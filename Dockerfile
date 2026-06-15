@@ -16,11 +16,8 @@ RUN npm install
 # Copy source files
 COPY . .
 
-# Run production build
-RUN npm run build
-
 # Expose port 3000
 EXPOSE 3000
 
-# Set start command
-CMD ["npm", "start"]
+# Set start command to build and start the application at runtime
+CMD ["sh", "-c", "npm run build && npm start"]
