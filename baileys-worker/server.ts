@@ -1,0 +1,565 @@
+/**
+ * FW Core — Baileys Persistent Worker
+ * =====================================
+ * This process runs 24/7 on Railway/Render/VPS.
+ * It keeps the Baileys WebSocket alive and bridges between
+ * Supabase (action queue) and WhatsApp servers.
+ *
+ * Architecture:
+ *   Vercel (Next.js) → baileys_action_queue (Supabase) → THIS WORKER → WhatsApp
+ *
+ * Start: npm run dev  (development)
+ *        npm start    (production)
+ */
+
+import 'dotenv/config';
+import makeWASocket, {
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  makeInMemoryStore,
+  proto,
+  useMultiFileAuthState,
+  WAMessageContent,
+  WAMessageKey,
+  BaileysEventMap,
+} from '@adiwajshing/baileys';
+import { Boom } from '@hapi/boom';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import pino from 'pino';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as http from 'http';
+
+// ─── Logger ──────────────────────────────────────────────────────────────────
+const logger = pino({
+  level: process.env.LOG_LEVEL ?? 'info',
+  transport: { target: 'pino-pretty' },
+});
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+const SUPABASE_URL = process.env.SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const WORKSPACE_ID = process.env.WORKER_WORKSPACE_ID!;
+const PORT = parseInt(process.env.PORT ?? '3001', 10);
+const AUTH_FOLDER = path.join(__dirname, '.baileys_auth');
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
+  logger.fatal('Missing required env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_WORKSPACE_ID');
+  process.exit(1);
+}
+
+// ─── Supabase Admin Client ────────────────────────────────────────────────────
+const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+// ─── In-Memory Store (Chat cache) ────────────────────────────────────────────
+const store = makeInMemoryStore({ logger: logger.child({ module: 'store' }) });
+
+// ─── Active Socket Reference ─────────────────────────────────────────────────
+let sock: ReturnType<typeof makeWASocket> | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ─── Session State Helpers ────────────────────────────────────────────────────
+async function loadCredsFromSupabase(): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('baileys_sessions')
+    .select('creds_json, keys_json')
+    .eq('workspace_id', WORKSPACE_ID)
+    .maybeSingle();
+
+  if (error || !data?.creds_json) return false;
+
+  try {
+    if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
+    fs.writeFileSync(path.join(AUTH_FOLDER, 'creds.json'), data.creds_json, 'utf-8');
+    if (data.keys_json) {
+      const keys = JSON.parse(data.keys_json);
+      for (const [file, content] of Object.entries(keys)) {
+        fs.writeFileSync(path.join(AUTH_FOLDER, file), JSON.stringify(content), 'utf-8');
+      }
+    }
+    logger.info('✅ Loaded credentials from Supabase');
+    return true;
+  } catch (e) {
+    logger.error({ err: e }, 'Failed to write creds from Supabase');
+    return false;
+  }
+}
+
+async function saveCredsToSupabase(credsJson: string): Promise<void> {
+  // Also save any key files alongside creds
+  const keysObj: Record<string, unknown> = {};
+  if (fs.existsSync(AUTH_FOLDER)) {
+    const files = fs.readdirSync(AUTH_FOLDER).filter(f => f !== 'creds.json');
+    for (const file of files) {
+      try {
+        keysObj[file] = JSON.parse(fs.readFileSync(path.join(AUTH_FOLDER, file), 'utf-8'));
+      } catch { /* skip */ }
+    }
+  }
+
+  const { error } = await supabase
+    .from('baileys_sessions')
+    .upsert({
+      workspace_id: WORKSPACE_ID,
+      creds_json: credsJson,
+      keys_json: JSON.stringify(keysObj),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'workspace_id' });
+
+  if (error) logger.error({ err: error }, 'Failed to save creds to Supabase');
+  else logger.debug('💾 Credentials synced to Supabase');
+}
+
+async function updateSessionState(
+  state: 'disconnected' | 'connecting' | 'open',
+  extras: Record<string, unknown> = {}
+): Promise<void> {
+  await supabase
+    .from('baileys_sessions')
+    .upsert({
+      workspace_id: WORKSPACE_ID,
+      conn_state: state,
+      ...extras,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'workspace_id' });
+}
+
+// ─── Message Sending Helpers ──────────────────────────────────────────────────
+async function sendTextMessage(to: string, text: string): Promise<string | null> {
+  if (!sock) throw new Error('Socket not connected');
+  const result = await sock.sendMessage(to, { text });
+  return result?.key?.id ?? null;
+}
+
+async function sendMediaMessage(
+  to: string,
+  mediaUrl: string,
+  caption: string,
+  mimeType: string
+): Promise<string | null> {
+  if (!sock) throw new Error('Socket not connected');
+
+  const isImage = mimeType.startsWith('image/');
+  const isVideo = mimeType.startsWith('video/');
+  const isAudio = mimeType.startsWith('audio/');
+
+  let result;
+  if (isImage) {
+    result = await sock.sendMessage(to, { image: { url: mediaUrl }, caption });
+  } else if (isVideo) {
+    result = await sock.sendMessage(to, { video: { url: mediaUrl }, caption });
+  } else if (isAudio) {
+    result = await sock.sendMessage(to, { audio: { url: mediaUrl }, mimetype: mimeType, ptt: false });
+  } else {
+    result = await sock.sendMessage(to, {
+      document: { url: mediaUrl },
+      mimetype: mimeType,
+      fileName: caption || 'file',
+    });
+  }
+  return result?.key?.id ?? null;
+}
+
+async function sendTemplateMessage(
+  to: string,
+  templateId: string,
+  variables: Record<string, string>
+): Promise<string | null> {
+  const { data: tpl } = await supabase
+    .from('baileys_templates')
+    .select('body_text, media_url, media_type')
+    .eq('id', templateId)
+    .eq('workspace_id', WORKSPACE_ID)
+    .single();
+
+  if (!tpl) throw new Error(`Template ${templateId} not found`);
+
+  // Replace placeholders
+  let body = tpl.body_text;
+  for (const [key, val] of Object.entries(variables)) {
+    body = body.replaceAll(`{${key}}`, val);
+  }
+
+  if (tpl.media_url) {
+    return sendMediaMessage(to, tpl.media_url, body, tpl.media_type === 'image' ? 'image/jpeg' : 'video/mp4');
+  }
+  return sendTextMessage(to, body);
+}
+
+async function dispatchGroupCard(groupJid: string, leadData: Record<string, unknown>): Promise<void> {
+  if (!sock) throw new Error('Socket not connected');
+
+  const name = (leadData.name as string) ?? 'New Lead';
+  const source = (leadData.source as string) ?? 'Unknown';
+  const phone = (leadData.phone as string) ?? '—';
+  const email = (leadData.email as string) ?? '—';
+
+  const card = `🎯 *NEW LEAD ALERT*\n\n` +
+    `👤 *Name:* ${name}\n` +
+    `📞 *Phone:* ${phone}\n` +
+    `📧 *Email:* ${email}\n` +
+    `🔗 *Source:* ${source}\n` +
+    `🕐 *Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n` +
+    `_FW Core — Automated Lead Alert_`;
+
+  await sock.sendMessage(groupJid, { text: card });
+  logger.info({ groupJid, name }, '📤 Group dispatch sent');
+}
+
+// ─── Action Queue Processor ───────────────────────────────────────────────────
+async function processAction(action: {
+  id: string;
+  action_type: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  // Mark as processing
+  await supabase
+    .from('baileys_action_queue')
+    .update({ status: 'processing', attempt_count: 1, processed_at: new Date().toISOString() })
+    .eq('id', action.id);
+
+  try {
+    let waMessageId: string | null = null;
+
+    switch (action.action_type) {
+      case 'send_text': {
+        const { to, text } = action.payload as { to: string; text: string };
+        waMessageId = await sendTextMessage(to, text);
+        break;
+      }
+      case 'send_media': {
+        const { to, mediaUrl, caption, mimeType } = action.payload as {
+          to: string; mediaUrl: string; caption: string; mimeType: string;
+        };
+        waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType);
+        break;
+      }
+      case 'send_template': {
+        const { to, templateId, variables } = action.payload as {
+          to: string; templateId: string; variables: Record<string, string>;
+        };
+        waMessageId = await sendTemplateMessage(to, templateId, variables);
+        break;
+      }
+      case 'group_dispatch': {
+        const { groupJid, leadData } = action.payload as {
+          groupJid: string; leadData: Record<string, unknown>;
+        };
+        await dispatchGroupCard(groupJid, leadData);
+        break;
+      }
+      default:
+        logger.warn({ type: action.action_type }, 'Unknown action type');
+    }
+
+    // Mark done + store WA message ID
+    await supabase
+      .from('baileys_action_queue')
+      .update({ status: 'done', result_message_id: waMessageId })
+      .eq('id', action.id);
+
+    logger.info({ actionId: action.id, type: action.action_type, waMessageId }, '✅ Action processed');
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.error({ actionId: action.id, err: errMsg }, '❌ Action failed');
+
+    await supabase
+      .from('baileys_action_queue')
+      .update({ status: 'failed', error_message: errMsg })
+      .eq('id', action.id);
+  }
+}
+
+// ─── Supabase Realtime Subscription ─────────────────────────────────────────
+function startActionQueueListener(): void {
+  logger.info('📡 Subscribing to baileys_action_queue realtime...');
+
+  supabase
+    .channel('baileys_worker_queue')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'baileys_action_queue',
+        filter: `workspace_id=eq.${WORKSPACE_ID}`,
+      },
+      async (payload) => {
+        const action = payload.new as {
+          id: string;
+          action_type: string;
+          payload: Record<string, unknown>;
+          status: string;
+        };
+
+        if (action.status !== 'pending') return;
+        logger.info({ actionId: action.id, type: action.action_type }, '🎯 New action received');
+
+        if (!sock) {
+          logger.warn('Socket not ready, action will be retried');
+          return;
+        }
+
+        await processAction(action);
+      }
+    )
+    .subscribe((status) => {
+      logger.info({ status }, '📡 Realtime subscription status');
+    });
+
+  // Also poll for any missed pending actions on startup
+  processPendingActionsOnStartup();
+}
+
+async function processPendingActionsOnStartup(): Promise<void> {
+  const { data: pending } = await supabase
+    .from('baileys_action_queue')
+    .select('*')
+    .eq('workspace_id', WORKSPACE_ID)
+    .eq('status', 'pending')
+    .order('priority', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(50);
+
+  if (pending && pending.length > 0) {
+    logger.info({ count: pending.length }, '📋 Processing pending actions from startup');
+    for (const action of pending) {
+      await processAction(action);
+    }
+  }
+}
+
+// ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
+async function startBaileysSocket(): Promise<void> {
+  logger.info('🚀 Starting Baileys socket...');
+
+  await updateSessionState('connecting');
+
+  // Load creds from Supabase if available
+  await loadCredsFromSupabase();
+
+  if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
+
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  logger.info({ version, isLatest }, '📦 WhatsApp Web version');
+
+  sock = makeWASocket({
+    version,
+    logger: logger.child({ module: 'baileys' }),
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger.child({ module: 'keys' })),
+    },
+    printQRInTerminal: true,
+    generateHighQualityLinkPreview: true,
+    markOnlineOnConnect: false,
+  });
+
+  store.bind(sock.ev);
+
+  // ── Event: creds.update — save creds on every update ──
+  sock.ev.on('creds.update', async () => {
+    saveCreds();
+    const credsJson = fs.readFileSync(path.join(AUTH_FOLDER, 'creds.json'), 'utf-8');
+    await saveCredsToSupabase(credsJson);
+  });
+
+  // ── Event: connection.update — handle QR, open, close ──
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    // New QR code generated — save to DB so UI can display it
+    if (qr) {
+      logger.info('📱 New QR code generated');
+      await supabase
+        .from('baileys_sessions')
+        .upsert({
+          workspace_id: WORKSPACE_ID,
+          qr_string: qr,
+          qr_expires_at: new Date(Date.now() + 60_000).toISOString(), // expires in 60s
+          conn_state: 'connecting',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id' });
+    }
+
+    if (connection === 'open') {
+      logger.info('✅ WhatsApp connected!');
+      const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
+
+      await supabase
+        .from('baileys_sessions')
+        .upsert({
+          workspace_id: WORKSPACE_ID,
+          conn_state: 'open',
+          qr_string: null,       // Clear QR after connect
+          phone_number: phoneNumber,
+          last_connected: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id' });
+    }
+
+    if (connection === 'close') {
+      const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+      logger.warn({ statusCode, shouldReconnect }, '🔌 Connection closed');
+
+      await updateSessionState('disconnected');
+
+      if (shouldReconnect) {
+        logger.info('♻️  Reconnecting in 5s...');
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(startBaileysSocket, 5_000);
+      } else {
+        // Logged out — clear session
+        logger.warn('🚪 Logged out. Clearing session from DB...');
+        await supabase
+          .from('baileys_sessions')
+          .update({ creds_json: null, keys_json: null, conn_state: 'disconnected' })
+          .eq('workspace_id', WORKSPACE_ID);
+
+        if (fs.existsSync(AUTH_FOLDER)) {
+          fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+        }
+      }
+    }
+  });
+
+  // ── Event: messages.upsert — save inbound messages ──
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const msg of messages) {
+      if (msg.key.fromMe) continue; // Skip our own messages
+
+      const chatJid = msg.key.remoteJid!;
+      const text =
+        msg.message?.conversation ??
+        msg.message?.extendedTextMessage?.text ??
+        msg.message?.imageMessage?.caption ??
+        '[media]';
+
+      logger.info({ chatJid, text }, '📩 Inbound message');
+
+      // Save to baileys_messages
+      await supabase.from('baileys_messages').insert({
+        workspace_id: WORKSPACE_ID,
+        wa_message_id: msg.key.id,
+        chat_jid: chatJid,
+        direction: 'inbound',
+        message_text: text,
+        status: 'read',
+        sent_at: new Date((msg.messageTimestamp as number) * 1000).toISOString(),
+      });
+
+      // Update chat last message
+      await supabase
+        .from('baileys_chats')
+        .upsert({
+          workspace_id: WORKSPACE_ID,
+          jid: chatJid,
+          last_message: text.slice(0, 100),
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id, jid' });
+    }
+  });
+
+  // ── Event: messages.update — Blue Tick / Delivery status ──
+  sock.ev.on('messages.update', async (updates) => {
+    for (const update of updates) {
+      if (!update.update.status) continue;
+
+      const waStatus = update.update.status;
+      // WhatsApp status codes: 2 = sent, 3 = delivered, 4 = read
+      let dbStatus: 'sent' | 'delivered' | 'read' | null = null;
+      const extras: Record<string, string> = {};
+
+      if (waStatus === proto.WebMessageInfo.Status.DELIVERY_ACK) {
+        dbStatus = 'delivered';
+        extras.delivered_at = new Date().toISOString();
+      } else if (waStatus === proto.WebMessageInfo.Status.READ) {
+        dbStatus = 'read';
+        extras.read_at = new Date().toISOString();
+      } else if (waStatus === proto.WebMessageInfo.Status.SERVER_ACK) {
+        dbStatus = 'sent';
+      }
+
+      if (dbStatus && update.key.id) {
+        await supabase
+          .from('baileys_messages')
+          .update({ status: dbStatus, ...extras })
+          .eq('wa_message_id', update.key.id);
+
+        logger.debug({ msgId: update.key.id, status: dbStatus }, '📊 Status updated');
+      }
+    }
+  });
+
+  // ── Event: chats.set — Bulk sync chat list on connect ──
+  sock.ev.on('chats.set', async ({ chats }) => {
+    if (!chats.length) return;
+    logger.info({ count: chats.length }, '📂 Syncing chat list...');
+
+    const rows = chats.slice(0, 200).map((chat) => ({
+      workspace_id: WORKSPACE_ID,
+      jid: chat.id,
+      display_name: (chat as unknown as Record<string,string>).name ?? chat.id.split('@')[0],
+      is_group: chat.id.endsWith('@g.us'),
+      unread_count: chat.unreadCount ?? 0,
+      last_message: (chat as unknown as Record<string,string>).lastMessage ?? null,
+      updated_at: new Date().toISOString(),
+    }));
+
+    await supabase
+      .from('baileys_chats')
+      .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+  });
+}
+
+// ─── Health Check HTTP Server ────────────────────────────────────────────────
+function startHealthServer(): void {
+  const server = http.createServer(async (req, res) => {
+    if (req.url === '/health') {
+      const { data } = await supabase
+        .from('baileys_sessions')
+        .select('conn_state, phone_number, last_connected')
+        .eq('workspace_id', WORKSPACE_ID)
+        .maybeSingle();
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        worker: 'baileys',
+        socket: sock ? 'alive' : 'null',
+        session: data,
+      }));
+    } else {
+      res.writeHead(404);
+      res.end('Not Found');
+    }
+  });
+
+  server.listen(PORT, () => {
+    logger.info({ port: PORT }, `🌐 Health server running on port ${PORT}`);
+  });
+}
+
+// ─── Bootstrap ───────────────────────────────────────────────────────────────
+async function main(): Promise<void> {
+  logger.info('🔥 FW Core — Baileys Worker Starting...');
+  logger.info({ workspaceId: WORKSPACE_ID }, '🏢 Workspace');
+
+  startHealthServer();
+  startActionQueueListener();
+  await startBaileysSocket();
+}
+
+main().catch((err) => {
+  logger.fatal({ err }, '💥 Worker crashed');
+  process.exit(1);
+});
