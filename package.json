@@ -9,9 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "6.7.23",
     "@hapi/boom": "^10.0.1",
     "@supabase/supabase-js": "^2.108.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "bufferutil": "^4.0.9",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",

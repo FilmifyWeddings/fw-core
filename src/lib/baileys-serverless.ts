@@ -55,12 +55,14 @@ export interface HydrationResult {
 
 export interface SendPayload {
   to: string;                        // JID or phone number digits
-  type: 'text' | 'image' | 'video' | 'document' | 'audio';
+  type: 'text' | 'image' | 'video' | 'document' | 'audio' | 'poll';
   text?: string;
   mediaUrl?: string;
   caption?: string;
   mimeType?: string;
   fileName?: string;
+  pollOptions?: string[];
+  pollSelectableCount?: number;
 }
 
 // ─── /tmp Path Helper ─────────────────────────────────────────────────────────
@@ -214,6 +216,11 @@ export async function getOrCreateSocket(
     receivedPendingNotifications: false,
     manageIntegrity: false,
     forceConnect: true,
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 30000,
+    emitOwnEvents: true,
+    retryRequestDelayMs: 2000,
   });
 
   sock.ev.on('creds.update', async () => {
@@ -354,6 +361,15 @@ export async function sendMessageServerless(
           fileName: payload.fileName ?? 'file',
         };
         break;
+      case 'poll':
+        msgContent = {
+          poll: {
+            name: payload.text!,
+            values: payload.pollOptions || [],
+            selectableCount: payload.pollSelectableCount ?? 1
+          }
+        };
+        break;
       default: // text
         msgContent = { text: payload.text! };
     }
@@ -431,11 +447,11 @@ export async function sendMessageServerless(
           receivedPendingNotifications: false,
           manageIntegrity: false,
           forceConnect: true,
-          connectTimeoutMs: 60000, // Extend connection timeout allowance
-          defaultQueryTimeoutMs: 0, // Prevent socket query drops
-          retryRequestDelayMs: 250,
-          maxMsgRetryCount: 1,
-          keepAliveIntervalMs: 0, // Don't keep alive — we close after send
+          connectTimeoutMs: 60000,
+          defaultQueryTimeoutMs: 60000,
+          keepAliveIntervalMs: 30000,
+          emitOwnEvents: true,
+          retryRequestDelayMs: 2000,
         });
 
         // ── creds.update: Save to /tmp + Supabase ──
@@ -611,173 +627,200 @@ export async function generateQrServerless(
       }
     }, timeoutMs);
 
-    try {
-      const { state, saveCreds } = await useMultiFileAuthState(authDir);
-      const { version } = await fetchLatestBaileysVersion();
+    async function connect() {
+      if (done) return;
+      try {
+        const { state, saveCreds } = await useMultiFileAuthState(authDir);
+        const { version } = await fetchLatestBaileysVersion();
 
-      sock = makeWASocket({
-        version,
-        logger,
-        auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, logger),
-        },
-        printQRInTerminal: false,
-        markOnlineOnConnect: false,
-        syncFullHistory: false,
-        shouldSyncHistoryMessage: () => false,
-        downloadHistoryWithMediaFiles: false,
-        receivedPendingNotifications: false,
-        manageIntegrity: false,
-        forceConnect: true,
-        connectTimeoutMs: 60000, // Extend connection timeout allowance
-        defaultQueryTimeoutMs: 0, // Prevent socket query drops
-      });
+        sock = makeWASocket({
+          version,
+          logger,
+          auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, logger),
+          },
+          printQRInTerminal: false,
+          markOnlineOnConnect: false,
+          syncFullHistory: false,
+          shouldSyncHistoryMessage: () => false,
+          downloadHistoryWithMediaFiles: false,
+          receivedPendingNotifications: false,
+          manageIntegrity: false,
+          forceConnect: true,
+          connectTimeoutMs: 60000,
+          defaultQueryTimeoutMs: 60000,
+          keepAliveIntervalMs: 30000,
+          emitOwnEvents: true,
+          retryRequestDelayMs: 2000,
+        });
 
-      sock.ev.on('creds.update', async () => {
-        saveCreds();
+        sock.ev.on('creds.update', async () => {
+          saveCreds();
 
-        // Immediate token eviction if successfully paired
-        const credsPath = path.join(authDir, 'creds.json');
-        if (fs.existsSync(credsPath)) {
-          try {
-            const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
-            if (creds?.me?.id) {
-              console.log(`[generateQrServerless] creds.update has valid me.id (${creds.me.id}). Saving and scheduling close...`);
-              hasOpened = true;
-
-              await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-
-              const phoneNumber = creds.me.id.split(':')[0] || '';
-              await supabaseAdmin
-                .from('baileys_sessions')
-                .upsert({
-                  workspace_id: workspaceId,
-                  conn_state: 'open',
-                  qr_string: null,
-                  phone_number: phoneNumber,
-                  last_connected: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id' });
-
-              onConnected(phoneNumber);
-              
-              // Delay closure by 3 seconds to let the cryptographic handshake finalize
-              setTimeout(async () => {
-                await finish();
-              }, 3000);
-              return;
-            }
-          } catch (e) {
-            console.error('[generateQrServerless] creds.update check error:', e);
-          }
-        }
-
-        credsSavePromise = persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-      });
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sock.ev.on('connection.update', async ({ connection, qr, lastDisconnect }: { connection: any; qr: any; lastDisconnect: any }) => {
-        if (qr) {
-          // New QR code generated — write to Supabase + fire callback
-          const expiresAt = new Date(Date.now() + 60_000).toISOString();
-          await supabaseAdmin
-            .from('baileys_sessions')
-            .upsert({
-              workspace_id: workspaceId,
-              qr_string: qr,
-              qr_expires_at: expiresAt,
-              conn_state: 'connecting',
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' });
-
-          onQr(qr);
-        }
-
-        if (connection === 'open') {
-          hasOpened = true;
-          const phoneNumber = sock?.user?.id?.split(':')[0] ?? '';
-          
-          // Wait for any active credentials commit to Supabase first
-          if (credsSavePromise) {
-            console.log('[generateQrServerless] Awaiting pending credentials save...');
-            await credsSavePromise;
-          }
-          await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-
-          await supabaseAdmin
-            .from('baileys_sessions')
-            .upsert({
-              workspace_id: workspaceId,
-              conn_state: 'open',
-              qr_string: null,
-              phone_number: phoneNumber,
-              last_connected: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' });
-
-          onConnected(phoneNumber);
-          await finish();
-        }
-
-        if (connection === 'close') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-          console.log(`[generateQrServerless] Connection closed. Code: ${statusCode}`);
-
-          if (!hasOpened) {
-            console.log(`[generateQrServerless] Connection closed before opening. Resetting session to disconnected.`);
-            
-            // Clear /tmp auth files to prevent dirty reconnect attempts
+          // Immediate token eviction if successfully paired
+          const credsPath = path.join(authDir, 'creds.json');
+          if (fs.existsSync(credsPath)) {
             try {
-              if (fs.existsSync(authDir)) {
-                fs.rmSync(authDir, { recursive: true });
+              const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+              if (creds?.me?.id) {
+                console.log(`[generateQrServerless] creds.update has valid me.id (${creds.me.id}). Saving and scheduling close...`);
+                hasOpened = true;
+
+                await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
+
+                const phoneNumber = creds.me.id.split(':')[0] || '';
+                await supabaseAdmin
+                  .from('baileys_sessions')
+                  .upsert({
+                    workspace_id: workspaceId,
+                    conn_state: 'open',
+                    qr_string: null,
+                    phone_number: phoneNumber,
+                    last_connected: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'workspace_id' });
+
+                onConnected(phoneNumber);
+                
+                // Delay closure by 3 seconds to let the cryptographic handshake finalize
+                setTimeout(async () => {
+                  await finish();
+                }, 3000);
+                return;
               }
             } catch (e) {
-              console.error('[generateQrServerless] Clear auth dir error:', e);
+              console.error('[generateQrServerless] creds.update check error:', e);
             }
+          }
 
-            // DB update to trigger a clean session reset state
+          credsSavePromise = persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
+        });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        sock.ev.on('connection.update', async ({ connection, qr, lastDisconnect }: { connection: any; qr: any; lastDisconnect: any }) => {
+          if (qr) {
+            // New QR code generated — write to Supabase + fire callback
+            const expiresAt = new Date(Date.now() + 60_000).toISOString();
             await supabaseAdmin
               .from('baileys_sessions')
               .upsert({
                 workspace_id: workspaceId,
-                conn_state: 'disconnected',
-                qr_string: null,
-                qr_expires_at: null,
-                creds_json: null,
-                keys_json: null,
+                qr_string: qr,
+                qr_expires_at: expiresAt,
+                conn_state: 'connecting',
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'workspace_id' });
 
-            onError(`Connection failed or timed out. Code: ${statusCode}`);
-          } else {
-            console.log(`[generateQrServerless] Connection closed after success. No reset required.`);
+            onQr(qr);
           }
-          await finish();
-        }
-      });
-    } catch (err) {
-      console.error('[generateQrServerless] Error during setup:', err);
-      // Aggressive database state reset on exception
-      try {
-        if (fs.existsSync(authDir)) {
-          fs.rmSync(authDir, { recursive: true });
-        }
-      } catch {}
-      await supabaseAdmin
-        .from('baileys_sessions')
-        .upsert({
-          workspace_id: workspaceId,
-          conn_state: 'disconnected',
-          qr_string: null,
-          qr_expires_at: null,
-          creds_json: null,
-          keys_json: null,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id' });
-      onError(`Setup error: ${err instanceof Error ? err.message : String(err)}`);
-      await finish();
+
+          if (connection === 'open') {
+            hasOpened = true;
+            const phoneNumber = sock?.user?.id?.split(':')[0] ?? '';
+            
+            // Wait for any active credentials commit to Supabase first
+            if (credsSavePromise) {
+              console.log('[generateQrServerless] Awaiting pending credentials save...');
+              await credsSavePromise;
+            }
+            await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
+
+            await supabaseAdmin
+              .from('baileys_sessions')
+              .upsert({
+                workspace_id: workspaceId,
+                conn_state: 'open',
+                qr_string: null,
+                phone_number: phoneNumber,
+                last_connected: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id' });
+
+            onConnected(phoneNumber);
+            await finish();
+          }
+
+          if (connection === 'close') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+            console.log(`[generateQrServerless] Connection closed. Code: ${statusCode}`);
+
+            // If it's a restart required (515) or non-401 error, and we haven't timed out, retry!
+            const shouldRetry = statusCode !== 401 && !done;
+            if (shouldRetry) {
+              console.log(`[generateQrServerless] Restart/reconnect required (Code: ${statusCode}). Retrying in 1.5s...`);
+              setTimeout(() => {
+                connect().catch(err => {
+                  console.error('[generateQrServerless] Reconnect failed during retry:', err);
+                  onError(`Reconnect failed: ${err.message}`);
+                  finish();
+                });
+              }, 1500);
+              return;
+            }
+
+            if (!hasOpened) {
+              console.log(`[generateQrServerless] Connection closed before opening. Resetting session to disconnected.`);
+              
+              // Clear auth files to prevent dirty reconnect attempts
+              try {
+                if (fs.existsSync(authDir)) {
+                  fs.rmSync(authDir, { recursive: true });
+                }
+              } catch (e) {
+                console.error('[generateQrServerless] Clear auth dir error:', e);
+              }
+
+              // DB update to trigger a clean session reset state
+              await supabaseAdmin
+                .from('baileys_sessions')
+                .upsert({
+                  workspace_id: workspaceId,
+                  conn_state: 'disconnected',
+                  qr_string: null,
+                  qr_expires_at: null,
+                  creds_json: null,
+                  keys_json: null,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id' });
+
+              onError(`Connection failed or timed out. Code: ${statusCode}`);
+            } else {
+              console.log(`[generateQrServerless] Connection closed after success. No reset required.`);
+            }
+            await finish();
+          }
+        });
+      } catch (err) {
+        console.error('[generateQrServerless] Error during setup:', err);
+        // Aggressive database state reset on exception if not retrying
+        try {
+          if (fs.existsSync(authDir)) {
+            fs.rmSync(authDir, { recursive: true });
+          }
+        } catch {}
+        await supabaseAdmin
+          .from('baileys_sessions')
+          .upsert({
+            workspace_id: workspaceId,
+            conn_state: 'disconnected',
+            qr_string: null,
+            qr_expires_at: null,
+            creds_json: null,
+            keys_json: null,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id' });
+        onError(`Setup error: ${err instanceof Error ? err.message : String(err)}`);
+        await finish();
+      }
     }
+
+    // Trigger initial connection
+    connect().catch(err => {
+      console.error('[generateQrServerless] Initial connect error:', err);
+      onError(`Initial connection failed: ${err.message}`);
+      finish();
+    });
   });
 }

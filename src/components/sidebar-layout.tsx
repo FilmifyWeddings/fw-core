@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, Database, Send, Download, Megaphone, Layers, 
   Settings, HelpCircle, Sun, Moon, Menu, ChevronDown, ChevronRight, 
-  LogOut, Search, MessageSquare, FileSpreadsheet, Check
+  LogOut, Search, MessageSquare, FileSpreadsheet, Check, Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -98,18 +98,19 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   // Track active sub-integration tab from URL query params
   useEffect(() => {
-    if (pathname === '/integrations') {
-      const tab = searchParams.get('tab') || searchParams.get('integration');
-      if (tab) {
-        setActiveSubTab(tab);
-        setIntegrationsOpen(true);
+    if (pathname.startsWith('/dashboard/integrations')) {
+      const parts = pathname.split('/');
+      const providerSlug = parts[parts.length - 1];
+      if (providerSlug && providerSlug !== 'integrations') {
+        setActiveSubTab(providerSlug);
       } else {
         setActiveSubTab(null);
       }
+      setIntegrationsOpen(true);
     } else {
       setActiveSubTab(null);
     }
-  }, [pathname, searchParams]);
+  }, [pathname]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -150,7 +151,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     }
   ];
 
-  if (pathname === '/login') {
+  if (['/login', '/home', '/admin/sushant', '/admin/dashboard'].includes(pathname)) {
     return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
   }
 
@@ -245,22 +246,48 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             );
           })}
 
+          {/* Super Admin Dashboard Link */}
+          {userEmail === 'sushantnawale700@gmail.com' && (
+            <div className="relative group">
+              <Link
+                href="/admin/dashboard"
+                className={`flex items-center gap-3 py-2 rounded-lg text-xs font-semibold transition-all border border-transparent ${
+                  collapsed ? 'px-2 justify-center' : 'px-3'
+                } ${
+                  pathname === '/admin/dashboard'
+                    ? 'bg-zinc-200 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800 text-zinc-950 dark:text-white'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/40 dark:hover:bg-zinc-900/30'
+                }`}
+              >
+                <Shield className={`w-4 h-4 ${pathname === '/admin/dashboard' ? 'text-orange-500' : ''}`} />
+                {!collapsed && <span>Admin Dashboard</span>}
+              </Link>
+              
+              {/* Collapsed Tooltip */}
+              {collapsed && (
+                <div className="hidden group-hover:block absolute left-16 top-1/2 -translate-y-1/2 bg-zinc-950 border border-zinc-800 text-white text-[9px] font-bold py-1 px-2.5 rounded-md pointer-events-none whitespace-nowrap shadow-xl z-50">
+                  Admin Dashboard
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Integrations Parent Menu Accordion */}
           <div className="relative group">
             <button
               type="button"
               onClick={() => {
-                router.push('/integrations');
+                router.push('/dashboard/integrations');
                 if (!collapsed) {
                   setIntegrationsOpen(!integrationsOpen);
                 }
               }}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all border border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/40 dark:hover:bg-zinc-900/30 ${
-                pathname === '/integrations' && !activeSubTab ? 'bg-zinc-200/50 dark:bg-zinc-900/40 text-zinc-950 dark:text-white' : ''
+                pathname.startsWith('/dashboard/integrations') && !activeSubTab ? 'bg-zinc-200/50 dark:bg-zinc-900/40 text-zinc-950 dark:text-white' : ''
               } ${collapsed ? 'justify-center' : ''}`}
             >
               <div className="flex items-center gap-3">
-                <Layers className={`w-4 h-4 ${pathname === '/integrations' ? 'text-orange-500' : ''}`} />
+                <Layers className={`w-4 h-4 ${pathname.startsWith('/dashboard/integrations') ? 'text-orange-500' : ''}`} />
                 {!collapsed && <span>Integrations</span>}
               </div>
               {!collapsed && (
@@ -279,37 +306,37 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             {!collapsed && integrationsOpen && (
               <div className="mt-1 ml-4 pl-3.5 border-l border-zinc-200 dark:border-zinc-900 space-y-0.5">
                 <Link
-                  href="/integrations?tab=whatsapp"
+                  href="/dashboard/integrations/whatsapp-web"
                   className={`flex items-center gap-2 py-1.5 px-2.5 rounded-md text-[11px] font-medium transition-all ${
-                    activeSubTab === 'whatsapp'
+                    activeSubTab === 'whatsapp-web'
                       ? 'text-orange-500 bg-zinc-200/30 dark:bg-zinc-900/20'
                       : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                   }`}
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
-                  <span>WhatsApp</span>
+                  <span>WhatsApp Web</span>
                 </Link>
                 <Link
-                  href="/integrations?tab=facebook"
+                  href="/dashboard/integrations/meta-ads"
                   className={`flex items-center gap-2 py-1.5 px-2.5 rounded-md text-[11px] font-medium transition-all ${
-                    activeSubTab === 'facebook'
+                    activeSubTab === 'meta-ads'
                       ? 'text-orange-500 bg-zinc-200/30 dark:bg-zinc-900/20'
                       : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                   }`}
                 >
                   <FacebookIcon className="w-3.5 h-3.5" />
-                  <span>Facebook Ads</span>
+                  <span>Meta Ads</span>
                 </Link>
                 <Link
-                  href="/integrations?tab=google"
+                  href="/dashboard/integrations/google-contacts"
                   className={`flex items-center gap-2 py-1.5 px-2.5 rounded-md text-[11px] font-medium transition-all ${
-                    activeSubTab === 'google'
+                    activeSubTab === 'google-contacts'
                       ? 'text-orange-500 bg-zinc-200/30 dark:bg-zinc-900/20'
                       : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                   }`}
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Google Sheets</span>
+                  <span>Google Contacts</span>
                 </Link>
               </div>
             )}

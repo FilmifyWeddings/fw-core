@@ -89,32 +89,93 @@ async function processQueuedAction(action: {
         to: string; templateId: string; variables?: Record<string, string>;
       };
 
-      // Fetch template from DB
+      // Fetch template from DB (using new whatsapp_templates table)
       const { data: tpl } = await supabaseAdmin
-        .from('baileys_templates')
-        .select('body_text, media_url, media_type')
+        .from('whatsapp_templates')
+        .select('*')
         .eq('id', templateId)
         .eq('workspace_id', workspace_id)
         .single();
 
       if (!tpl) return { success: false, error: `Template ${templateId} not found` };
 
-      // Replace placeholders: {lead_name}, {wedding_date}, etc.
-      let body = tpl.body_text as string;
+      const tplPayload = tpl.payload || {};
+      const tplButtons = tpl.buttons || [];
+
+      // Replace placeholders in body/question
+      let body = (tplPayload.body || tplPayload.question || '') as string;
       if (variables) {
         for (const [key, val] of Object.entries(variables)) {
-          body = body.replaceAll(`{${key}}`, val);
+          body = body.replaceAll(`{${key}}`, val).replaceAll(`{{${key}}}`, val);
         }
       }
 
-      if (tpl.media_url) {
-        const mimeType = tpl.media_type === 'image' ? 'image/jpeg' : 'video/mp4';
+      // ─── Case 1: Poll Template ──────────────────────────────────
+      if (tpl.type === 'poll') {
+        const options = (tplPayload.options || []).map((o: any) => o.text).filter(Boolean);
         return sendMessageServerless(supabaseAdmin, workspace_id, {
           to: normalizeJid(to),
-          type: tpl.media_type as 'image' | 'video',
-          mediaUrl: tpl.media_url as string,
+          type: 'poll',
+          text: body,
+          pollOptions: options,
+          pollSelectableCount: tplPayload.allowMultiple ? 0 : 1,
+        });
+      }
+
+      // ─── Case 2: Media Template ──────────────────────────────────
+      if (tpl.type === 'media') {
+        const mediaUrl = tplPayload.mediaUrl || tplPayload.default_send_media_url;
+        const mimeType = tplPayload.mediaMime || tplPayload.default_send_media_mime || 'application/pdf';
+        
+        // Append footer if exists
+        if (tplPayload.footer) {
+          body += `\n\n_${tplPayload.footer}_`;
+        }
+
+        // Append formatted buttons for compatibility
+        if (tplButtons.length > 0) {
+          body += `\n\n`;
+          tplButtons.forEach((btn: any, index: number) => {
+            body += `[${index + 1}] ${btn.text}\n`;
+          });
+        }
+
+        const mediaType = mimeType.startsWith('image/') ? 'image' :
+                          mimeType.startsWith('video/') ? 'video' :
+                          mimeType.startsWith('audio/') ? 'audio' : 'document';
+
+        return sendMessageServerless(supabaseAdmin, workspace_id, {
+          to: normalizeJid(to),
+          type: mediaType as any,
+          mediaUrl,
           caption: body,
           mimeType,
+          fileName: tplPayload.fileName || 'document',
+        });
+      }
+
+      // ─── Case 3: List / Button / Text Template ──────────────────
+      // For maximum compatibility and reliable delivery, format list sections and buttons as text.
+      if (tplPayload.footer) {
+        body += `\n\n_${tplPayload.footer}_`;
+      }
+
+      // Format List sections if it's a List template
+      if (tpl.type === 'list' && tplPayload.sections) {
+        body += `\n\n*${tplPayload.buttonText || 'Options'}*`;
+        tplPayload.sections.forEach((sec: any) => {
+          body += `\n\n*${sec.title}*:`;
+          (sec.rows || []).forEach((row: any) => {
+            body += `\n- ${row.title}${row.desc || row.description ? ` (${row.desc || row.description})` : ''}`;
+          });
+        });
+      }
+
+      // Format standard buttons
+      if (tplButtons.length > 0) {
+        body += `\n\n`;
+        tplButtons.forEach((btn: any, index: number) => {
+          body += `[${index + 1}] ${btn.text}\n`;
         });
       }
 

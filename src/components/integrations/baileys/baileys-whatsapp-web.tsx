@@ -444,7 +444,7 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
               <MessageSquare className="w-4 h-4 text-black" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Baileys Direct</h3>
+              <h3 className="text-sm font-bold text-white">WhatsApp Gateway</h3>
               <p className="text-[9px] text-emerald-400 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
                 Live
@@ -603,7 +603,7 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
               <MessageSquare className="w-10 h-10 text-emerald-500/60" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-lg font-bold text-white">Baileys WhatsApp Web</h3>
+              <h3 className="text-lg font-bold text-white">WhatsApp Live Chat</h3>
               <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
                 Left sidebar se koi bhi contact select karo aur real-time messaging shuru karo.
               </p>

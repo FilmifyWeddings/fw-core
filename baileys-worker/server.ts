@@ -209,71 +209,88 @@ async function dispatchGroupCard(groupJid: string, leadData: Record<string, unkn
   logger.info({ groupJid, name }, '📤 Group dispatch sent');
 }
 
-// ─── Action Queue Processor ───────────────────────────────────────────────────
-async function processAction(action: {
+// ─── Action Handler (implements ActionHandler interface from queue-processor) ──
+/**
+ * Executes a single action from the queue.
+ * Called by the queue-processor engine for each dequeued action.
+ * Must return { success: boolean, waMessageId?, error? }
+ */
+async function executeAction(action: {
   id: string;
   action_type: string;
   payload: Record<string, unknown>;
-}): Promise<void> {
-  // Mark as processing
-  await supabase
-    .from('baileys_action_queue')
-    .update({ status: 'processing', attempt_count: 1, processed_at: new Date().toISOString() })
-    .eq('id', action.id);
+  workspace_id: string;
+  attempt_count: number;
+  status: string;
+  priority: number;
+  created_at: string;
+}): Promise<{ success: boolean; waMessageId?: string | null; error?: string }> {
+  if (!sock) throw new Error('WhatsApp socket is not connected. Cannot process action.');
 
-  try {
-    let waMessageId: string | null = null;
+  let waMessageId: string | null = null;
 
-    switch (action.action_type) {
-      case 'send_text': {
-        const { to, text } = action.payload as { to: string; text: string };
-        waMessageId = await sendTextMessage(to, text);
-        break;
-      }
-      case 'send_media': {
-        const { to, mediaUrl, caption, mimeType } = action.payload as {
-          to: string; mediaUrl: string; caption: string; mimeType: string;
-        };
-        waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType);
-        break;
-      }
-      case 'send_template': {
-        const { to, templateId, variables } = action.payload as {
-          to: string; templateId: string; variables: Record<string, string>;
-        };
-        waMessageId = await sendTemplateMessage(to, templateId, variables);
-        break;
-      }
-      case 'group_dispatch': {
-        const { groupJid, leadData } = action.payload as {
-          groupJid: string; leadData: Record<string, unknown>;
-        };
-        await dispatchGroupCard(groupJid, leadData);
-        break;
-      }
-      default:
-        logger.warn({ type: action.action_type }, 'Unknown action type');
+  switch (action.action_type) {
+    case 'send_text': {
+      const { to, text } = action.payload as { to: string; text: string };
+      waMessageId = await sendTextMessage(to, text);
+      break;
     }
+    case 'send_media': {
+      const { to, mediaUrl, caption, mimeType } = action.payload as {
+        to: string; mediaUrl: string; caption: string; mimeType: string;
+      };
+      waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType);
+      break;
+    }
+    case 'send_template': {
+      const { to, templateId, variables } = action.payload as {
+        to: string; templateId: string; variables: Record<string, string>;
+      };
+      waMessageId = await sendTemplateMessage(to, templateId, variables);
+      break;
+    }
+    case 'group_dispatch': {
+      const { groupJid, leadData } = action.payload as {
+        groupJid: string; leadData: Record<string, unknown>;
+      };
+      await dispatchGroupCard(groupJid, leadData);
+      break;
+    }
+    default:
+      logger.warn({ type: action.action_type }, 'Unknown action type — skipping');
+  }
 
-    // Mark done + store WA message ID
-    await supabase
-      .from('baileys_action_queue')
-      .update({ status: 'done', result_message_id: waMessageId })
-      .eq('id', action.id);
+  logger.info({ actionId: action.id, type: action.action_type, waMessageId }, '✅ Action executed');
+  return { success: true, waMessageId };
+}
 
-    logger.info({ actionId: action.id, type: action.action_type, waMessageId }, '✅ Action processed');
+// ─── Queue Drain Wrapper (calls the processor engine) ─────────────────────────
+async function runQueueDrain(): Promise<void> {
+  if (!sock) {
+    logger.debug('Socket not ready — skipping queue drain');
+    return;
+  }
+  try {
+    const { drainQueue } = await import('../src/lib/queue-processor.js');
+    await drainQueue(WORKSPACE_ID, executeAction as any, 3);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    logger.error({ actionId: action.id, err: errMsg }, '❌ Action failed');
+    logger.error({ err }, 'Queue drain error');
+  }
+}
 
-    await supabase
-      .from('baileys_action_queue')
-      .update({ status: 'failed', error_message: errMsg })
-      .eq('id', action.id);
+async function runSweeper(): Promise<void> {
+  try {
+    const { sweepExpiredRetries } = await import('../src/lib/queue-processor.js');
+    const recovered = await sweepExpiredRetries(WORKSPACE_ID);
+    if (recovered > 0) logger.info({ recovered }, '🧹 Sweeper recovered stuck actions');
+  } catch (err: unknown) {
+    logger.error({ err }, 'Sweeper error');
   }
 }
 
 // ─── Supabase Realtime Subscription ─────────────────────────────────────────
+// Realtime triggers an immediate drain when a new action is inserted.
+// The 5-second polling interval below is the safety net for missed events.
 function startActionQueueListener(): void {
   logger.info('📡 Subscribing to baileys_action_queue realtime...');
 
@@ -288,48 +305,21 @@ function startActionQueueListener(): void {
         filter: `workspace_id=eq.${WORKSPACE_ID}`,
       },
       async (payload) => {
-        const action = payload.new as {
-          id: string;
-          action_type: string;
-          payload: Record<string, unknown>;
-          status: string;
-        };
-
+        const action = payload.new as { id: string; status: string; action_type: string };
         if (action.status !== 'pending') return;
-        logger.info({ actionId: action.id, type: action.action_type }, '🎯 New action received');
-
-        if (!sock) {
-          logger.warn('Socket not ready, action will be retried');
-          return;
-        }
-
-        await processAction(action);
+        logger.info({ actionId: action.id, type: action.action_type }, '🎯 Realtime trigger — draining queue');
+        // Trigger a queue drain instead of processing single action inline
+        // This ensures retry-eligible actions are also picked up in the same sweep
+        await runQueueDrain();
       }
     )
     .subscribe((status) => {
       logger.info({ status }, '📡 Realtime subscription status');
     });
 
-  // Also poll for any missed pending actions on startup
-  processPendingActionsOnStartup();
-}
-
-async function processPendingActionsOnStartup(): Promise<void> {
-  const { data: pending } = await supabase
-    .from('baileys_action_queue')
-    .select('*')
-    .eq('workspace_id', WORKSPACE_ID)
-    .eq('status', 'pending')
-    .order('priority', { ascending: true })
-    .order('created_at', { ascending: true })
-    .limit(50);
-
-  if (pending && pending.length > 0) {
-    logger.info({ count: pending.length }, '📋 Processing pending actions from startup');
-    for (const action of pending) {
-      await processAction(action);
-    }
-  }
+  // Startup drain: catch any pending actions that arrived while worker was offline
+  logger.info('📋 Running startup queue drain...');
+  runQueueDrain();
 }
 
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
@@ -456,6 +446,63 @@ async function startBaileysSocket(): Promise<void> {
         sent_at: new Date((msg.messageTimestamp as number) * 1000).toISOString(),
       });
 
+      // ─── Click-to-WhatsApp Ad Lead Parser Hook ───
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const isAdReferral = 
+        contextInfo?.sourceType === 'ad' ||
+        contextInfo?.referredImageUrl ||
+        text.toLowerCase().includes('saw this on facebook') ||
+        text.toLowerCase().includes('saw this on instagram') ||
+        text.toLowerCase().includes('click to whatsapp') ||
+        text.toLowerCase().includes('ad_id');
+
+      if (isAdReferral) {
+        logger.info({ chatJid }, '🎯 Click-to-WhatsApp Ad Referral Ingress detected!');
+        
+        const phoneNumber = chatJid.split('@')[0];
+        
+        // Check if lead already exists to avoid duplicate card ingestion
+        const { data: existingLead } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('workspace_id', WORKSPACE_ID)
+          .eq('phone', phoneNumber)
+          .maybeSingle();
+
+        if (!existingLead) {
+          // Auto-create lead card
+          const { data: newLead } = await supabase
+            .from('leads')
+            .insert({
+              workspace_id: WORKSPACE_ID,
+              name: msg.pushName || `WA Ad Lead (${phoneNumber.slice(-4)})`,
+              phone: phoneNumber,
+              source: 'whatsapp_ad',
+              status: 'new',
+              score: 'High-Value 🔥',
+              score_reason: 'Automated Click-to-WhatsApp Ad Lead Ingest.',
+              raw_payload: {
+                message_text: text,
+                ad_context: contextInfo ?? {}
+              }
+            })
+            .select('id')
+            .single();
+
+          if (newLead) {
+            // Write live activity log
+            await supabase.from('live_logs').insert({
+              workspace_id: WORKSPACE_ID,
+              lead_id: newLead.id,
+              event_type: 'webhook_ingested',
+              message: `Lead auto-created from Click-to-WhatsApp Ad: "${msg.pushName || phoneNumber}". Score: High-Value 🔥.`,
+              metadata: { source: 'whatsapp_ad' }
+            });
+            logger.info({ leadId: newLead.id }, '✅ Lead card successfully auto-created.');
+          }
+        }
+      }
+
       // Update chat last message
       await supabase
         .from('baileys_chats')
@@ -557,6 +604,18 @@ async function main(): Promise<void> {
   startHealthServer();
   startActionQueueListener();
   await startBaileysSocket();
+
+  // ── Polling interval: drain queue every 5 seconds (safety net for missed Realtime events)
+  setInterval(() => {
+    runQueueDrain().catch(err => logger.error({ err }, 'Polling drain error'));
+  }, 5_000);
+
+  // ── Sweeper: recover stuck 'processing' rows every 60 seconds
+  setInterval(() => {
+    runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));
+  }, 60_000);
+
+  logger.info('✅ Queue polling (5s) and sweeper (60s) active.');
 }
 
 main().catch((err) => {

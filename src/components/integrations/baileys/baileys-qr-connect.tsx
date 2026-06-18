@@ -209,7 +209,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       sse.addEventListener('baileys-error', (e) => {
         const d = JSON.parse((e as MessageEvent).data ?? '{}');
         setConnState('error');
-        setStatusMsg(d.message ?? 'Baileys connection error');
+        setStatusMsg(d.message ?? 'Gateway connection error');
         setIsStarting(false);
         sse.close();
         stopPolling();
@@ -336,7 +336,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
             <div className="flex flex-wrap gap-2 justify-center">
               {[
-                { icon: Zap, label: 'Serverless Engine' },
+                { icon: Zap, label: 'Direct Gateway' },
                 { icon: Shield, label: 'End-to-End Encrypted' },
                 { icon: Wifi, label: 'Session Active' },
               ].map(({ icon: Icon, label }) => (
@@ -440,18 +440,18 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
             <div className="space-y-2">
               <h3 className="text-lg font-bold text-white">
-                {connState === 'error' ? 'Connection Failed' : 'Baileys Direct — Not Connected'}
+                {connState === 'error' ? 'Connection Failed' : 'WhatsApp Gateway — Not Connected'}
               </h3>
               <p className="text-xs text-zinc-500 leading-relaxed">
                 {connState === 'error'
                   ? 'Dobara try karo. Agar problem continue kare toh session reset karo.'
-                  : 'Connect your WhatsApp using the Baileys serverless engine. No API fees, no external worker needed! 🚀'}
+                  : 'Connect your WhatsApp using the direct connection gateway. No API fees, no external worker needed! 🚀'}
               </p>
             </div>
 
             {/* Feature pills */}
             <div className="flex flex-wrap gap-2 justify-center">
-              {['100% Serverless', 'SSE Real-time QR', 'Auto Session Persist', 'Blue Tick Tracking', 'Group Dispatch (WGL)'].map(f => (
+              {['Direct Connection', 'SSE Real-time QR', 'Auto Session Persist', 'Blue Tick Tracking', 'Group Dispatch (WGL)'].map(f => (
                 <span key={f} className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-800/60 border border-zinc-700 text-zinc-400 font-medium">
                   {f}
                 </span>
@@ -474,7 +474,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
               />
               <span className="relative flex items-center gap-2">
                 {isStarting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
-                {isStarting ? 'Starting SSE stream...' : connState === 'error' ? 'Retry Connection' : 'Connect WhatsApp (Baileys)'}
+                {isStarting ? 'Starting SSE stream...' : connState === 'error' ? 'Retry Connection' : 'Connect WhatsApp'}
               </span>
             </motion.button>
 
@@ -482,8 +482,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             <div className="flex items-start gap-2 text-left bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3 max-w-sm w-full">
               <Zap className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
               <p className="text-[10px] text-zinc-400 leading-relaxed">
-                <span className="text-emerald-400 font-semibold">100% Serverless:</span>{' '}
-                Koi external worker chahiye nahi! Vercel pe directly SSE stream ke through QR generate hoga aur session Supabase mein save hoga.
+                <span className="text-emerald-400 font-semibold">Direct Connection:</span>{' '}
+                Koi third-party server chahiye nahi! App directly secure connection generate karegi aur settings Supabase mein save karegi.
               </p>
             </div>
           </motion.div>
