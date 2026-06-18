@@ -793,14 +793,7 @@ export function LeadTable({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-zinc-300 table-fixed min-w-[1000px]">
               
-              <colgroup>
-                <col className="w-[50px]" /> {/* Checkbox */}
-                <col className="w-[220px]" /> {/* Frozen Lead Name */}
-                {columns.filter(col => col.visible).map(col => (
-                  <col key={col.id} className="w-[170px]" />
-                ))}
-                <col className="w-[140px]" /> {/* Frozen Actions Column */}
-              </colgroup>
+              <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[140px]" /></colgroup>
 
               <thead>
                 <tr className="border-b border-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-550 bg-zinc-950/40">
