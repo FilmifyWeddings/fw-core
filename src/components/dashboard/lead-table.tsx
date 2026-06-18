@@ -796,7 +796,7 @@ export function LeadTable({
               <colgroup>
                 <col className="w-[50px]" /> {/* Checkbox */}
                 <col className="w-[220px]" /> {/* Frozen Lead Name */}
-                {columns.map(col => col.visible && (
+                {columns.filter(col => col.visible).map(col => (
                   <col key={col.id} className="w-[170px]" />
                 ))}
                 <col className="w-[140px]" /> {/* Frozen Actions Column */}
