@@ -68,10 +68,20 @@ const MOCK_LEADS: Lead[] = [
   },
 ];
 
+const DEFAULT_STAGES = [
+  { id: 'new', name: 'Inquiry', color: '#3b82f6', position: 0 },
+  { id: 'contacted', name: 'Contacted', color: '#8b5cf6', position: 1 },
+  { id: 'warm', name: 'Meeting Scheduled', color: '#ec4899', position: 2 },
+  { id: 'hot', name: 'Proposal Sent', color: '#f59e0b', position: 3 },
+  { id: 'closed', name: 'Contract Signed', color: '#10b981', position: 4 },
+  { id: 'lost', name: 'Closed/Lost', color: '#6b7280', position: 5 }
+];
+
 export default function LeadsPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string>(MOCK_WORKSPACE_ID);
   const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS);
+  const [stages, setStages] = useState<any[]>(DEFAULT_STAGES);
   const [preferences, setPreferences] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isDemoMode, setIsDemoMode] = useState(true);
@@ -105,6 +115,19 @@ export default function LeadsPage() {
 
       if (!leadsErr && dbLeads) {
         setLeads(dbLeads as Lead[]);
+      }
+
+      // Load CRM Stages
+      const { data: dbStages, error: stagesErr } = await supabase
+        .from('crm_stages')
+        .select('*')
+        .eq('workspace_id', targetUserId)
+        .order('position', { ascending: true });
+
+      if (!stagesErr && dbStages && dbStages.length > 0) {
+        setStages(dbStages);
+      } else {
+        setStages(DEFAULT_STAGES);
       }
 
       // Load Layout Configurations (try table_layouts first, fallback to profiles)
@@ -357,6 +380,7 @@ export default function LeadsPage() {
           <div className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md shadow-2xl space-y-4">
             <LeadTable 
               leads={leads} 
+              stages={stages}
               onStatusChange={handleStatusChange} 
               onLeadUpdate={handleLeadUpdate}
               onCreateLead={handleCreateLead}

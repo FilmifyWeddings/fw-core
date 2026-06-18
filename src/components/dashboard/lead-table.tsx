@@ -20,6 +20,7 @@ const AnimatePresenceComponent = AnimatePresenceImport;
 
 interface LeadTableProps {
   leads: Lead[];
+  stages?: any[];
   onStatusChange?: (leadId: string, newStatus: LeadStatus) => void;
   onLeadUpdate?: (leadId: string, updatedFields: Partial<Lead>) => void;
   onCreateLead?: (newLead: Partial<Lead>) => void;
@@ -54,6 +55,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
 
 export function LeadTable({ 
   leads: initialLeads, 
+  stages = [],
   onStatusChange,
   onLeadUpdate,
   onCreateLead,
@@ -406,12 +408,22 @@ export function LeadTable({
       return;
     }
 
+    const selectedStage = stages.find(s => s.id === manualLeadStatus);
+    const resolvedStatus = (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
+                            selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
+                            selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
+                            selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
+                            selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
+                            selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
+                            manualLeadStatus) as LeadStatus;
+
     const newLead: Partial<Lead> = {
       name: manualLeadName.trim(),
       phone: manualLeadPhone.trim(),
       email: manualLeadEmail.trim() || null,
       source: manualLeadSource,
-      status: manualLeadStatus,
+      status: resolvedStatus,
+      stage_id: selectedStage ? selectedStage.id : null,
       score: manualLeadScore,
       score_reason: 'Manually created lead.',
       raw_payload: {
@@ -962,18 +974,28 @@ export function LeadTable({
                                 return (
                                   <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
                                     <select
-                                      value={lead.status}
+                                      value={lead.stage_id || lead.status}
                                       onChange={(e) => {
-                                        if (onStatusChange) onStatusChange(lead.id, e.target.value as LeadStatus);
+                                        const nextStageId = e.target.value;
+                                        const selectedStage = stages.find(s => s.id === nextStageId);
+                                        if (onLeadUpdate) {
+                                          onLeadUpdate(lead.id, {
+                                            stage_id: nextStageId,
+                                            status: (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
+                                                     selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
+                                                     selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
+                                                     selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
+                                                     selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
+                                                     selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
+                                                     lead.status) as LeadStatus
+                                          });
+                                        }
                                       }}
                                       className="bg-zinc-950/80 border border-zinc-900 text-zinc-350 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-zinc-800 cursor-pointer w-28"
                                     >
-                                      <option value="new">New</option>
-                                      <option value="contacted">Open</option>
-                                      <option value="warm">In Progress</option>
-                                      <option value="hot">Priority</option>
-                                      <option value="closed">Closed/Won</option>
-                                      <option value="lost">Lost</option>
+                                      {stages.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                      ))}
                                     </select>
                                   </MotionTd>
                                 );
@@ -1223,18 +1245,41 @@ export function LeadTable({
         /* KANBAN BOARD VIEW                                    */
         /* ---------------------------------------------------- */
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-start overflow-x-auto pb-6">
-          {(['new', 'contacted', 'warm', 'hot', 'closed', 'lost'] as LeadStatus[]).map(stage => {
-            const stageLeads = filteredLeads.filter(l => l.status === stage);
-            const badgeConfig = getStatusBadgeConfig(stage);
+          {stages.map(stage => {
+            const stageLeads = filteredLeads.filter(l => {
+              if (l.stage_id === stage.id) return true;
+              if (!l.stage_id) {
+                const stageName = stage.name.toLowerCase();
+                const leadStatus = l.status.toLowerCase();
+                if (leadStatus === stage.id) return true;
+                if (leadStatus === stageName) return true;
+                if (stageName === 'inquiry' && leadStatus === 'new') return true;
+                if (stageName === 'contacted' && leadStatus === 'contacted') return true;
+                if (stageName === 'meeting scheduled' && leadStatus === 'warm') return true;
+                if (stageName === 'proposal sent' && leadStatus === 'hot') return true;
+                if (stageName === 'contract signed' && leadStatus === 'closed') return true;
+                if (stageName === 'closed/lost' && leadStatus === 'lost') return true;
+              }
+              return false;
+            });
+
+            const dotColor = stage.color || (
+              stage.id === 'new' ? '#3b82f6' :
+              stage.id === 'contacted' ? '#8b5cf6' :
+              stage.id === 'warm' ? '#ec4899' :
+              stage.id === 'hot' ? '#f59e0b' :
+              stage.id === 'closed' ? '#10b981' :
+              stage.id === 'lost' ? '#6b7280' : '#71717a'
+            );
 
             return (
-              <div key={stage} className="rounded-2xl border border-zinc-900 bg-zinc-950/20 p-3.5 space-y-3 shrink-0 min-w-[200px]">
+              <div key={stage.id} className="rounded-2xl border border-zinc-900 bg-zinc-950/20 p-3.5 space-y-3 shrink-0 min-w-[200px]">
                 
                 {/* Stage Header */}
                 <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
                   <div className="flex items-center gap-2">
-                    <span className={`w-1.5 h-1.5 rounded-full ${badgeConfig.dot}`} />
-                    <span className="text-xs font-black text-white uppercase tracking-wider">{badgeConfig.label}</span>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
+                    <span className="text-xs font-black text-white uppercase tracking-wider">{stage.name}</span>
                   </div>
                   <span className="text-[10px] font-bold text-zinc-650 bg-zinc-950 px-2 py-0.5 rounded-md">
                     {stageLeads.length}
@@ -1258,6 +1303,7 @@ export function LeadTable({
                           onClick={() => setSelectedLead(lead)}
                           className="p-3 rounded-xl border border-zinc-900 hover:border-zinc-800 bg-zinc-950/70 hover:bg-zinc-950 hover:scale-[1.01] cursor-pointer transition-all space-y-3 relative group"
                         >
+                          {/* Card Body */}
                           {/* Card Body */}
                           <div>
                             <span 
@@ -1285,18 +1331,28 @@ export function LeadTable({
                           {/* Drag/Shift Stage Selector Shortcut */}
                           <div className="opacity-0 group-hover:opacity-100 absolute top-2 right-2 transition-opacity" onClick={(e)=>e.stopPropagation()}>
                             <select
-                              value={lead.status}
+                              value={lead.stage_id || lead.status}
                               onChange={(e) => {
-                                if (onStatusChange) onStatusChange(lead.id, e.target.value as LeadStatus);
+                                const nextStageId = e.target.value;
+                                const selectedStage = stages.find(s => s.id === nextStageId);
+                                if (onLeadUpdate) {
+                                  onLeadUpdate(lead.id, {
+                                    stage_id: nextStageId,
+                                    status: (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
+                                             selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
+                                             selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
+                                             selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
+                                             selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
+                                             selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
+                                             lead.status) as LeadStatus
+                                  });
+                                }
                               }}
                               className="bg-zinc-900 border border-zinc-800 text-white text-[9px] rounded p-0.5 cursor-pointer focus:outline-none"
                             >
-                              <option value="new">New</option>
-                              <option value="contacted">Open</option>
-                              <option value="warm">In Progress</option>
-                              <option value="hot">Priority</option>
-                              <option value="closed">Won</option>
-                              <option value="lost">Lost</option>
+                              {stages.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
                             </select>
                           </div>
                         </div>
@@ -1477,12 +1533,9 @@ export function LeadTable({
                       onChange={(e) => setManualLeadStatus(e.target.value as LeadStatus)}
                       className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none"
                     >
-                      <option value="new">New</option>
-                      <option value="contacted">Open</option>
-                      <option value="warm">In Progress</option>
-                      <option value="hot">Priority</option>
-                      <option value="closed">Won</option>
-                      <option value="lost">Lost</option>
+                      {stages.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="space-y-1">

@@ -34,6 +34,8 @@ export interface Lead {
   google_synced?: boolean;
   wgl_dispatched?: boolean;
   followup_timeline?: any;
+  stage_id?: string | null;
+  stage_position?: number;
   // Meta Facebook Ads fields
   source_form_id?: string | null;
   form_tag?: string | null;
