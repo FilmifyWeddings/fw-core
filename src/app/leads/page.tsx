@@ -318,11 +318,12 @@ export default function LeadsPage() {
             body: JSON.stringify({ lead: savedLead })
           }).catch(err => console.error('Error triggering WhatsApp automation:', err));
         } else {
-          setLeads(prev => [newLead, ...prev]);
+          console.error("Database create error:", error);
+          alert("Failed to save lead to database: " + (error?.message || "Unknown error"));
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Database create error:", err);
-        setLeads(prev => [newLead, ...prev]);
+        alert("Failed to save lead to database: " + (err?.message || err));
       }
     }
   };
