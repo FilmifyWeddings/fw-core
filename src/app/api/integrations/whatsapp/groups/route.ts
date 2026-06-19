@@ -95,3 +95,39 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+
+// PATCH: Update a contact group's details
+export async function PATCH(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const tenantId = searchParams.get('tenant_id') || searchParams.get('workspace_id');
+  const groupId = searchParams.get('group_id');
+
+  if (!tenantId || !groupId) {
+    return NextResponse.json({ error: 'Missing tenant_id or group_id parameter' }, { status: 400 });
+  }
+
+  try {
+    const { group_name, group_description } = await req.json();
+
+    const { data: group, error } = await supabaseAdmin
+      .from('whatsapp_contact_groups')
+      .update({
+        group_name,
+        group_description
+      })
+      .eq('id', groupId)
+      .eq('tenant_id', tenantId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({
+      success: true,
+      group
+    });
+  } catch (err: any) {
+    console.error('Update contact group error:', err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
