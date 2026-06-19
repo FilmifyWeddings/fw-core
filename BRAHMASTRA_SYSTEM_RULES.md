@@ -94,3 +94,21 @@ As your lead AI software architect, I will strictly cross-reference this ruleset
 2. **Tenancy Proof**: I will verify that all SQL statements define RLS policies and include tenant bounds.
 3. **Queue validation**: I will check if the logic runs inside a synchronous API thread and refactor it into an asynchronous queue if the execution time is variable.
 4. **Modularity Mapping**: Every file update will be placed in its designated modular silo.
+
+---
+
+## 🗄️ MANDATORY BACKEND RETENTION LAW (3-TIER MULTI-TENANCY)
+
+Whenever architecting features, layouts, routers, or components for BHAMSTRA, you are STRICTLY PROHIBITED from using local-only or memory-only states for business logic. Every data array must possess persistent relational backup inside Supabase.
+
+### 🛡️ THE THREE-TIER RELATIONAL LOCK MANDATE:
+1. **User/Studio Level (`tenant_id`):** Every row across all tables (Leads, Quotations, Tasks, Settings, Expenses) MUST explicitly contain a `tenant_id` UUID column linking back to the Photographer Studio Owner. Standard RLS policies must block cross-tenant leakage.
+2. **Client/Project Level (`client_id`):** Every document, pipeline status change, quotation file entry, and operational track inside a studio profile MUST link to a specific project (`client_id`). This keeps each wedding assignment's data sandboxed inside that client's universe.
+3. **Team/Author Level (`user_id` / `assigned_to` / `created_by`):** Every task allocation, workflow swap, or timeline comment entry MUST capture the exact ID of the team member (Shooter, Editor, Manager) who executed the action for auditing and future role-based access control (RBAC).
+
+### 🛠️ CORE BACKEND TABLES SCHEMAS ENFORCED IN SUPABASE:
+* `tenant_storage_tiers`: Tracks `allowed_storage_bytes`, `used_storage_bytes` (Original vs Compressed size values).
+* `leads` / `clients`: Holds relational columns: `tenant_id`, `client_id`, `deal_stage`, `lead_source`, `created_by_user_id`.
+* `client_quotations`: Maps itemized multi-day event structures, deliverables counts, and template choices.
+* `client_comments`: Tracks `comment_text`, custom time-stamps, and follow-up alert flag configurations.
+* `team_tasks`: Manages `assigned_to_user_id`, deadlines, progress status tags, and `Overdue_Alert` calculations.
