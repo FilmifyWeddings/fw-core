@@ -82,6 +82,37 @@ export function LeadTable({
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
   const [showManageCols, setShowManageCols] = useState(false);
+  const [draggedColIdx, setDraggedColIdx] = useState<number | null>(null);
+  const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
+  
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedColIdx(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedColIdx !== index) {
+      setDragOverColIdx(index);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedColIdx === null || draggedColIdx === index) return;
+    const updated = [...columns];
+    const draggedCol = updated[draggedColIdx];
+    updated.splice(draggedColIdx, 1);
+    updated.splice(index, 0, draggedCol);
+    setColumns(updated);
+    savePreferences(updated);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedColIdx(null);
+    setDragOverColIdx(null);
+  };
   const [contactSubtext, setContactSubtext] = useState<'both' | 'phone' | 'email' | 'none'>('both');
   const [editingHeaderId, setEditingHeaderId] = useState<string | null>(null);
   const [editingHeaderVal, setEditingHeaderVal] = useState('');
@@ -613,7 +644,7 @@ export function LeadTable({
             placeholder="Search leads, contact, number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-zinc-900/60 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700 transition-all font-sans"
+            className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-slate-300 dark:focus:border-zinc-700 transition-all font-sans"
           />
         </div>
 
@@ -621,49 +652,49 @@ export function LeadTable({
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
           
           {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-zinc-950/40 border border-zinc-800 rounded-xl px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5">
             <Tag className="w-3 h-3 text-zinc-550" />
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-zinc-300 focus:outline-none cursor-pointer border-none"
+              className="bg-transparent text-[11px] font-semibold text-slate-700 dark:text-zinc-300 focus:outline-none cursor-pointer border-none"
             >
-              <option value="all" className="bg-zinc-950">Stages: All</option>
-              <option value="new" className="bg-zinc-950">New</option>
-              <option value="contacted" className="bg-zinc-950">Open</option>
-              <option value="warm" className="bg-zinc-950">In Progress</option>
-              <option value="hot" className="bg-zinc-950">Priority</option>
-              <option value="closed" className="bg-zinc-950">Won</option>
-              <option value="lost" className="bg-zinc-950">Lost</option>
+              <option value="all" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Stages: All</option>
+              <option value="new" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">New</option>
+              <option value="contacted" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Open</option>
+              <option value="warm" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">In Progress</option>
+              <option value="hot" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Priority</option>
+              <option value="closed" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Won</option>
+              <option value="lost" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Lost</option>
             </select>
           </div>
 
           {/* Source Filter */}
-          <div className="flex items-center gap-1.5 bg-zinc-950/40 border border-zinc-800 rounded-xl px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5">
             <ExternalLink className="w-3 h-3 text-zinc-550" />
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
               className="bg-transparent text-[11px] font-semibold text-zinc-300 focus:outline-none cursor-pointer border-none capitalize"
             >
-              <option value="all" className="bg-zinc-950">Sources: All</option>
+              <option value="all" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Sources: All</option>
               {customSources.map(src => (
-                <option key={src} value={src} className="bg-zinc-950">{src}</option>
+                <option key={src} value={src} className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">{src}</option>
               ))}
             </select>
           </div>
 
           {/* Owner Filter */}
-          <div className="flex items-center gap-1.5 bg-zinc-950/40 border border-zinc-800 rounded-xl px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5">
             <User className="w-3 h-3 text-zinc-550" />
             <select
               value={ownerFilter}
               onChange={(e) => setOwnerFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-zinc-300 focus:outline-none cursor-pointer border-none"
+              className="bg-transparent text-[11px] font-semibold text-slate-700 dark:text-zinc-300 focus:outline-none cursor-pointer border-none"
             >
-              <option value="all" className="bg-zinc-950">Owners: All</option>
+              <option value="all" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Owners: All</option>
               {uniqueOwners.map(owner => (
-                <option key={owner} value={owner} className="bg-zinc-950">{owner}</option>
+                <option key={owner} value={owner} className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">{owner}</option>
               ))}
             </select>
           </div>
@@ -672,7 +703,7 @@ export function LeadTable({
           <div className="relative" ref={manageColsRef}>
             <button
               onClick={() => setShowManageCols(!showManageCols)}
-              className="px-3 py-1.5 text-xs bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 rounded-xl transition-all flex items-center gap-2"
+              className="px-3 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 rounded-xl transition-all flex items-center gap-2"
             >
               <Columns className="w-3.5 h-3.5" />
               Columns Engine
@@ -686,7 +717,7 @@ export function LeadTable({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-50 rounded-2xl bg-zinc-950/95 border border-zinc-850 p-4 shadow-2xl backdrop-blur-md space-y-4"
+                  className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-50 rounded-2xl bg-white dark:bg-zinc-950/95 border border-slate-200 dark:border-zinc-850 p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-slate-800 dark:text-zinc-300"
                 >
                   {/* Contact subtext layout config */}
                   <div className="space-y-1.5 pb-2 border-b border-zinc-900">
@@ -697,7 +728,7 @@ export function LeadTable({
                         setContactSubtext(e.target.value as any);
                         localStorage.setItem('leads_table_contact_subtext', e.target.value);
                       }}
-                      className="w-full bg-zinc-900 text-xs text-white rounded-lg p-1.5 border border-zinc-800"
+                      className="w-full bg-slate-50 dark:bg-zinc-900 text-xs text-slate-800 dark:text-white rounded-lg p-1.5 border border-slate-200 dark:border-zinc-800"
                     >
                       <option value="both">Show Phone & Email</option>
                       <option value="phone">Show Phone Only</option>
@@ -710,7 +741,7 @@ export function LeadTable({
                   <div className="space-y-1">
                     <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider block mb-1">Visible Fields</span>
                     {columns.map(col => (
-                      <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-zinc-900 rounded-lg text-xs text-zinc-300">
+                      <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs text-slate-700 dark:text-zinc-300">
                         <button
                           onClick={() => toggleColumn(col.id)}
                           className="flex items-center gap-2 flex-1 text-left py-0.5"
@@ -718,7 +749,7 @@ export function LeadTable({
                           <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
                             col.visible 
                               ? 'bg-orange-500 border-orange-600 text-black' 
-                              : 'border-zinc-750 bg-transparent text-transparent'
+                              : 'border-slate-300 dark:border-zinc-750 bg-transparent text-transparent'
                           }`}>
                             <Check className="w-2.5 h-2.5 stroke-[3]" />
                           </div>
@@ -746,7 +777,7 @@ export function LeadTable({
                       placeholder="Column Name (e.g. Shoot Type)"
                       value={newColLabel}
                       onChange={(e) => setNewColLabel(e.target.value)}
-                      className="w-full bg-zinc-900 text-xs text-white rounded-lg p-1.5 border border-zinc-800 placeholder-zinc-650"
+                      className="w-full bg-slate-50 dark:bg-zinc-900 text-xs text-slate-800 dark:text-white rounded-lg p-1.5 border border-slate-200 dark:border-zinc-800 placeholder-slate-400 dark:placeholder-zinc-600"
                     />
                     <select
                       value={newColType}
@@ -764,7 +795,7 @@ export function LeadTable({
                         placeholder="Options: Pre-Wedding, Portrait"
                         value={newColOptionsText}
                         onChange={(e) => setNewColOptionsText(e.target.value)}
-                        className="w-full bg-zinc-900 text-xs text-white rounded-lg p-1.5 border border-zinc-800 placeholder-zinc-650"
+                        className="w-full bg-slate-50 dark:bg-zinc-900 text-xs text-slate-800 dark:text-white rounded-lg p-1.5 border border-slate-200 dark:border-zinc-800 placeholder-slate-400 dark:placeholder-zinc-600"
                       />
                     )}
 
@@ -789,14 +820,14 @@ export function LeadTable({
         /* ---------------------------------------------------- */
         /* GRID TABLE VIEW                                      */
         /* ---------------------------------------------------- */
-        <div className="w-full overflow-hidden border border-zinc-900 bg-zinc-950/30 rounded-2xl shadow-2xl relative transition-all">
+        <div className="w-full overflow-hidden border border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/30 rounded-2xl shadow-xl dark:shadow-2xl relative transition-all">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-zinc-300 table-fixed min-w-[1000px]">
+            <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-300 table-fixed min-w-[1000px]">
               
               <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[140px]" /></colgroup>
 
               <thead>
-                <tr className="border-b border-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-550 bg-zinc-950/40">
+                <tr className="border-b border-slate-200 dark:border-zinc-900 text-[10px] font-bold uppercase tracking-wider text-slate-550 dark:text-zinc-550 bg-slate-50 dark:bg-zinc-950/40">
                   <th className="py-4 px-4 text-center">
                     <button onClick={handleSelectAll} className="text-zinc-550 hover:text-white transition-colors">
                       {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
@@ -808,14 +839,22 @@ export function LeadTable({
                   </th>
                   
                   {/* Frozen Column Name (Sticky Left) */}
-                  <th className="py-4 px-4 font-bold sticky left-0 bg-[#0c0c0e] z-30 border-r border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.4)]">Lead Name</th>
+                  <th className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#0c0c0e] z-30 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.4)] text-slate-800 dark:text-white">Lead Name</th>
                   
                   {/* Dynamic Columns headers */}
                   {columns.map((col, idx) => col.visible && (
-                    <MotionTh
+                    <th
                       key={col.id}
-                      layoutId={`header-${col.id}`}
-                      className="py-4 px-4 font-bold relative group/header"
+                      className={`py-4 px-4 font-bold relative group/header cursor-grab active:cursor-grabbing transition-all select-none ${
+                        draggedColIdx === idx ? 'opacity-40 bg-slate-100 dark:bg-zinc-900 border-dashed border border-orange-500' : ''
+                      } ${
+                        dragOverColIdx === idx ? 'border-l-2 border-l-orange-500' : ''
+                      }`}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDragEnd={handleDragEnd}
+                      onDrop={(e) => handleDrop(e, idx)}
                     >
                       <div className="flex items-center gap-1.5">
                         
@@ -860,11 +899,11 @@ export function LeadTable({
                         </div>
 
                       </div>
-                    </MotionTh>
+                    </th>
                   ))}
 
                   {/* Frozen Column Actions (Sticky Right) */}
-                  <th className="py-4 px-4 text-right sticky right-0 bg-[#0c0c0e] border-l border-zinc-900/60 z-30 shadow-[-5px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
+                  <th className="py-4 px-4 text-right sticky right-0 bg-white dark:bg-[#0c0c0e] border-l border-slate-200 dark:border-zinc-900/60 z-30 shadow-[-5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.4)] text-slate-800 dark:text-white">Actions</th>
                 </tr>
               </thead>
 
@@ -891,8 +930,8 @@ export function LeadTable({
                         key={lead.id}
                         layout
                         onClick={() => setSelectedLead(lead)}
-                        className={`hover:bg-zinc-900/20 transition-all cursor-pointer group/row border-b border-zinc-900 ${
-                          isSelected ? 'bg-zinc-900/30' : ''
+                        className={`hover:bg-slate-50 dark:hover:bg-zinc-900/20 transition-all cursor-pointer group/row border-b border-slate-200 dark:border-zinc-900 ${
+                          isSelected ? 'bg-slate-100 dark:bg-zinc-900/30' : ''
                         }`}
                       >
                         {/* Checkbox Selector */}
@@ -905,11 +944,11 @@ export function LeadTable({
                         </td>
 
                         {/* Sticky Left: Lead Name Column (Initials Circle Removed) */}
-                        <td className="py-3.5 px-4 sticky left-0 bg-[#0c0c0e] z-20 border-r border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.3)]">
+                        <td className="py-3.5 px-4 sticky left-0 bg-white dark:bg-[#0c0c0e] z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300">
                           <div className="min-w-0">
                             <span 
                               style={{ color: activeColor || 'inherit' }}
-                              className="font-black text-white group-hover/row:text-orange-400 transition-colors truncate block text-sm"
+                              className="font-black text-slate-900 dark:text-white group-hover/row:text-orange-500 transition-colors truncate block text-sm"
                             >
                               {lead.name || 'Unspecified Lead'}
                             </span>
@@ -1140,7 +1179,7 @@ export function LeadTable({
                                   <select
                                     value={customVal}
                                     onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value)}
-                                    className="bg-zinc-950/80 border border-zinc-900 text-zinc-350 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-zinc-800 cursor-pointer w-32 truncate"
+                                    className="bg-slate-50 dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-900 text-slate-700 dark:text-zinc-350 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-slate-300 dark:focus:border-zinc-800 cursor-pointer w-32 truncate"
                                   >
                                     <option value="">Select option</option>
                                     {col.options?.map(opt => (
@@ -1159,7 +1198,7 @@ export function LeadTable({
                                   placeholder="..."
                                   value={customVal}
                                   onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value)}
-                                  className="bg-zinc-950/50 border border-transparent hover:border-zinc-800 focus:border-zinc-700 text-xs text-white p-1 rounded w-28 focus:outline-none"
+                                  className="bg-slate-50 dark:bg-zinc-950/50 border border-transparent hover:border-slate-300 dark:hover:border-zinc-800 focus:border-slate-400 dark:focus:border-zinc-700 text-xs text-slate-900 dark:text-white p-1 rounded w-28 focus:outline-none"
                                 />
                               </MotionTd>
                             );
@@ -1169,12 +1208,12 @@ export function LeadTable({
                         })}
 
                         {/* Sticky Right: Column Actions */}
-                        <td className="py-3.5 px-4 text-right sticky right-0 bg-[#0c0c0e] border-l border-zinc-900/60 z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.3)]" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3.5 px-4 text-right sticky right-0 bg-white dark:bg-[#0c0c0e] border-l border-slate-200 dark:border-zinc-900/60 z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.3)]" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             <a 
                               href={`tel:${lead.phone}`}
                               title="Call Lead"
-                              className="p-1.5 rounded-lg border border-zinc-900 hover:border-zinc-700 bg-zinc-950 text-zinc-400 hover:text-white transition-all"
+                              className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
                             >
                               <PhoneCall className="w-3.5 h-3.5" />
                             </a>
@@ -1182,7 +1221,7 @@ export function LeadTable({
                               <a 
                                 href={`mailto:${lead.email}`}
                                 title="Email Lead"
-                                className="p-1.5 rounded-lg border border-zinc-900 hover:border-zinc-700 bg-zinc-950 text-zinc-400 hover:text-white transition-all"
+                                className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
                               >
                                 <Mail className="w-3.5 h-3.5" />
                               </a>
@@ -1190,7 +1229,7 @@ export function LeadTable({
                             <button 
                               onClick={() => setSelectedLead(lead)}
                               title="Full Lead Details (Kundali)"
-                              className="p-1.5 rounded-lg border border-zinc-900 hover:border-zinc-700 bg-zinc-950 text-zinc-400 hover:text-white transition-all"
+                              className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
                             >
                               <MoreHorizontal className="w-3.5 h-3.5" />
                             </button>
@@ -1208,7 +1247,7 @@ export function LeadTable({
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 text-xs text-zinc-500 px-4 py-3 border-t border-zinc-900/40">
+            <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
               <div>
                 Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalLeads)} of {totalLeads} leads
               </div>
@@ -1216,7 +1255,7 @@ export function LeadTable({
                 <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
-                  className="px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-zinc-900 hover:text-white transition-all"
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-zinc-900 hover:text-slate-800 dark:hover:text-white transition-all"
                 >
                   Previous
                 </button>
@@ -1237,7 +1276,7 @@ export function LeadTable({
         /* ---------------------------------------------------- */
         /* KANBAN BOARD VIEW                                    */
         /* ---------------------------------------------------- */
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-start overflow-x-auto pb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-start overflow-x-auto pb-6 text-slate-800 dark:text-zinc-300">
           {stages.map(stage => {
             const stageLeads = filteredLeads.filter(l => {
               if (l.stage_id === stage.id) return true;
@@ -1266,15 +1305,15 @@ export function LeadTable({
             );
 
             return (
-              <div key={stage.id} className="rounded-2xl border border-zinc-900 bg-zinc-950/20 p-3.5 space-y-3 shrink-0 min-w-[200px]">
+              <div key={stage.id} className="rounded-2xl border border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/20 p-3.5 space-y-3 shrink-0 min-w-[200px] shadow-sm">
                 
                 {/* Stage Header */}
-                <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-zinc-900">
                   <div className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
-                    <span className="text-xs font-black text-white uppercase tracking-wider">{stage.name}</span>
+                    <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{stage.name}</span>
                   </div>
-                  <span className="text-[10px] font-bold text-zinc-650 bg-zinc-950 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-650 bg-slate-50 dark:bg-zinc-950 px-2 py-0.5 rounded-md border border-slate-200 dark:border-zinc-900">
                     {stageLeads.length}
                   </span>
                 </div>
@@ -1282,7 +1321,7 @@ export function LeadTable({
                 {/* Cards Container */}
                 <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
                   {stageLeads.length === 0 ? (
-                    <div className="py-8 text-center text-[10px] text-zinc-600 italic border border-dashed border-zinc-900 rounded-xl">
+                    <div className="py-8 text-center text-[10px] text-slate-400 dark:text-zinc-600 italic border border-dashed border-slate-200 dark:border-zinc-900 rounded-xl">
                       Empty stage
                     </div>
                   ) : (
@@ -1294,22 +1333,22 @@ export function LeadTable({
                         <div
                           key={lead.id}
                           onClick={() => setSelectedLead(lead)}
-                          className="p-3 rounded-xl border border-zinc-900 hover:border-zinc-800 bg-zinc-950/70 hover:bg-zinc-950 hover:scale-[1.01] cursor-pointer transition-all space-y-3 relative group"
+                          className="p-3 rounded-xl border border-slate-200 dark:border-zinc-900 hover:border-slate-350 dark:hover:border-zinc-800 bg-slate-50 dark:bg-zinc-950/70 hover:bg-slate-100 dark:hover:bg-zinc-950 hover:scale-[1.01] cursor-pointer transition-all space-y-3 relative group shadow-sm"
                         >
                           {/* Card Body */}
                           {/* Card Body */}
                           <div>
                             <span 
                               style={{ color: leadColor || 'inherit' }}
-                              className="text-xs font-bold text-white block truncate"
+                              className="text-xs font-bold text-slate-800 dark:text-white block truncate"
                             >
                               {lead.name || 'Unspecified'}
                             </span>
-                            <span className="text-[9px] text-zinc-650 block mt-1">{getIngestionTime(lead.created_at)}</span>
+                            <span className="text-[9px] text-slate-400 dark:text-zinc-650 block mt-1">{getIngestionTime(lead.created_at)}</span>
                           </div>
 
                           {/* Quick details based on column settings */}
-                          <div className="space-y-1 text-[10px] text-zinc-550 border-t border-zinc-900 pt-2 font-mono">
+                          <div className="space-y-1 text-[10px] text-slate-500 dark:text-zinc-550 border-t border-slate-200 dark:border-zinc-900 pt-2 font-mono">
                             {isColVisible('contact') && (
                               <div className="truncate flex items-center gap-1.5"><Phone className="w-2.5 h-2.5 text-zinc-700" /> {lead.phone}</div>
                             )}
