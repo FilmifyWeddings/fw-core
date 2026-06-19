@@ -2,10 +2,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, RefreshCw } from 'lucide-react';
+import { Database, RefreshCw, Settings } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadTable } from '@/components/dashboard/lead-table';
+import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -86,6 +87,7 @@ export default function LeadsPage() {
   const [preferences, setPreferences] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isDemoMode, setIsDemoMode] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Authenticate user & load leads
   useEffect(() => {
@@ -371,9 +373,17 @@ export default function LeadsPage() {
               </span>
             )}
             <button
+              onClick={() => setSettingsOpen(true)}
+              className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center"
+              title="Workspace Config Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
               onClick={() => loadLeadsAndPreferences(userId)}
               disabled={loading}
               className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center"
+              title="Refresh leads data"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -399,6 +409,13 @@ export default function LeadsPage() {
             />
           </div>
         )}
+
+        <MasterSettingsHub
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          workspaceId={userId}
+          onStagesUpdated={() => loadLeadsAndPreferences(userId)}
+        />
 
       </main>
     </div>
