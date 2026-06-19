@@ -6,14 +6,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, ScanQrCode, Zap, FileText, MessageSquare, Layers,
   ShieldCheck, Wifi, WifiOff, RefreshCw, Building2,
-  ChevronDown, Check, Sparkles, Lock, Globe
+  ChevronDown, Check, Sparkles, Lock, Globe, Send
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
-type WaTab = 'device' | 'chat' | 'templates' | 'workflows' | 'groups';
+type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups';
 type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] = [
@@ -22,6 +22,12 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     label: 'Device Link',
     icon: <ScanQrCode className="w-4 h-4" />,
     path: '/dashboard/integrations/whatsapp-web'
+  },
+  {
+    id: 'single-send',
+    label: 'Single Send',
+    icon: <Send className="w-4 h-4" />,
+    path: '/dashboard/integrations/whatsapp-web/single-send'
   },
   {
     id: 'chat',
@@ -66,7 +72,8 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
 
   // Determine active tab based on pathname
   let activeTab: WaTab = 'device';
-  if (pathname === '/dashboard/integrations/whatsapp-web/chat') activeTab = 'chat';
+  if (pathname === '/dashboard/integrations/whatsapp-web/single-send') activeTab = 'single-send';
+  else if (pathname === '/dashboard/integrations/whatsapp-web/chat') activeTab = 'chat';
   else if (pathname === '/dashboard/integrations/whatsapp-web/templates') activeTab = 'templates';
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows') activeTab = 'workflows';
   else if (pathname === '/dashboard/integrations/whatsapp-web/groups') activeTab = 'groups';

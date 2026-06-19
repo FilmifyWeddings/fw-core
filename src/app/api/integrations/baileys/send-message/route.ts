@@ -128,12 +128,39 @@ export async function POST(req: NextRequest) {
       } else {
         // Template — fetch and render
         if (!body.templateId) return NextResponse.json({ error: 'Missing: templateId' }, { status: 400 });
-        const { data: tpl } = await supabaseAdmin
-          .from('baileys_templates')
-          .select('body_text, media_url, media_type')
+        
+        let tpl: { body_text: string; media_url: string | null; media_type: string | null } | null = null;
+        
+        const { data: tenantTpl } = await supabaseAdmin
+          .from('tenant_whatsapp_templates')
+          .select('body_text, media_url_payload')
           .eq('id', body.templateId)
-          .eq('workspace_id', user.id)
-          .single();
+          .eq('tenant_id', user.id)
+          .maybeSingle();
+
+        if (tenantTpl) {
+          tpl = {
+            body_text: tenantTpl.body_text || '',
+            media_url: tenantTpl.media_url_payload || null,
+            media_type: tenantTpl.media_url_payload ? 'image' : null
+          };
+        } else {
+          // Fallback to legacy whatsapp_templates
+          const { data: legacyTpl } = await supabaseAdmin
+            .from('whatsapp_templates')
+            .select('payload')
+            .eq('id', body.templateId)
+            .eq('workspace_id', user.id)
+            .maybeSingle();
+
+          if (legacyTpl) {
+            tpl = {
+              body_text: (legacyTpl.payload as any)?.body || '',
+              media_url: (legacyTpl.payload as any)?.mediaUrl || null,
+              media_type: (legacyTpl.payload as any)?.mediaUrl ? 'image' : null
+            };
+          }
+        }
 
         if (!tpl) return NextResponse.json({ error: 'Template not found' }, { status: 404 });
 
@@ -147,7 +174,7 @@ export async function POST(req: NextRequest) {
         if (tpl.media_url) {
           result = await sendMessageServerless(supabaseAdmin, user.id, {
             to: chatJid,
-            type: tpl.media_type as 'image' | 'video',
+            type: tpl.media_type as 'image' | 'video' | 'audio' | 'document',
             mediaUrl: tpl.media_url as string,
             caption: rendered,
             mimeType: tpl.media_type === 'image' ? 'image/jpeg' : 'video/mp4',
