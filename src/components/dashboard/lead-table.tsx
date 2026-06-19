@@ -256,6 +256,36 @@ export function LeadTable({
       alert(`WhatsApp welcome simulated for ${lead.name || lead.phone}.`);
     }
   };
+
+  const handleWglDispatch = async (lead: Lead) => {
+    // Optimistic UI Update
+    setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, wgl_dispatched: true } : l));
+    if (onLeadUpdate) {
+      onLeadUpdate(lead.id, { wgl_dispatched: true });
+    }
+    try {
+      await supabase
+        .from('leads')
+        .update({ 
+          wgl_dispatched: true, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', lead.id);
+
+      await supabase.from('live_logs').insert({
+        workspace_id: lead.workspace_id || '00000000-0000-0000-0000-000000000000',
+        lead_id: lead.id,
+        event_type: 'wgl_alert_dispatch',
+        message: `WGL Alert dispatched successfully for client '${lead.name || lead.phone}'.`,
+        metadata: { dispatched_at: new Date().toISOString() }
+      });
+      
+      alert(`WGL Alert dispatched successfully for ${lead.name || lead.phone}!`);
+    } catch (err) {
+      console.error('WGL dispatch error:', err);
+      alert(`WGL Alert simulated for ${lead.name || lead.phone}.`);
+    }
+  };
   
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedColIdx(index);
@@ -1007,7 +1037,7 @@ export function LeadTable({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-300 table-fixed min-w-[1000px]">
               
-              <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[140px]" /></colgroup>
+              <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[260px]" /></colgroup>
 
               <thead>
                 <tr className="border-b border-slate-200 dark:border-zinc-900 text-[10px] font-bold uppercase tracking-wider text-slate-550 dark:text-zinc-550 bg-slate-50 dark:bg-zinc-950/40">
@@ -1407,6 +1437,65 @@ export function LeadTable({
                         {/* Sticky Right: Column Actions */}
                         <td className="py-3.5 px-4 text-right sticky right-0 bg-white dark:bg-[#0c0c0e] border-l border-slate-200 dark:border-zinc-900/60 z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.3)]" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
+                            
+                            {/* WA Welcome Msg Quick Action */}
+                            <button
+                              onClick={() => handleWhatsappWelcomeDispatch(lead)}
+                              title={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent ✓" : "Click to Send WA Welcome Msg"}
+                              className={`p-1.5 rounded-lg border transition-all ${
+                                (lead as any).wa_welcome_sent 
+                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                                  : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-emerald-400'
+                              }`}
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Google Contact Sync Quick Action */}
+                            <button
+                              onClick={() => handleGoogleContactsSync(lead)}
+                              disabled={syncingLeadId === lead.id}
+                              title={(lead as any).google_synced ? "Google Contact Synced ✓" : syncingLeadId === lead.id ? "Syncing..." : "Click to Sync Google Contact"}
+                              className={`p-1.5 rounded-lg border transition-all ${
+                                (lead as any).google_synced 
+                                  ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 cursor-default' 
+                                  : syncingLeadId === lead.id 
+                                    ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
+                                    : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-blue-400'
+                              }`}
+                            >
+                              {syncingLeadId === lead.id ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <UserCheck className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+
+                            {/* WGL Status / Dispatch Quick Action */}
+                            <button
+                              onClick={() => handleWglDispatch(lead)}
+                              title={(lead as any).wgl_dispatched ? "WGL Alert Active ✅" : "Click to Dispatch WGL Alert"}
+                              className={`p-1.5 rounded-lg border transition-all ${
+                                (lead as any).wgl_dispatched 
+                                  ? 'bg-green-600/15 border-green-500/20 text-green-400' 
+                                  : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-green-400'
+                              }`}
+                            >
+                              <AlertCircle className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Followups Timeline Quick Action */}
+                            <button
+                              onClick={() => setTimelineLead(lead)}
+                              title="Open Followup Timeline"
+                              className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-orange-400 transition-all"
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </button>
+
+                            <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-900 mx-1 hidden md:block" />
+
+                            {/* PhoneCall Selector */}
                             <div className="relative">
                               <button 
                                 onClick={(e) => {
@@ -1441,6 +1530,8 @@ export function LeadTable({
                                 </div>
                               )}
                             </div>
+
+                            {/* Mail Lead */}
                             {lead.email && (
                               <a 
                                 href={`mailto:${lead.email}`}
@@ -1450,6 +1541,8 @@ export function LeadTable({
                                 <Mail className="w-3.5 h-3.5" />
                               </a>
                             )}
+
+                            {/* Details Kundali */}
                             <button 
                               onClick={() => setSelectedLead(lead)}
                               title="Full Lead Details (Kundali)"
