@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 
 interface WhatsappTemplatesProps {
   workspaceId: string;
+  shootType?: string; // 'all' | 'wedding' | 'commercial'
 }
 
 interface TemplateRow {
@@ -28,7 +29,7 @@ interface TemplateRow {
   meta_approval_required: boolean;
 }
 
-export function WhatsappTemplates({ workspaceId }: WhatsappTemplatesProps) {
+export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTemplatesProps) {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -197,7 +198,7 @@ export function WhatsappTemplates({ workspaceId }: WhatsappTemplatesProps) {
   const loadTemplates = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/templates?workspace_id=${workspaceId}`);
+      const res = await fetch(`/api/templates?workspace_id=${workspaceId}&shoot_type=${shootType}`);
       const data = await res.json();
       if (data.success) {
         setTemplates(data.results);
@@ -216,7 +217,7 @@ export function WhatsappTemplates({ workspaceId }: WhatsappTemplatesProps) {
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       loadTemplates();
     }
-  }, [workspaceId]);
+  }, [workspaceId, shootType]);
 
   // Form Submit Handler
   const handleCreateTemplate = async (e: React.FormEvent) => {

@@ -1,16 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// GET: List all WhatsApp templates for a workspace
+// GET: List all WhatsApp templates for a workspace (supports both tenant_whatsapp_templates and whatsapp_templates)
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const workspaceId = searchParams.get('workspace_id');
+  const shootType = searchParams.get('shoot_type') || 'all';
 
   if (!workspaceId) {
     return NextResponse.json({ error: 'Missing workspace_id parameter' }, { status: 400 });
   }
 
   try {
+    // Try querying tenant_whatsapp_templates first (Law 1 Multi-Tenancy RLS compliant)
+    const { data: tenantTemplates, error: tenantError } = await supabaseAdmin
+      .from('tenant_whatsapp_templates')
+      .select('*')
+      .eq('tenant_id', workspaceId)
+      .order('created_at', { ascending: false });
+
+    if (!tenantError && tenantTemplates) {
+      // Map to standard template structure expected by UI
+      const results = tenantTemplates.map(t => ({
+        id: t.id,
+        name: t.template_name,
+        category: t.category,
+        language: 'en_US',
+        type: t.media_url_payload ? 'media' : 'text',
+        status: 'approved',
+        payload: {
+          body: t.body_text || '',
+          mediaUrl: t.media_url_payload || ''
+        },
+        buttons: [],
+        meta_approval_required: false,
+        created_at: t.created_at,
+        updated_at: t.updated_at
+      }));
+
+      // Filter by shoot type category if not 'all'
+      const filtered = shootType === 'all' 
+        ? results 
+        : results.filter(t => t.category === shootType || t.category === 'all' || t.category === 'custom');
+
+      return NextResponse.json({
+        success: true,
+        results: filtered
+      });
+    }
+
+    // Fallback to legacy whatsapp_templates table
     const { data: templates, error } = await supabaseAdmin
       .from('whatsapp_templates')
       .select('*')
@@ -19,9 +58,13 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
+    const filteredLegacy = shootType === 'all'
+      ? (templates || [])
+      : (templates || []).filter(t => t.category === shootType || t.category === 'all' || t.category === 'utility');
+
     return NextResponse.json({
       success: true,
-      results: templates || []
+      results: filteredLegacy
     });
   } catch (err: any) {
     console.error('Fetch templates error:', err);
@@ -29,7 +72,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST: Create a WhatsApp template and sync with WhatsBoost
+// POST: Create a WhatsApp template
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const workspaceId = searchParams.get('workspace_id');
@@ -46,10 +89,47 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required template fields' }, { status: 400 });
     }
 
-    // Direct approval: templates created locally are instantly approved and active
     const templateStatus = 'approved';
 
-    // 2. Write to local database in Supabase
+    // 1. Try insert into tenant_whatsapp_templates first
+    const bodyText = payload?.body || payload?.question || '';
+    const mediaUrl = payload?.mediaUrl || payload?.default_send_media_url || '';
+
+    const { data: tenantData, error: tenantInsertError } = await supabaseAdmin
+      .from('tenant_whatsapp_templates')
+      .insert({
+        tenant_id: workspaceId,
+        template_name: name,
+        category: category,
+        body_text: bodyText,
+        media_url_payload: mediaUrl || null
+      })
+      .select()
+      .maybeSingle();
+
+    if (!tenantInsertError && tenantData) {
+      await supabaseAdmin.from('live_logs').insert({
+        workspace_id: workspaceId,
+        event_type: 'sync_templates_success',
+        message: `WhatsApp template "${name}" created in tenant storage.`,
+        metadata: { templateId: tenantData.id, status: templateStatus }
+      });
+
+      return NextResponse.json({
+        success: true,
+        template: {
+          id: tenantData.id,
+          name: tenantData.template_name,
+          category: tenantData.category,
+          language: 'en_US',
+          type: type,
+          status: 'approved',
+          payload: { body: tenantData.body_text, mediaUrl: tenantData.media_url_payload }
+        }
+      });
+    }
+
+    // 2. Fallback to legacy whatsapp_templates table
     const { data: template, error: dbErr } = await supabaseAdmin
       .from('whatsapp_templates')
       .insert({
@@ -72,11 +152,10 @@ export async function POST(req: NextRequest) {
       throw dbErr;
     }
 
-    // 3. Log event to live_logs
     await supabaseAdmin.from('live_logs').insert({
       workspace_id: workspaceId,
       event_type: 'sync_templates_success',
-      message: `WhatsApp template "${name}" created and synced successfully (${templateStatus}).`,
+      message: `WhatsApp template "${name}" created successfully (${templateStatus}).`,
       metadata: { templateId: template.id, status: templateStatus }
     });
 
@@ -90,7 +169,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH: Update an existing WhatsApp template and sync with WhatsBoost
+// PATCH: Update an existing WhatsApp template
 export async function PATCH(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const workspaceId = searchParams.get('workspace_id');
@@ -108,10 +187,47 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required template fields' }, { status: 400 });
     }
 
-    // Direct approval: templates updated locally are instantly approved and active
     const templateStatus = 'approved';
+    const bodyText = payload?.body || payload?.question || '';
+    const mediaUrl = payload?.mediaUrl || payload?.default_send_media_url || '';
 
-    // 3. Write updates to local database in Supabase
+    // 1. Try update in tenant_whatsapp_templates first
+    const { data: tenantData, error: tenantUpdateError } = await supabaseAdmin
+      .from('tenant_whatsapp_templates')
+      .update({
+        template_name: name,
+        category: category,
+        body_text: bodyText,
+        media_url_payload: mediaUrl || null
+      })
+      .eq('id', templateId)
+      .eq('tenant_id', workspaceId)
+      .select()
+      .maybeSingle();
+
+    if (!tenantUpdateError && tenantData) {
+      await supabaseAdmin.from('live_logs').insert({
+        workspace_id: workspaceId,
+        event_type: 'sync_templates_success',
+        message: `WhatsApp template "${name}" updated in tenant storage.`,
+        metadata: { templateId: tenantData.id }
+      });
+
+      return NextResponse.json({
+        success: true,
+        template: {
+          id: tenantData.id,
+          name: tenantData.template_name,
+          category: tenantData.category,
+          language: 'en_US',
+          type: type,
+          status: 'approved',
+          payload: { body: tenantData.body_text, mediaUrl: tenantData.media_url_payload }
+        }
+      });
+    }
+
+    // 2. Fallback to legacy whatsapp_templates table
     const { data: template, error: dbErr } = await supabaseAdmin
       .from('whatsapp_templates')
       .update({
@@ -135,11 +251,10 @@ export async function PATCH(req: NextRequest) {
       throw dbErr;
     }
 
-    // 4. Log event to live_logs
     await supabaseAdmin.from('live_logs').insert({
       workspace_id: workspaceId,
       event_type: 'sync_templates_success',
-      message: `WhatsApp template "${name}" updated and synced successfully (${templateStatus}).`,
+      message: `WhatsApp template "${name}" updated successfully (${templateStatus}).`,
       metadata: { templateId: template.id, status: templateStatus }
     });
 

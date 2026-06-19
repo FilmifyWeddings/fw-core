@@ -4,22 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
-  ArrowLeft, ShieldCheck, RefreshCw, Key, Copy, Check, Info,
-  Sliders, MessageSquare, BarChart3, Globe, Mail, Calendar, UserPlus,
-  CheckCircle2, AlertTriangle, Lock, Settings, Send, Play,
-  ScanQrCode, Zap, FileText, Layers
+  ArrowLeft, ShieldCheck, RefreshCw, Key, Copy, Check,
+  BarChart3, Globe, Mail, Calendar, UserPlus,
+  CheckCircle2, Lock
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
-
-// WhatsApp Sub-components (reloaded from original Baileys integration setup)
-import { BaileysQrConnect } from '@/components/integrations/baileys/baileys-qr-connect';
-import { BaileysWhatsappWeb } from '@/components/integrations/baileys/baileys-whatsapp-web';
-import { WhatsappTemplates } from '@/components/integrations/whatsapp-templates';
-import { WhatsappWelcomeMsg } from '@/components/integrations/whatsapp-welcome-msg';
-import { WhatsappFollowups } from '@/components/integrations/whatsapp-followups';
-
-const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
 function ProviderConfigCore() {
   const params = useParams();
@@ -33,9 +23,24 @@ function ProviderConfigCore() {
 
   // Form states
   const [status, setStatus] = useState<'connected' | 'disconnected'>('disconnected');
-  
-  // WhatsApp Inner Tabs
-  const [waTab, setWaTab] = useState<'device' | 'chat' | 'templates' | 'welcome' | 'followups'>('device');
+
+  // Redirect: WhatsApp Web now has its own full-screen dedicated route
+  useEffect(() => {
+    if (provider === 'whatsapp-web') {
+      router.replace('/dashboard/integrations/whatsapp-web');
+    }
+  }, [provider, router]);
+
+  if (provider === 'whatsapp-web') {
+    return (
+      <div className="min-h-screen bg-[#070708] flex items-center justify-center">
+        <div className="flex items-center gap-3 text-zinc-400 text-sm">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          Redirecting to WhatsApp Hub...
+        </div>
+      </div>
+    );
+  }
 
   // Custom Website Hook States
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -223,51 +228,10 @@ function ProviderConfigCore() {
               </div>
             )}
 
-            {/* 2. WHATSAPP WEB (BAILEYS) - CORE DETAILED SCANNER & CHATS */}
-            {provider === 'whatsapp-web' && (
-              <div className="space-y-6">
-                {/* WhatsApp Inner Tabs */}
-                <div className="flex flex-wrap border-b border-zinc-800 gap-6 pb-1">
-                  {['device', 'chat', 'templates', 'welcome', 'followups'].map((tab) => {
-                    const isTabActive = waTab === tab;
-                    return (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => setWaTab(tab as any)}
-                        className={`pb-3 text-xs font-bold transition-all relative capitalize ${
-                          isTabActive ? 'text-emerald-400 font-extrabold' : 'text-zinc-550 hover:text-zinc-350'
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          {tab === 'device' && <ScanQrCode className="w-3.5 h-3.5 text-emerald-500" />}
-                          {tab === 'chat' && <Zap className="w-3.5 h-3.5 text-emerald-500" />}
-                          {tab === 'templates' && <FileText className="w-3.5 h-3.5" />}
-                          {tab === 'welcome' && <MessageSquare className="w-3.5 h-3.5" />}
-                          {tab === 'followups' && <Layers className="w-3.5 h-3.5" />}
-                          {tab.replace('_', ' ')}
-                        </span>
-                        {isTabActive && (
-                          <motion.div 
-                            layoutId="waTabUnderline" 
-                            className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500" 
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
 
-                {/* Sub-tabs output render */}
-                <div className="rounded-2xl border border-zinc-850 bg-zinc-950/60 overflow-hidden">
-                  {waTab === 'device' && <BaileysQrConnect workspaceId={userId || MOCK_WORKSPACE_ID} />}
-                  {waTab === 'chat' && <BaileysWhatsappWeb workspaceId={userId || MOCK_WORKSPACE_ID} />}
-                  {waTab === 'templates' && <WhatsappTemplates workspaceId={userId || MOCK_WORKSPACE_ID} />}
-                  {waTab === 'welcome' && <WhatsappWelcomeMsg workspaceId={userId || MOCK_WORKSPACE_ID} />}
-                  {waTab === 'followups' && <WhatsappFollowups workspaceId={userId || MOCK_WORKSPACE_ID} />}
-                </div>
-              </div>
-            )}
+            {/* WhatsApp Web — now handled by dedicated full-screen /dashboard/integrations/whatsapp-web route */}
+
+
 
             {/* 3. PERSONAL WEBSITE WEBHOOK VIEW */}
             {provider === 'personal-website' && (

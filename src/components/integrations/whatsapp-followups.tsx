@@ -35,9 +35,10 @@ interface LogEntry {
 
 interface WhatsappFollowupsProps {
   workspaceId: string;
+  shootType?: string; // 'all' | 'wedding' | 'commercial'
 }
 
-export function WhatsappFollowups({ workspaceId }: WhatsappFollowupsProps) {
+export function WhatsappFollowups({ workspaceId, shootType = 'all' }: WhatsappFollowupsProps) {
   const [isActive, setIsActive] = useState(true);
   const [steps, setSteps] = useState<Step[]>([
     { template_name: 'brochure_share', day: 1 },
@@ -62,29 +63,45 @@ export function WhatsappFollowups({ workspaceId }: WhatsappFollowupsProps) {
     async function loadData() {
       setLoading(true);
       try {
-        // 1. Load templates
-        const { data: dbTemplates, error: tempErr } = await supabase
-          .from('whatsapp_templates')
-          .select('id, name, type')
-          .eq('workspace_id', workspaceId)
-          .eq('status', 'approved');
-
-        if (!tempErr && dbTemplates && dbTemplates.length > 0) {
-          setTemplates(dbTemplates);
+        // 1. Load templates via API (which supports both new & legacy tables + category filters)
+        const tempRes = await fetch(`/api/templates?workspace_id=${workspaceId}&shoot_type=${shootType}`);
+        const tempData = await tempRes.json();
+        if (tempData.success && tempData.results && tempData.results.length > 0) {
+          setTemplates(tempData.results.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            type: t.type
+          })));
         }
 
-        // 2. Load Followup Automation Setting
-        const { data: config, error: configErr } = await supabase
-          .from('whatsapp_automations')
+        // 2. Load Followup Automation Setting from whatsapp_workflow_sequences (persistent category config)
+        const { data: seqConfig, error: seqErr } = await supabase
+          .from('whatsapp_workflow_sequences')
           .select('*')
-          .eq('workspace_id', workspaceId)
-          .eq('automation_type', 'followup')
+          .eq('tenant_id', workspaceId)
+          .eq('sequence_type', 'followup')
+          .eq('shoot_type', shootType)
           .maybeSingle();
 
-        if (config) {
-          setIsActive(config.is_active);
-          if (Array.isArray(config.steps) && config.steps.length > 0) {
-            setSteps(config.steps as Step[]);
+        if (seqConfig) {
+          setIsActive(seqConfig.is_active);
+          if (Array.isArray(seqConfig.steps) && seqConfig.steps.length > 0) {
+            setSteps(seqConfig.steps as Step[]);
+          }
+        } else {
+          // Fallback to legacy whatsapp_automations
+          const { data: config } = await supabase
+            .from('whatsapp_automations')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .eq('automation_type', 'followup')
+            .maybeSingle();
+
+          if (config) {
+            setIsActive(config.is_active);
+            if (Array.isArray(config.steps) && config.steps.length > 0) {
+              setSteps(config.steps as Step[]);
+            }
           }
         }
 
@@ -127,7 +144,7 @@ export function WhatsappFollowups({ workspaceId }: WhatsappFollowupsProps) {
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       loadData();
     }
-  }, [workspaceId]);
+  }, [workspaceId, shootType]);
 
   // Load Demo Data from localStorage
   const loadDemoData = () => {
@@ -210,20 +227,37 @@ export function WhatsappFollowups({ workspaceId }: WhatsappFollowupsProps) {
     setSaving(true);
     try {
       if (isDemo) {
-        localStorage.setItem(`wa_config_followup_${workspaceId}`, JSON.stringify({ isActive, steps }));
+        localStorage.setItem(`wa_config_followup_${workspaceId}_${shootType}`, JSON.stringify({ isActive, steps }));
         alert('Followups settings saved successfully (Demo Mode)!');
       } else {
-        const { error } = await supabase
-          .from('whatsapp_automations')
+        // Try saving to whatsapp_workflow_sequences first
+        const { error: seqError } = await supabase
+          .from('whatsapp_workflow_sequences')
           .upsert({
-            workspace_id: workspaceId,
-            automation_type: 'followup',
+            tenant_id: workspaceId,
+            sequence_type: 'followup',
+            shoot_type: shootType,
             steps: steps,
             is_active: isActive,
             updated_at: new Date().toISOString()
-          }, { onConflict: 'workspace_id, automation_type' });
+          }, { onConflict: 'tenant_id, sequence_type, shoot_type' });
 
-        if (error) throw error;
+        if (seqError) {
+          console.warn('Saving to whatsapp_workflow_sequences failed, falling back to legacy:', seqError.message);
+          // Fallback to legacy whatsapp_automations
+          const { error } = await supabase
+            .from('whatsapp_automations')
+            .upsert({
+              workspace_id: workspaceId,
+              automation_type: 'followup',
+              steps: steps,
+              is_active: isActive,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'workspace_id, automation_type' });
+
+          if (error) throw error;
+        }
+
         alert('Follow-ups settings saved successfully!');
       }
     } catch (err: any) {
