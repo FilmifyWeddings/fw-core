@@ -112,3 +112,10 @@ Whenever architecting features, layouts, routers, or components for BHAMSTRA, yo
 * `client_quotations`: Maps itemized multi-day event structures, deliverables counts, and template choices.
 * `client_comments`: Tracks `comment_text`, custom time-stamps, and follow-up alert flag configurations.
 * `team_tasks`: Manages `assigned_to_user_id`, deadlines, progress status tags, and `Overdue_Alert` calculations.
+
+---
+
+## 📱 UNIVERSAL RESPONSIVENESS MANDATE (PC, TABLET, MOBILE FIRST)
+Every frontend component, grid table, kanban card, or builder node you generate MUST be 100% responsive out-of-the-box. 
+* **Mobile Optimization:** You must prioritize stacked layouts, collapsable side-drawers, and scrollable sub-containers on small screens (`sm:` and max-width viewports) so no buttons, forms, or actions ever hide or break.
+* **Fluid Utility:** Use Tailwind's structural breakpoints (`grid-cols-1 md:grid-cols-3`, `w-full`, `flex-col md:flex-row`) systematically.
