@@ -331,10 +331,10 @@ function WhatsAppGroupsHubCore() {
   const avgGroupSize = totalGroups > 0 ? Math.round(segmentedContacts / totalGroups) : 0;
 
   return (
-    <div className="w-full min-h-screen bg-slate-50 dark:bg-[#070708] text-slate-900 dark:text-white flex flex-col overflow-hidden font-sans">
+    <div className="w-full text-slate-900 dark:text-white flex flex-col font-sans">
       
       {/* ═══ TOP HEADER (Image 2 style) ═══ */}
-      <div className="flex-shrink-0 flex flex-col md:flex-row md:items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-zinc-800/70 bg-white dark:bg-[#070708]/90 backdrop-blur-lg z-30 gap-4">
+      <div className="flex-shrink-0 flex flex-col md:flex-row md:items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-zinc-800/70 bg-white dark:bg-zinc-950/20 backdrop-blur-lg z-30 gap-4">
         <div>
           <div className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-zinc-500 font-medium select-none">
             <span className="hover:text-slate-600 dark:hover:text-zinc-350 cursor-pointer" onClick={() => router.push('/dashboard')}>Dashboard</span>
@@ -988,23 +988,10 @@ function WhatsAppGroupsHubCore() {
         )}
       </AnimatePresence>
 
-      {/* ═══ STATUS BAR FOOTER ═══ */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-t border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/60 text-[9px] text-slate-400 dark:text-zinc-600 font-mono">
-        <span className="flex items-center gap-1.5">
-          <Lock className="w-3.5 h-3.5 text-slate-300 dark:text-emerald-600 shrink-0" />
-          BRAHMASTRA LAW 1 — tenant_id relational bounds locked
-        </span>
-        <span>WhatsApp Hub v2.1</span>
-      </div>
-
     </div>
   );
 }
 
 export default function WhatsAppGroupsHubPage() {
-  return (
-    <BhamstraProvider>
-      <WhatsAppGroupsHubCore />
-    </BhamstraProvider>
-  );
+  return <WhatsAppGroupsHubCore />;
 }

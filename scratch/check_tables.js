@@ -1,9 +1,7 @@
-const fs = require('fs');
-const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
+const fs = require('fs');
 
-// Parse .env.local manually
-const envPath = path.join(__dirname, '../.env.local');
+const envPath = './.env.local';
 const envContent = fs.readFileSync(envPath, 'utf-8');
 const env = {};
 envContent.split('\n').forEach(line => {
@@ -19,13 +17,21 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
 async function check() {
-  console.log('--- Checking app_versions table ---');
-  const { data: v, error: ve } = await supabase.from('app_versions').select('*');
-  console.log('Versions:', v, 'Error:', ve?.message);
+  console.log('Checking whatsapp_contact_groups table...');
+  const { data: gData, error: gError } = await supabase.from('whatsapp_contact_groups').select('id').limit(1);
+  if (gError) {
+    console.error('whatsapp_contact_groups check failed:', gError.message);
+  } else {
+    console.log('whatsapp_contact_groups check passed. Data:', gData);
+  }
 
-  console.log('--- Checking user_telemetry_metrics table ---');
-  const { data: t, error: te } = await supabase.from('user_telemetry_metrics').select('*');
-  console.log('Telemetry:', t, 'Error:', te?.message);
+  console.log('Checking whatsapp_custom_workflows table...');
+  const { data: wData, error: wError } = await supabase.from('whatsapp_custom_workflows').select('id').limit(1);
+  if (wError) {
+    console.error('whatsapp_custom_workflows check failed:', wError.message);
+  } else {
+    console.log('whatsapp_custom_workflows check passed. Data:', wData);
+  }
 }
 
 check();
