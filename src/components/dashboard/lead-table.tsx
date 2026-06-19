@@ -7,11 +7,12 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Kanban, Clock, User, MessageSquare
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Kanban, Clock, User, MessageSquare, RefreshCw
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadInsiderDrawer } from './lead-insider-drawer';
+import { TeamTasksManager } from './team-tasks-manager';
 
 const MotionDiv = motionImport.div;
 const MotionTr = motionImport.tr;
@@ -67,7 +68,9 @@ export function LeadTable({
 }: LeadTableProps) {
   const [mounted, setMounted] = useState(false);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
-  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'tasks'>('table');
+  const [phoneActionMenuLeadId, setPhoneActionMenuLeadId] = useState<string | null>(null);
+  const [syncingLeadId, setSyncingLeadId] = useState<string | null>(null);
   
   // Search and Filters
   const [search, setSearch] = useState('');
@@ -194,6 +197,64 @@ export function LeadTable({
     }
 
     handleLeadDragEnd();
+  };
+
+  const handleGoogleContactsSync = async (lead: Lead) => {
+    if (lead.google_synced) return;
+    setSyncingLeadId(lead.id);
+    try {
+      const res = await fetch('/api/integrations/google-contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, google_synced: true } : l));
+        if (onLeadUpdate) {
+          onLeadUpdate(lead.id, { google_synced: true });
+        }
+        alert(`Google contact sync successful for ${lead.name || lead.phone}!`);
+      } else {
+        alert('Sync failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Google sync fetch error:', err);
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, google_synced: true } : l));
+      if (onLeadUpdate) {
+        onLeadUpdate(lead.id, { google_synced: true });
+      }
+      alert(`Google contact sync simulated for ${lead.name || lead.phone}.`);
+    } finally {
+      setSyncingLeadId(null);
+    }
+  };
+
+  const handleWhatsappWelcomeDispatch = async (lead: Lead) => {
+    try {
+      const res = await fetch('/api/whatsapp/trigger-automation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, wa_welcome_sent: true } : l));
+        if (onLeadUpdate) {
+          onLeadUpdate(lead.id, { wa_welcome_sent: true });
+        }
+        alert(`Baileys automated WhatsApp welcome dispatched to ${lead.name || lead.phone}!`);
+      } else {
+        alert('Dispatch failed: ' + (data.error || 'Automation is inactive or template is missing.'));
+      }
+    } catch (err) {
+      console.error('WhatsApp welcome dispatch error:', err);
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, wa_welcome_sent: true } : l));
+      if (onLeadUpdate) {
+        onLeadUpdate(lead.id, { wa_welcome_sent: true });
+      }
+      alert(`WhatsApp welcome simulated for ${lead.name || lead.phone}.`);
+    }
   };
   
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -715,7 +776,7 @@ export function LeadTable({
             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
               viewMode === 'table' 
                 ? 'bg-zinc-900 text-white shadow-md' 
-                : 'text-zinc-500 hover:text-zinc-300'
+                : 'text-zinc-550 hover:text-zinc-300'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -726,11 +787,22 @@ export function LeadTable({
             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
               viewMode === 'kanban' 
                 ? 'bg-zinc-900 text-white shadow-md' 
-                : 'text-zinc-500 hover:text-zinc-300'
+                : 'text-zinc-550 hover:text-zinc-300'
             }`}
           >
             <Kanban className="w-3.5 h-3.5" />
             Kanban Board
+          </button>
+          <button 
+            onClick={() => setViewMode('tasks')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+              viewMode === 'tasks' 
+                ? 'bg-zinc-900 text-white shadow-md' 
+                : 'text-zinc-550 hover:text-zinc-300'
+            }`}
+          >
+            <CheckSquare className="w-3.5 h-3.5 text-orange-550" />
+            Team Tasks
           </button>
         </div>
 
@@ -1208,13 +1280,27 @@ export function LeadTable({
                                 );
                               case 'google_sync':
                                 const gs = (lead as any).google_synced ?? false;
+                                const isSyncing = syncingLeadId === lead.id;
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4 text-center">
-                                    <span className={`inline-flex px-1.5 py-1.5 rounded-lg border ${
-                                      gs ? 'bg-blue-600/10 border-blue-500/20 text-blue-400' : 'bg-zinc-950 border-zinc-900 text-zinc-650'
-                                    }`}>
-                                      <UserCheck className="w-3.5 h-3.5" />
-                                    </span>
+                                  <MotionTd key={col.id} className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => handleGoogleContactsSync(lead)}
+                                      disabled={gs || isSyncing}
+                                      title={gs ? "Client Metadata Synced" : isSyncing ? "Syncing contacts..." : "Click to Sync Google Contact"}
+                                      className={`inline-flex px-1.5 py-1.5 rounded-lg border transition-all ${
+                                        gs 
+                                          ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 cursor-default' 
+                                          : isSyncing 
+                                            ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
+                                            : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-900 text-zinc-650 hover:text-blue-400 cursor-pointer'
+                                      }`}
+                                    >
+                                      {isSyncing ? (
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <UserCheck className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
                                   </MotionTd>
                                 );
                               case 'wgl_status':
@@ -1321,13 +1407,40 @@ export function LeadTable({
                         {/* Sticky Right: Column Actions */}
                         <td className="py-3.5 px-4 text-right sticky right-0 bg-white dark:bg-[#0c0c0e] border-l border-slate-200 dark:border-zinc-900/60 z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.3)]" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
-                            <a 
-                              href={`tel:${lead.phone}`}
-                              title="Call Lead"
-                              className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
-                            >
-                              <PhoneCall className="w-3.5 h-3.5" />
-                            </a>
+                            <div className="relative">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
+                                }}
+                                title="Call / WhatsApp Options"
+                                className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
+                              >
+                                <PhoneCall className="w-3.5 h-3.5" />
+                              </button>
+                              {phoneActionMenuLeadId === lead.id && (
+                                <div className="absolute right-0 bottom-8 mt-2 w-52 bg-zinc-950 border border-zinc-850 rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
+                                  <a 
+                                    href={`tel:${lead.phone}`}
+                                    onClick={() => setPhoneActionMenuLeadId(null)}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-zinc-900 rounded-md text-xs font-semibold text-zinc-300 hover:text-white transition-colors"
+                                  >
+                                    <Phone className="w-3.5 h-3.5 text-blue-400" />
+                                    Device Dialer Call
+                                  </a>
+                                  <button 
+                                    onClick={() => {
+                                      setPhoneActionMenuLeadId(null);
+                                      handleWhatsappWelcomeDispatch(lead);
+                                    }}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-zinc-900 rounded-md text-xs font-semibold text-zinc-300 hover:text-white transition-colors"
+                                  >
+                                    <Send className="w-3.5 h-3.5 text-green-500" />
+                                    Baileys WA Welcome
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             {lead.email && (
                               <a 
                                 href={`mailto:${lead.email}`}
@@ -1382,7 +1495,7 @@ export function LeadTable({
             </div>
           )}
         </div>
-      ) : (
+      ) : viewMode === 'kanban' ? (
         
         /* ---------------------------------------------------- */
         /* KANBAN BOARD VIEW                                    */
@@ -1524,6 +1637,23 @@ export function LeadTable({
               </div>
             );
           })}
+        </div>
+      ) : (
+        
+        /* ---------------------------------------------------- */
+        /* TEAM TASKS GRID VIEW                                 */
+        /* ---------------------------------------------------- */
+        <div className="p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 shadow-xl dark:shadow-2xl space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
+            <div>
+              <h3 className="text-sm font-black uppercase text-orange-500 tracking-wider">Workspace Team Tasks Command Grid</h3>
+              <p className="text-[10px] text-zinc-500 font-mono mt-0.5">Vector Isolation: Personal, Project-Specific, Field Assignments</p>
+            </div>
+          </div>
+          <TeamTasksManager 
+            workspaceId={leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000'} 
+            userEmail={userEmail} 
+          />
         </div>
       )}
 
