@@ -20,6 +20,10 @@ export type LeadScore = 'High-Value 🔥' | 'Warm 👍' | 'Cold ❄️';
 export interface Lead {
   id: string;
   workspace_id: string;
+  tenant_id?: string | null;
+  client_id?: string | null;
+  created_by_user_id?: string | null;
+  assigned_to_user_id?: string | null;
   name: string | null;
   email: string | null;
   phone: string;

@@ -80,6 +80,7 @@ const DEFAULT_STAGES = [
 export default function LeadsPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string>(MOCK_WORKSPACE_ID);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS);
   const [stages, setStages] = useState<any[]>(DEFAULT_STAGES);
   const [preferences, setPreferences] = useState<any>(null);
@@ -95,6 +96,7 @@ export default function LeadsPage() {
         return;
       }
       let uId = session.user.id;
+      setUserEmail(session.user.email || null);
       // Admin impersonation override
       if (session.user.email === 'sushantnawale700@gmail.com') {
         const impId = localStorage.getItem('impersonated_tenant_id');
@@ -393,6 +395,7 @@ export default function LeadsPage() {
               onCreateLead={handleCreateLead}
               initialPreferences={preferences}
               onPreferencesChange={handlePreferencesChange}
+              userEmail={userEmail}
             />
           </div>
         )}

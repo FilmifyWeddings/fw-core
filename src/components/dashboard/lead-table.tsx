@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { LeadInsiderDrawer } from './lead-insider-drawer';
 
 const MotionDiv = motionImport.div;
 const MotionTr = motionImport.tr;
@@ -26,6 +27,7 @@ interface LeadTableProps {
   onCreateLead?: (newLead: Partial<Lead>) => void;
   initialPreferences?: any;
   onPreferencesChange?: (newPrefs: any) => void;
+  userEmail?: string | null;
 }
 
 interface ColumnConfig {
@@ -60,7 +62,8 @@ export function LeadTable({
   onLeadUpdate,
   onCreateLead,
   initialPreferences,
-  onPreferencesChange
+  onPreferencesChange,
+  userEmail
 }: LeadTableProps) {
   const [mounted, setMounted] = useState(false);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
@@ -84,6 +87,114 @@ export function LeadTable({
   const [showManageCols, setShowManageCols] = useState(false);
   const [draggedColIdx, setDraggedColIdx] = useState<number | null>(null);
   const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
+
+  // Kanban Card Drag and Drop State
+  const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
+  const [draggedLeadSourceStage, setDraggedLeadSourceStage] = useState<string | null>(null);
+  const [activeDropStageId, setActiveDropStageId] = useState<string | null>(null);
+
+  const handleLeadDragStart = (e: React.DragEvent, leadId: string, stageId: string) => {
+    setDraggedLeadId(leadId);
+    setDraggedLeadSourceStage(stageId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', leadId);
+  };
+
+  const handleLeadDragEnd = () => {
+    setDraggedLeadId(null);
+    setDraggedLeadSourceStage(null);
+    setActiveDropStageId(null);
+  };
+
+  const handleStageDragOver = (e: React.DragEvent, stageId: string) => {
+    e.preventDefault();
+    if (draggedLeadSourceStage !== stageId) {
+      setActiveDropStageId(stageId);
+    }
+  };
+
+  const handleStageDragLeave = (e: React.DragEvent, stageId: string) => {
+    e.preventDefault();
+    if (activeDropStageId === stageId) {
+      setActiveDropStageId(null);
+    }
+  };
+
+  const handleStageDrop = async (e: React.DragEvent, nextStageId: string) => {
+    e.preventDefault();
+    const leadId = e.dataTransfer.getData('text/plain') || draggedLeadId;
+    if (!leadId || draggedLeadSourceStage === nextStageId) {
+      handleLeadDragEnd();
+      return;
+    }
+
+    const leadToMove = leads.find(l => l.id === leadId);
+    if (!leadToMove) {
+      handleLeadDragEnd();
+      return;
+    }
+
+    const selectedStage = stages.find(s => s.id === nextStageId);
+    const resolvedStatus = (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
+                            selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
+                            selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
+                            selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
+                            selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
+                            selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
+                            leadToMove.status) as LeadStatus;
+
+    const oldStageId = leadToMove.stage_id || leadToMove.status;
+
+    // Optimistic UI Update
+    setLeads(prev => prev.map(l => l.id === leadId ? { 
+      ...l, 
+      stage_id: nextStageId, 
+      status: resolvedStatus, 
+      updated_at: new Date().toISOString() 
+    } : l));
+
+    if (onLeadUpdate) {
+      onLeadUpdate(leadId, { 
+        stage_id: nextStageId, 
+        status: resolvedStatus 
+      });
+    }
+
+    // Background API patch to Supabase & insert log to live_logs for auditing
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const actorId = session?.user?.id || leadToMove.workspace_id || '00000000-0000-0000-0000-000000000000';
+      const tenantId = leadToMove.workspace_id || leadToMove.tenant_id || actorId;
+
+      await supabase
+        .from('leads')
+        .update({ 
+          stage_id: nextStageId, 
+          status: resolvedStatus, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', leadId);
+
+      await supabase
+        .from('live_logs')
+        .insert({
+          workspace_id: tenantId,
+          lead_id: leadId,
+          event_type: 'lead_stage_transition',
+          message: `Lead '${leadToMove.name || 'Unspecified'}' stage dragged from '${draggedLeadSourceStage}' to '${selectedStage?.name || nextStageId}' by user ID ${actorId}.`,
+          metadata: {
+            action_by_user_id: actorId,
+            old_stage_id: oldStageId,
+            new_stage_id: nextStageId,
+            timestamp: new Date().toISOString()
+          }
+        });
+    } catch (err) {
+      console.error('Audit drag-drop logging failed:', err);
+    }
+
+    handleLeadDragEnd();
+  };
   
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedColIdx(index);
@@ -1305,7 +1416,17 @@ export function LeadTable({
             );
 
             return (
-              <div key={stage.id} className="rounded-2xl border border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/20 p-3.5 space-y-3 shrink-0 min-w-[200px] shadow-sm">
+              <div 
+                key={stage.id} 
+                onDragOver={(e) => handleStageDragOver(e, stage.id)}
+                onDragLeave={(e) => handleStageDragLeave(e, stage.id)}
+                onDrop={(e) => handleStageDrop(e, stage.id)}
+                className={`rounded-2xl border transition-all duration-200 p-3.5 space-y-3 shrink-0 min-w-[200px] shadow-sm ${
+                  activeDropStageId === stage.id 
+                    ? 'border-orange-500/50 bg-orange-500/5 dark:bg-orange-500/10 scale-[0.99]' 
+                    : 'border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/20'
+                }`}
+              >
                 
                 {/* Stage Header */}
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-zinc-900">
@@ -1333,9 +1454,13 @@ export function LeadTable({
                         <div
                           key={lead.id}
                           onClick={() => setSelectedLead(lead)}
-                          className="p-3 rounded-xl border border-slate-200 dark:border-zinc-900 hover:border-slate-350 dark:hover:border-zinc-800 bg-slate-50 dark:bg-zinc-950/70 hover:bg-slate-100 dark:hover:bg-zinc-950 hover:scale-[1.01] cursor-pointer transition-all space-y-3 relative group shadow-sm"
+                          draggable
+                          onDragStart={(e) => handleLeadDragStart(e, lead.id, stage.id)}
+                          onDragEnd={handleLeadDragEnd}
+                          className={`p-3 rounded-xl border border-slate-200 dark:border-zinc-900 hover:border-slate-350 dark:hover:border-zinc-800 bg-slate-50 dark:bg-zinc-950/70 hover:bg-slate-100 dark:hover:bg-zinc-950 hover:scale-[1.01] cursor-pointer transition-all space-y-3 relative group shadow-sm ${
+                            draggedLeadId === lead.id ? 'opacity-40 border-dashed border-orange-500/50' : ''
+                          }`}
                         >
-                          {/* Card Body */}
                           {/* Card Body */}
                           <div>
                             <span 
@@ -1357,6 +1482,9 @@ export function LeadTable({
                             )}
                             {isColVisible('owner') && (
                               <div className="truncate flex items-center gap-1.5"><User className="w-2.5 h-2.5 text-zinc-700" /> {lead.raw_payload?.lead_owner || mockOwner.name}</div>
+                            )}
+                            {isColVisible('date') && (
+                              <div className="truncate flex items-center gap-1.5"><Calendar className="w-2.5 h-2.5 text-zinc-700" /> {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>
                             )}
                           </div>
 
@@ -1719,243 +1847,25 @@ export function LeadTable({
         )}
       </AnimatePresenceComponent>
 
-      {/* Ultimate Lead "Kundali" Details Drawer (Right-Side Sheet) */}
+      {/* Premium LeadInsiderDrawer workspace sheet */}
       <AnimatePresenceComponent>
         {selectedLead && (
-          <>
-            <MotionDiv
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedLead(null)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
-            />
-            <MotionDiv
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-              className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-md bg-zinc-950 border-l border-zinc-855 shadow-2xl flex flex-col text-white"
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between p-5 border-b border-zinc-900 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-                  <h3 className="text-base font-black">Lead Kundali</h3>
-                </div>
-                <button
-                  onClick={() => setSelectedLead(null)}
-                  className="p-1.5 rounded-lg hover:bg-zinc-900 text-zinc-500 hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Content body */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-6">
-                
-                {/* Color highlight mapping option */}
-                <div className="space-y-1.5 bg-zinc-900/30 border border-zinc-900/60 p-3 rounded-xl">
-                  <label className="text-[10px] text-zinc-500 font-bold uppercase">Color Tag Highlight</label>
-                  <div className="flex items-center gap-3">
-                    <input 
-                      type="color" 
-                      value={selectedLead.custom_color || '#ffffff'}
-                      onChange={(e) => {
-                        handleInlineLeadEdit({ custom_color: e.target.value });
-                      }}
-                      className="w-8 h-8 rounded-md bg-transparent border-none cursor-pointer"
-                    />
-                    <span className="text-xs font-mono text-zinc-300 font-semibold uppercase">{selectedLead.custom_color || 'No color filter mapped'}</span>
-                    {selectedLead.custom_color && (
-                      <button 
-                        onClick={() => handleInlineLeadEdit({ custom_color: null })}
-                        className="text-[10px] text-red-400 font-bold underline ml-auto"
-                      >
-                        Reset Color
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Visible Info fields (Editable) */}
-                <div className="space-y-4">
-                  <h4 className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Visible Parameters</h4>
-                  
-                  {/* Lead Name */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Lead Name</label>
-                    <input 
-                      type="text" 
-                      value={selectedLead.name || ''} 
-                      onChange={(e) => handleInlineLeadEdit({ name: e.target.value })}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white text-xs font-semibold focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Phone */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Mobile Phone</label>
-                    <input 
-                      type="text" 
-                      value={selectedLead.phone} 
-                      onChange={(e) => handleInlineLeadEdit({ phone: e.target.value })}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white text-xs font-mono focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Email */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Email Address</label>
-                    <input 
-                      type="text" 
-                      value={selectedLead.email || ''} 
-                      onChange={(e) => handleInlineLeadEdit({ email: e.target.value })}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white text-xs font-mono focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Source */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Source Platform</label>
-                    <select
-                      value={selectedLead.source}
-                      onChange={(e) => handleInlineLeadEdit({ source: e.target.value })}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white text-xs font-semibold focus:outline-none"
-                    >
-                      {customSources.map(src => (
-                        <option key={src} value={src}>{src}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Custom Columns Mapping Fields inside raw payload */}
-                {columns.filter(c => c.type && c.type.startsWith('custom_') && c.type !== 'custom-color').map(col => {
-                  const val = selectedLead.raw_payload?.[col.id] || '';
-                  return (
-                    <div key={col.id} className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">{col.label}</label>
-                      {col.type === 'custom-dropdown' ? (
-                        <select
-                          value={val}
-                          onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value)}
-                          className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white text-xs font-semibold focus:outline-none"
-                        >
-                          <option value="">Select option</option>
-                          {col.options?.map(opt => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input 
-                          type="text" 
-                          value={val}
-                          onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value)}
-                          className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white text-xs focus:outline-none"
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Workflow Status Tracker Toggles */}
-                <div className="space-y-3 pt-3 border-t border-zinc-900">
-                  <h4 className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Automations Check</h4>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <button
-                      onClick={() => handleInlineLeadEdit({ wa_welcome_sent: !(selectedLead as any).wa_welcome_sent } as any)}
-                      className={`p-2 border rounded-xl flex items-center justify-between ${
-                        (selectedLead as any).wa_welcome_sent 
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                          : 'bg-zinc-900/60 border-zinc-850 text-zinc-400'
-                      }`}
-                    >
-                      <span>WA Welcome</span>
-                      <Check className={`w-3.5 h-3.5 ${ (selectedLead as any).wa_welcome_sent ? 'opacity-100' : 'opacity-20' }`} />
-                    </button>
-                    
-                    <button
-                      onClick={() => handleInlineLeadEdit({ google_synced: !(selectedLead as any).google_synced } as any)}
-                      className={`p-2 border rounded-xl flex items-center justify-between ${
-                        (selectedLead as any).google_synced 
-                          ? 'bg-blue-600/10 border-blue-500/20 text-blue-400' 
-                          : 'bg-zinc-900/60 border-zinc-850 text-zinc-400'
-                      }`}
-                    >
-                      <span>Google Sync</span>
-                      <Check className={`w-3.5 h-3.5 ${ (selectedLead as any).google_synced ? 'opacity-100' : 'opacity-20' }`} />
-                    </button>
-
-                    <button
-                      onClick={() => handleInlineLeadEdit({ wgl_dispatched: !(selectedLead as any).wgl_dispatched } as any)}
-                      className={`p-2 border rounded-xl flex items-center justify-between col-span-2 ${
-                        (selectedLead as any).wgl_dispatched 
-                          ? 'bg-green-600/15 border-green-500/20 text-green-400' 
-                          : 'bg-zinc-900/60 border-zinc-850 text-zinc-400'
-                      }`}
-                    >
-                      <span>WGL Alert Sent</span>
-                      <Check className={`w-3.5 h-3.5 ${ (selectedLead as any).wgl_dispatched ? 'opacity-100' : 'opacity-20' }`} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Timed Comments Panel */}
-                <div className="space-y-3 pt-3 border-t border-zinc-900">
-                  <h4 className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider flex items-center gap-1.5">
-                    <MessageSquare className="w-3.5 h-3.5 text-orange-500" />
-                    Activity Comments Logs
-                  </h4>
-                  
-                  {/* Comments List */}
-                  <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                    {((selectedLead as any).comments || []).length === 0 ? (
-                      <p className="text-[10px] text-zinc-650 italic py-2">No activity comments recorded</p>
-                    ) : (
-                      ((selectedLead as any).comments || []).map((comm: any, cidx: number) => (
-                        <div key={cidx} className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl space-y-1">
-                          <p className="text-xs text-zinc-300 font-semibold">{comm.text}</p>
-                          <span className="text-[9px] text-zinc-500 block font-mono">
-                            {new Date(comm.timestamp).toLocaleString('en-IN', {
-                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-                            })}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {/* Add Comment input */}
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Add status comment..."
-                      value={newCommentText}
-                      onChange={(e) => setNewCommentText(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
-                      className="flex-1 bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-xs focus:outline-none focus:border-zinc-700 placeholder-zinc-650"
-                    />
-                    <button
-                      onClick={handleAddComment}
-                      className="px-3 bg-white hover:bg-zinc-200 text-black font-extrabold rounded-xl text-xs transition-colors"
-                    >
-                      Log
-                    </button>
-                  </div>
-                </div>
-
-                {/* Raw metadata */}
-                <div className="space-y-2 pt-3 border-t border-zinc-900">
-                  <h4 className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Full Ingested Metadata</h4>
-                  <pre className="p-3 bg-black border border-zinc-900 rounded-xl text-[10px] text-zinc-400 overflow-x-auto font-mono max-h-40">
-                    {JSON.stringify(selectedLead.raw_payload, null, 2)}
-                  </pre>
-                </div>
-
-              </div>
-            </MotionDiv>
-          </>
+          <LeadInsiderDrawer
+            lead={selectedLead}
+            onClose={() => setSelectedLead(null)}
+            onLeadUpdate={(leadId, updatedFields) => {
+              setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updatedFields } : l));
+              if (selectedLead && selectedLead.id === leadId) {
+                setSelectedLead(prev => prev ? { ...prev, ...updatedFields } : null);
+              }
+              if (onLeadUpdate) {
+                onLeadUpdate(leadId, updatedFields);
+              }
+            }}
+            stages={stages}
+            customSources={customSources}
+            userEmail={userEmail}
+          />
         )}
       </AnimatePresenceComponent>
 
