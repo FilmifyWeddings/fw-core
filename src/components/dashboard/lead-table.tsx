@@ -7,7 +7,7 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Kanban, Clock, User, MessageSquare, RefreshCw
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Kanban, Clock, User, MessageSquare, RefreshCw, Users
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -50,6 +50,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'address', label: 'Full Address', visible: false, type: 'system' },
   { id: 'attachments', label: 'Attachments / PDFs', visible: true, type: 'system' },
   // Workflow Tracker columns
+  { id: 'wa_group', label: 'WhatsApp Group', visible: true, type: 'system' },
   { id: 'wa_welcome', label: 'WA Welcome Msg', visible: false, type: 'system' },
   { id: 'google_sync', label: 'Google Contact Sync', visible: false, type: 'system' },
   { id: 'wgl_status', label: 'WGL Status', visible: false, type: 'system' },
@@ -358,6 +359,8 @@ export function LeadTable({
 
   // Bulk actions menus
   const [showBulkStatusMenu, setShowBulkStatusMenu] = useState(false);
+  const [showBulkGroupMenu, setShowBulkGroupMenu] = useState(false);
+  const [contactGroups, setContactGroups] = useState<any[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   // Comments state in details drawer
@@ -414,6 +417,29 @@ export function LeadTable({
     });
 
   }, [initialLeads]);
+
+  // Load WhatsApp Contact Groups
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uId = session?.user?.id || leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000';
+        const res = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${uId}`);
+        const data = await res.json();
+        if (data.success) {
+          setContactGroups(data.results || []);
+        } else {
+          throw new Error(data.error);
+        }
+      } catch (err) {
+        console.warn('Fallback loading contact groups locally in table');
+        const uId = leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000';
+        const fallback = localStorage.getItem(`wa_contact_groups_${uId}`);
+        if (fallback) setContactGroups(JSON.parse(fallback));
+      }
+    };
+    fetchGroups();
+  }, [leads]);
 
   // Load configuration preferences
   useEffect(() => {
@@ -746,6 +772,41 @@ export function LeadTable({
       setSelectedLeadIds([]);
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
+  const handleBulkAssignGroup = async (groupId: string | null) => {
+    setIsBulkProcessing(true);
+    try {
+      setLeads(prev => prev.map(l => selectedLeadIds.includes(l.id) ? { 
+        ...l, 
+        whatsapp_group_id: groupId, 
+        updated_at: new Date().toISOString() 
+      } : l));
+      
+      await supabase
+        .from('leads')
+        .update({ 
+          whatsapp_group_id: groupId, 
+          updated_at: new Date().toISOString() 
+        })
+        .in('id', selectedLeadIds);
+
+      if (onLeadUpdate) {
+        selectedLeadIds.forEach(id => {
+          onLeadUpdate(id, { whatsapp_group_id: groupId });
+        });
+      }
+
+      setShowBulkGroupMenu(false);
+      setSelectedLeadIds([]);
+      alert('Selected leads assigned to WhatsApp Contact Group successfully.');
+    } catch (err) {
+      console.error('Failed to bulk assign group:', err);
+      setShowBulkGroupMenu(false);
+      setSelectedLeadIds([]);
     } finally {
       setIsBulkProcessing(false);
     }
@@ -1297,6 +1358,32 @@ export function LeadTable({
                                 );
                               
                               // SaaS Automation workflow trackers
+                              case 'wa_group':
+                                return (
+                                  <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                    <select
+                                      value={lead.whatsapp_group_id || ''}
+                                      onChange={async (e) => {
+                                        const nextGroupId = e.target.value || null;
+                                        handleInlineLeadEdit({ whatsapp_group_id: nextGroupId });
+                                        try {
+                                          await supabase
+                                            .from('leads')
+                                            .update({ whatsapp_group_id: nextGroupId, updated_at: new Date().toISOString() })
+                                            .eq('id', lead.id);
+                                        } catch (err) {
+                                          console.error('Failed to update group in DB:', err);
+                                        }
+                                      }}
+                                      className="bg-zinc-950/80 border border-zinc-900 text-zinc-300 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-zinc-800 cursor-pointer w-32 truncate"
+                                    >
+                                      <option value="">Unassigned</option>
+                                      {contactGroups.map(g => (
+                                        <option key={g.id} value={g.id}>{g.group_name}</option>
+                                      ))}
+                                    </select>
+                                  </MotionTd>
+                                );
                               case 'wa_welcome':
                                 const ws = (lead as any).wa_welcome_sent ?? false;
                                 return (
@@ -1793,6 +1880,46 @@ export function LeadTable({
                         {st === 'contacted' ? 'Open' : st === 'warm' ? 'In Progress' : st}
                       </button>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Bulk Group Update */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowBulkGroupMenu(!showBulkGroupMenu)}
+                  className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-850 rounded-lg text-xs font-semibold border border-zinc-800 transition-colors flex items-center gap-1.5 text-zinc-300"
+                >
+                  <Users className="w-3.5 h-3.5 text-emerald-400" />
+                  WA Group
+                  <ChevronDown className="w-3 h-3 text-zinc-500" />
+                </button>
+                
+                {showBulkGroupMenu && (
+                  <div className="absolute bottom-11 right-0 w-48 bg-zinc-950 border border-zinc-850 rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 max-h-48 overflow-y-auto">
+                    <button
+                      disabled={isBulkProcessing}
+                      onClick={() => handleBulkAssignGroup(null)}
+                      className="w-full text-left p-1.5 hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-zinc-550 hover:text-white transition-colors"
+                    >
+                      Unassigned / None
+                    </button>
+                    {contactGroups.length === 0 ? (
+                      <div className="p-2 text-[10px] text-zinc-650 italic text-center">
+                        No contact groups configured.
+                      </div>
+                    ) : (
+                      contactGroups.map(grp => (
+                        <button
+                          key={grp.id}
+                          disabled={isBulkProcessing}
+                          onClick={() => handleBulkAssignGroup(grp.id)}
+                          className="w-full text-left p-1.5 hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-zinc-400 hover:text-white transition-colors truncate"
+                        >
+                          {grp.group_name}
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>

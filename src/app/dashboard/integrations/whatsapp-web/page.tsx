@@ -15,12 +15,12 @@ import { supabase } from '@/lib/supabase';
 import { BaileysQrConnect } from '@/components/integrations/baileys/baileys-qr-connect';
 import { BaileysWhatsappWeb } from '@/components/integrations/baileys/baileys-whatsapp-web';
 import { WhatsappTemplates } from '@/components/integrations/whatsapp-templates';
-import { WhatsappWelcomeMsg } from '@/components/integrations/whatsapp-welcome-msg';
-import { WhatsappFollowups } from '@/components/integrations/whatsapp-followups';
+import { WhatsappWorkflowBuilder } from '@/components/integrations/whatsapp-workflow-builder';
+import { WhatsappContactGroups } from '@/components/integrations/whatsapp-contact-groups';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
-type WaTab = 'device' | 'chat' | 'templates' | 'welcome' | 'followups';
+type WaTab = 'device' | 'chat' | 'templates' | 'workflows' | 'groups';
 type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; description: string }[] = [
@@ -43,16 +43,16 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; description: stri
     description: 'Build & manage templates'
   },
   {
-    id: 'welcome',
-    label: 'Welcome Flow',
-    icon: <MessageSquare className="w-4 h-4" />,
-    description: 'Auto-welcome sequences'
+    id: 'workflows',
+    label: 'Workflow Builder',
+    icon: <Layers className="w-4 h-4" />,
+    description: 'Custom message triggers'
   },
   {
-    id: 'followups',
-    label: 'Follow-up Engine',
-    icon: <Layers className="w-4 h-4" />,
-    description: 'Drip sequence scheduler'
+    id: 'groups',
+    label: 'Contact Groups',
+    icon: <MessageSquare className="w-4 h-4" />,
+    description: 'Manage mailing groups'
   }
 ];
 
@@ -122,7 +122,7 @@ function WhatsAppHubCore() {
         <div className="flex items-center gap-3">
 
           {/* Shoot Category Filter */}
-          {(activeTab === 'templates' || activeTab === 'welcome' || activeTab === 'followups') && (
+          {(activeTab === 'templates' || activeTab === 'workflows') && (
             <div className="relative">
               <button
                 onClick={() => setCategoryOpen(o => !o)}
@@ -254,44 +254,18 @@ function WhatsAppHubCore() {
               </div>
             )}
 
-            {activeTab === 'welcome' && (
+            {activeTab === 'workflows' && (
               <div className="w-full p-6">
-                {shootCategory !== 'all' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs"
-                  >
-                    <span className={activeCategory.color}>{activeCategory.icon}</span>
-                    <span className="text-zinc-400">
-                      Welcome sequence for <strong className="text-white">{activeCategory.label}</strong> — separate config saved independently
-                    </span>
-                  </motion.div>
-                )}
-                <WhatsappWelcomeMsg
+                <WhatsappWorkflowBuilder
                   workspaceId={userId || MOCK_WORKSPACE_ID}
-                  shootType={shootCategory}
                 />
               </div>
             )}
 
-            {activeTab === 'followups' && (
+            {activeTab === 'groups' && (
               <div className="w-full p-6">
-                {shootCategory !== 'all' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs"
-                  >
-                    <span className={activeCategory.color}>{activeCategory.icon}</span>
-                    <span className="text-zinc-400">
-                      Follow-up drip for <strong className="text-white">{activeCategory.label}</strong> — config saved per category
-                    </span>
-                  </motion.div>
-                )}
-                <WhatsappFollowups
+                <WhatsappContactGroups
                   workspaceId={userId || MOCK_WORKSPACE_ID}
-                  shootType={shootCategory}
                 />
               </div>
             )}

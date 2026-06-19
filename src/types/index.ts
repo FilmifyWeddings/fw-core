@@ -40,6 +40,7 @@ export interface Lead {
   followup_timeline?: any;
   stage_id?: string | null;
   stage_position?: number;
+  whatsapp_group_id?: string | null;
   // Meta Facebook Ads fields
   source_form_id?: string | null;
   form_tag?: string | null;
