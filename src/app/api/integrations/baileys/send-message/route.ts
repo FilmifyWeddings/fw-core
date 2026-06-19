@@ -167,9 +167,13 @@ export async function POST(req: NextRequest) {
         let rendered = tpl.body_text as string;
         if (body.variables) {
           for (const [k, v] of Object.entries(body.variables)) {
-            rendered = rendered.replaceAll(`{${k}}`, v);
+            // Support {{Name}}, {{1}}, {Name}, {1} — all common template variable formats
+            rendered = rendered
+              .replaceAll(`{{${k}}}`, v)   // Double-brace Mustache: {{Name}}, {{1}}
+              .replaceAll(`{${k}}`, v);    // Single-brace: {Name}, {1}
           }
         }
+
 
         if (tpl.media_url) {
           result = await sendMessageServerless(supabaseAdmin, user.id, {

@@ -320,64 +320,37 @@ export async function sendMessageServerless(
   payload: SendPayload,
   timeoutMs = 25_000
 ): Promise<HydrationResult> {
-  const { authDir, hasExistingCreds } = await hydrateCredsFromSupabase(supabaseAdmin, workspaceId);
+  const { hasExistingCreds } = await hydrateCredsFromSupabase(supabaseAdmin, workspaceId);
 
   if (!hasExistingCreds) {
     return { success: false, error: 'No active session. Please scan QR code first.' };
   }
 
-  try {
-    const sock = await getOrCreateSocket(supabaseAdmin, workspaceId);
-    const jid = normalizeJid(payload.to);
-    
-    // Dynamically fetch WAMessageContent builders
-    const { default: makeWASocket } = await import('@whiskeysockets/baileys') as any;
-    let msgContent: WAMessageContent;
-
-    switch (payload.type) {
+  // ── Helper: Build message content from payload ────────────────────────────
+  function buildMsgContent(p: SendPayload): WAMessageContent {
+    switch (p.type) {
       case 'image':
-        msgContent = {
-          image: { url: payload.mediaUrl! },
-          caption: payload.caption ?? '',
-        };
-        break;
+        return { image: { url: p.mediaUrl! }, caption: p.caption ?? '' };
       case 'video':
-        msgContent = {
-          video: { url: payload.mediaUrl! },
-          caption: payload.caption ?? '',
-        };
-        break;
+        return { video: { url: p.mediaUrl! }, caption: p.caption ?? '' };
       case 'audio':
-        msgContent = {
-          audio: { url: payload.mediaUrl! },
-          mimetype: payload.mimeType ?? 'audio/mpeg',
-          ptt: false,
-        };
-        break;
+        return { audio: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'audio/mpeg', ptt: false };
       case 'document':
-        msgContent = {
-          document: { url: payload.mediaUrl! },
-          mimetype: payload.mimeType ?? 'application/pdf',
-          fileName: payload.fileName ?? 'file',
-        };
-        break;
+        return { document: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'application/pdf', fileName: p.fileName ?? 'file' };
       case 'poll':
-        msgContent = {
-          poll: {
-            name: payload.text!,
-            values: payload.pollOptions || [],
-            selectableCount: payload.pollSelectableCount ?? 1
-          }
-        };
-        break;
-      default: // text
-        msgContent = { text: payload.text! };
+        return { poll: { name: p.text!, values: p.pollOptions || [], selectableCount: p.pollSelectableCount ?? 1 } };
+      default:
+        return { text: p.text! };
     }
+  }
 
+  // ── Helper: Try to send via a connected socket ────────────────────────────
+  async function trySend(sock: BaileysSocket): Promise<HydrationResult> {
+    const jid = normalizeJid(payload.to);
+    const msgContent = buildMsgContent(payload);
     const result = await sock.sendMessage(jid, msgContent);
     const waMessageId = result?.key?.id ?? null;
 
-    // Update DB: message status → sent
     if (waMessageId) {
       await supabaseAdmin
         .from('baileys_messages')
@@ -388,176 +361,51 @@ export async function sendMessageServerless(
         .order('created_at', { ascending: false })
         .limit(1);
     }
-
     return { success: true, waMessageId: waMessageId ?? undefined };
-  } catch (err: any) {
-    console.error('[send] Error sending message via manager:', err.message);
-    
-    // Fallback: if getOrCreateSocket failed, we fall back to spinning up a quick temporary socket to send the message
-    return new Promise<HydrationResult>(async (resolve) => {
-      let sock: BaileysSocket | null = null;
-      let credsSaved = false;
-      let resolved = false;
-      let timeoutHandle: ReturnType<typeof setTimeout>;
-      let credsSavePromise: Promise<void> | null = null;
-
-      const cleanResolve = async (result: HydrationResult) => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timeoutHandle);
-
-        // Save any creds mutations before exit
-        if (!credsSaved) {
-          await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-        }
-
-        // Gracefully destroy socket
-        try { sock?.end(undefined); } catch { /* already closed */ }
-
-        resolve(result);
-      };
-
-      // Timeout guard — Vercel has execution limits
-      timeoutHandle = setTimeout(() => {
-        cleanResolve({ success: false, error: 'Timeout: message send exceeded time limit' });
-      }, timeoutMs);
-
-      try {
-        const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, fetchLatestBaileysVersion } =
-          await import('@whiskeysockets/baileys') as any;
-        const pino = (await import('pino') as any).default;
-        const logger = pino({ level: 'silent' });
-
-        const { state, saveCreds } = await useMultiFileAuthState(authDir);
-        const { version } = await fetchLatestBaileysVersion();
-
-        sock = makeWASocket({
-          version,
-          logger,
-          auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, logger),
-          },
-          printQRInTerminal: false,
-          markOnlineOnConnect: false,
-          generateHighQualityLinkPreview: false,
-          syncFullHistory: false,
-          shouldSyncHistoryMessage: () => false,
-          downloadHistoryWithMediaFiles: false,
-          receivedPendingNotifications: false,
-          manageIntegrity: false,
-          forceConnect: true,
-          connectTimeoutMs: 60000,
-          defaultQueryTimeoutMs: 60000,
-          keepAliveIntervalMs: 30000,
-          emitOwnEvents: true,
-          retryRequestDelayMs: 2000,
-        });
-
-        // ── creds.update: Save to /tmp + Supabase ──
-        sock.ev.on('creds.update', () => {
-          saveCreds(); // saves to /tmp
-          credsSavePromise = persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-          credsSaved = true;
-        });
-
-        // ── connection.update: Wait for 'open' then send ──
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        sock.ev.on('connection.update', async ({ connection, lastDisconnect }: { connection: any; lastDisconnect: any }) => {
-          if (connection === 'open') {
-            console.log('[send-fallback] Connection open — sending message...');
-
-            try {
-              const jid = normalizeJid(payload.to);
-              let msgContent: WAMessageContent;
-
-              switch (payload.type) {
-                case 'image':
-                  msgContent = {
-                    image: { url: payload.mediaUrl! },
-                    caption: payload.caption ?? '',
-                  };
-                  break;
-                case 'video':
-                  msgContent = {
-                    video: { url: payload.mediaUrl! },
-                    caption: payload.caption ?? '',
-                  };
-                  break;
-                case 'audio':
-                  msgContent = {
-                    audio: { url: payload.mediaUrl! },
-                    mimetype: payload.mimeType ?? 'audio/mpeg',
-                    ptt: false,
-                  };
-                  break;
-                case 'document':
-                  msgContent = {
-                    document: { url: payload.mediaUrl! },
-                    mimetype: payload.mimeType ?? 'application/pdf',
-                    fileName: payload.fileName ?? 'file',
-                  };
-                  break;
-                default: // text
-                  msgContent = { text: payload.text! };
-              }
-
-              const result = await sock!.sendMessage(jid, msgContent);
-              const waMessageId = result?.key?.id ?? null;
-
-              // Update DB: message status → sent
-              if (waMessageId) {
-                await supabaseAdmin
-                  .from('baileys_messages')
-                  .update({ status: 'sent', wa_message_id: waMessageId })
-                  .eq('workspace_id', workspaceId)
-                  .eq('chat_jid', jid)
-                  .eq('status', 'queued')
-                  .order('created_at', { ascending: false })
-                  .limit(1);
-              }
-
-              // Await any pending credentials save
-              if (credsSavePromise) {
-                await credsSavePromise;
-              }
-              await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-
-              await cleanResolve({ success: true, waMessageId: waMessageId ?? undefined });
-            } catch (sendErr) {
-              const errMsg = sendErr instanceof Error ? sendErr.message : String(sendErr);
-              console.error('[send-fallback] Send error:', errMsg);
-              if (credsSavePromise) {
-                await credsSavePromise;
-              }
-              await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-              await cleanResolve({ success: false, error: errMsg });
-            }
-          }
-
-          if (connection === 'close') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-            if (!resolved) {
-              if (credsSavePromise) {
-                await credsSavePromise;
-              }
-              await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-              await cleanResolve({
-                success: false,
-                error: `Connection closed unexpectedly. Code: ${statusCode}`,
-              });
-            }
-          }
-        });
-      } catch (initErr) {
-        const errMsg = initErr instanceof Error ? initErr.message : String(initErr);
-        console.error('[send-fallback] Init error:', errMsg);
-        await cleanResolve({ success: false, error: errMsg });
-      }
-    });
   }
+
+  // ── Attempt 1: Use primary persistent socket ──────────────────────────────
+  try {
+    const sock = await getOrCreateSocket(supabaseAdmin, workspaceId);
+    return await trySend(sock);
+  } catch (err: any) {
+    console.error('[send] Primary socket send failed:', err.message);
+  }
+
+  // ── Attempt 2: SAFE RETRY — Wait for the manager socket to recover ────────
+  // ⚠️  DO NOT spawn a new fallback socket here.
+  // Spawning a second socket causes Code 440 (connectionReplaced) because
+  // WhatsApp only allows ONE active web session per account at a time.
+  // The manager's connection.update handler already schedules a 5s reconnect —
+  // we just need to poll until globalSockets has a live open socket again.
+  console.log(`[send] Waiting for manager socket to recover (workspace ${workspaceId})...`);
+
+  const startTime = Date.now();
+  const POLL_INTERVAL_MS = 1_200;
+  const WAIT_TIMEOUT_MS = Math.min(timeoutMs, 18_000); // max 18s wait
+
+  while (Date.now() - startTime < WAIT_TIMEOUT_MS) {
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    const existingSock = globalSockets.get(workspaceId);
+    if (existingSock && existingSock.ws && existingSock.ws.readyState === 1) {
+      try {
+        console.log(`[send] Socket recovered! Retrying send for workspace ${workspaceId}...`);
+        return await trySend(existingSock);
+      } catch (retryErr: any) {
+        console.error('[send] Retry send also failed:', retryErr.message);
+        return { success: false, error: `Send failed after socket recovery: ${retryErr.message}` };
+      }
+    }
+  }
+
+  console.error(`[send] Manager socket did not recover within ${WAIT_TIMEOUT_MS}ms`);
+  return {
+    success: false,
+    error: 'WhatsApp is reconnecting. Please wait 5–10 seconds and try again.',
+  };
 }
+
+
 
 // ─── CORE: Generate QR Code via On-Demand Socket ─────────────────────────────
 /**

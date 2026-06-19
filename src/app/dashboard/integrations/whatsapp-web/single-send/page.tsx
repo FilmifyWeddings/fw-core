@@ -50,6 +50,9 @@ export default function WhatsAppSingleSendPage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Template variable states — auto-detected from template body
+  const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
+
   // UI state
   const [sending, setSending] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -93,6 +96,43 @@ export default function WhatsAppSingleSendPage() {
   }, [tenantId]);
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
+
+  // Extract template variable placeholders like {{Name}}, {{1}}, {Name}, {1}
+  const extractTemplatePlaceholders = (bodyText: string): string[] => {
+    const doubleBrace = [...bodyText.matchAll(/\{\{([^}]+)\}\}/g)].map(m => m[1].trim());
+    const singleBrace = [...bodyText.matchAll(/\{([^{}]+)\}/g)].map(m => m[1].trim());
+    // Deduplicate preserving order
+    const seen = new Set<string>();
+    return [...doubleBrace, ...singleBrace].filter(v => { if (seen.has(v)) return false; seen.add(v); return true; });
+  };
+
+  const detectedVariables = selectedTemplate?.payload?.body
+    ? extractTemplatePlaceholders(selectedTemplate.payload.body)
+    : [];
+
+  // When template changes, reset variable values
+  const handleTemplateChange = (id: string) => {
+    setSelectedTemplateId(id);
+    const tmpl = templates.find(t => t.id === id);
+    if (tmpl?.payload?.body) {
+      const keys = extractTemplatePlaceholders(tmpl.payload.body);
+      const defaults: Record<string, string> = {};
+      keys.forEach(k => { defaults[k] = ''; });
+      setTemplateVariables(defaults);
+    } else {
+      setTemplateVariables({});
+    }
+  };
+
+  // Get rendered template body with variables substituted
+  const getRenderedBody = () => {
+    if (!selectedTemplate?.payload?.body) return '';
+    let body = selectedTemplate.payload.body;
+    for (const [k, v] of Object.entries(templateVariables)) {
+      body = body.replaceAll(`{{${k}}}`, v || `{{${k}}}`).replaceAll(`{${k}}`, v || `{${k}}`);
+    }
+    return body;
+  };
 
   // Format helper for text insertion in Plain Text mode
   const applyTextFormat = (formatSymbol: string) => {
@@ -170,13 +210,12 @@ export default function WhatsAppSingleSendPage() {
     } else {
       return JSON.stringify({
         to: receiver || '',
-        type: selectedTemplate?.type === 'media' || mediaUrlOverride ? 'media' : 'text',
+        type: 'template',
+        mode: 'direct',
         templateId: selectedTemplateId || '',
         templateName: selectedTemplate?.name || '',
-        language: 'en_US',
-        variables: {},
-        mediaUrl: mediaUrlOverride || selectedTemplate?.payload?.mediaUrl || '',
-        mediaMime: mediaMimeOverride || (mediaUrlOverride ? 'image/jpeg' : '')
+        variables: templateVariables,
+        ...(mediaUrlOverride ? { mediaUrl: mediaUrlOverride, mimeType: mediaMimeOverride } : {})
       }, null, 2);
     }
   };
@@ -235,6 +274,7 @@ export default function WhatsAppSingleSendPage() {
       } else {
         payload.type = 'template';
         payload.templateId = selectedTemplateId;
+        payload.variables = templateVariables;
         if (mediaUrlOverride) {
           payload.mediaUrl = mediaUrlOverride;
           payload.mimeType = mediaMimeOverride;
@@ -489,7 +529,7 @@ export default function WhatsAppSingleSendPage() {
                   <select
                     value={selectedTemplateId}
                     required
-                    onChange={e => setSelectedTemplateId(e.target.value)}
+                    onChange={e => handleTemplateChange(e.target.value)}
                     className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs text-slate-900 dark:text-zinc-300 focus:outline-none focus:border-slate-350 dark:focus:border-emerald-500/40 cursor-pointer"
                   >
                     <option value="">Select Template</option>
@@ -500,6 +540,31 @@ export default function WhatsAppSingleSendPage() {
                   <span className="text-[10px] text-slate-400 dark:text-zinc-550 block leading-none">
                     Choose a template to send
                   </span>
+
+                  {/* Dynamic Variable Inputs */}
+                  {detectedVariables.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <span className="text-[10px] font-bold text-amber-500 dark:text-amber-400 uppercase tracking-wider block">
+                        ✦ Template Variables ({detectedVariables.length} found)
+                      </span>
+                      <div className="space-y-2">
+                        {detectedVariables.map(varKey => (
+                          <div key={varKey} className="flex items-center gap-2">
+                            <span className="shrink-0 px-2 py-1 bg-amber-500/10 border border-amber-500/20 rounded text-[10px] font-mono text-amber-600 dark:text-amber-400 min-w-[80px] text-center">
+                              {`{{${varKey}}}`}
+                            </span>
+                            <input
+                              type="text"
+                              placeholder={`Value for ${varKey}`}
+                              value={templateVariables[varKey] || ''}
+                              onChange={e => setTemplateVariables(prev => ({ ...prev, [varKey]: e.target.value }))}
+                              className="flex-1 px-2.5 py-1.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-600 focus:outline-none focus:border-amber-500/40"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Media Override (Optional) Card */}
@@ -615,8 +680,16 @@ export default function WhatsAppSingleSendPage() {
                       )}
 
                       <div className="p-3 bg-white dark:bg-zinc-950 border border-slate-100 dark:border-zinc-900 rounded-xl text-xs text-slate-700 dark:text-zinc-300 leading-relaxed font-sans whitespace-pre-wrap">
-                        {selectedTemplate.payload?.body || 'Empty template body text.'}
+                        {getRenderedBody() || 'Empty template body text.'}
                       </div>
+                      {detectedVariables.length > 0 && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                          <span className="text-[9px] text-amber-500 dark:text-amber-400 font-mono">
+                            {Object.values(templateVariables).filter(Boolean).length}/{detectedVariables.length} variables filled
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     /* Placeholder */
