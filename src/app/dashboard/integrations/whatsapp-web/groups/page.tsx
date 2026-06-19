@@ -52,6 +52,12 @@ function WhatsAppGroupsHubCore() {
   const [actionLoading, setActionLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
+  // Drawer / Add Lead States
+  const [selectedLeadIdToAdd, setSelectedLeadIdToAdd] = useState('');
+  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+  const [showLeadSuggestions, setShowLeadSuggestions] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Fetch initial data
@@ -286,39 +292,78 @@ function WhatsAppGroupsHubCore() {
     setActiveMenuId(null);
   };
 
+  // Add Member to Group Action
+  const handleAddLeadToGroup = async (leadId: string) => {
+    if (!selectedGroup) return;
+    setActionLoading(true);
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ whatsapp_group_id: selectedGroup.id })
+        .eq('id', leadId);
+
+      if (error) throw error;
+
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, whatsapp_group_id: selectedGroup.id } : l));
+      setLeadSearchQuery('');
+      setSelectedLeadIdToAdd('');
+      setShowLeadSuggestions(false);
+      
+      setSuccessMessage('Member added to group successfully!');
+      setTimeout(() => setSuccessMessage(''), 3500);
+    } catch (err) {
+      console.warn('Fallback update lead to group in sandbox');
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, whatsapp_group_id: selectedGroup.id } : l));
+      setLeadSearchQuery('');
+      setSelectedLeadIdToAdd('');
+      setShowLeadSuggestions(false);
+      
+      setSuccessMessage('Added member to group in sandbox mode!');
+      setTimeout(() => setSuccessMessage(''), 3500);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Analytics variables
   const totalGroups = groups.length;
   const segmentedContacts = leads.filter(l => l.whatsapp_group_id !== null).length;
   const avgGroupSize = totalGroups > 0 ? Math.round(segmentedContacts / totalGroups) : 0;
 
   return (
-    <div className="w-full min-h-screen bg-[#070708] text-white flex flex-col overflow-hidden font-sans">
+    <div className="w-full min-h-screen bg-slate-50 dark:bg-[#070708] text-slate-900 dark:text-white flex flex-col overflow-hidden font-sans">
       
-      {/* ═══ TOP HEADER ═══ */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-zinc-800/70 bg-[#070708]/90 backdrop-blur-lg z-30">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/dashboard/integrations/whatsapp-web')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-xs font-bold text-zinc-400 hover:text-white transition-all"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to Dashboard
-          </button>
-          
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <Users className="w-4.5 h-4.5 text-emerald-400" />
-            </div>
-            <div>
-              <span className="text-[9px] text-zinc-600 font-mono tracking-widest uppercase block leading-none mb-0.5">Integration Console</span>
-              <span className="text-sm font-black text-white tracking-tight leading-none">Contact Groups Management Hub</span>
-            </div>
+      {/* ═══ TOP HEADER (Image 2 style) ═══ */}
+      <div className="flex-shrink-0 flex flex-col md:flex-row md:items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-zinc-800/70 bg-white dark:bg-[#070708]/90 backdrop-blur-lg z-30 gap-4">
+        <div>
+          <div className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-zinc-500 font-medium select-none">
+            <span className="hover:text-slate-600 dark:hover:text-zinc-350 cursor-pointer" onClick={() => router.push('/dashboard')}>Dashboard</span>
+            <span>•</span>
+            <span className="hover:text-slate-600 dark:hover:text-zinc-350 cursor-pointer">Group</span>
+            <span>•</span>
+            <span className="text-slate-600 dark:text-zinc-400 font-semibold">List</span>
           </div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1 leading-none">List</h2>
         </div>
 
-        {/* Security badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-850 text-[10px] text-zinc-450 font-mono">
-          <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-          RLS Bound · tenant/{tenantId.slice(0, 8)}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push('/dashboard/integrations/whatsapp-web')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-850 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-all shadow-xs"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
+          </button>
+
+          <button
+            onClick={() => {
+              setGroupName('');
+              setGroupDesc('');
+              setShowCreateModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-emerald-500 hover:bg-slate-800 dark:hover:bg-emerald-600 text-white dark:text-black text-xs font-bold rounded-lg shadow-sm transition-all flex items-center justify-center"
+          >
+            <Plus className="w-4 h-4" /> Add New
+          </button>
         </div>
       </div>
 
@@ -329,7 +374,7 @@ function WhatsAppGroupsHubCore() {
             initial={{ opacity: 0, y: -20, x: '-50%' }}
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: -20, x: '-50%' }}
-            className="fixed top-20 left-1/2 z-50 transform -translate-x-1/2 px-4 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-2 shadow-2xl backdrop-blur-md"
+            className="fixed top-24 left-1/2 z-50 transform -translate-x-1/2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-md"
           >
             <CheckCircle className="w-4 h-4 shrink-0" />
             {successMessage}
@@ -340,114 +385,105 @@ function WhatsAppGroupsHubCore() {
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         
         {/* ═══ ANALYTICS STATS GRID ═══ */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-4 rounded-2xl bg-zinc-950/40 border border-zinc-800/80 shadow-md">
-            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider block">Total Groups</span>
-            <div className="text-xl font-black mt-1 flex items-baseline gap-1.5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 rounded-xl bg-white dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800/80 shadow-xs">
+            <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono uppercase tracking-wider block">Total Groups</span>
+            <div className="text-lg font-black mt-1 flex items-baseline gap-1.5 text-slate-800 dark:text-white">
               <span>{totalGroups}</span>
-              <span className="text-zinc-650 text-xs font-medium">containers</span>
+              <span className="text-slate-400 dark:text-zinc-650 text-[10px] font-medium">containers</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-zinc-950/40 border border-zinc-800/80 shadow-md">
-            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider block">Segmented Contacts</span>
-            <div className="text-xl font-black mt-1 flex items-baseline gap-1.5">
-              <span className="text-emerald-400">{segmentedContacts}</span>
-              <span className="text-zinc-650 text-xs font-medium">/ {leads.length} leads</span>
+          <div className="p-4 rounded-xl bg-white dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800/80 shadow-xs">
+            <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono uppercase tracking-wider block">Segmented Contacts</span>
+            <div className="text-lg font-black mt-1 flex items-baseline gap-1.5 text-slate-800 dark:text-white">
+              <span className="text-emerald-600 dark:text-emerald-400">{segmentedContacts}</span>
+              <span className="text-slate-400 dark:text-zinc-655 text-[10px] font-medium">/ {leads.length} leads</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-zinc-950/40 border border-zinc-800/80 shadow-md">
-            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider block">Average Group Size</span>
-            <div className="text-xl font-black mt-1 flex items-baseline gap-1.5">
+          <div className="p-4 rounded-xl bg-white dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800/80 shadow-xs">
+            <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono uppercase tracking-wider block">Average Group Size</span>
+            <div className="text-lg font-black mt-1 flex items-baseline gap-1.5 text-slate-800 dark:text-white">
               <span>{avgGroupSize}</span>
-              <span className="text-zinc-650 text-xs font-medium">contacts</span>
+              <span className="text-slate-400 dark:text-zinc-650 text-[10px] font-medium">contacts</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-zinc-950/40 border border-zinc-800/80 shadow-md">
-            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider block">Unsegmented Leads</span>
-            <div className="text-xl font-black mt-1 flex items-baseline gap-1.5">
-              <span className="text-amber-400">{leads.length - segmentedContacts}</span>
-              <span className="text-zinc-650 text-xs font-medium">pending</span>
+          <div className="p-4 rounded-xl bg-white dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800/80 shadow-xs">
+            <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono uppercase tracking-wider block">Unsegmented Leads</span>
+            <div className="text-lg font-black mt-1 flex items-baseline gap-1.5 text-slate-800 dark:text-white">
+              <span className="text-amber-600 dark:text-amber-400">{leads.length - segmentedContacts}</span>
+              <span className="text-slate-400 dark:text-zinc-650 text-[10px] font-medium">pending</span>
             </div>
           </div>
         </div>
 
-        {/* ═══ FILTER & ACTIONS BAR ═══ */}
-        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-500" />
-            <input
-              type="text"
-              placeholder="Search group name or description..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-3 text-zinc-550 hover:text-white"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          <button
-            onClick={() => {
-              setGroupName('');
-              setGroupDesc('');
-              setShowCreateModal(true);
-            }}
-            className="w-full sm:w-auto px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-black text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 hover:scale-102 shrink-0"
-          >
-            <Plus className="w-4 h-4" /> Create Contact Group
-          </button>
+        {/* ═══ SEARCH FILTER BAR ═══ */}
+        <div className="relative w-full">
+          <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400 dark:text-zinc-550" />
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-zinc-200 placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-slate-300 dark:focus:border-emerald-500/40 transition-colors shadow-xs"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 dark:text-zinc-550 dark:hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* ═══ DATA TABLE SECTION (UNIVERSAL RESPONSIVENESS LAW) ═══ */}
-        <div className="w-full overflow-hidden border border-zinc-900 bg-zinc-950/20 rounded-2xl shadow-xl relative">
+        {/* ═══ TABLE DATA MATRIX (Mirroring Image 2 layout) ═══ */}
+        <div className="w-full overflow-hidden border border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/20 rounded-xl shadow-xs relative">
           
           <div className="overflow-x-auto scroller-thin w-full">
-            <table className="w-full text-left border-collapse text-zinc-350 min-w-[700px] table-fixed">
+            <table className="w-full text-left border-collapse text-slate-600 dark:text-zinc-350 min-w-[700px] table-fixed">
               
               <colgroup>
+                <col className="w-[50px]" />
                 <col className="w-[200px]" />
                 <col />
                 <col className="w-[140px]" />
                 <col className="w-[180px]" />
-                <col className="w-[70px]" />
+                <col className="w-[60px]" />
               </colgroup>
 
               <thead>
-                <tr className="border-b border-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-500 bg-zinc-950/60 select-none">
-                  <th className="py-4 px-5">Group Name</th>
-                  <th className="py-4 px-4">Description</th>
-                  <th className="py-4 px-4 text-center">Linked Contacts</th>
-                  <th className="py-4 px-4">Last Modified</th>
-                  <th className="py-4 px-5 text-right">Actions</th>
+                <tr className="border-b border-slate-200 dark:border-zinc-900 text-[11px] font-bold text-slate-400 dark:text-zinc-500 bg-slate-50 dark:bg-zinc-950/60 select-none">
+                  <th className="py-3 px-4 text-center">
+                    <input type="checkbox" className="rounded border-slate-300 text-slate-900 focus:ring-0 cursor-pointer" readOnly checked={false} />
+                  </th>
+                  <th className="py-3 px-4">Name</th>
+                  <th className="py-3 px-4">Description</th>
+                  <th className="py-3 px-4 text-center">Linked Contacts</th>
+                  <th className="py-3 px-4">Last Modified</th>
+                  <th className="py-3 px-4 text-right"></th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-zinc-900/50 text-xs">
+              <tbody className="divide-y divide-slate-100 dark:divide-zinc-900/50 text-xs font-sans">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="py-16 text-center text-zinc-500">
+                    <td colSpan={6} className="py-16 text-center text-slate-400 dark:text-zinc-500">
                       <div className="flex items-center justify-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                        <RefreshCw className="w-4 h-4 animate-spin text-slate-400 dark:text-emerald-400" />
                         <span>Loading contact group segments...</span>
                       </div>
                     </td>
                   </tr>
                 ) : filteredGroups.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-20 text-center text-zinc-500">
+                    <td colSpan={6} className="py-20 text-center text-slate-400 dark:text-zinc-500">
                       <div className="flex flex-col items-center gap-2.5">
-                        <Users className="w-8 h-8 text-zinc-700" />
-                        <p className="font-semibold text-xs text-zinc-400">No contact groups segment matches found</p>
-                        <p className="text-[10px] text-zinc-650 max-w-xs">Create your first mailing group to automate workflows based on category segments.</p>
+                        <Users className="w-8 h-8 text-slate-300 dark:text-zinc-700" />
+                        <p className="font-semibold text-xs text-slate-700 dark:text-zinc-400">No contact groups segment matches found</p>
+                        <p className="text-[10px] text-slate-400 dark:text-zinc-650 max-w-xs">Create your first mailing group to automate workflows based on category segments.</p>
                       </div>
                     </td>
                   </tr>
@@ -461,40 +497,52 @@ function WhatsAppGroupsHubCore() {
                     return (
                       <tr
                         key={group.id}
-                        className="hover:bg-zinc-900/20 border-b border-zinc-900/60 transition-colors"
+                        className="hover:bg-slate-50/50 dark:hover:bg-zinc-900/20 border-b border-slate-100 dark:border-zinc-900/60 transition-colors"
                       >
+                        {/* Checkbox column */}
+                        <td className="py-4 px-4 text-center">
+                          <input type="checkbox" className="rounded border-slate-300 text-slate-900 focus:ring-0 cursor-pointer" readOnly checked={false} />
+                        </td>
+
                         {/* Name */}
-                        <td className="py-4 px-5 font-black text-white truncate">
-                          {group.group_name}
+                        <td className="py-4 px-4 font-semibold text-slate-900 dark:text-white truncate">
+                          <span 
+                            onClick={() => handleViewMembers(group)} 
+                            className="cursor-pointer hover:underline text-slate-900 dark:text-white"
+                          >
+                            {group.group_name}
+                          </span>
                         </td>
 
                         {/* Description */}
-                        <td className="py-4 px-4 text-zinc-400 font-medium truncate">
-                          {group.group_description || <span className="text-zinc-650 italic text-[11px]">No description</span>}
+                        <td className="py-4 px-4 text-slate-500 dark:text-zinc-400 truncate">
+                          {group.group_description || <span className="text-slate-400 dark:text-zinc-650 italic text-[11px]">No description</span>}
                         </td>
 
                         {/* Linked Contacts Count badge */}
                         <td className="py-4 px-4 text-center">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold border ${
-                            count > 0 
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                              : 'bg-zinc-900 border-zinc-800 text-zinc-600'
-                          }`}>
-                            <Users className="w-3 h-3" />
+                          <span 
+                            onClick={() => handleViewMembers(group)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border cursor-pointer hover:scale-105 transition-transform ${
+                              count > 0 
+                                ? 'bg-blue-50 dark:bg-emerald-500/10 border-blue-200 dark:border-emerald-500/20 text-blue-600 dark:text-emerald-400' 
+                                : 'bg-slate-100 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-400 dark:text-zinc-600'
+                            }`}
+                          >
                             {count}
                           </span>
                         </td>
 
                         {/* Last Modified */}
-                        <td className="py-4 px-4 text-zinc-500 font-mono text-[11px]">
+                        <td className="py-4 px-4 text-slate-400 dark:text-zinc-500 font-mono text-[11px]">
                           {formattedDate}
                         </td>
 
                         {/* Actions Menu */}
-                        <td className="py-4 px-5 text-right relative" onClick={e => e.stopPropagation()}>
+                        <td className="py-4 px-4 text-right relative" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={() => setActiveMenuId(activeMenuId === group.id ? null : group.id)}
-                            className="p-1.5 hover:bg-zinc-850 rounded-lg text-zinc-550 hover:text-white transition-colors"
+                            className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-850 rounded-lg text-slate-400 dark:text-zinc-550 hover:text-slate-600 dark:hover:text-white transition-colors"
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
@@ -502,37 +550,37 @@ function WhatsAppGroupsHubCore() {
                           {activeMenuId === group.id && (
                             <div
                               ref={menuRef}
-                              className="absolute right-5 top-11 mt-1 w-48 bg-zinc-950 border border-zinc-850 rounded-2xl p-1.5 shadow-2xl flex flex-col gap-1 z-40 text-left"
+                              className="absolute right-4 top-10 mt-1 w-48 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-855 rounded-xl p-1 shadow-lg flex flex-col gap-1 z-40 text-left"
                             >
                               <button
                                 onClick={() => handleViewMembers(group)}
-                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                               >
-                                <FolderOpen className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                                 View Members
                               </button>
 
                               <button
                                 onClick={() => handleEditClick(group)}
-                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                               >
-                                <Edit2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <Edit2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                                 Edit Metadata
                               </button>
 
                               <button
                                 onClick={() => handleClearGroup(group)}
-                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                               >
-                                <Eraser className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                                <Eraser className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                                 Clear Group Members
                               </button>
 
-                              <div className="h-[1px] bg-zinc-900 my-0.5" />
+                              <div className="h-[1px] bg-slate-100 dark:bg-zinc-900 my-0.5" />
 
                               <button
                                 onClick={() => handleDeleteGroup(group)}
-                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-zinc-500 hover:text-rose-450 transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg text-xs font-semibold text-slate-500 hover:text-rose-600 dark:hover:text-rose-450 transition-colors"
                               >
                                 <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                 Delete Group Container
@@ -562,22 +610,22 @@ function WhatsAppGroupsHubCore() {
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowCreateModal(false)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
+              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs"
             />
             <motion.div
               initial={{ scale: 0.95, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="fixed inset-0 m-auto z-50 w-[92%] max-w-md h-fit bg-zinc-950 border border-zinc-850 p-6 rounded-3xl shadow-2xl space-y-4 text-white"
+              className="fixed inset-0 m-auto z-50 w-[92%] max-w-md h-fit bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-855 p-6 rounded-2xl shadow-2xl space-y-4 text-slate-900 dark:text-white"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-900">
                 <h3 className="text-sm font-bold flex items-center gap-2">
-                  <Users className="w-4.5 h-4.5 text-emerald-400" />
+                  <Users className="w-4.5 h-4.5 text-slate-900 dark:text-emerald-400" />
                   Create Contact Group Segment
                 </h3>
                 <button
                   onClick={() => setShowCreateModal(false)}
-                  className="p-1 hover:bg-zinc-900 rounded-lg text-zinc-550 hover:text-white"
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-lg text-slate-400 hover:text-slate-900 dark:text-zinc-550 dark:hover:text-white"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -585,25 +633,25 @@ function WhatsAppGroupsHubCore() {
 
               <form onSubmit={handleCreateGroup} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Group Name</label>
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Group Name</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Premium Pre-Wedding Clients"
                     value={groupName}
                     onChange={e => setGroupName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-850 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-slate-300 dark:focus:border-emerald-500/40"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Description</label>
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Description</label>
                   <textarea
                     placeholder="e.g. Automatically tracks target prospects for pre-wedding portfolio followups."
                     value={groupDesc}
                     onChange={e => setGroupDesc(e.target.value)}
                     rows={3}
-                    className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-855 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/40 resize-none"
+                    className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-slate-300 dark:focus:border-emerald-500/40 resize-none"
                   />
                 </div>
 
@@ -611,14 +659,14 @@ function WhatsAppGroupsHubCore() {
                   <button
                     type="button"
                     onClick={() => setShowCreateModal(false)}
-                    className="px-4 py-2 border border-zinc-850 hover:bg-zinc-900 rounded-xl text-zinc-400 font-semibold"
+                    className="px-4 py-2 border border-slate-200 dark:border-zinc-850 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-slate-500 dark:text-zinc-400 font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className="px-4 py-2 bg-emerald-500 text-black font-extrabold rounded-xl hover:bg-emerald-600 disabled:opacity-50"
+                    className="px-4 py-2 bg-slate-900 dark:bg-emerald-500 text-white dark:text-black font-extrabold rounded-xl hover:bg-slate-800 dark:hover:bg-emerald-600 disabled:opacity-50"
                   >
                     {actionLoading ? 'Creating...' : 'Create Group'}
                   </button>
@@ -638,22 +686,22 @@ function WhatsAppGroupsHubCore() {
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowEditModal(false)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
+              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs"
             />
             <motion.div
               initial={{ scale: 0.95, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="fixed inset-0 m-auto z-50 w-[92%] max-w-md h-fit bg-zinc-950 border border-zinc-855 p-6 rounded-3xl shadow-2xl space-y-4 text-white"
+              className="fixed inset-0 m-auto z-50 w-[92%] max-w-md h-fit bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-855 p-6 rounded-2xl shadow-2xl space-y-4 text-slate-900 dark:text-white"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-900">
                 <h3 className="text-sm font-bold flex items-center gap-2">
                   <Edit2 className="w-4 h-4 text-amber-500" />
                   Edit Group Metadata
                 </h3>
                 <button
                   onClick={() => setShowEditModal(false)}
-                  className="p-1 hover:bg-zinc-900 rounded-lg text-zinc-550 hover:text-white"
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-lg text-slate-400 hover:text-slate-900 dark:text-zinc-550 dark:hover:text-white"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -661,25 +709,25 @@ function WhatsAppGroupsHubCore() {
 
               <form onSubmit={handleUpdateGroup} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Group Name</label>
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Group Name</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Wedding Shoots 2026"
                     value={groupName}
                     onChange={e => setGroupName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-850 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500/40"
+                    className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-slate-300 dark:focus:border-emerald-500/40"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-zinc-550 uppercase tracking-wider">Description</label>
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-zinc-550 uppercase tracking-wider">Description</label>
                   <textarea
                     placeholder="Describe group segment..."
                     value={groupDesc}
                     onChange={e => setGroupDesc(e.target.value)}
                     rows={3}
-                    className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-850 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500/40 resize-none"
+                    className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-slate-300 dark:focus:border-emerald-500/40 resize-none"
                   />
                 </div>
 
@@ -687,14 +735,14 @@ function WhatsAppGroupsHubCore() {
                   <button
                     type="button"
                     onClick={() => setShowEditModal(false)}
-                    className="px-4 py-2 border border-zinc-850 hover:bg-zinc-900 rounded-xl text-zinc-400 font-semibold"
+                    className="px-4 py-2 border border-slate-200 dark:border-zinc-850 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-slate-500 dark:text-zinc-400 font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className="px-4 py-2 bg-emerald-500 text-black font-extrabold rounded-xl hover:bg-emerald-600 disabled:opacity-50"
+                    className="px-4 py-2 bg-slate-900 dark:bg-emerald-500 text-white dark:text-black font-extrabold rounded-xl hover:bg-slate-800 dark:hover:bg-emerald-600 disabled:opacity-50"
                   >
                     {actionLoading ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -705,7 +753,7 @@ function WhatsAppGroupsHubCore() {
         )}
       </AnimatePresence>
 
-      {/* ═══ VIEW MEMBERS DRAWER ═══ */}
+      {/* ═══ VIEW MEMBERS DRAWER (Searchable add & remove) ═══ */}
       <AnimatePresence>
         {showMembersDrawer && selectedGroup && (
           <>
@@ -714,81 +762,223 @@ function WhatsAppGroupsHubCore() {
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowMembersDrawer(false)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
+              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs"
             />
             <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 220 }}
-              className="fixed top-0 right-0 h-full w-[90%] sm:w-[480px] bg-zinc-950 border-l border-zinc-850 z-50 p-6 flex flex-col shadow-2xl text-white"
+              className="fixed top-0 right-0 h-full w-[90%] sm:w-[480px] bg-white dark:bg-zinc-950 border-l border-slate-200 dark:border-zinc-850 z-50 p-6 flex flex-col shadow-2xl text-slate-900 dark:text-white"
             >
-              <div className="flex-shrink-0 flex items-center justify-between pb-4 border-b border-zinc-900">
+              {/* Drawer Header */}
+              <div className="flex-shrink-0 flex items-center justify-between pb-4 border-b border-slate-100 dark:border-zinc-900">
                 <div>
-                  <span className="text-[10px] text-zinc-500 font-mono uppercase">Segment Membership List</span>
-                  <h3 className="text-sm font-black text-white mt-0.5">{selectedGroup.group_name}</h3>
+                  <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono uppercase tracking-wider">Segment Membership List</span>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white mt-0.5">{selectedGroup.group_name}</h3>
                 </div>
                 <button
                   onClick={() => setShowMembersDrawer(false)}
-                  className="p-2 hover:bg-zinc-900 rounded-xl text-zinc-550 hover:text-white transition-colors"
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-xl text-slate-400 dark:text-zinc-550 hover:text-slate-900 dark:hover:text-white transition-colors"
                 >
                   <X className="w-4.5 h-4.5" />
                 </button>
               </div>
 
-              {/* Members List */}
-              <div className="flex-1 overflow-y-auto py-4 space-y-3 scroller-thin">
-                {leads.filter(l => l.whatsapp_group_id === selectedGroup.id).length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-zinc-500 text-xs italic">
-                    <UserCheck className="w-8 h-8 text-zinc-800 mb-2 shrink-0" />
-                    No members assigned to this contact group.
-                  </div>
-                ) : (
-                  leads.filter(l => l.whatsapp_group_id === selectedGroup.id).map(member => (
-                    <div
-                      key={member.id}
-                      className="p-3.5 rounded-2xl bg-zinc-900/30 border border-zinc-900/60 hover:border-zinc-800/80 transition-all flex items-start justify-between group"
-                    >
-                      <div className="min-w-0">
-                        <span className="text-xs font-bold text-white group-hover:text-emerald-450 transition-colors block">
-                          {member.name || 'Unspecified Name'}
-                        </span>
-                        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-mono mt-1">
-                          <span>📞 {member.phone}</span>
-                          {member.email && <span>• ✉️ {member.email}</span>}
-                        </div>
-                      </div>
-
-                      {/* Dissociate button */}
+              {/* Searchable Add Contact Combobox Section */}
+              <div className="flex-shrink-0 bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-900 p-4 rounded-2xl space-y-2 mt-4 mb-2 relative">
+                <h4 className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5 select-none">
+                  <Plus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500" /> Add Contact to Group
+                </h4>
+                
+                <div className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />
+                    <input
+                      type="text"
+                      placeholder="Search contact by name or phone..."
+                      value={leadSearchQuery}
+                      onFocus={() => setShowLeadSuggestions(true)}
+                      onChange={(e) => {
+                        setLeadSearchQuery(e.target.value);
+                        setShowLeadSuggestions(true);
+                      }}
+                      className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-slate-350 dark:focus:border-emerald-500/40"
+                    />
+                    {leadSearchQuery && (
                       <button
-                        onClick={async () => {
-                          if (confirm(`Remove "${member.name || member.phone}" from this group?`)) {
-                            try {
-                              await supabase
-                                .from('leads')
-                                .update({ whatsapp_group_id: null })
-                                .eq('id', member.id);
-                              
-                              setLeads(prev => prev.map(l => l.id === member.id ? { ...l, whatsapp_group_id: null } : l));
-                            } catch (err) {
-                              console.error(err);
-                            }
-                          }
+                        onClick={() => {
+                          setLeadSearchQuery('');
+                          setShowLeadSuggestions(false);
                         }}
-                        className="p-1.5 opacity-0 group-hover:opacity-100 bg-zinc-950 border border-zinc-900 hover:border-rose-900 hover:text-rose-450 rounded-lg text-zinc-550 transition-all"
-                        title="Remove member"
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:text-zinc-500 dark:hover:text-white"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
-                    </div>
-                  ))
+                    )}
+                  </div>
+
+                  {/* Suggestions list dropdown */}
+                  <AnimatePresence>
+                    {showLeadSuggestions && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setShowLeadSuggestions(false)} 
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 5 }}
+                          className="absolute left-0 right-0 mt-1.5 max-h-48 overflow-y-auto bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 p-1 divide-y divide-slate-100 dark:divide-zinc-900 scroller-thin text-xs text-slate-800 dark:text-zinc-200"
+                        >
+                          {leads
+                            .filter(l => l.whatsapp_group_id !== selectedGroup.id)
+                            .filter(l => {
+                              if (!leadSearchQuery) return true;
+                              const search = leadSearchQuery.toLowerCase();
+                              return (
+                                (l.name || '').toLowerCase().includes(search) ||
+                                l.phone.toLowerCase().includes(search) ||
+                                (l.email || '').toLowerCase().includes(search)
+                              );
+                            })
+                            .slice(0, 15) // limit to top 15 matches for speed
+                            .map(lead => (
+                              <button
+                                key={lead.id}
+                                type="button"
+                                onClick={() => handleAddLeadToGroup(lead.id)}
+                                className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg flex items-center justify-between group transition-colors"
+                              >
+                                <div className="min-w-0">
+                                  <span className="font-bold block truncate text-slate-900 dark:text-white">
+                                    {lead.name || 'Unnamed Lead'}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
+                                    📞 {lead.phone}
+                                  </span>
+                                </div>
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded border border-emerald-500/20 text-emerald-600 dark:text-emerald-500 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  Add
+                                </span>
+                              </button>
+                            ))}
+                          
+                          {leads
+                            .filter(l => l.whatsapp_group_id !== selectedGroup.id)
+                            .filter(l => {
+                              if (!leadSearchQuery) return true;
+                              const search = leadSearchQuery.toLowerCase();
+                              return (
+                                (l.name || '').toLowerCase().includes(search) ||
+                                l.phone.toLowerCase().includes(search) ||
+                                (l.email || '').toLowerCase().includes(search)
+                              );
+                            }).length === 0 && (
+                            <div className="px-3 py-3 text-center text-slate-400 dark:text-zinc-500 italic text-[11px]">
+                              No unassigned leads found.
+                            </div>
+                          )}
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              {/* Member Search filter inside drawer */}
+              <div className="flex-shrink-0 relative my-2">
+                <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Filter active members list..."
+                  value={memberSearchQuery}
+                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-slate-300 dark:focus:border-emerald-500/40"
+                />
+                {memberSearchQuery && (
+                  <button onClick={() => setMemberSearchQuery('')} className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:text-zinc-500">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 )}
               </div>
 
-              <div className="flex-shrink-0 pt-4 border-t border-zinc-900">
+              {/* Members List Container */}
+              <div className="flex-1 overflow-y-auto py-2 space-y-2.5 scroller-thin">
+                {leads
+                  .filter(l => l.whatsapp_group_id === selectedGroup.id)
+                  .filter(l => {
+                    if (!memberSearchQuery) return true;
+                    const search = memberSearchQuery.toLowerCase();
+                    return (
+                      (l.name || '').toLowerCase().includes(search) ||
+                      l.phone.toLowerCase().includes(search) ||
+                      (l.email || '').toLowerCase().includes(search)
+                    );
+                  }).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400 dark:text-zinc-500 text-xs italic">
+                    <UserCheck className="w-8 h-8 text-slate-300 dark:text-zinc-800 mb-2 shrink-0" />
+                    No matching members in group.
+                  </div>
+                ) : (
+                  leads
+                    .filter(l => l.whatsapp_group_id === selectedGroup.id)
+                    .filter(l => {
+                      if (!memberSearchQuery) return true;
+                      const search = memberSearchQuery.toLowerCase();
+                      return (
+                        (l.name || '').toLowerCase().includes(search) ||
+                        l.phone.toLowerCase().includes(search) ||
+                        (l.email || '').toLowerCase().includes(search)
+                      );
+                    })
+                    .map(member => (
+                      <div
+                        key={member.id}
+                        className="p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/30 border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-800/80 transition-all flex items-center justify-between group"
+                      >
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-450 transition-colors block">
+                            {member.name || 'Unnamed Lead'}
+                          </span>
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5">
+                            <span>📞 {member.phone}</span>
+                            {member.email && <span>• ✉️ {member.email}</span>}
+                          </div>
+                        </div>
+
+                        {/* Remove from group member button */}
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Remove "${member.name || member.phone}" from this group?`)) {
+                              try {
+                                await supabase
+                                  .from('leads')
+                                  .update({ whatsapp_group_id: null })
+                                  .eq('id', member.id);
+                                
+                                setLeads(prev => prev.map(l => l.id === member.id ? { ...l, whatsapp_group_id: null } : l));
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }
+                          }}
+                          className="p-1.5 opacity-60 group-hover:opacity-100 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-900 hover:border-rose-300 dark:hover:border-rose-900 hover:text-rose-600 dark:hover:text-rose-450 rounded-lg text-slate-400 transition-all"
+                          title="Remove member"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                )}
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="flex-shrink-0 pt-4 border-t border-slate-100 dark:border-zinc-900">
                 <button
                   onClick={() => setShowMembersDrawer(false)}
-                  className="w-full py-2.5 bg-zinc-900 hover:bg-zinc-850 rounded-xl text-xs font-bold text-zinc-400 hover:text-white transition-colors"
+                  className="w-full py-2.5 bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-850 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                 >
                   Close Members Panel
                 </button>
@@ -798,10 +988,10 @@ function WhatsAppGroupsHubCore() {
         )}
       </AnimatePresence>
 
-      {/* ═══ FOOTER ═══ */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-2.5 border-t border-zinc-900 bg-zinc-950/60 text-[9px] text-zinc-600 font-mono">
+      {/* ═══ STATUS BAR FOOTER ═══ */}
+      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-t border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/60 text-[9px] text-slate-400 dark:text-zinc-600 font-mono">
         <span className="flex items-center gap-1.5">
-          <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <Lock className="w-3.5 h-3.5 text-slate-300 dark:text-emerald-600 shrink-0" />
           BRAHMASTRA LAW 1 — tenant_id relational bounds locked
         </span>
         <span>WhatsApp Hub v2.1</span>

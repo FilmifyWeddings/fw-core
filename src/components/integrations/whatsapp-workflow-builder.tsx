@@ -765,16 +765,34 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
             </div>
             
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5 text-xs text-zinc-350">
-                <span className="text-[9px] uppercase font-bold text-zinc-500">Flow Status:</span>
-                <select
-                  value={workflowStatus}
-                  onChange={e => setWorkflowStatus(e.target.value as any)}
-                  className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer border-none"
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-350">
+                <span className="text-[9px] uppercase font-bold text-zinc-500">Status</span>
+                <button
+                  type="button"
+                  onClick={() => setWorkflowStatus(prev => prev === 'Active' ? 'Inactive' : 'Active')}
+                  className={`relative w-22 h-7 rounded-full p-1 transition-all duration-300 flex items-center cursor-pointer border ${
+                    workflowStatus === 'Active'
+                      ? 'bg-emerald-950/60 border-emerald-500/30'
+                      : 'bg-zinc-900 border-zinc-800'
+                  }`}
                 >
-                  <option value="Active" className="bg-zinc-950 text-white">Active</option>
-                  <option value="Inactive" className="bg-zinc-950 text-white">Inactive</option>
-                </select>
+                  {/* Sliding circle */}
+                  <motion.div
+                    animate={{ x: workflowStatus === 'Active' ? 56 : 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                    className={`w-5 h-5 rounded-full ${
+                      workflowStatus === 'Active' ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-zinc-650'
+                    }`}
+                  />
+                  {/* Active / Inactive Text */}
+                  <span className={`absolute text-[8.5px] font-black uppercase tracking-wider select-none transition-colors duration-300 ${
+                    workflowStatus === 'Active' 
+                      ? 'left-2.5 text-emerald-400' 
+                      : 'right-2.5 text-zinc-550'
+                  }`}>
+                    {workflowStatus}
+                  </span>
+                </button>
               </div>
 
               <button
@@ -835,14 +853,63 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                   {steps.map((step, index) => (
                     <React.Fragment key={index}>
                       
-                      {/* 3D Glassmorphic Drip Node */}
+                      {/* 3D Glassmorphic Delay Cooldown Card (rendered BEFORE the node card) */}
+                      <div className="flex flex-col items-center select-none relative my-2">
+                        {/* Connecting Line Segment Above Delay Card */}
+                        <div className="w-[2px] h-6 bg-gradient-to-b from-emerald-500/80 to-emerald-450 relative shadow-[0_0_8px_rgba(16,185,129,0.5)]">
+                          {index === 0 && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />}
+                        </div>
+
+                        {/* 3D Glassmorphic Delay Card */}
+                        <motion.div
+                          whileHover={{ scale: 1.03 }}
+                          className="my-1.5 px-4 py-2.5 rounded-2xl bg-[#09090b]/80 border border-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.1)] flex items-center gap-3 w-fit mx-auto relative z-10 hover:border-emerald-500/30 transition-all duration-300"
+                        >
+                          <div className="flex items-center gap-2 pr-2.5 border-r border-zinc-800/80">
+                            <Calendar className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                            <div className="text-left">
+                              <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block leading-none">Drip Delay</span>
+                              <span className="text-[9px] text-white font-extrabold block leading-none mt-0.5">
+                                {index === 0 ? 'Trigger Delay' : `Delay #${index + 1}`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              required
+                              min="0"
+                              placeholder="30"
+                              value={step.delay_value}
+                              onChange={(e) => handleUpdateStep(index, 'delay_value', parseInt(e.target.value) || 0)}
+                              className="w-14 px-2 py-1 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs font-bold text-zinc-200 text-center focus:outline-none focus:border-emerald-500/40"
+                            />
+                            <select
+                              value={step.delay_unit}
+                              onChange={(e) => handleUpdateStep(index, 'delay_unit', e.target.value)}
+                              className="px-2 py-1 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none cursor-pointer focus:border-emerald-500/40"
+                            >
+                              <option value="seconds" className="bg-zinc-950 text-white">Seconds</option>
+                              <option value="hours" className="bg-zinc-950 text-white">Hours</option>
+                            </select>
+                          </div>
+                        </motion.div>
+
+                        {/* Connecting Line Segment Below Delay Card */}
+                        <div className="w-[2px] h-6 bg-gradient-to-b from-emerald-450 to-emerald-500/80 relative shadow-[0_0_8px_rgba(16,185,129,0.5)]">
+                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />
+                        </div>
+                      </div>
+
+                      {/* 3D Glassmorphic Drip Node (compact layout) */}
                       <div
                         draggable
                         onDragStart={() => handleDragStart(index)}
                         onDragEnter={() => handleDragEnter(index)}
                         onDragEnd={handleDragEnd}
                         onDragOver={(e) => e.preventDefault()}
-                        className="p-5 rounded-2xl backdrop-blur-md bg-white/5 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] hover:bg-white/10 flex flex-col md:flex-row items-center gap-4 transition-all relative group"
+                        className="p-4 rounded-2xl backdrop-blur-md bg-white/5 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] hover:bg-white/10 flex items-center gap-4 transition-all relative group"
                       >
                         {/* Drag Handle & Node Index */}
                         <div className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing text-zinc-550 hover:text-white transition-colors shrink-0">
@@ -858,7 +925,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           <select
                             value={step.template_name}
                             onChange={(e) => handleUpdateStep(index, 'template_name', e.target.value)}
-                            className="w-full px-3 py-2 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none"
+                            className="w-full px-3 py-2 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40"
                           >
                             <option value="">Select Template</option>
                             {templates.map(t => (
@@ -867,54 +934,15 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           </select>
                         </div>
 
-                        {/* Custom Delay Matrix: Number + Unit */}
-                        <div className="w-full md:w-64 space-y-1">
-                          <label className="text-[9px] font-bold text-zinc-455 uppercase tracking-wider flex items-center gap-1">
-                            Delay Cooldown <span className="text-[8px] text-zinc-650 font-mono font-normal">(Relative to Ingestion)</span>
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="number"
-                              required
-                              min="0"
-                              placeholder="30"
-                              value={step.delay_value}
-                              onChange={(e) => handleUpdateStep(index, 'delay_value', parseInt(e.target.value) || 0)}
-                              className="w-20 px-3 py-2 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-650 focus:outline-none text-center"
-                            />
-                            <select
-                              value={step.delay_unit}
-                              onChange={(e) => handleUpdateStep(index, 'delay_unit', e.target.value)}
-                              className="flex-1 px-3 py-2 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none cursor-pointer"
-                            >
-                              <option value="seconds">Seconds</option>
-                              <option value="hours">Hours</option>
-                            </select>
-                          </div>
-                          <span className="text-[8.5px] text-zinc-550 block font-sans leading-none pt-1">
-                            Runs exactly {step.delay_value} {step.delay_unit} after lead creation.
-                          </span>
-                        </div>
-
                         {/* Delete Node Step */}
                         <button
                           type="button"
                           onClick={() => handleDeleteStep(index)}
-                          className="p-2 text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all md:self-end shrink-0"
+                          className="p-2 text-zinc-650 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all shrink-0"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-
-                      {/* Glowing vertical linking line featuring a fluid animated gradient pulse */}
-                      {index < steps.length - 1 && (
-                        <div className="flex flex-col items-center py-2 select-none">
-                          <div className="w-[2px] h-8 bg-gradient-to-b from-emerald-500 via-emerald-400 to-transparent relative animate-pulse shadow-[0_0_8px_#10b981]">
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                          </div>
-                          <span className="text-[8px] text-zinc-600 font-mono tracking-widest uppercase my-0.5">drip execution delay flow</span>
-                        </div>
-                      )}
 
                     </React.Fragment>
                   ))}
