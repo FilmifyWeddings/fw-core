@@ -24,7 +24,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { sendMessageServerless, normalizeJid } from '@/lib/baileys-serverless';
+import { sendMessageServerless, normalizeJid, processSingleQueuedAction } from '@/lib/baileys-serverless';
 
 // Tell Vercel this route can run up to 60 seconds (Pro plan)
 export const maxDuration = 60;
@@ -47,199 +47,6 @@ function validateWebhookSecret(req: NextRequest): boolean {
   return providedSecret === secret;
 }
 
-// ─── Action Processor ─────────────────────────────────────────────────────────
-async function processQueuedAction(action: {
-  id: string;
-  workspace_id: string;
-  action_type: string;
-  payload: Record<string, unknown>;
-}): Promise<{ success: boolean; error?: string; waMessageId?: string }> {
-  const { workspace_id, action_type, payload } = action;
-
-  // Build SendPayload from action
-  switch (action_type) {
-    case 'send_text': {
-      const { to, text } = payload as { to: string; text: string };
-      return sendMessageServerless(supabaseAdmin, workspace_id, {
-        to: normalizeJid(to),
-        type: 'text',
-        text,
-      });
-    }
-
-    case 'send_media': {
-      const { to, mediaUrl, caption, mimeType } = payload as {
-        to: string; mediaUrl: string; caption?: string; mimeType: string;
-      };
-      const mediaType = mimeType.startsWith('image/') ? 'image' :
-                        mimeType.startsWith('video/') ? 'video' :
-                        mimeType.startsWith('audio/') ? 'audio' : 'document';
-
-      return sendMessageServerless(supabaseAdmin, workspace_id, {
-        to: normalizeJid(to),
-        type: mediaType as 'image' | 'video' | 'audio' | 'document',
-        mediaUrl,
-        caption,
-        mimeType,
-      });
-    }
-
-    case 'send_template': {
-      const { to, templateId, variables } = payload as {
-        to: string; templateId: string; variables?: Record<string, string>;
-      };
-
-      let tpl: any = null;
-
-      // 1. Try querying tenant_whatsapp_templates first (Law 1 Multi-Tenancy RLS compliant)
-      const { data: tenantTpl, error: tenantTplErr } = await supabaseAdmin
-        .from('tenant_whatsapp_templates')
-        .select('*')
-        .eq('id', templateId)
-        .eq('tenant_id', workspace_id)
-        .maybeSingle();
-
-      if (!tenantTplErr && tenantTpl) {
-        tpl = {
-          id: tenantTpl.id,
-          name: tenantTpl.template_name,
-          type: tenantTpl.media_url_payload ? 'media' : 'text',
-          payload: {
-            body: tenantTpl.body_text || '',
-            mediaUrl: tenantTpl.media_url_payload || ''
-          },
-          buttons: []
-        };
-      } else {
-        // 2. Fallback to legacy whatsapp_templates
-        const { data: legacyTpl } = await supabaseAdmin
-          .from('whatsapp_templates')
-          .select('*')
-          .eq('id', templateId)
-          .eq('workspace_id', workspace_id)
-          .maybeSingle();
-
-        if (legacyTpl) {
-          tpl = legacyTpl;
-        }
-      }
-
-      if (!tpl) return { success: false, error: `Template ${templateId} not found in workspace/tenant templates.` };
-
-      const tplPayload = tpl.payload || {};
-      const tplButtons = tpl.buttons || [];
-
-      // Replace placeholders in body/question
-      let body = (tplPayload.body || tplPayload.question || '') as string;
-      if (variables) {
-        for (const [key, val] of Object.entries(variables)) {
-          body = body.replaceAll(`{${key}}`, val).replaceAll(`{{${key}}}`, val);
-        }
-      }
-
-      // ─── Case 1: Poll Template ──────────────────────────────────
-      if (tpl.type === 'poll') {
-        const options = (tplPayload.options || []).map((o: any) => o.text).filter(Boolean);
-        return sendMessageServerless(supabaseAdmin, workspace_id, {
-          to: normalizeJid(to),
-          type: 'poll',
-          text: body,
-          pollOptions: options,
-          pollSelectableCount: tplPayload.allowMultiple ? 0 : 1,
-        });
-      }
-
-      // ─── Case 2: Media Template ──────────────────────────────────
-      if (tpl.type === 'media') {
-        const mediaUrl = tplPayload.mediaUrl || tplPayload.default_send_media_url;
-        const mimeType = tplPayload.mediaMime || tplPayload.default_send_media_mime || 'application/pdf';
-        
-        // Append footer if exists
-        if (tplPayload.footer) {
-          body += `\n\n_${tplPayload.footer}_`;
-        }
-
-        // Append formatted buttons for compatibility
-        if (tplButtons.length > 0) {
-          body += `\n\n`;
-          tplButtons.forEach((btn: any, index: number) => {
-            body += `[${index + 1}] ${btn.text}\n`;
-          });
-        }
-
-        const mediaType = mimeType.startsWith('image/') ? 'image' :
-                          mimeType.startsWith('video/') ? 'video' :
-                          mimeType.startsWith('audio/') ? 'audio' : 'document';
-
-        return sendMessageServerless(supabaseAdmin, workspace_id, {
-          to: normalizeJid(to),
-          type: mediaType as any,
-          mediaUrl,
-          caption: body,
-          mimeType,
-          fileName: tplPayload.fileName || 'document',
-        });
-      }
-
-      // ─── Case 3: List / Button / Text Template ──────────────────
-      // For maximum compatibility and reliable delivery, format list sections and buttons as text.
-      if (tplPayload.footer) {
-        body += `\n\n_${tplPayload.footer}_`;
-      }
-
-      // Format List sections if it's a List template
-      if (tpl.type === 'list' && tplPayload.sections) {
-        body += `\n\n*${tplPayload.buttonText || 'Options'}*`;
-        tplPayload.sections.forEach((sec: any) => {
-          body += `\n\n*${sec.title}*:`;
-          (sec.rows || []).forEach((row: any) => {
-            body += `\n- ${row.title}${row.desc || row.description ? ` (${row.desc || row.description})` : ''}`;
-          });
-        });
-      }
-
-      // Format standard buttons
-      if (tplButtons.length > 0) {
-        body += `\n\n`;
-        tplButtons.forEach((btn: any, index: number) => {
-          body += `[${index + 1}] ${btn.text}\n`;
-        });
-      }
-
-      return sendMessageServerless(supabaseAdmin, workspace_id, {
-        to: normalizeJid(to),
-        type: 'text',
-        text: body,
-      });
-    }
-
-    case 'group_dispatch': {
-      const { groupJid, leadData } = payload as {
-        groupJid: string;
-        leadData: { name?: string; phone?: string; email?: string; source?: string };
-      };
-
-      const card =
-        `🎯 *NEW LEAD ALERT*\n\n` +
-        `👤 *Name:* ${leadData.name ?? 'Unknown'}\n` +
-        `📞 *Phone:* ${leadData.phone ?? '—'}\n` +
-        `📧 *Email:* ${leadData.email ?? '—'}\n` +
-        `🔗 *Source:* ${leadData.source ?? '—'}\n` +
-        `🕐 *Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n` +
-        `_FW Core — Automated Lead Alert_`;
-
-      return sendMessageServerless(supabaseAdmin, workspace_id, {
-        to: groupJid,
-        type: 'text',
-        text: card,
-      });
-    }
-
-    default:
-      return { success: false, error: `Unknown action type: ${action_type}` };
-  }
-}
-
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   // 1. Validate webhook secret
@@ -256,7 +63,6 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Parse Supabase webhook payload
-  // Supabase sends: { type: "INSERT", table: "baileys_action_queue", record: {...}, schema: "public" }
   const eventType = body.type as string;
   const record = body.record as {
     id: string;
@@ -264,6 +70,7 @@ export async function POST(req: NextRequest) {
     action_type: string;
     payload: Record<string, unknown>;
     status: string;
+    next_retry_at?: string;
   } | undefined;
 
   if (!record || eventType !== 'INSERT') {
@@ -274,6 +81,12 @@ export async function POST(req: NextRequest) {
   if (record.status !== 'pending') {
     console.log('[webhook-trigger] Action not pending, skipping');
     return NextResponse.json({ skipped: true, reason: 'not_pending' });
+  }
+
+  // Skip immediate webhook dispatches for future-scheduled actions
+  if (record.next_retry_at && new Date(record.next_retry_at) > new Date()) {
+    console.log(`[webhook-trigger] Action ${record.id} is scheduled for the future (${record.next_retry_at}), skipping immediate execution`);
+    return NextResponse.json({ skipped: true, reason: 'scheduled_in_future' });
   }
 
   console.log(`[webhook-trigger] Processing action: ${record.id} (${record.action_type})`);
@@ -289,8 +102,7 @@ export async function POST(req: NextRequest) {
     .eq('id', record.id);
 
   // 4. Process the action (send message via serverless hydration)
-  const result = await processQueuedAction({
-    id: record.id,
+  const result = await processSingleQueuedAction(supabaseAdmin, {
     workspace_id: record.workspace_id,
     action_type: record.action_type,
     payload: record.payload,

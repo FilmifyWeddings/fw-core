@@ -247,7 +247,7 @@ export async function getOrCreateSocket(
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
       console.log(`[manager] WhatsApp socket closed for workspace ${workspaceId}. Code: ${statusCode}`);
-      
+
       if (statusCode === 401) {
         console.log(`[manager] Credentials rejected for ${workspaceId}. Resetting session...`);
         globalSockets.delete(workspaceId);
@@ -264,6 +264,17 @@ export async function getOrCreateSocket(
             qr_string: null,
             creds_json: null,
             keys_json: null,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id' });
+      } else if (statusCode === 440) {
+        console.warn(`[manager] Connection replaced (Code 440) for workspace ${workspaceId}. Another socket took over. Stopping auto-reconnect.`);
+        globalSockets.delete(workspaceId);
+        await supabaseAdmin
+          .from('baileys_sessions')
+          .upsert({
+            workspace_id: workspaceId,
+            conn_state: 'disconnected',
+            qr_string: null,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id' });
       } else {
@@ -671,4 +682,356 @@ export async function generateQrServerless(
       finish();
     });
   });
+}
+
+// ─── QUEUE PROCESSOR & POLL ENGINE (SELF-CONTAINED IN NEXT.JS RUNTIME) ─────────
+
+const workspaceLocks = new Map<string, number>();
+
+function acquireLock(workspaceId: string): boolean {
+  const now = Date.now();
+  const expiry = workspaceLocks.get(workspaceId);
+  if (expiry && expiry > now) return false;
+  workspaceLocks.set(workspaceId, now + 30000); // 30s lock
+  return true;
+}
+
+function releaseLock(workspaceId: string) {
+  workspaceLocks.delete(workspaceId);
+}
+
+export async function processSingleQueuedAction(
+  supabaseAdmin: SupabaseClient,
+  action: {
+    workspace_id: string;
+    action_type: string;
+    payload: Record<string, any>;
+  }
+): Promise<{ success: boolean; error?: string; waMessageId?: string }> {
+  const { workspace_id, action_type, payload } = action;
+
+  switch (action_type) {
+    case 'send_text': {
+      const { to, text } = payload as { to: string; text: string };
+      return sendMessageServerless(supabaseAdmin, workspace_id, {
+        to: normalizeJid(to),
+        type: 'text',
+        text,
+      });
+    }
+
+    case 'send_media': {
+      const { to, mediaUrl, caption, mimeType } = payload as {
+        to: string; mediaUrl: string; caption?: string; mimeType: string;
+      };
+      const mediaType = mimeType.startsWith('image/') ? 'image' :
+                        mimeType.startsWith('video/') ? 'video' :
+                        mimeType.startsWith('audio/') ? 'audio' : 'document';
+
+      return sendMessageServerless(supabaseAdmin, workspace_id, {
+        to: normalizeJid(to),
+        type: mediaType as any,
+        mediaUrl,
+        caption,
+        mimeType,
+      });
+    }
+
+    case 'send_template': {
+      const { to, templateId, variables } = payload as {
+        to: string; templateId: string; variables?: Record<string, string>;
+      };
+
+      let tpl: any = null;
+
+      // 1. Try querying tenant_whatsapp_templates first
+      const { data: tenantTpl, error: tenantTplErr } = await supabaseAdmin
+        .from('tenant_whatsapp_templates')
+        .select('*')
+        .eq('id', templateId)
+        .eq('tenant_id', workspace_id)
+        .maybeSingle();
+
+      if (!tenantTplErr && tenantTpl) {
+        tpl = {
+          id: tenantTpl.id,
+          name: tenantTpl.template_name,
+          type: tenantTpl.media_url_payload ? 'media' : 'text',
+          payload: {
+            body: tenantTpl.body_text || '',
+            mediaUrl: tenantTpl.media_url_payload || ''
+          },
+          buttons: []
+        };
+      } else {
+        // 2. Fallback to legacy whatsapp_templates
+        const { data: legacyTpl } = await supabaseAdmin
+          .from('whatsapp_templates')
+          .select('*')
+          .eq('id', templateId)
+          .eq('workspace_id', workspace_id)
+          .maybeSingle();
+
+        if (legacyTpl) {
+          tpl = legacyTpl;
+        }
+      }
+
+      if (!tpl) return { success: false, error: `Template ${templateId} not found in workspace/tenant templates.` };
+
+      const tplPayload = tpl.payload || {};
+      const tplButtons = tpl.buttons || [];
+
+      let body = (tplPayload.body || tplPayload.question || '') as string;
+      if (variables) {
+        for (const [key, val] of Object.entries(variables)) {
+          body = body.replaceAll(`{${key}}`, val).replaceAll(`{{${key}}}`, val);
+        }
+      }
+
+      if (tpl.type === 'poll') {
+        const options = (tplPayload.options || []).map((o: any) => o.text).filter(Boolean);
+        return sendMessageServerless(supabaseAdmin, workspace_id, {
+          to: normalizeJid(to),
+          type: 'poll',
+          text: body,
+          pollOptions: options,
+          pollSelectableCount: tplPayload.allowMultiple ? 0 : 1,
+        });
+      }
+
+      if (tpl.type === 'media') {
+        const mediaUrl = tplPayload.mediaUrl || tplPayload.default_send_media_url;
+        const mimeType = tplPayload.mediaMime || tplPayload.default_send_media_mime || 'application/pdf';
+        
+        if (tplPayload.footer) {
+          body += `\n\n_${tplPayload.footer}_`;
+        }
+
+        if (tplButtons.length > 0) {
+          body += `\n\n`;
+          tplButtons.forEach((btn: any, index: number) => {
+            body += `[${index + 1}] ${btn.text}\n`;
+          });
+        }
+
+        const mediaType = mimeType.startsWith('image/') ? 'image' :
+                          mimeType.startsWith('video/') ? 'video' :
+                          mimeType.startsWith('audio/') ? 'audio' : 'document';
+
+        return sendMessageServerless(supabaseAdmin, workspace_id, {
+          to: normalizeJid(to),
+          type: mediaType as any,
+          mediaUrl,
+          caption: body,
+          mimeType,
+          fileName: tplPayload.fileName || 'document',
+        });
+      }
+
+      if (tplPayload.footer) {
+        body += `\n\n_${tplPayload.footer}_`;
+      }
+
+      if (tpl.type === 'list' && tplPayload.sections) {
+        body += `\n\n*${tplPayload.buttonText || 'Options'}*`;
+        tplPayload.sections.forEach((sec: any) => {
+          body += `\n\n*${sec.title}*:`;
+          (sec.rows || []).forEach((row: any) => {
+            body += `\n- ${row.title}${row.desc || row.description ? ` (${row.desc || row.description})` : ''}`;
+          });
+        });
+      }
+
+      if (tplButtons.length > 0) {
+        body += `\n\n`;
+        tplButtons.forEach((btn: any, index: number) => {
+          body += `[${index + 1}] ${btn.text}\n`;
+        });
+      }
+
+      return sendMessageServerless(supabaseAdmin, workspace_id, {
+        to: normalizeJid(to),
+        type: 'text',
+        text: body,
+      });
+    }
+
+    case 'group_dispatch': {
+      const { groupJid, leadData } = payload as {
+        groupJid: string;
+        leadData: { name?: string; phone?: string; email?: string; source?: string };
+      };
+
+      const card =
+        `🎯 *NEW LEAD ALERT*\n\n` +
+        `👤 *Name:* ${leadData.name ?? 'Unknown'}\n` +
+        `📞 *Phone:* ${leadData.phone ?? '—'}\n` +
+        `📧 *Email:* ${leadData.email ?? '—'}\n` +
+        `🔗 *Source:* ${leadData.source ?? '—'}\n` +
+        `🕐 *Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n` +
+        `_FW Core — Automated Lead Alert_`;
+
+      return sendMessageServerless(supabaseAdmin, workspace_id, {
+        to: groupJid,
+        type: 'text',
+        text: card,
+      });
+    }
+
+    default:
+      return { success: false, error: `Unknown action type: ${action_type}` };
+  }
+}
+
+export function startQueuePoller(supabaseAdmin: SupabaseClient) {
+  if ((globalThis as any).__baileysQueuePollerInitialized) {
+    console.log('[poller] Baileys background queue poller already initialized, skipping.');
+    return;
+  }
+  (globalThis as any).__baileysQueuePollerInitialized = true;
+  console.log('[poller] Starting Baileys background queue poller (5s interval)...');
+
+  setInterval(async () => {
+    const activeWorkspaceIds = Array.from(globalSockets.keys()) as string[];
+    if (activeWorkspaceIds.length === 0) return;
+
+    for (const workspaceId of activeWorkspaceIds) {
+      if (!acquireLock(workspaceId)) continue;
+
+      try {
+        const now = new Date().toISOString();
+        const { data: actions, error } = await supabaseAdmin
+          .from('baileys_action_queue')
+          .select('*')
+          .eq('workspace_id', workspaceId)
+          .eq('status', 'pending')
+          .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
+          .order('priority', { ascending: true })
+          .order('created_at', { ascending: true })
+          .limit(3);
+
+        if (error || !actions || actions.length === 0) {
+          releaseLock(workspaceId);
+          continue;
+        }
+
+        console.log(`[poller] Draining ${actions.length} actions for workspace ${workspaceId}...`);
+
+        for (const action of actions) {
+          // Claim action
+          const { data: claimed, error: claimErr } = await supabaseAdmin
+            .from('baileys_action_queue')
+            .update({
+              status: 'processing',
+              attempt_count: action.attempt_count + 1,
+              processed_at: new Date().toISOString()
+            })
+            .eq('id', action.id)
+            .eq('status', 'pending')
+            .select();
+
+          if (claimErr || !claimed || claimed.length === 0) continue;
+
+          try {
+            const result = await processSingleQueuedAction(supabaseAdmin, action);
+            if (!result.success) throw new Error(result.error || 'Execution returned success=false');
+
+            await supabaseAdmin
+              .from('baileys_action_queue')
+              .update({
+                status: 'done',
+                result_message_id: result.waMessageId || null,
+                error_message: null
+              })
+              .eq('id', action.id);
+
+            await supabaseAdmin.from('live_logs').insert({
+              workspace_id: workspaceId,
+              event_type: 'queue_action_done',
+              message: `Action ${action.action_type} [${action.id}] completed successfully.`,
+              metadata: { action_id: action.id, wa_message_id: result.waMessageId }
+            });
+          } catch (err: any) {
+            const errMsg = err.message || String(err);
+            const newAttemptCount = action.attempt_count + 1;
+
+            if (newAttemptCount >= 5) {
+              await supabaseAdmin
+                .from('baileys_action_queue')
+                .update({
+                  status: 'failed',
+                  error_message: `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
+                  next_retry_at: null
+                })
+                .eq('id', action.id);
+
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: workspaceId,
+                event_type: 'queue_action_failed',
+                message: `⚠️ Action ${action.action_type} [${action.id}] permanently failed after 5 attempts.`,
+                metadata: { action_id: action.id, error: errMsg }
+              });
+            } else {
+              const jitter = Math.floor(Math.random() * 5000);
+              const delayMs = 15000 * Math.pow(4, newAttemptCount) + jitter;
+              const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+
+              await supabaseAdmin
+                .from('baileys_action_queue')
+                .update({
+                  status: 'pending',
+                  error_message: `[Attempt ${newAttemptCount}/5] Failed: ${errMsg}`,
+                  next_retry_at: nextRetryAt
+                })
+                .eq('id', action.id);
+
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: workspaceId,
+                event_type: 'queue_action_retry_scheduled',
+                message: `↩️ Action ${action.action_type} [${action.id}] failed. Retry in ${Math.round(delayMs / 1000)}s.`,
+                metadata: { action_id: action.id, error: errMsg, next_retry_at: nextRetryAt }
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error(`[poller] Error draining queue for workspace ${workspaceId}:`, err.message);
+      } finally {
+        releaseLock(workspaceId);
+      }
+    }
+  }, 5000);
+
+  // Periodic sweeper to recover stuck processing rows (every 60s)
+  setInterval(async () => {
+    const activeWorkspaceIds = Array.from(globalSockets.keys()) as string[];
+    for (const workspaceId of activeWorkspaceIds) {
+      try {
+        const stuckTimeout = new Date(Date.now() - 120000).toISOString(); // 2 minutes stuck
+        const { data: stuck } = await supabaseAdmin
+          .from('baileys_action_queue')
+          .select('id')
+          .eq('workspace_id', workspaceId)
+          .eq('status', 'processing')
+          .lt('processed_at', stuckTimeout);
+
+        if (stuck && stuck.length > 0) {
+          const stuckIds = stuck.map(s => s.id);
+          console.warn(`[poller] Sweeper found ${stuckIds.length} stuck actions in processing for workspace ${workspaceId}. Recovering...`);
+          
+          await supabaseAdmin
+            .from('baileys_action_queue')
+            .update({
+              status: 'pending',
+              error_message: 'Worker process crashed or timed out. Auto-recovered by sweeper.',
+              next_retry_at: new Date(Date.now() + 5000).toISOString(),
+            })
+            .in('id', stuckIds);
+        }
+      } catch (err: any) {
+        console.error(`[poller] Sweeper error for workspace ${workspaceId}:`, err.message);
+      }
+    }
+  }, 60000);
 }

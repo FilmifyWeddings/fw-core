@@ -394,7 +394,8 @@ async function startBaileysSocket(): Promise<void> {
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      const isReplaced = statusCode === DisconnectReason.connectionReplaced;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && !isReplaced;
 
       logger.warn({ statusCode, shouldReconnect }, '🔌 Connection closed');
 
@@ -405,15 +406,19 @@ async function startBaileysSocket(): Promise<void> {
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(startBaileysSocket, 5_000);
       } else {
-        // Logged out — clear session
-        logger.warn('🚪 Logged out. Clearing session from DB...');
-        await supabase
-          .from('baileys_sessions')
-          .update({ creds_json: null, keys_json: null, conn_state: 'disconnected' })
-          .eq('workspace_id', WORKSPACE_ID);
+        if (isReplaced) {
+          logger.warn('⚠️ Connection replaced. Another socket has taken over. Stopping auto-reconnect.');
+        } else {
+          // Logged out — clear session
+          logger.warn('🚪 Logged out. Clearing session from DB...');
+          await supabase
+            .from('baileys_sessions')
+            .update({ creds_json: null, keys_json: null, conn_state: 'disconnected' })
+            .eq('workspace_id', WORKSPACE_ID);
 
-        if (fs.existsSync(AUTH_FOLDER)) {
-          fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+          if (fs.existsSync(AUTH_FOLDER)) {
+            fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+          }
         }
       }
     }

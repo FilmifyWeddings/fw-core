@@ -705,22 +705,32 @@ export function LeadTable({
     setCreateModalOpen(false);
   };
 
-  // Lead Details Drawer Inline editing updates
-  const handleInlineLeadEdit = (fields: Partial<Lead>) => {
-    if (!selectedLead) return;
-    const updated = { ...selectedLead, ...fields };
-    setSelectedLead(updated);
-    
+  const handleInlineLeadEdit = (fields: Partial<Lead>, leadId?: string) => {
+    const targetId = leadId || selectedLead?.id;
+    if (!targetId) return;
+
+    if (selectedLead && selectedLead.id === targetId) {
+      setSelectedLead(prev => prev ? { ...prev, ...fields } : null);
+    }
+
+    // Update local table leads state immediately
+    setLeads(prev => prev.map(l => l.id === targetId ? { ...l, ...fields, updated_at: new Date().toISOString() } : l));
+
     // Sync back to database
     if (onLeadUpdate) {
-      onLeadUpdate(selectedLead.id, fields);
+      onLeadUpdate(targetId, fields);
     }
   };
 
-  const handleInlineRawPayloadEdit = (key: string, val: any) => {
-    if (!selectedLead) return;
-    const updatedPayload = { ...selectedLead.raw_payload, [key]: val };
-    handleInlineLeadEdit({ raw_payload: updatedPayload });
+  const handleInlineRawPayloadEdit = (key: string, val: any, leadId?: string) => {
+    const targetId = leadId || selectedLead?.id;
+    if (!targetId) return;
+
+    const targetLead = leads.find(l => l.id === targetId);
+    if (!targetLead) return;
+
+    const updatedPayload = { ...targetLead.raw_payload, [key]: val };
+    handleInlineLeadEdit({ raw_payload: updatedPayload }, targetId);
   };
 
   const handleAddComment = () => {
@@ -1264,7 +1274,7 @@ export function LeadTable({
                                         if (e.target.value === '__add_new__') {
                                           setShowAddSourceModal(true);
                                         } else {
-                                          handleInlineLeadEdit({ source: e.target.value });
+                                          handleInlineLeadEdit({ source: e.target.value }, lead.id);
                                         }
                                       }}
                                       className="bg-zinc-950/80 border border-zinc-900 text-zinc-350 text-[11px] font-semibold rounded-lg px-2.5 py-1 focus:outline-none focus:border-zinc-800 cursor-pointer w-[140px] capitalize"
@@ -1363,17 +1373,9 @@ export function LeadTable({
                                   <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
                                     <select
                                       value={lead.whatsapp_group_id || ''}
-                                      onChange={async (e) => {
+                                      onChange={(e) => {
                                         const nextGroupId = e.target.value || null;
-                                        handleInlineLeadEdit({ whatsapp_group_id: nextGroupId });
-                                        try {
-                                          await supabase
-                                            .from('leads')
-                                            .update({ whatsapp_group_id: nextGroupId, updated_at: new Date().toISOString() })
-                                            .eq('id', lead.id);
-                                        } catch (err) {
-                                          console.error('Failed to update group in DB:', err);
-                                        }
+                                        handleInlineLeadEdit({ whatsapp_group_id: nextGroupId }, lead.id);
                                       }}
                                       className="bg-zinc-950/80 border border-zinc-900 text-zinc-300 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-zinc-800 cursor-pointer w-32 truncate"
                                     >
@@ -1473,9 +1475,9 @@ export function LeadTable({
                                       value={customVal || '#71717a'}
                                       onChange={(e) => {
                                         // Save to raw payload
-                                        handleInlineRawPayloadEdit(col.id, e.target.value);
+                                        handleInlineRawPayloadEdit(col.id, e.target.value, lead.id);
                                         // Highlight name color directly
-                                        handleInlineLeadEdit({ custom_color: e.target.value });
+                                        handleInlineLeadEdit({ custom_color: e.target.value }, lead.id);
                                       }}
                                       className="w-6 h-6 border-none bg-transparent cursor-pointer shrink-0"
                                       title="Click to color highlight lead name text"
@@ -1492,7 +1494,7 @@ export function LeadTable({
                                 <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
                                   <select
                                     value={customVal}
-                                    onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value)}
+                                    onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value, lead.id)}
                                     className="bg-slate-50 dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-900 text-slate-700 dark:text-zinc-350 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-slate-300 dark:focus:border-zinc-800 cursor-pointer w-32 truncate"
                                   >
                                     <option value="">Select option</option>
@@ -1511,7 +1513,7 @@ export function LeadTable({
                                   type="text"
                                   placeholder="..."
                                   value={customVal}
-                                  onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value)}
+                                  onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value, lead.id)}
                                   className="bg-slate-50 dark:bg-zinc-950/50 border border-transparent hover:border-slate-300 dark:hover:border-zinc-800 focus:border-slate-400 dark:focus:border-zinc-700 text-xs text-slate-900 dark:text-white p-1 rounded w-28 focus:outline-none"
                                 />
                               </MotionTd>

@@ -9,10 +9,12 @@ export async function register() {
 
     console.log('[instrumentation] Node.js runtime detected. Initializing Baileys Auto-Reconnect...');
     const { supabaseAdmin } = await import('@/lib/supabase');
-    const { autoReconnectSessions } = await import('@/lib/baileys-serverless');
+    const { autoReconnectSessions, startQueuePoller } = await import('@/lib/baileys-serverless');
     
     autoReconnectSessions(supabaseAdmin).catch(err => {
       console.error('[instrumentation] Baileys Auto-Reconnect failed on boot:', err);
     });
+
+    startQueuePoller(supabaseAdmin);
   }
 }
