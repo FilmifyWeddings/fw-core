@@ -22,9 +22,30 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, results: [] });
     }
 
+    // Fetch all logs for this tenant to compute deterministic execution_count
+    const { data: logs, error: logsError } = await supabaseAdmin
+      .from('whatsapp_workflow_logs')
+      .select('workflow_id, lead_id')
+      .eq('tenant_id', tenantId);
+
+    const countsMap: Record<string, Set<string>> = {};
+    if (!logsError && logs) {
+      logs.forEach(log => {
+        if (!countsMap[log.workflow_id]) {
+          countsMap[log.workflow_id] = new Set();
+        }
+        countsMap[log.workflow_id].add(log.lead_id);
+      });
+    }
+
+    const results = (workflows || []).map(wf => ({
+      ...wf,
+      execution_count: countsMap[wf.id] ? countsMap[wf.id].size : 0
+    }));
+
     return NextResponse.json({
       success: true,
-      results: workflows || []
+      results
     });
   } catch (err: any) {
     console.error('Fetch custom workflows error:', err);

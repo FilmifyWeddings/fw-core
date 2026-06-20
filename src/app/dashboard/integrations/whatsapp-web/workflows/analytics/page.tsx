@@ -33,7 +33,6 @@ import {
   Filter,
 } from 'lucide-react';
 
-// ─── Interfaces ────────────────────────────────────────────────────────────────
 interface Workflow {
   id: string;
   workflow_name: string;
@@ -51,24 +50,16 @@ interface WorkflowStep {
   sort_index: number;
 }
 
-interface WorkflowLog {
-  id: string;
-  lead_id: string;
-  workflow_id: string;
+interface StepLog {
+  id: string | null;
   step_index: number;
-  phone_number: string;
   template_name: string;
-  status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+  status: string;
   error_message: string | null;
   sent_at: string;
-  updated_at: string;
-}
-
-interface Lead {
-  id: string;
-  name: string | null;
-  phone: string;
-  whatsapp_group_id: string | null;
+  sent_at_formatted: string;
+  updated_at: string | null;
+  updated_at_formatted: string;
 }
 
 interface ExecutionRow {
@@ -83,7 +74,8 @@ interface ExecutionRow {
   pendingSteps: number;
   runsCount: number;
   updatedAt: string;
-  stepsLogs: WorkflowLog[];
+  groupJoinTime: string;
+  stepsLogs: StepLog[];
 }
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
@@ -112,62 +104,40 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── Step Node Component ───────────────────────────────────────────────────────
 function StepNode({
-  step,
   stepIndex,
-  logEntry,
+  stepLog,
   onRetry,
-  tenantId,
-  execution,
 }: {
-  step: WorkflowStep;
   stepIndex: number;
-  logEntry: WorkflowLog | undefined;
+  stepLog: StepLog;
   onRetry: () => void;
-  tenantId: string;
-  execution: ExecutionRow;
 }) {
-  let nodeStatus: 'completed' | 'pending' | 'failed' | 'unsent' = 'unsent';
-  let scheduledAt = `T+${step.delay_value}${step.delay_unit === 'seconds' ? 's' : 'h'}`;
-  let completedAt = '—';
-  let errorText: string | null = null;
-
-  if (logEntry) {
-    if (['sent', 'delivered', 'read'].includes(logEntry.status)) {
-      nodeStatus = 'completed';
-    } else if (logEntry.status === 'failed') {
-      nodeStatus = 'failed';
-    } else {
-      nodeStatus = 'pending';
-    }
-
-    scheduledAt = new Date(logEntry.sent_at).toLocaleString('en-IN', {
-      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
-    });
-
-    if (nodeStatus === 'completed') {
-      completedAt = new Date(logEntry.updated_at).toLocaleString('en-IN', {
-        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
-      });
-    }
-
-    errorText = logEntry.error_message;
-  }
+  const nodeStatus = stepLog.status;
+  const scheduledAt = stepLog.sent_at_formatted;
+  const completedAt = stepLog.updated_at_formatted;
+  const errorText = stepLog.error_message;
 
   const nodeColor = {
     completed: 'border-emerald-500/40 bg-emerald-500/5',
     pending:   'border-amber-500/40 bg-amber-500/5',
     failed:    'border-red-500/40 bg-red-500/5',
     unsent:    'border-zinc-800 bg-zinc-900/30',
-  }[nodeStatus];
+    sent:      'border-emerald-500/40 bg-emerald-500/5',
+    delivered: 'border-emerald-500/40 bg-emerald-500/5',
+    read:      'border-emerald-500/40 bg-emerald-500/5',
+  }[nodeStatus] || 'border-zinc-800 bg-zinc-900/30';
 
   const iconColor = {
     completed: 'text-emerald-400',
     pending:   'text-amber-400',
     failed:    'text-red-400',
-    unsent:    'text-zinc-600',
-  }[nodeStatus];
+    unsent:    'text-zinc-650',
+    sent:      'text-emerald-400',
+    delivered: 'text-emerald-400',
+    read:      'text-emerald-400',
+  }[nodeStatus] || 'text-zinc-650';
 
-  const StepIcon = nodeStatus === 'completed' ? CheckCheck
+  const StepIcon = ['completed', 'sent', 'delivered', 'read'].includes(nodeStatus) ? CheckCheck
     : nodeStatus === 'failed' ? XCircle
     : nodeStatus === 'pending' ? Hourglass
     : Circle;
@@ -192,24 +162,18 @@ function StepNode({
               <StatusBadge status={nodeStatus} />
             </div>
             <span className="text-[10px] text-zinc-500 font-mono mt-0.5 block">
-              📄 {step.template_name}
+              📄 {stepLog.template_name}
             </span>
 
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
               <div className="flex items-center gap-1 text-[10px] text-zinc-500">
-                <Timer className="w-3 h-3 text-zinc-600" />
-                <span className="font-semibold text-zinc-400">Delay:</span>
-                <span className="font-mono">{step.delay_value} {step.delay_unit}</span>
-              </div>
-              <div className="flex items-center gap-1 text-[10px] text-zinc-500">
-                <Clock className="w-3 h-3 text-zinc-600" />
-                <span className="font-semibold text-zinc-400">Scheduled:</span>
-                <span className="font-mono">{scheduledAt}</span>
+                <Clock className="w-3.5 h-3.5 text-zinc-600" />
+                <span className="font-mono text-zinc-455">{scheduledAt}</span>
               </div>
               {completedAt !== '—' && (
                 <div className="flex items-center gap-1 text-[10px] text-zinc-500">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  <span className="font-semibold text-zinc-400">Done:</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="font-semibold text-zinc-400">Completed:</span>
                   <span className="font-mono text-emerald-400/80">{completedAt}</span>
                 </div>
               )}
@@ -246,8 +210,6 @@ function WorkflowAnalyticsInner() {
 
   const [workflows, setWorkflows]           = useState<Workflow[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
-  const [leads, setLeads]                   = useState<Lead[]>([]);
-  const [logs, setLogs]                     = useState<WorkflowLog[]>([]);
   const [executions, setExecutions]         = useState<ExecutionRow[]>([]);
   const [loading, setLoading]               = useState(true);
   const [refreshing, setRefreshing]         = useState(false);
@@ -266,6 +228,7 @@ function WorkflowAnalyticsInner() {
     else setLoading(true);
 
     try {
+      // 1. Fetch workflows list
       const { data: workflowsData } = await supabase
         .from('whatsapp_custom_workflows')
         .select('*')
@@ -283,89 +246,27 @@ function WorkflowAnalyticsInner() {
 
       if (!currentWorkflow) { setExecutions([]); return; }
 
-      // Fetch leads in target group
-      let targetLeads: Lead[] = [];
-      if (currentWorkflow.target_group_id) {
-        const { data: leadsData } = await supabase
-          .from('leads')
-          .select('id, name, phone, whatsapp_group_id')
-          .eq('workspace_id', tenantId)
-          .eq('whatsapp_group_id', currentWorkflow.target_group_id);
-        targetLeads = leadsData || [];
+      // 2. Fetch server-calculated executions telemetry
+      const resp = await fetch(`/api/integrations/whatsapp/workflows/execution?tenant_id=${tenantId}&workflow_id=${currentWorkflow.id}`);
+      const data = await resp.json();
+      if (data.success) {
+        setExecutions(data.executions || []);
+        
+        // Also update selected execution details if open
+        if (selectedExecution) {
+          const updated = (data.executions || []).find((r: any) => r.leadId === selectedExecution.leadId);
+          if (updated) setSelectedExecution(updated);
+        }
+      } else {
+        console.error('Failed to load executions:', data.error);
       }
-      setLeads(targetLeads);
-
-      // Fetch workflow logs
-      const { data: logsData } = await supabase
-        .from('whatsapp_workflow_logs')
-        .select('*')
-        .eq('workflow_id', currentWorkflow.id)
-        .eq('tenant_id', tenantId)
-        .order('step_index', { ascending: true });
-
-      const allLogs = logsData || [];
-      setLogs(allLogs);
-
-      buildExecutionRows(targetLeads, allLogs, currentWorkflow);
+    } catch (err) {
+      console.error('Fetch execution analytics error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [tenantId, selectedWorkflow, urlWorkflowId]);
-
-  const buildExecutionRows = (targetLeads: Lead[], stepLogs: WorkflowLog[], workflow: Workflow) => {
-    const totalStepsCount = workflow.workflow_steps?.length || 0;
-
-    const rows: ExecutionRow[] = targetLeads.map(lead => {
-      const leadLogs = stepLogs.filter(log => log.lead_id === lead.id);
-      const completedCount = leadLogs.filter(l => ['sent', 'delivered', 'read'].includes(l.status)).length;
-      const failedCount    = leadLogs.filter(l => l.status === 'failed').length;
-      const pendingCount   = leadLogs.filter(l => l.status === 'pending').length;
-      const leftCount      = Math.max(0, totalStepsCount - completedCount - failedCount - pendingCount);
-
-      let status: ExecutionRow['status'] = 'not_started';
-      if (leadLogs.length === 0) {
-        status = 'not_started';
-      } else if (failedCount > 0) {
-        status = 'failed';
-      } else if (completedCount === totalStepsCount && totalStepsCount > 0) {
-        status = 'completed';
-      } else {
-        status = 'running';
-      }
-
-      const lastLog = leadLogs.length > 0 ? leadLogs[leadLogs.length - 1] : null;
-      const lastUpdate = lastLog
-        ? new Date(lastLog.updated_at).toLocaleString('en-IN', {
-            day: '2-digit', month: 'short', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', hour12: true,
-          })
-        : 'Not started';
-
-      return {
-        leadId: lead.id,
-        name: lead.name || 'Unknown Contact',
-        phone: lead.phone,
-        status,
-        totalSteps: totalStepsCount,
-        completedSteps: completedCount,
-        leftSteps: leftCount,
-        failedSteps: failedCount,
-        pendingSteps: pendingCount,
-        runsCount: leadLogs.length > 0 ? 1 : 0,
-        updatedAt: lastUpdate,
-        stepsLogs: leadLogs,
-      };
-    });
-
-    setExecutions(rows);
-
-    // Update modal row if open
-    if (selectedExecution) {
-      const updated = rows.find(r => r.leadId === selectedExecution.leadId);
-      if (updated) setSelectedExecution(updated);
-    }
-  };
+  }, [tenantId, selectedWorkflow, urlWorkflowId, selectedExecution]);
 
   // Realtime subscriptions
   useEffect(() => {
@@ -392,8 +293,6 @@ function WorkflowAnalyticsInner() {
     const wf = workflows.find(w => w.id === wfId);
     if (wf) {
       setSelectedWorkflow(wf);
-      setLeads([]);
-      setLogs([]);
       setExecutions([]);
       setLoading(true);
     }
@@ -528,9 +427,14 @@ function WorkflowAnalyticsInner() {
     }
   };
 
-  const handleRetryStepManual = async (step: WorkflowStep, execution: ExecutionRow) => {
+  const handleRetryStepManual = async (stepLog: StepLog, execution: ExecutionRow) => {
     if (!selectedWorkflow) return;
-    if (!window.confirm(`Re-queue Step ${step.sort_index + 1} (${step.template_name}) for immediate dispatch?`)) return;
+    const step = selectedWorkflow.workflow_steps.find(s => s.sort_index === stepLog.step_index);
+    if (!step) {
+      alert('Step configuration not found.');
+      return;
+    }
+    if (!window.confirm(`Re-queue Step ${stepLog.step_index + 1} (${stepLog.template_name}) for immediate dispatch?`)) return;
     try {
       const cleanPhone = execution.phone.replace(/[^0-9]/g, '');
       const { error } = await supabase.from('baileys_action_queue').insert({
@@ -558,10 +462,30 @@ function WorkflowAnalyticsInner() {
   const completedCount    = executions.filter(e => e.status === 'completed').length;
   const failedCount       = executions.filter(e => e.status === 'failed').length;
   const notStartedCount   = executions.filter(e => e.status === 'not_started').length;
-  const totalSent         = logs.filter(l => ['sent', 'delivered', 'read'].includes(l.status)).length;
-  const totalDelivered    = logs.filter(l => ['delivered', 'read'].includes(l.status)).length;
-  const totalRead         = logs.filter(l => l.status === 'read').length;
-  const totalFailed       = logs.filter(l => l.status === 'failed').length;
+
+  // Aggregate metrics from executions stepsLogs
+  let totalSent = 0;
+  let totalDelivered = 0;
+  let totalRead = 0;
+  let totalFailed = 0;
+
+  executions.forEach(e => {
+    (e.stepsLogs || []).forEach(log => {
+      if (['sent', 'delivered', 'read'].includes(log.status)) {
+        totalSent++;
+      }
+      if (['delivered', 'read'].includes(log.status)) {
+        totalDelivered++;
+      }
+      if (log.status === 'read') {
+        totalRead++;
+      }
+      if (log.status === 'failed') {
+        totalFailed++;
+      }
+    });
+  });
+
   const readRate          = totalSent > 0 ? Math.round((totalRead / totalSent) * 100) : 0;
 
   // Filtered rows
@@ -844,6 +768,11 @@ function WorkflowAnalyticsInner() {
                     +{selectedExecution.phone.replace(/[^0-9]/g, '')}
                   </span>
                   <span className="text-zinc-700">·</span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-zinc-600" />
+                    Joined Group: <span className="font-mono text-zinc-350">{selectedExecution.groupJoinTime}</span>
+                  </span>
+                  <span className="text-zinc-700">·</span>
                   <span>{selectedExecution.totalSteps} steps · {selectedExecution.completedSteps} done · {selectedExecution.failedSteps} failed</span>
                 </div>
               </div>
@@ -913,23 +842,19 @@ function WorkflowAnalyticsInner() {
                 </h4>
 
                 {selectedExecution.totalSteps === 0 ? (
-                  <div className="py-8 text-center text-zinc-600 border border-zinc-800 rounded-xl">
+                  <div className="py-8 text-center text-zinc-600 border border-zinc-850 rounded-xl">
                     <MessageSquare className="w-8 h-8 mx-auto mb-2 text-zinc-800" />
                     No steps defined in this workflow.
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {selectedWorkflow?.workflow_steps?.map((step, idx) => {
-                      const logEntry = selectedExecution.stepsLogs.find(l => l.step_index === step.sort_index);
+                    {selectedExecution.stepsLogs.map((stepLog, idx) => {
                       return (
                         <StepNode
-                          key={step.sort_index}
-                          step={step}
+                          key={stepLog.id || stepLog.step_index}
                           stepIndex={idx}
-                          logEntry={logEntry}
-                          onRetry={() => handleRetryStepManual(step, selectedExecution)}
-                          tenantId={tenantId}
-                          execution={selectedExecution}
+                          stepLog={stepLog}
+                          onRetry={() => handleRetryStepManual(stepLog, selectedExecution)}
                         />
                       );
                     })}
