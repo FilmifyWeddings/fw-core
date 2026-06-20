@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         .from('baileys_action_queue')
         .select('id, payload')
         .eq('workspace_id', tenantId)
-        .in('status', ['pending', 'failed']);
+        .in('status', ['pending', 'failed', 'processing']);
 
       const toDelete = (queueItems || []).filter(
         (item: any) => item.payload?.workflowLogId && logIds.includes(item.payload.workflowLogId)

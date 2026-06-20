@@ -11,24 +11,31 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { leadId, workflowId } = await req.json();
+    const { leadId, workflowId, workflowLogId } = await req.json();
 
     if (!leadId || !workflowId) {
       return NextResponse.json({ error: 'Missing leadId or workflowId parameters' }, { status: 400 });
     }
 
-    // 1. Fetch all failed logs for this lead and workflow
-    const { data: failedLogs, error: logsError } = await supabaseAdmin
+    // 1. Fetch all workflow logs for this lead and workflow
+    const { data: logs, error: logsError } = await supabaseAdmin
       .from('whatsapp_workflow_logs')
       .select('*')
       .eq('lead_id', leadId)
-      .eq('workflow_id', workflowId)
-      .eq('status', 'failed');
+      .eq('workflow_id', workflowId);
 
     if (logsError) throw logsError;
 
-    if (!failedLogs || failedLogs.length === 0) {
-      return NextResponse.json({ success: true, message: 'No failed steps found to retry.' });
+    // Filter logs that are failed OR pending with a temporary error (stuck in retry queue)
+    const retriableLogs = (logs || []).filter(log => {
+      if (workflowLogId) {
+        return log.id === workflowLogId;
+      }
+      return log.status === 'failed' || (log.status === 'pending' && log.error_message);
+    });
+
+    if (retriableLogs.length === 0) {
+      return NextResponse.json({ success: true, message: 'No failed or stuck steps found to retry.' });
     }
 
     // 2. Fetch workflow steps config
@@ -61,15 +68,15 @@ export async function POST(req: NextRequest) {
       ...(lead.raw_payload && typeof lead.raw_payload === 'object' ? lead.raw_payload : {})
     };
 
-    // Fetch all failed queue items for this workspace
+    // Fetch both failed and pending queue items for this workspace
     const { data: queueItems } = await supabaseAdmin
       .from('baileys_action_queue')
       .select('*')
       .eq('workspace_id', tenantId)
-      .eq('status', 'failed');
+      .in('status', ['failed', 'pending']);
 
-    for (const failedLog of failedLogs) {
-      const step = (workflow.workflow_steps || []).find((s: any) => s.sort_index === failedLog.step_index);
+    for (const log of retriableLogs) {
+      const step = (workflow.workflow_steps || []).find((s: any) => s.sort_index === log.step_index);
       if (!step) continue;
 
       // Update step log to pending and reset execution timestamps
@@ -81,12 +88,12 @@ export async function POST(req: NextRequest) {
           sent_at: new Date().toISOString(), // Reset execution timestamp to NOW
           updated_at: new Date().toISOString()
         })
-        .eq('id', failedLog.id);
+        .eq('id', log.id);
 
       if (updErr) throw updErr;
 
       const matchedQueueItem = (queueItems || []).find(
-        (item: any) => item.payload?.workflowLogId === failedLog.id
+        (item: any) => item.payload?.workflowLogId === log.id
       );
 
       if (matchedQueueItem) {
@@ -114,7 +121,7 @@ export async function POST(req: NextRequest) {
               to: cleanJid,
               templateId: step.template_id,
               variables: v_variables,
-              workflowLogId: failedLog.id
+              workflowLogId: log.id
             },
             status: 'pending',
             priority: 2,
@@ -132,7 +139,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Retried ${failedLogs.length} failed step(s).`
+      message: `Retried ${retriableLogs.length} step(s).`
     });
 
   } catch (err: any) {

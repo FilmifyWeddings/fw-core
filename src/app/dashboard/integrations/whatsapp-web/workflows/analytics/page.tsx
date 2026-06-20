@@ -357,8 +357,10 @@ function WorkflowAnalyticsInner() {
     if (!selectedWorkflow) return;
     setRetryingFailed(true);
     try {
-      const failedLogs = execution.stepsLogs.filter(l => l.status === 'failed');
-      if (failedLogs.length === 0) { alert('No failed steps found.'); return; }
+      const retriableLogs = execution.stepsLogs.filter(
+        l => l.status === 'failed' || (l.status === 'pending' && l.error_message)
+      );
+      if (retriableLogs.length === 0) { alert('No failed or stuck steps found.'); return; }
 
       const res = await fetch(`/api/integrations/whatsapp/workflows/retry?tenant_id=${tenantId}`, {
         method: 'POST',
@@ -370,7 +372,7 @@ function WorkflowAnalyticsInner() {
         throw new Error(data.error || 'Failed to retry steps');
       }
 
-      alert(`✅ Retried failed step(s). Queue updated.`);
+      alert(`✅ Retried failed/stuck step(s). Queue updated.`);
       fetchData(true);
     } catch (err: any) {
       alert(`Retry failed: ${err.message}`);
@@ -418,20 +420,36 @@ function WorkflowAnalyticsInner() {
     }
     if (!window.confirm(`Re-queue Step ${stepLog.step_index + 1} (${stepLog.template_name}) for immediate dispatch?`)) return;
     try {
-      const cleanPhone = execution.phone.replace(/[^0-9]/g, '');
-      const { error } = await supabase.from('baileys_action_queue').insert({
-        workspace_id: tenantId,
-        action_type: 'send_template',
-        payload: {
-          to: `${cleanPhone}@s.whatsapp.net`,
-          templateId: step.template_id,
-          variables: { Name: execution.name, lead_name: execution.name, phone: execution.phone },
-        },
-        status: 'pending',
-        priority: 2,
-      });
-      if (error) throw error;
-      alert('✅ Step queued for dispatch!');
+      if (stepLog.id) {
+        const res = await fetch(`/api/integrations/whatsapp/workflows/retry?tenant_id=${tenantId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            leadId: execution.leadId,
+            workflowId: selectedWorkflow.id,
+            workflowLogId: stepLog.id
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to retry step');
+        }
+      } else {
+        const cleanPhone = execution.phone.replace(/[^0-9]/g, '');
+        const { error } = await supabase.from('baileys_action_queue').insert({
+          workspace_id: tenantId,
+          action_type: 'send_template',
+          payload: {
+            to: `${cleanPhone}@s.whatsapp.net`,
+            templateId: step.template_id,
+            variables: { Name: execution.name, lead_name: execution.name, phone: execution.phone },
+          },
+          status: 'pending',
+          priority: 2,
+        });
+        if (error) throw error;
+      }
+      alert('✅ Step queued for immediate dispatch!');
       fetchData(true);
     } catch (err: any) {
       alert(`Failed: ${err.message}`);
@@ -783,13 +801,13 @@ function WorkflowAnalyticsInner() {
 
                 <button
                   onClick={() => handleRetryFailedSteps(selectedExecution)}
-                  disabled={retryingFailed || selectedExecution.failedSteps === 0}
+                  disabled={retryingFailed || selectedExecution.stepsLogs.filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length === 0}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-40 disabled:scale-100 cursor-pointer"
                 >
                   {retryingFailed
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     : <AlertTriangle className="w-3.5 h-3.5" />}
-                  Retry Failed Steps ({selectedExecution.failedSteps})
+                  Retry Failed/Stuck Steps ({selectedExecution.stepsLogs.filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length})
                 </button>
 
                 <button
