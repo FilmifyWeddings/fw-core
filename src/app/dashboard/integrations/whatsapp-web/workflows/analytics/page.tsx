@@ -170,7 +170,14 @@ function StepNode({
                 <Clock className="w-3.5 h-3.5 text-zinc-600" />
                 <span className="font-mono text-zinc-455">{scheduledAt}</span>
               </div>
-              {completedAt !== '—' && (
+              {nodeStatus === 'failed' && completedAt !== '—' && (
+                <div className="flex items-center gap-1 text-[10px] text-zinc-500">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                  <span className="font-semibold text-zinc-400">Failed at:</span>
+                  <span className="font-mono text-red-400/80">{completedAt}</span>
+                </div>
+              )}
+              {['completed', 'sent', 'delivered', 'read'].includes(nodeStatus) && completedAt !== '—' && (
                 <div className="flex items-center gap-1 text-[10px] text-zinc-500">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   <span className="font-semibold text-zinc-400">Completed:</span>
