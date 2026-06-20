@@ -1035,3 +1035,135 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
     }
   }, 60000);
 }
+
+export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId: string): Promise<void> {
+  console.log(`[poller] forceWakeQueue triggered for workspace ${workspaceId}`);
+  
+  // Run connection recovery and draining in the background (as per Law 3)
+  (async () => {
+    try {
+      // 1. Recover/re-establish socket connection if dead/disconnected
+      const sock = await getOrCreateSocket(supabaseAdmin, workspaceId);
+      if (!sock) {
+        console.error(`[poller] forceWakeQueue: Could not get or create socket for workspace ${workspaceId}`);
+        return;
+      }
+
+      // 2. Try to acquire lock (wait up to 5 seconds if locked)
+      let acquired = false;
+      for (let i = 0; i < 5; i++) {
+        if (acquireLock(workspaceId)) {
+          acquired = true;
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      if (!acquired) {
+        console.log(`[poller] forceWakeQueue: Workspace ${workspaceId} is locked, skipping background drain`);
+        return;
+      }
+
+      try {
+        const now = new Date().toISOString();
+        const { data: actions, error } = await supabaseAdmin
+          .from('baileys_action_queue')
+          .select('*')
+          .eq('workspace_id', workspaceId)
+          .eq('status', 'pending')
+          .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
+          .order('priority', { ascending: true })
+          .order('created_at', { ascending: true })
+          .limit(3);
+
+        if (error || !actions || actions.length === 0) {
+          return;
+        }
+
+        console.log(`[poller] [Force-Wake] Processing ${actions.length} actions for workspace ${workspaceId}...`);
+
+        for (const action of actions) {
+          // Claim action
+          const { data: claimed, error: claimErr } = await supabaseAdmin
+            .from('baileys_action_queue')
+            .update({
+              status: 'processing',
+              attempt_count: action.attempt_count + 1,
+              processed_at: new Date().toISOString()
+            })
+            .eq('id', action.id)
+            .eq('status', 'pending')
+            .select();
+
+          if (claimErr || !claimed || claimed.length === 0) continue;
+
+          try {
+            const result = await processSingleQueuedAction(supabaseAdmin, action);
+            if (!result.success) throw new Error(result.error || 'Execution returned success=false');
+
+            await supabaseAdmin
+              .from('baileys_action_queue')
+              .update({
+                status: 'done',
+                result_message_id: result.waMessageId || null,
+                error_message: null
+              })
+              .eq('id', action.id);
+
+            await supabaseAdmin.from('live_logs').insert({
+              workspace_id: workspaceId,
+              event_type: 'queue_action_done',
+              message: `Action ${action.action_type} [${action.id}] completed successfully. (Force-Woken)`,
+              metadata: { action_id: action.id, wa_message_id: result.waMessageId }
+            });
+          } catch (err: any) {
+            const errMsg = err.message || String(err);
+            const newAttemptCount = action.attempt_count + 1;
+
+            if (newAttemptCount >= 5) {
+              await supabaseAdmin
+                .from('baileys_action_queue')
+                .update({
+                  status: 'failed',
+                  error_message: `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
+                  next_retry_at: null
+                })
+                .eq('id', action.id);
+
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: workspaceId,
+                event_type: 'queue_action_failed',
+                message: `⚠️ Action ${action.action_type} [${action.id}] permanently failed after 5 attempts. (Force-Woken)`,
+                metadata: { action_id: action.id, error: errMsg }
+              });
+            } else {
+              const jitter = Math.floor(Math.random() * 5000);
+              const delayMs = 15000 * Math.pow(4, newAttemptCount) + jitter;
+              const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+
+              await supabaseAdmin
+                .from('baileys_action_queue')
+                .update({
+                  status: 'pending',
+                  error_message: `[Attempt ${newAttemptCount}/5] Failed: ${errMsg}`,
+                  next_retry_at: nextRetryAt
+                })
+                .eq('id', action.id);
+
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: workspaceId,
+                event_type: 'queue_action_retry_scheduled',
+                message: `↩️ Action ${action.action_type} [${action.id}] failed. Retry in ${Math.round(delayMs / 1000)}s. (Force-Woken)`,
+                metadata: { action_id: action.id, error: errMsg, next_retry_at: nextRetryAt }
+              });
+            }
+          }
+        }
+      } finally {
+        releaseLock(workspaceId);
+      }
+    } catch (e: any) {
+      console.error('[poller] forceWakeQueue background error:', e.message);
+    }
+  })();
+}

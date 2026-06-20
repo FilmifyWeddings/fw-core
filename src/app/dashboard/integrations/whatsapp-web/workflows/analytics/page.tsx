@@ -336,18 +336,18 @@ function WorkflowAnalyticsInner() {
     if (!selectedWorkflow) return;
     if (!window.confirm('Restart full workflow for this contact? Previous logs will be deleted.')) return;
     try {
-      await supabase.from('whatsapp_workflow_logs').delete()
-        .eq('lead_id', leadId).eq('workflow_id', selectedWorkflow.id);
-
-      const { data: targetLead } = await supabase.from('leads').select('*').eq('id', leadId).single();
-      if (targetLead) {
-        const origGroup = targetLead.whatsapp_group_id;
-        await supabase.from('leads').update({ whatsapp_group_id: null }).eq('id', leadId);
-        await supabase.from('leads').update({ whatsapp_group_id: origGroup }).eq('id', leadId);
-        alert('✅ Workflow restarted and queued!');
-        fetchData(true);
-        setIsModalOpen(false);
+      const res = await fetch(`/api/integrations/whatsapp/workflows/resend?tenant_id=${tenantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to restart workflow');
       }
+      alert('✅ Workflow restarted and queued!');
+      fetchData(true);
+      setIsModalOpen(false);
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }
@@ -360,42 +360,17 @@ function WorkflowAnalyticsInner() {
       const failedLogs = execution.stepsLogs.filter(l => l.status === 'failed');
       if (failedLogs.length === 0) { alert('No failed steps found.'); return; }
 
-      const targetStep = selectedWorkflow.workflow_steps.find(
-        s => s.sort_index === failedLogs[0].step_index
-      );
-      if (!targetStep) { alert('Cannot find step config.'); return; }
-
-      const cleanPhone = execution.phone.replace(/[^0-9]/g, '');
-
-      for (const failedLog of failedLogs) {
-        const step = selectedWorkflow.workflow_steps.find(s => s.sort_index === failedLog.step_index);
-        if (!step) continue;
-
-        // Reset log to pending
-        await supabase.from('whatsapp_workflow_logs')
-          .update({ status: 'pending', error_message: null, updated_at: new Date().toISOString() })
-          .eq('id', failedLog.id);
-
-        // Re-queue action
-        await supabase.from('baileys_action_queue').insert({
-          workspace_id: tenantId,
-          action_type: 'send_template',
-          payload: {
-            to: `${cleanPhone}@s.whatsapp.net`,
-            templateId: step.template_id,
-            variables: {
-              Name: execution.name,
-              lead_name: execution.name,
-              phone: execution.phone,
-            },
-            workflowLogId: failedLog.id,
-          },
-          status: 'pending',
-          priority: 2,
-        });
+      const res = await fetch(`/api/integrations/whatsapp/workflows/retry?tenant_id=${tenantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: execution.leadId, workflowId: selectedWorkflow.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to retry steps');
       }
 
-      alert(`✅ Retried ${failedLogs.length} failed step(s). Queue updated.`);
+      alert(`✅ Retried failed step(s). Queue updated.`);
       fetchData(true);
     } catch (err: any) {
       alert(`Retry failed: ${err.message}`);
