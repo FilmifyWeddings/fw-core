@@ -102,8 +102,9 @@ export async function GET(req: NextRequest) {
       // Group Join Ingest Timestamp: earliest log sent_at timestamp, falling back to lead.created_at
       let groupJoinDate = new Date(lead.created_at);
       if (leadLogs.length > 0) {
-        // Find minimum sent_at to determine original trigger/join time
-        const logTimes = leadLogs.map(l => new Date(l.sent_at).getTime()).filter(t => !isNaN(t));
+        // Find minimum sent_at of SENT/COMPLETED logs to determine original trigger/join time
+        const processedLogs = leadLogs.filter(l => !['pending', 'failed'].includes(l.status));
+        const logTimes = processedLogs.map(l => new Date(l.sent_at).getTime()).filter(t => !isNaN(t));
         if (logTimes.length > 0) {
           const minTime = Math.min(...logTimes);
           groupJoinDate = new Date(minTime);

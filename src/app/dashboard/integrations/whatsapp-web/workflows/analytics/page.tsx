@@ -31,6 +31,7 @@ import {
   Circle,
   Hourglass,
   Filter,
+  Trash2,
 } from 'lucide-react';
 
 interface Workflow {
@@ -456,6 +457,26 @@ function WorkflowAnalyticsInner() {
     }
   };
 
+  const handleDeleteLead = async (leadId: string, leadName: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${leadName}" and all associated workflow execution records? If you re-add this contact in the future, they will start the workflow sequence from the beginning.`)) return;
+    try {
+      const res = await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${tenantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete contact');
+      }
+      alert('✅ Contact and workflow execution logs deleted successfully.');
+      fetchData(true);
+      setIsModalOpen(false);
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message}`);
+    }
+  };
+
   // ── Metrics ────────────────────────────────────────────────────────────────
   const totalContacts     = executions.length;
   const runningCount      = executions.filter(e => e.status === 'running').length;
@@ -723,13 +744,23 @@ function WorkflowAnalyticsInner() {
 
                   {/* Action */}
                   <td className="py-3.5 px-4 text-center">
-                    <button
-                      onClick={() => { setSelectedExecution(row); setIsModalOpen(true); }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-amber-500/30 text-zinc-350 hover:text-amber-400 text-[10px] font-bold rounded-lg transition-all active:scale-90 cursor-pointer"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      View
-                    </button>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={() => { setSelectedExecution(row); setIsModalOpen(true); }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 hover:border-amber-500/30 text-zinc-350 hover:text-amber-400 text-[10px] font-bold rounded-lg transition-all active:scale-90 cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        View
+                      </button>
+                      <button
+                        onClick={() => handleDeleteLead(row.leadId, row.name)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-850 hover:bg-red-950/40 border border-zinc-700 hover:border-red-500/30 text-zinc-350 hover:text-red-400 text-[10px] font-bold rounded-lg transition-all active:scale-90 cursor-pointer"
+                        title="Delete contact and all execution logs"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -816,6 +847,15 @@ function WorkflowAnalyticsInner() {
                 >
                   <Ban className="w-3.5 h-3.5" />
                   Stop Workflow
+                </button>
+
+                <button
+                  onClick={() => handleDeleteLead(selectedExecution.leadId, selectedExecution.name)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-950/20 border border-red-500/25 hover:bg-red-950/40 hover:border-red-500/40 text-red-400 font-bold text-xs rounded-xl transition-all active:scale-95 cursor-pointer md:ml-auto"
+                  title="Permanently delete contact from database"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete Contact
                 </button>
               </div>
 
