@@ -80,23 +80,25 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch templates
-      const tempRes = await fetch(`/api/templates?workspace_id=${workspaceId}`);
-      const tempData = await tempRes.json();
+      // Fetch all three endpoints concurrently in parallel
+      const [tempRes, groupRes, workflowRes] = await Promise.all([
+        fetch(`/api/templates?workspace_id=${workspaceId}`),
+        fetch(`/api/integrations/whatsapp/groups?tenant_id=${workspaceId}`),
+        fetch(`/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}`)
+      ]);
+
+      const [tempData, groupData, workflowData] = await Promise.all([
+        tempRes.json(),
+        groupRes.json(),
+        workflowRes.json()
+      ]);
+
       if (tempData.success) {
         setTemplates(tempData.results || []);
       }
-
-      // 2. Fetch contact groups
-      const groupRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${workspaceId}`);
-      const groupData = await groupRes.json();
       if (groupData.success) {
         setGroups(groupData.results || []);
       }
-
-      // 3. Fetch workflows
-      const workflowRes = await fetch(`/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}`);
-      const workflowData = await workflowRes.json();
       if (workflowData.success) {
         // Enforce status default on load
         const list: Workflow[] = (workflowData.results || []).map((w: any) => ({
@@ -107,7 +109,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         localStorage.setItem(`wa_workflows_${workspaceId}`, JSON.stringify(list));
       }
     } catch (err) {
-      console.warn('Fallback loading workflows from local storage');
+      console.warn('Fallback loading workflows from local storage', err);
       const localGroups = localStorage.getItem(`wa_contact_groups_${workspaceId}`);
       if (localGroups) setGroups(JSON.parse(localGroups));
       const localWorkflows = localStorage.getItem(`wa_workflows_${workspaceId}`);

@@ -11,22 +11,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data: workflows, error } = await supabaseAdmin
-      .from('whatsapp_custom_workflows')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false });
+    const [workflowsRes, logsRes] = await Promise.all([
+      supabaseAdmin
+        .from('whatsapp_custom_workflows')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false }),
+      supabaseAdmin
+        .from('whatsapp_workflow_logs')
+        .select('workflow_id, lead_id')
+        .eq('tenant_id', tenantId)
+    ]);
+
+    const { data: workflows, error } = workflowsRes;
+    const { data: logs, error: logsError } = logsRes;
 
     if (error) {
       // Fallback to empty if table doesn't exist yet
       return NextResponse.json({ success: true, results: [] });
     }
-
-    // Fetch all logs for this tenant to compute deterministic execution_count
-    const { data: logs, error: logsError } = await supabaseAdmin
-      .from('whatsapp_workflow_logs')
-      .select('workflow_id, lead_id')
-      .eq('tenant_id', tenantId);
 
     const countsMap: Record<string, Set<string>> = {};
     if (!logsError && logs) {
