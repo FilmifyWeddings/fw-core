@@ -99,13 +99,13 @@ export async function GET(req: NextRequest) {
         status = 'running';
       }
 
-      // Group Join Ingest Timestamp: earliest log updated_at timestamp, falling back to lead.updated_at
-      let groupJoinDate = new Date(lead.updated_at);
+      // Group Join Ingest Timestamp: earliest log sent_at timestamp, falling back to lead.created_at
+      let groupJoinDate = new Date(lead.created_at);
       if (leadLogs.length > 0) {
-        // Find minimum updated_at or sent_at to determine join time
-        const logTimes = leadLogs.map(l => new Date(l.updated_at || l.sent_at).getTime());
-        const minTime = Math.min(...logTimes);
-        if (!isNaN(minTime)) {
+        // Find minimum sent_at to determine original trigger/join time
+        const logTimes = leadLogs.map(l => new Date(l.sent_at).getTime()).filter(t => !isNaN(t));
+        if (logTimes.length > 0) {
+          const minTime = Math.min(...logTimes);
           groupJoinDate = new Date(minTime);
         }
       }
