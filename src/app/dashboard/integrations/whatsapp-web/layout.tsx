@@ -6,14 +6,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, ScanQrCode, Zap, FileText, MessageSquare, Layers,
   ShieldCheck, Wifi, WifiOff, RefreshCw, Building2,
-  ChevronDown, Check, Sparkles, Lock, Globe, Send
+  ChevronDown, Check, Sparkles, Lock, Globe, Send, BarChart3
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
-type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups';
+type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics';
 type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] = [
@@ -48,6 +48,12 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     path: '/dashboard/integrations/whatsapp-web/workflows'
   },
   {
+    id: 'analytics',
+    label: 'Workflow Analytics',
+    icon: <BarChart3 className="w-4 h-4" />,
+    path: '/dashboard/integrations/whatsapp-web/workflows/analytics'
+  },
+  {
     id: 'groups',
     label: 'Contact Groups',
     icon: <MessageSquare className="w-4 h-4" />,
@@ -70,12 +76,12 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
 
-  // Determine active tab based on pathname
   let activeTab: WaTab = 'device';
   if (pathname === '/dashboard/integrations/whatsapp-web/single-send') activeTab = 'single-send';
   else if (pathname === '/dashboard/integrations/whatsapp-web/chat') activeTab = 'chat';
   else if (pathname === '/dashboard/integrations/whatsapp-web/templates') activeTab = 'templates';
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows') activeTab = 'workflows';
+  else if (pathname === '/dashboard/integrations/whatsapp-web/workflows/analytics') activeTab = 'analytics';
   else if (pathname === '/dashboard/integrations/whatsapp-web/groups') activeTab = 'groups';
 
   const shootCategory = (searchParams.get('category') || 'all') as ShootCategory;
