@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: any = {
-  allowedDevOrigins: ['*.loca.lt', 'loca.lt', '*.lhr.life', 'lhr.life'],
+  allowedDevOrigins: ['*.loca.lt', 'loca.lt', '*.lhr.life', 'lhr.life', '*.ngrok-free.dev', 'ngrok-free.dev'],
   
   // Baileys must run server-side only (Node.js runtime, not Edge/browser)
   // serverExternalPackages tells Next.js NOT to bundle these for SSR —
