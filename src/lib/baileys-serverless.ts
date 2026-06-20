@@ -894,113 +894,148 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
   console.log('[poller] Starting Baileys background queue poller (5s interval)...');
 
   setInterval(async () => {
-    const activeWorkspaceIds = Array.from(globalSockets.keys()) as string[];
-    if (activeWorkspaceIds.length === 0) return;
+    try {
+      const now = new Date().toISOString();
+      
+      // 1. Fetch all distinct workspace IDs that have pending queue items due
+      const { data: pendingItems, error: pendingErr } = await supabaseAdmin
+        .from('baileys_action_queue')
+        .select('workspace_id')
+        .eq('status', 'pending')
+        .or(`next_retry_at.is.null,next_retry_at.lte.${now}`);
 
-    for (const workspaceId of activeWorkspaceIds) {
-      if (!acquireLock(workspaceId)) continue;
+      if (pendingErr || !pendingItems || pendingItems.length === 0) {
+        return;
+      }
 
-      try {
-        const now = new Date().toISOString();
-        const { data: actions, error } = await supabaseAdmin
-          .from('baileys_action_queue')
-          .select('*')
-          .eq('workspace_id', workspaceId)
-          .eq('status', 'pending')
-          .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
-          .order('priority', { ascending: true })
-          .order('created_at', { ascending: true })
-          .limit(3);
+      // Get unique workspace IDs
+      const workspaceIds = Array.from(new Set(pendingItems.map(item => item.workspace_id)));
 
-        if (error || !actions || actions.length === 0) {
-          releaseLock(workspaceId);
-          continue;
-        }
+      for (const workspaceId of workspaceIds) {
+        // Verify socket is in globalSockets, if not try to wake it up if the session is open
+        if (!globalSockets.has(workspaceId)) {
+          const { data: session } = await supabaseAdmin
+            .from('baileys_sessions')
+            .select('conn_state')
+            .eq('workspace_id', workspaceId)
+            .maybeSingle();
 
-        console.log(`[poller] Draining ${actions.length} actions for workspace ${workspaceId}...`);
-
-        for (const action of actions) {
-          // Claim action
-          const { data: claimed, error: claimErr } = await supabaseAdmin
-            .from('baileys_action_queue')
-            .update({
-              status: 'processing',
-              attempt_count: action.attempt_count + 1,
-              processed_at: new Date().toISOString()
-            })
-            .eq('id', action.id)
-            .eq('status', 'pending')
-            .select();
-
-          if (claimErr || !claimed || claimed.length === 0) continue;
-
-          try {
-            const result = await processSingleQueuedAction(supabaseAdmin, action);
-            if (!result.success) throw new Error(result.error || 'Execution returned success=false');
-
-            await supabaseAdmin
-              .from('baileys_action_queue')
-              .update({
-                status: 'done',
-                result_message_id: result.waMessageId || null,
-                error_message: null
-              })
-              .eq('id', action.id);
-
-            await supabaseAdmin.from('live_logs').insert({
-              workspace_id: workspaceId,
-              event_type: 'queue_action_done',
-              message: `Action ${action.action_type} [${action.id}] completed successfully.`,
-              metadata: { action_id: action.id, wa_message_id: result.waMessageId }
+          if (session?.conn_state === 'open') {
+            console.log(`[poller] Found pending actions for offline workspace ${workspaceId}. Waking up socket...`);
+            await getOrCreateSocket(supabaseAdmin, workspaceId).catch(err => {
+              console.error(`[poller] Failed to auto-wake socket for workspace ${workspaceId}:`, err.message);
             });
-          } catch (err: any) {
-            const errMsg = err.message || String(err);
-            const newAttemptCount = action.attempt_count + 1;
-
-            if (newAttemptCount >= 5) {
-              await supabaseAdmin
-                .from('baileys_action_queue')
-                .update({
-                  status: 'failed',
-                  error_message: `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
-                  next_retry_at: null
-                })
-                .eq('id', action.id);
-
-              await supabaseAdmin.from('live_logs').insert({
-                workspace_id: workspaceId,
-                event_type: 'queue_action_failed',
-                message: `⚠️ Action ${action.action_type} [${action.id}] permanently failed after 5 attempts.`,
-                metadata: { action_id: action.id, error: errMsg }
-              });
-            } else {
-              const jitter = Math.floor(Math.random() * 5000);
-              const delayMs = 15000 * Math.pow(4, newAttemptCount) + jitter;
-              const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
-
-              await supabaseAdmin
-                .from('baileys_action_queue')
-                .update({
-                  status: 'pending',
-                  error_message: `[Attempt ${newAttemptCount}/5] Failed: ${errMsg}`,
-                  next_retry_at: nextRetryAt
-                })
-                .eq('id', action.id);
-
-              await supabaseAdmin.from('live_logs').insert({
-                workspace_id: workspaceId,
-                event_type: 'queue_action_retry_scheduled',
-                message: `↩️ Action ${action.action_type} [${action.id}] failed. Retry in ${Math.round(delayMs / 1000)}s.`,
-                metadata: { action_id: action.id, error: errMsg, next_retry_at: nextRetryAt }
-              });
-            }
           }
         }
-      } catch (err: any) {
-        console.error(`[poller] Error draining queue for workspace ${workspaceId}:`, err.message);
-      } finally {
-        releaseLock(workspaceId);
+
+        // Proceed if socket is now active
+        if (!globalSockets.has(workspaceId)) continue;
+
+        if (!acquireLock(workspaceId)) continue;
+
+        try {
+          const { data: actions, error } = await supabaseAdmin
+            .from('baileys_action_queue')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .eq('status', 'pending')
+            .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
+            .order('priority', { ascending: true })
+            .order('created_at', { ascending: true })
+            .limit(3);
+
+          if (error || !actions || actions.length === 0) {
+            releaseLock(workspaceId);
+            continue;
+          }
+
+          console.log(`[poller] Draining ${actions.length} actions for workspace ${workspaceId}...`);
+
+          for (const action of actions) {
+            // Claim action
+            const { data: claimed, error: claimErr } = await supabaseAdmin
+              .from('baileys_action_queue')
+              .update({
+                status: 'processing',
+                attempt_count: action.attempt_count + 1,
+                processed_at: new Date().toISOString()
+              })
+              .eq('id', action.id)
+              .eq('status', 'pending')
+              .select();
+
+            if (claimErr || !claimed || claimed.length === 0) continue;
+
+            try {
+              const result = await processSingleQueuedAction(supabaseAdmin, action);
+              if (!result.success) throw new Error(result.error || 'Execution returned success=false');
+
+              await supabaseAdmin
+                .from('baileys_action_queue')
+                .update({
+                  status: 'done',
+                  result_message_id: result.waMessageId || null,
+                  error_message: null
+                })
+                .eq('id', action.id);
+
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: workspaceId,
+                event_type: 'queue_action_done',
+                message: `Action ${action.action_type} [${action.id}] completed successfully.`,
+                metadata: { action_id: action.id, wa_message_id: result.waMessageId }
+              });
+            } catch (err: any) {
+              const errMsg = err.message || String(err);
+              const newAttemptCount = action.attempt_count + 1;
+
+              if (newAttemptCount >= 5) {
+                await supabaseAdmin
+                  .from('baileys_action_queue')
+                  .update({
+                    status: 'failed',
+                    error_message: `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
+                    next_retry_at: null
+                  })
+                  .eq('id', action.id);
+
+                await supabaseAdmin.from('live_logs').insert({
+                  workspace_id: workspaceId,
+                  event_type: 'queue_action_failed',
+                  message: `⚠️ Action ${action.action_type} [${action.id}] permanently failed after 5 attempts.`,
+                  metadata: { action_id: action.id, error: errMsg }
+                });
+              } else {
+                const jitter = Math.floor(Math.random() * 5000);
+                const delayMs = 15000 * Math.pow(4, newAttemptCount) + jitter;
+                const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+
+                await supabaseAdmin
+                  .from('baileys_action_queue')
+                  .update({
+                    status: 'pending',
+                    error_message: `[Attempt ${newAttemptCount}/5] Failed: ${errMsg}`,
+                    next_retry_at: nextRetryAt
+                  })
+                  .eq('id', action.id);
+
+                await supabaseAdmin.from('live_logs').insert({
+                  workspace_id: workspaceId,
+                  event_type: 'queue_action_retry_scheduled',
+                  message: `↩️ Action ${action.action_type} [${action.id}] failed. Retry in ${Math.round(delayMs / 1000)}s.`,
+                  metadata: { action_id: action.id, error: errMsg, next_retry_at: nextRetryAt }
+                });
+              }
+            }
+          }
+        } catch (err: any) {
+          console.error(`[poller] Error draining queue for workspace ${workspaceId}:`, err.message);
+        } finally {
+          releaseLock(workspaceId);
+        }
       }
+    } catch (e: any) {
+      console.error('[poller] Error in startQueuePoller interval:', e.message);
     }
   }, 5000);
 
