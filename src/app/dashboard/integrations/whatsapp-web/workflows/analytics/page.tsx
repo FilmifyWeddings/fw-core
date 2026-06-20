@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
+import { useSearchParams } from 'next/navigation';
 import { 
   ArrowLeft, 
   Search, 
@@ -80,6 +81,8 @@ const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 export default function WorkflowAnalyticsPage() {
   const { userId } = useBhamstra();
   const tenantId = userId || MOCK_WORKSPACE_ID;
+  const searchParams = useSearchParams();
+  const urlWorkflowId = searchParams.get('workflowId');
 
   // State Management
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -112,8 +115,19 @@ export default function WorkflowAnalyticsPage() {
       // Auto-select first workflow if none selected
       let currentWorkflow = selectedWorkflow;
       if (workflowsData && workflowsData.length > 0 && !selectedWorkflow) {
-        currentWorkflow = workflowsData[0];
-        setSelectedWorkflow(workflowsData[0]);
+        if (urlWorkflowId) {
+          const matched = workflowsData.find(w => w.id === urlWorkflowId);
+          if (matched) {
+            currentWorkflow = matched;
+            setSelectedWorkflow(matched);
+          } else {
+            currentWorkflow = workflowsData[0];
+            setSelectedWorkflow(workflowsData[0]);
+          }
+        } else {
+          currentWorkflow = workflowsData[0];
+          setSelectedWorkflow(workflowsData[0]);
+        }
       }
 
       if (currentWorkflow) {
@@ -154,7 +168,7 @@ export default function WorkflowAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, [tenantId, selectedWorkflow]);
+  }, [tenantId, selectedWorkflow, urlWorkflowId]);
 
   // Calculate grid execution rows dynamically
   const calculateExecutions = (targetLeads: Lead[], stepLogs: WorkflowLog[], workflow: Workflow) => {

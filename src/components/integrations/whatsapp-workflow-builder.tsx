@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { 
   Play, Trash2, Calendar, Send, CheckCircle2, 
   AlertTriangle, RefreshCw, Layers, ArrowDown, HelpCircle,
   Search, ShieldAlert, Sparkles, ChevronRight, UserCheck, Users,
   GripVertical, Plus, Edit, Copy, PlayCircle, RotateCcw, 
   Database, PauseCircle, MoreVertical, Sliders, X, ArrowLeft,
-  ChevronLeft, ChevronRight as ChevronRightIcon
+  ChevronLeft, ChevronRight as ChevronRightIcon, BarChart3
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -46,6 +47,7 @@ interface Workflow {
 }
 
 export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilderProps) {
+  const router = useRouter();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -659,6 +661,17 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                   <PlayCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                                   {executingId === wf.id ? 'Running...' : 'Execute Sequence'}
                                 </button>
+                                 
+                                 <button
+                                   onClick={() => {
+                                     setActiveMenuId(null);
+                                     router.push(`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${wf.id}`);
+                                   }}
+                                   className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+                                 >
+                                   <BarChart3 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                   View Analytics
+                                 </button>
 
                                 <div className="h-[1px] bg-zinc-900 my-0.5" />
 
