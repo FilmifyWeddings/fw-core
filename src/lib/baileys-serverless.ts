@@ -178,11 +178,12 @@ export async function getOrCreateSocket(
 ): Promise<any> {
   if (globalSockets.has(workspaceId)) {
     const sock = globalSockets.get(workspaceId);
-    // Verify connection is alive and open
-    if (sock && sock.ws && sock.ws.readyState === 1) { // 1 === OPEN
+    // Verify connection is alive, open, or connecting (readyState: 0=CONNECTING, 1=OPEN)
+    // If it's still connecting or initializing, do NOT recreate it to prevent race condition reconnect loops.
+    if (sock && (!sock.ws || sock.ws.readyState === 1 || sock.ws.readyState === 0)) {
       return sock;
     }
-    console.log(`[manager] Socket for ${workspaceId} is dead/closing. Recreating...`);
+    console.log(`[manager] Socket for ${workspaceId} is dead/closing (ws: ${!!sock.ws}, readyState: ${sock.ws?.readyState}). Recreating...`);
     try { sock.end(undefined); } catch {}
     globalSockets.delete(workspaceId);
   }
@@ -246,7 +247,7 @@ export async function getOrCreateSocket(
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-      console.log(`[manager] WhatsApp socket closed for workspace ${workspaceId}. Code: ${statusCode}`);
+      console.log(`[manager] WhatsApp socket closed for workspace ${workspaceId}. Code: ${statusCode}, Error:`, lastDisconnect?.error);
 
       if (statusCode === 401) {
         console.log(`[manager] Credentials rejected for ${workspaceId}. Resetting session...`);

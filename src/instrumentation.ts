@@ -8,6 +8,10 @@ export async function register() {
     (globalThis as any).__baileysReconnectInitialized = true;
 
     console.log('[instrumentation] Node.js runtime detected. Initializing Baileys Auto-Reconnect...');
+    if (process.env.DISABLE_WHATSAPP_WORKER === 'true') {
+      console.log('[instrumentation] Baileys Auto-Reconnect and Poller disabled via environment variable.');
+      return;
+    }
     const { supabaseAdmin } = await import('@/lib/supabase');
     const { autoReconnectSessions, startQueuePoller } = await import('@/lib/baileys-serverless');
     
