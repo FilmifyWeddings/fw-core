@@ -73,19 +73,40 @@ export async function POST(req: NextRequest) {
       .from('baileys_action_queue')
       .select('*')
       .eq('workspace_id', tenantId)
-      .in('status', ['failed', 'pending']);
+      .in('status', ['failed', 'pending', 'processing']);
+
+    // SEQUENTIAL DRIFT: Build a sorted list of workflow steps to compute cumulative delays
+    // This mirrors the PostgreSQL trigger logic: each step's time = previous step's time + its own delay
+    const workflowSteps: any[] = (workflow.workflow_steps || []).slice().sort(
+      (a: any, b: any) => a.sort_index - b.sort_index
+    );
+
+    // Pre-compute a map of step sort_index → scheduled_at using the same drift algorithm
+    const stepScheduleMap = new Map<number, string>();
+    let driftTime = new Date(); // baseline = NOW()
+    for (const step of workflowSteps) {
+      if (step.delay_unit === 'seconds' && step.delay_value > 0) {
+        driftTime = new Date(driftTime.getTime() + step.delay_value * 1000);
+      } else if (step.delay_unit === 'hours' && step.delay_value > 0) {
+        driftTime = new Date(driftTime.getTime() + step.delay_value * 3600 * 1000);
+      }
+      stepScheduleMap.set(step.sort_index, driftTime.toISOString());
+    }
 
     for (const log of retriableLogs) {
-      const step = (workflow.workflow_steps || []).find((s: any) => s.sort_index === log.step_index);
+      const step = workflowSteps.find((s: any) => s.sort_index === log.step_index);
       if (!step) continue;
 
-      // Update step log to pending and reset execution timestamps
+      // Get the sequentially-computed scheduled time for this step
+      const newScheduledAt = stepScheduleMap.get(log.step_index) || new Date().toISOString();
+
+      // Update step log to pending with fresh sequential timestamp
       const { error: updErr } = await supabaseAdmin
         .from('whatsapp_workflow_logs')
         .update({
           status: 'pending',
           error_message: null,
-          sent_at: new Date().toISOString(), // Reset execution timestamp to NOW
+          sent_at: newScheduledAt, // Progressive sequential time
           updated_at: new Date().toISOString()
         })
         .eq('id', log.id);
@@ -97,14 +118,14 @@ export async function POST(req: NextRequest) {
       );
 
       if (matchedQueueItem) {
-        // Recycle the existing queue item back to pending
+        // Recycle the existing queue item back to pending with sequential scheduled time
         const { error: qUpdErr } = await supabaseAdmin
           .from('baileys_action_queue')
           .update({
             status: 'pending',
-            attempt_count: 0,
+            attempt_count: 0,          // Reset attempts per Sushant's mandate
             error_message: null,
-            next_retry_at: new Date().toISOString(), // Immediate dispatch
+            next_retry_at: newScheduledAt, // Use sequential drift time
             processed_at: null
           })
           .eq('id', matchedQueueItem.id);
@@ -124,8 +145,9 @@ export async function POST(req: NextRequest) {
               workflowLogId: log.id
             },
             status: 'pending',
+            attempt_count: 0,
             priority: 2,
-            next_retry_at: new Date().toISOString()
+            next_retry_at: newScheduledAt  // Sequential drift time for new items too
           });
 
         if (qInsErr) throw qInsErr;

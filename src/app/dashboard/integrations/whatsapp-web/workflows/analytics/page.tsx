@@ -458,22 +458,28 @@ function WorkflowAnalyticsInner() {
   };
 
   const handleDeleteLead = async (leadId: string, leadName: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${leadName}" and all associated workflow execution records? If you re-add this contact in the future, they will start the workflow sequence from the beginning.`)) return;
+    if (!selectedWorkflow) return;
+    if (!window.confirm(
+      `Clear workflow execution history for "${leadName}"?\n\n` +
+      `This will delete all scheduling logs and pending queue items for the "${selectedWorkflow.workflow_name}" workflow.\n\n` +
+      `✅ The contact will remain in your CRM.\n` +
+      `✅ Re-syncing the contact will restart the workflow sequence with fresh timings.`
+    )) return;
     try {
-      const res = await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${tenantId}`, {
+      const res = await fetch(`/api/integrations/whatsapp/workflows/delete-contact?tenant_id=${tenantId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId }),
+        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to delete contact');
+        throw new Error(data.error || 'Failed to clear workflow logs');
       }
-      alert('✅ Contact and workflow execution logs deleted successfully.');
+      alert(`✅ Workflow execution logs cleared (${data.deletedLogCount ?? 0} log(s) removed).\nContact is preserved in CRM. Re-sync to restart the sequence.`);
       fetchData(true);
       setIsModalOpen(false);
     } catch (err: any) {
-      alert(`Delete failed: ${err.message}`);
+      alert(`Clear logs failed: ${err.message}`);
     }
   };
 

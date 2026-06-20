@@ -909,22 +909,48 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
       }
 
       // Get unique workspace IDs
-      const workspaceIds = Array.from(new Set(pendingItems.map(item => item.workspace_id)));
+      const workspaceIds = Array.from(new Set(pendingItems.map((item: any) => item.workspace_id)));
 
       for (const workspaceId of workspaceIds) {
         // Verify socket is in globalSockets, if not try to wake it up if the session is open
         if (!globalSockets.has(workspaceId)) {
           const { data: session } = await supabaseAdmin
             .from('baileys_sessions')
-            .select('conn_state')
+            .select('conn_state, creds_json')
             .eq('workspace_id', workspaceId)
             .maybeSingle();
 
-          if (session?.conn_state === 'open') {
+          if (session?.conn_state === 'open' && session?.creds_json) {
             console.log(`[poller] Found pending actions for offline workspace ${workspaceId}. Waking up socket...`);
             await getOrCreateSocket(supabaseAdmin, workspaceId).catch(err => {
               console.error(`[poller] Failed to auto-wake socket for workspace ${workspaceId}:`, err.message);
             });
+          } else {
+            // ── DEAD-LOCK AUTO-FAIL: Socket is DISCONNECTED and credentials are missing/null.
+            // Any past-deadline pending tasks cannot be delivered. Immediately mark them
+            // as failed so they don't perpetually deadlock in PENDING state.
+            const { data: overdueItems } = await supabaseAdmin
+              .from('baileys_action_queue')
+              .select('id, attempt_count')
+              .eq('workspace_id', workspaceId)
+              .eq('status', 'pending')
+              .lte('next_retry_at', now);
+
+            if (overdueItems && overdueItems.length > 0) {
+              console.warn(`[poller] Gateway DISCONNECTED for workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
+              for (const item of overdueItems) {
+                await supabaseAdmin
+                  .from('baileys_action_queue')
+                  .update({
+                    status: 'failed',
+                    error_message: `[AUTO-FAIL] Gateway disconnected (no active WhatsApp session). Scheduled dispatch deadline passed at ${now}. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
+                    next_retry_at: null
+                  })
+                  .eq('id', item.id)
+                  .eq('status', 'pending');
+              }
+            }
+            continue;
           }
         }
 
