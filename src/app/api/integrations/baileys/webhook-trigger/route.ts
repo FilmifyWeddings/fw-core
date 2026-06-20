@@ -89,15 +89,42 @@ async function processQueuedAction(action: {
         to: string; templateId: string; variables?: Record<string, string>;
       };
 
-      // Fetch template from DB (using new whatsapp_templates table)
-      const { data: tpl } = await supabaseAdmin
-        .from('whatsapp_templates')
+      let tpl: any = null;
+
+      // 1. Try querying tenant_whatsapp_templates first (Law 1 Multi-Tenancy RLS compliant)
+      const { data: tenantTpl, error: tenantTplErr } = await supabaseAdmin
+        .from('tenant_whatsapp_templates')
         .select('*')
         .eq('id', templateId)
-        .eq('workspace_id', workspace_id)
-        .single();
+        .eq('tenant_id', workspace_id)
+        .maybeSingle();
 
-      if (!tpl) return { success: false, error: `Template ${templateId} not found` };
+      if (!tenantTplErr && tenantTpl) {
+        tpl = {
+          id: tenantTpl.id,
+          name: tenantTpl.template_name,
+          type: tenantTpl.media_url_payload ? 'media' : 'text',
+          payload: {
+            body: tenantTpl.body_text || '',
+            mediaUrl: tenantTpl.media_url_payload || ''
+          },
+          buttons: []
+        };
+      } else {
+        // 2. Fallback to legacy whatsapp_templates
+        const { data: legacyTpl } = await supabaseAdmin
+          .from('whatsapp_templates')
+          .select('*')
+          .eq('id', templateId)
+          .eq('workspace_id', workspace_id)
+          .maybeSingle();
+
+        if (legacyTpl) {
+          tpl = legacyTpl;
+        }
+      }
+
+      if (!tpl) return { success: false, error: `Template ${templateId} not found in workspace/tenant templates.` };
 
       const tplPayload = tpl.payload || {};
       const tplButtons = tpl.buttons || [];

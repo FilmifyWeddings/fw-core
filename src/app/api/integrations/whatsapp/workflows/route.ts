@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { workflow_name, target_group_id, workflow_steps } = await req.json();
+    const { workflow_name, target_group_id, workflow_steps, status } = await req.json();
 
     if (!workflow_name) {
       return NextResponse.json({ error: 'Missing workflow_name parameter' }, { status: 400 });
@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
         tenant_id: tenantId,
         workflow_name,
         target_group_id: target_group_id || null,
-        workflow_steps: workflow_steps || []
+        workflow_steps: workflow_steps || [],
+        status: status || 'Active'
       })
       .select()
       .single();
@@ -83,13 +84,14 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { workflow_name, target_group_id, workflow_steps, execution_count } = body;
+    const { workflow_name, target_group_id, workflow_steps, execution_count, status } = body;
 
     const updates: any = {};
     if (workflow_name !== undefined) updates.workflow_name = workflow_name;
     if (target_group_id !== undefined) updates.target_group_id = target_group_id;
     if (workflow_steps !== undefined) updates.workflow_steps = workflow_steps;
     if (execution_count !== undefined) updates.execution_count = execution_count;
+    if (status !== undefined) updates.status = status;
 
     updates.updated_at = new Date().toISOString();
 
