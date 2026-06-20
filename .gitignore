@@ -45,3 +45,4 @@ next-env.d.ts
 # baileys temporary session files
 .tmp/
 /scratch/
+/run.bat
