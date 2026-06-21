@@ -76,14 +76,14 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Size limits: Images = 5MB, Videos = 16MB, Other documents = 100MB
+    // Size limits: Images = 50MB, Videos = 50MB, Other documents = 100MB
     let maxLimit = 100 * 1024 * 1024; // Default 100MB
     let typeName = "file";
     if (file.type.startsWith('image/')) {
-      maxLimit = 5 * 1024 * 1024; // 5MB
+      maxLimit = 50 * 1024 * 1024; // 50MB
       typeName = "image";
     } else if (file.type.startsWith('video/')) {
-      maxLimit = 16 * 1024 * 1024; // 16MB
+      maxLimit = 50 * 1024 * 1024; // 50MB
       typeName = "video";
     }
 
@@ -892,9 +892,9 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                             <p className="text-xs text-zinc-700 dark:text-zinc-300 font-semibold">
                               {mediaUrl ? 'File selected (Click to replace)' : 'Drop files here or click to browse'}
                             </p>
-                            <p className="text-[10px] text-zinc-500">
-                              {mediaUrl ? `MIME: ${mediaMime}` : 'Single file only (Max: Image 5MB, Video 16MB, Document 100MB)'}
-                            </p>
+                             <p className="text-[10px] text-zinc-500">
+                               {mediaUrl ? `MIME: ${mediaMime}` : 'Single file only (Max: Image 50MB, Video 50MB, Document 100MB)'}
+                             </p>
                           </>
                         )}
                       </div>
