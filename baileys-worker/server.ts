@@ -177,10 +177,65 @@ async function sendTemplateMessage(
 
   if (!tpl) throw new Error(`Template ${templateId} not found`);
 
-  // Replace placeholders
+  // Replace placeholders (Must support both {{key}} and {key})
   let body = tpl.body_text;
-  for (const [key, val] of Object.entries(variables)) {
-    body = body.replaceAll(`{${key}}`, val);
+  if (body) {
+    const replaceFn = (match: string, key: string) => {
+      const trimmedKey = key.trim();
+      
+      // Look up in variables (case insensitive)
+      const foundKey = Object.keys(variables).find(k => k.toLowerCase() === trimmedKey.toLowerCase());
+      if (foundKey && variables[foundKey] !== undefined && variables[foundKey] !== null) {
+        return String(variables[foundKey]);
+      }
+
+      // Also compute client info and other fields dynamically if not present in variables
+      const normalizedKey = trimmedKey.toLowerCase();
+      const leadName = variables['Name'] || variables['name'] || variables['full_name'] || variables['lead_name'] || '';
+      const leadPhone = variables['phone'] || variables['phone_number'] || '';
+
+      if (normalizedKey === 'first_name') {
+        const parts = leadName.trim().split(/\s+/);
+        return parts[0] || '';
+      }
+      if (normalizedKey === 'last_name') {
+        const parts = leadName.trim().split(/\s+/);
+        return parts.slice(1).join(' ') || '';
+      }
+      if (normalizedKey === 'full_name') {
+        return leadName;
+      }
+      if (normalizedKey === 'phone_number') {
+        return leadPhone;
+      }
+      if (normalizedKey === 'timestamp') {
+        return new Date().toISOString();
+      }
+      if (normalizedKey === 'current_date') {
+        return new Date().toLocaleDateString('en-IN', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+      }
+      if (normalizedKey === 'facebook_lead_id') {
+        return variables['lead_id'] || variables['facebook_lead_id'] || '';
+      }
+      if (normalizedKey === 'form_name') {
+        return variables['form_name'] || '';
+      }
+      if (normalizedKey === 'campaign_name') {
+        return variables['campaign_name'] || '';
+      }
+      if (normalizedKey === 'platform') {
+        return variables['platform'] || '';
+      }
+
+      return '';
+    };
+
+    body = body.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
+    body = body.replace(/\{([^{}]+)\}/g, replaceFn);
   }
 
   if (tpl.media_url) {

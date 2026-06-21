@@ -50,6 +50,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
   // Custom states for Dynamic Fields insert
   const [showShortcodeDropdown, setShowShortcodeDropdown] = useState(false);
+  const [isTextareaFocused, setIsTextareaFocused] = useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const insertAtCursor = (tag: string) => {
@@ -334,100 +335,123 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   };
 
   // Formatting toolbar helper for textareas
-  const renderFormattingToolbar = () => (
-    <div className="flex items-center gap-1.5 pb-2 border-b border-zinc-150 dark:border-zinc-900 text-xs text-zinc-500 dark:text-zinc-400 font-mono mb-2 w-full">
-      <button 
-        type="button" 
-        onClick={() => insertAtCursor('*bold*')} 
-        className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-        title="Bold"
+  const renderFormattingToolbar = () => {
+    const renderOption = (item: { label: string, tag: string }) => (
+      <button
+        key={item.tag}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          insertAtCursor(item.tag);
+          setShowShortcodeDropdown(false);
+        }}
+        className="w-full text-left px-4 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/60 transition-colors font-sans flex justify-between items-center cursor-pointer"
       >
-        B
+        <span>{item.label}</span>
+        <span className="text-[10px] text-zinc-400 font-mono">{item.tag}</span>
       </button>
-      <button 
-        type="button" 
-        onClick={() => insertAtCursor('_italic_')} 
-        className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 italic rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-        title="Italic"
-      >
-        I
-      </button>
-      <button 
-        type="button" 
-        onClick={() => insertAtCursor('~strike~')} 
-        className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-        title="Strikethrough"
-      >
-        <span className="line-through">S</span>
-      </button>
-      <button 
-        type="button" 
-        onClick={() => insertAtCursor('`code`')} 
-        className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-        title="Code"
-      >
-        {"</>"}
-      </button>
-      <button 
-        type="button" 
-        onClick={() => insertAtCursor('{{1}}')} 
-        className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-        title="Variable"
-      >
-        {"{x}"}
-      </button>
+    );
 
-      {/* Dynamic Fields Dropdown */}
-      <div className="relative inline-block text-left ml-auto z-30">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowShortcodeDropdown(!showShortcodeDropdown);
-          }}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all font-sans cursor-pointer"
+    return (
+      <div className="flex items-center gap-1.5 pb-2 border-b border-zinc-150 dark:border-zinc-900 text-xs text-zinc-500 dark:text-zinc-400 font-mono mb-2 w-full">
+        <button 
+          type="button" 
+          onClick={() => insertAtCursor('*bold*')} 
+          className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
+          title="Bold"
         >
-          <span>Insert Dynamic Field</span>
-          <ChevronDown className="w-3.5 h-3.5" />
+          B
         </button>
-        {showShortcodeDropdown && (
-          <>
-            <div 
-              className="fixed inset-0 z-30" 
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowShortcodeDropdown(false);
-              }}
-            />
-            <div className="absolute right-0 mt-1 w-52 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-850 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-40 overflow-hidden py-1">
-              {[
-                { label: 'Client Name', tag: '{name}' },
-                { label: 'Phone Number', tag: '{phone_number}' },
-                { label: 'Event Date', tag: '{event_date}' },
-                { label: 'Pending Amount', tag: '{pending_amount}' },
-                { label: 'Lead Source', tag: '{lead_source}' },
-                { label: 'Shoot Type', tag: '{shoot_type}' },
-              ].map((item) => (
-                <button
-                  key={item.tag}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    insertAtCursor(item.tag);
-                    setShowShortcodeDropdown(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/60 transition-colors font-sans flex justify-between items-center cursor-pointer"
-                >
-                  <span>{item.label}</span>
-                  <span className="text-[10px] text-zinc-400 font-mono">{item.tag}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+        <button 
+          type="button" 
+          onClick={() => insertAtCursor('_italic_')} 
+          className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 italic rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
+          title="Italic"
+        >
+          I
+        </button>
+        <button 
+          type="button" 
+          onClick={() => insertAtCursor('~strike~')} 
+          className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
+          title="Strikethrough"
+        >
+          <span className="line-through">S</span>
+        </button>
+        <button 
+          type="button" 
+          onClick={() => insertAtCursor('`code`')} 
+          className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
+          title="Code"
+        >
+          {"</>"}
+        </button>
+        <button 
+          type="button" 
+          onClick={() => insertAtCursor('{{1}}')} 
+          className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
+          title="Variable"
+        >
+          {"{x}"}
+        </button>
+
+        {/* Dynamic Fields Dropdown */}
+        <div className="relative inline-block text-left z-30">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowShortcodeDropdown(!showShortcodeDropdown);
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all duration-200 font-sans cursor-pointer h-7 ${
+              isTextareaFocused 
+                ? 'text-zinc-950 dark:text-white border-zinc-950 dark:border-white bg-white/5 dark:bg-zinc-900/40 shadow-sm opacity-100 font-bold' 
+                : 'text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-850 bg-transparent opacity-60 hover:opacity-100 hover:text-zinc-800 dark:hover:text-zinc-200'
+            }`}
+          >
+            <span>Insert Dynamic Field</span>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+          {showShortcodeDropdown && (
+            <>
+              <div 
+                className="fixed inset-0 z-30" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowShortcodeDropdown(false);
+                }}
+              />
+              <div className="absolute left-0 mt-1 w-64 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-855 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-40 overflow-y-auto max-h-80 py-1.5 font-sans">
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500 tracking-wider">Client Info</div>
+                {[
+                  { label: 'First Name', tag: '{{first_name}}' },
+                  { label: 'Last Name', tag: '{{last_name}}' },
+                  { label: 'Full Name', tag: '{{full_name}}' },
+                  { label: 'Phone Number', tag: '{{phone_number}}' },
+                ].map(renderOption)}
+                
+                <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500 tracking-wider">System / Time</div>
+                {[
+                  { label: 'Timestamp', tag: '{{timestamp}}' },
+                  { label: 'Current Date', tag: '{{current_date}}' },
+                ].map(renderOption)}
+
+                <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500 tracking-wider">Meta / Campaign</div>
+                {[
+                  { label: 'Facebook Lead ID', tag: '{{facebook_lead_id}}' },
+                  { label: 'Form Name', tag: '{{form_name}}' },
+                  { label: 'Campaign Name', tag: '{{campaign_name}}' },
+                  { label: 'Platform', tag: '{{platform}}' },
+                ].map(renderOption)}
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // List menu rows count utility
   const getTotalListRows = () => {
@@ -824,6 +848,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                           placeholder="Write template message here..."
                           value={textBody}
                           onChange={(e) => setTextBody(e.target.value)}
+                          onFocus={() => setIsTextareaFocused(true)}
+                          onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)}
                           rows={6}
                           className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
                         />
@@ -927,6 +953,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                           placeholder="Write body text accompanying the media..."
                           value={textBody}
                           onChange={(e) => setTextBody(e.target.value)}
+                          onFocus={() => setIsTextareaFocused(true)}
+                          onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)}
                           rows={4}
                           className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
                         />
@@ -955,6 +983,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                           placeholder="Write introductory list description text..."
                           value={textBody}
                           onChange={(e) => setTextBody(e.target.value)}
+                          onFocus={() => setIsTextareaFocused(true)}
+                          onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)}
                           rows={4}
                           className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
                         />

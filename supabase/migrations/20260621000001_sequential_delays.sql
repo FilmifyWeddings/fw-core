@@ -52,11 +52,17 @@ BEGIN
 
   -- Build template variables from lead fields
   v_variables := jsonb_build_object(
-    'Name',      COALESCE(NEW.name, 'Guest'),
-    'Name_1',    COALESCE(NEW.name, 'Guest'),
-    'lead_name', COALESCE(NEW.name, 'Guest'),
-    'phone',     COALESCE(NEW.phone, ''),
-    'email',     COALESCE(NEW.email, '')
+    'Name',          COALESCE(NEW.name, 'Guest'),
+    'Name_1',        COALESCE(NEW.name, 'Guest'),
+    'lead_name',     COALESCE(NEW.name, 'Guest'),
+    'first_name',    split_part(COALESCE(NEW.name, 'Guest'), ' ', 1),
+    'last_name',     regexp_replace(COALESCE(NEW.name, ''), '^[^ ]+ *', ''),
+    'full_name',     COALESCE(NEW.name, 'Guest'),
+    'phone',         COALESCE(NEW.phone, ''),
+    'phone_number',  COALESCE(NEW.phone, ''),
+    'email',         COALESCE(NEW.email, ''),
+    'timestamp',     to_char(NOW(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'current_date',  to_char(NOW() AT TIME ZONE 'Asia/Kolkata', 'DD/MM/YYYY')
   );
   IF NEW.raw_payload IS NOT NULL AND jsonb_typeof(NEW.raw_payload) = 'object' THEN
     v_variables := v_variables || NEW.raw_payload;
@@ -174,11 +180,17 @@ BEGIN
     v_workspace_id := COALESCE(r_lead.workspace_id, r_lead.tenant_id);
 
     v_variables := jsonb_build_object(
-      'Name',      COALESCE(r_lead.name, 'Guest'),
-      'Name_1',    COALESCE(r_lead.name, 'Guest'),
-      'lead_name', COALESCE(r_lead.name, 'Guest'),
-      'phone',     COALESCE(r_lead.phone, ''),
-      'email',     COALESCE(r_lead.email, '')
+      'Name',          COALESCE(r_lead.name, 'Guest'),
+      'Name_1',        COALESCE(r_lead.name, 'Guest'),
+      'lead_name',     COALESCE(r_lead.name, 'Guest'),
+      'first_name',    split_part(COALESCE(r_lead.name, 'Guest'), ' ', 1),
+      'last_name',     regexp_replace(COALESCE(r_lead.name, ''), '^[^ ]+ *', ''),
+      'full_name',     COALESCE(r_lead.name, 'Guest'),
+      'phone',         COALESCE(r_lead.phone, ''),
+      'phone_number',  COALESCE(r_lead.phone, ''),
+      'email',         COALESCE(r_lead.email, ''),
+      'timestamp',     to_char(NOW(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+      'current_date',  to_char(NOW() AT TIME ZONE 'Asia/Kolkata', 'DD/MM/YYYY')
     );
     IF r_lead.raw_payload IS NOT NULL AND jsonb_typeof(r_lead.raw_payload) = 'object' THEN
       v_variables := v_variables || r_lead.raw_payload;

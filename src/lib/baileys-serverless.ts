@@ -334,15 +334,79 @@ export function parseShortcodes(text: string, lead: any): string {
   const replaceFn = (match: string, key: string) => {
     const normalizedKey = key.trim().toLowerCase();
 
-    // Direct column mapping
-    if (normalizedKey === 'name') return lead.name || '';
-    if (normalizedKey === 'phone' || normalizedKey === 'phone_number') return lead.phone || '';
+    // 1. Client Info Group
+    if (normalizedKey === 'first_name') {
+      const name = lead.name || '';
+      const parts = name.trim().split(/\s+/);
+      return parts[0] || '';
+    }
+    if (normalizedKey === 'last_name') {
+      const name = lead.name || '';
+      const parts = name.trim().split(/\s+/);
+      return parts.slice(1).join(' ') || '';
+    }
+    if (normalizedKey === 'full_name' || normalizedKey === 'name') {
+      return lead.name || '';
+    }
+    if (normalizedKey === 'phone_number' || normalizedKey === 'phone') {
+      return lead.phone || '';
+    }
     if (normalizedKey === 'email') return lead.email || '';
     if (normalizedKey === 'source' || normalizedKey === 'lead_source') return lead.source || '';
     if (normalizedKey === 'status') return lead.status || '';
     if (normalizedKey === 'score') return lead.score || '';
 
-    // Direct property check
+    // 2. System / Time Group
+    if (normalizedKey === 'timestamp') {
+      return new Date().toISOString();
+    }
+    if (normalizedKey === 'current_date') {
+      return new Date().toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    }
+
+    // 3. Meta / Campaign Fields
+    if (normalizedKey === 'facebook_lead_id') {
+      if (lead.facebook_lead_id !== undefined && lead.facebook_lead_id !== null) {
+        return String(lead.facebook_lead_id);
+      }
+      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
+        const val = lead.raw_payload.lead_id || lead.raw_payload.facebook_lead_id;
+        if (val !== undefined && val !== null) return String(val);
+      }
+    }
+    if (normalizedKey === 'form_name') {
+      if (lead.form_name !== undefined && lead.form_name !== null) {
+        return String(lead.form_name);
+      }
+      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
+        const val = lead.raw_payload.form_name;
+        if (val !== undefined && val !== null) return String(val);
+      }
+    }
+    if (normalizedKey === 'campaign_name') {
+      if (lead.campaign_name !== undefined && lead.campaign_name !== null) {
+        return String(lead.campaign_name);
+      }
+      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
+        const val = lead.raw_payload.campaign_name;
+        if (val !== undefined && val !== null) return String(val);
+      }
+    }
+    if (normalizedKey === 'platform') {
+      if (lead.platform !== undefined && lead.platform !== null) {
+        return String(lead.platform);
+      }
+      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
+        const val = lead.raw_payload.platform;
+        if (val !== undefined && val !== null) return String(val);
+      }
+    }
+
+    // Direct property check for any other key
     if (lead[normalizedKey] !== undefined && lead[normalizedKey] !== null) {
       return String(lead[normalizedKey]);
     }
