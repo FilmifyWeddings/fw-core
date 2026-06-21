@@ -63,6 +63,7 @@ export interface SendPayload {
   fileName?: string;
   pollOptions?: string[];
   pollSelectableCount?: number;
+  workflowLogId?: string;
 }
 
 // ─── /tmp Path Helper ─────────────────────────────────────────────────────────
@@ -325,6 +326,63 @@ export async function autoReconnectSessions(supabaseAdmin: SupabaseClient) {
   }
 }
 
+// ─── Token Replacement Parser (Regex Parser) ──────────────────────────────────
+export function parseShortcodes(text: string, lead: any): string {
+  if (!text) return '';
+  if (!lead) return text;
+
+  const replaceFn = (match: string, key: string) => {
+    const normalizedKey = key.trim().toLowerCase();
+
+    // Direct column mapping
+    if (normalizedKey === 'name') return lead.name || '';
+    if (normalizedKey === 'phone' || normalizedKey === 'phone_number') return lead.phone || '';
+    if (normalizedKey === 'email') return lead.email || '';
+    if (normalizedKey === 'source' || normalizedKey === 'lead_source') return lead.source || '';
+    if (normalizedKey === 'status') return lead.status || '';
+    if (normalizedKey === 'score') return lead.score || '';
+
+    // Direct property check
+    if (lead[normalizedKey] !== undefined && lead[normalizedKey] !== null) {
+      return String(lead[normalizedKey]);
+    }
+
+    // Check inside raw_payload
+    if (lead.raw_payload && typeof lead.raw_payload === 'object') {
+      const payloadKeys = Object.keys(lead.raw_payload);
+      const matchedKey = payloadKeys.find(k => k.toLowerCase() === normalizedKey);
+      if (matchedKey) {
+        const val = lead.raw_payload[matchedKey];
+        if (val !== undefined && val !== null) {
+          // Format date if key contains "date" and it's a valid date string
+          if (normalizedKey.includes('date') && typeof val === 'string' && !isNaN(Date.parse(val))) {
+            try {
+              return new Date(val).toLocaleDateString('en-IN', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+              });
+            } catch {
+              return val;
+            }
+          }
+          return String(val);
+        }
+      }
+    }
+
+    // Fallback gracefully
+    return '';
+  };
+
+  // Replace double braces first, then single braces
+  let parsed = text;
+  parsed = parsed.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
+  parsed = parsed.replace(/\{([^{}]+)\}/g, replaceFn);
+
+  return parsed;
+}
+
 // ─── CORE: Send Message via On-Demand Hydration ───────────────────────────────
 export async function sendMessageServerless(
   supabaseAdmin: SupabaseClient,
@@ -338,83 +396,216 @@ export async function sendMessageServerless(
     return { success: false, error: 'No active session. Please scan QR code first.' };
   }
 
-  // ── Helper: Build message content from payload ────────────────────────────
-  function buildMsgContent(p: SendPayload): WAMessageContent {
-    switch (p.type) {
-      case 'image':
-        return { image: { url: p.mediaUrl! }, caption: p.caption ?? '' };
-      case 'video':
-        return { video: { url: p.mediaUrl! }, caption: p.caption ?? '' };
-      case 'audio':
-        return { audio: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'audio/mpeg', ptt: false };
-      case 'document':
-        return { document: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'application/pdf', fileName: p.fileName ?? 'file' };
-      case 'poll':
-        return { poll: { name: p.text!, values: p.pollOptions || [], selectableCount: p.pollSelectableCount ?? 1 } };
-      default:
-        return { text: p.text! };
-    }
-  }
+  let tempFileToClean: string | null = null;
 
-  // ── Helper: Try to send via a connected socket ────────────────────────────
-  async function trySend(sock: BaileysSocket): Promise<HydrationResult> {
-    const jid = normalizeJid(payload.to);
-    const msgContent = buildMsgContent(payload);
-    const result = await sock.sendMessage(jid, msgContent);
-    const waMessageId = result?.key?.id ?? null;
-
-    if (waMessageId) {
-      await supabaseAdmin
-        .from('baileys_messages')
-        .update({ status: 'sent', wa_message_id: waMessageId })
-        .eq('workspace_id', workspaceId)
-        .eq('chat_jid', jid)
-        .eq('status', 'queued')
-        .order('created_at', { ascending: false })
-        .limit(1);
-    }
-    return { success: true, waMessageId: waMessageId ?? undefined };
-  }
-
-  // ── Attempt 1: Use primary persistent socket ──────────────────────────────
   try {
-    const sock = await getOrCreateSocket(supabaseAdmin, workspaceId);
-    return await trySend(sock);
-  } catch (err: any) {
-    console.error('[send] Primary socket send failed:', err.message);
-  }
-
-  // ── Attempt 2: SAFE RETRY — Wait for the manager socket to recover ────────
-  // ⚠️  DO NOT spawn a new fallback socket here.
-  // Spawning a second socket causes Code 440 (connectionReplaced) because
-  // WhatsApp only allows ONE active web session per account at a time.
-  // The manager's connection.update handler already schedules a 5s reconnect —
-  // we just need to poll until globalSockets has a live open socket again.
-  console.log(`[send] Waiting for manager socket to recover (workspace ${workspaceId})...`);
-
-  const startTime = Date.now();
-  const POLL_INTERVAL_MS = 1_200;
-  const WAIT_TIMEOUT_MS = Math.min(timeoutMs, 18_000); // max 18s wait
-
-  while (Date.now() - startTime < WAIT_TIMEOUT_MS) {
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-    const existingSock = globalSockets.get(workspaceId);
-    if (existingSock && existingSock.ws && existingSock.ws.readyState === 1) {
+    // 1. Token Replacement Parser (Regex Parser)
+    const textContent = payload.text || payload.caption || '';
+    if (textContent && (textContent.includes('{') || textContent.includes('}'))) {
       try {
-        console.log(`[send] Socket recovered! Retrying send for workspace ${workspaceId}...`);
-        return await trySend(existingSock);
-      } catch (retryErr: any) {
-        console.error('[send] Retry send also failed:', retryErr.message);
-        return { success: false, error: `Send failed after socket recovery: ${retryErr.message}` };
+        let leadRecord: any = null;
+        if (payload.workflowLogId) {
+          const { data: logData } = await supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .select('lead_id')
+            .eq('id', payload.workflowLogId)
+            .maybeSingle();
+          if (logData?.lead_id) {
+            const { data: leadData } = await supabaseAdmin
+              .from('leads')
+              .select('*')
+              .eq('id', logData.lead_id)
+              .maybeSingle();
+            leadRecord = leadData;
+          }
+        }
+
+        if (!leadRecord && payload.to) {
+          const cleanPhone = payload.to.replace(/[^0-9]/g, '');
+          const { data: leadsData } = await supabaseAdmin
+            .from('leads')
+            .select('*')
+            .eq('workspace_id', workspaceId);
+          
+          if (leadsData) {
+            leadRecord = leadsData.find((l: any) => {
+              const lp = (l.phone || '').replace(/[^0-9]/g, '');
+              return lp && (lp === cleanPhone || lp.endsWith(cleanPhone) || cleanPhone.endsWith(lp));
+            });
+          }
+        }
+
+        if (leadRecord) {
+          if (payload.text) {
+            payload.text = parseShortcodes(payload.text, leadRecord);
+          }
+          if (payload.caption) {
+            payload.caption = parseShortcodes(payload.caption, leadRecord);
+          }
+        }
+      } catch (scErr) {
+        console.error('[send] Error parsing shortcodes:', scErr);
+      }
+    }
+
+    // 2. Mime-type and extension check to fix PDF bug (ensure images are treated as 'image')
+    const isImageMime = payload.mimeType && payload.mimeType.startsWith('image/');
+    const isImageUrl = payload.mediaUrl && /\.(jpg|jpeg|png|webp)($|\?)/i.test(payload.mediaUrl);
+    if (payload.mediaUrl && (isImageMime || isImageUrl)) {
+      payload.type = 'image';
+      if (!payload.mimeType || !payload.mimeType.startsWith('image/')) {
+        const extMatch = payload.mediaUrl.match(/\.(jpg|jpeg|png|webp)($|\?)/i);
+        const ext = extMatch ? extMatch[1].toLowerCase() : 'jpeg';
+        payload.mimeType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+      }
+    }
+
+    // 3. Auto-Compression Layer for images over 5MB
+    if (payload.type === 'image' && payload.mediaUrl && (payload.mediaUrl.startsWith('http://') || payload.mediaUrl.startsWith('https://'))) {
+      try {
+        const LIMIT = 5 * 1024 * 1024; // 5MB limit
+        let needsCompression = false;
+        let size = 0;
+
+        try {
+          const headRes = await fetch(payload.mediaUrl, { method: 'HEAD' });
+          const contentLength = headRes.headers.get('content-length');
+          size = contentLength ? parseInt(contentLength, 10) : 0;
+          if (size > LIMIT || size === 0) {
+            needsCompression = true;
+          }
+        } catch (headErr) {
+          needsCompression = true;
+        }
+
+        if (needsCompression) {
+          console.log(`[compression] Fetching image for size check/compression: ${payload.mediaUrl}`);
+          const res = await fetch(payload.mediaUrl);
+          if (res.ok) {
+            const buffer = Buffer.from(await res.arrayBuffer());
+            if (buffer.length > LIMIT) {
+              console.log(`[compression] Image size ${buffer.length} bytes exceeds 5MB. Compressing...`);
+              
+              const sharp = (await import('sharp')).default;
+              const fs = await import('fs');
+              const path = await import('path');
+              const os = await import('os');
+
+              let quality = 85;
+              let compressedBuffer = await sharp(buffer)
+                .jpeg({ quality, progressive: true })
+                .toBuffer();
+
+              if (compressedBuffer.length > 4.8 * 1024 * 1024) {
+                quality = 70;
+                compressedBuffer = await sharp(buffer)
+                  .resize({ width: 2560, height: 2560, fit: 'inside', withoutEnlargement: true })
+                  .jpeg({ quality, progressive: true })
+                  .toBuffer();
+              }
+
+              const tempDir = os.tmpdir();
+              const tempFileName = `fw_comp_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+              const tempPath = path.join(tempDir, tempFileName);
+              fs.writeFileSync(tempPath, compressedBuffer);
+
+              console.log(`[compression] Compression complete. Original: ${buffer.length} bytes, New: ${compressedBuffer.length} bytes. Saved to temp path: ${tempPath}`);
+              payload.mediaUrl = tempPath;
+              tempFileToClean = tempPath;
+            }
+          }
+        }
+      } catch (compErr: any) {
+        console.error('[compression] Error in image compression layer:', compErr.message);
+      }
+    }
+
+    // ── Helper: Build message content from payload ────────────────────────────
+    const buildMsgContent = (p: SendPayload): WAMessageContent => {
+      switch (p.type) {
+        case 'image':
+          return { image: { url: p.mediaUrl! }, caption: p.caption ?? '' };
+        case 'video':
+          return { video: { url: p.mediaUrl! }, caption: p.caption ?? '' };
+        case 'audio':
+          return { audio: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'audio/mpeg', ptt: false };
+        case 'document':
+          return { document: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'application/pdf', fileName: p.fileName ?? 'file' };
+        case 'poll':
+          return { poll: { name: p.text!, values: p.pollOptions || [], selectableCount: p.pollSelectableCount ?? 1 } };
+        default:
+          return { text: p.text! };
+      }
+    };
+
+    // ── Helper: Try to send via a connected socket ────────────────────────────
+    const trySend = async (sock: BaileysSocket): Promise<HydrationResult> => {
+      const jid = normalizeJid(payload.to);
+      const msgContent = buildMsgContent(payload);
+      const result = await sock.sendMessage(jid, msgContent);
+      const waMessageId = result?.key?.id ?? null;
+
+      if (waMessageId) {
+        await supabaseAdmin
+          .from('baileys_messages')
+          .update({ status: 'sent', wa_message_id: waMessageId })
+          .eq('workspace_id', workspaceId)
+          .eq('chat_jid', jid)
+          .eq('status', 'queued')
+          .order('created_at', { ascending: false })
+          .limit(1);
+      }
+      return { success: true, waMessageId: waMessageId ?? undefined };
+    };
+
+    // ── Attempt 1: Use primary persistent socket ──────────────────────────────
+    try {
+      const sock = await getOrCreateSocket(supabaseAdmin, workspaceId);
+      return await trySend(sock);
+    } catch (err: any) {
+      console.error('[send] Primary socket send failed:', err.message);
+    }
+
+    // ── Attempt 2: SAFE RETRY — Wait for the manager socket to recover ────────
+    console.log(`[send] Waiting for manager socket to recover (workspace ${workspaceId})...`);
+
+    const startTime = Date.now();
+    const POLL_INTERVAL_MS = 1_200;
+    const WAIT_TIMEOUT_MS = Math.min(timeoutMs, 18_000); // max 18s wait
+
+    while (Date.now() - startTime < WAIT_TIMEOUT_MS) {
+      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      const existingSock = globalSockets.get(workspaceId);
+      if (existingSock && existingSock.ws && existingSock.ws.readyState === 1) {
+        try {
+          console.log(`[send] Socket recovered! Retrying send for workspace ${workspaceId}...`);
+          return await trySend(existingSock);
+        } catch (retryErr: any) {
+          console.error('[send] Retry send also failed:', retryErr.message);
+          return { success: false, error: `Send failed after socket recovery: ${retryErr.message}` };
+        }
+      }
+    }
+
+    console.error(`[send] Manager socket did not recover within ${WAIT_TIMEOUT_MS}ms`);
+    return {
+      success: false,
+      error: 'WhatsApp is reconnecting. Please wait 5–10 seconds and try again.',
+    };
+  } finally {
+    // 4. Temp File Cleanup
+    if (tempFileToClean) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(tempFileToClean)) {
+          fs.unlinkSync(tempFileToClean);
+          console.log('[compression] Cleaned up temporary compressed file:', tempFileToClean);
+        }
+      } catch (err: any) {
+        console.error('[compression] Error unlinking temp file:', err.message);
       }
     }
   }
-
-  console.error(`[send] Manager socket did not recover within ${WAIT_TIMEOUT_MS}ms`);
-  return {
-    success: false,
-    error: 'WhatsApp is reconnecting. Please wait 5–10 seconds and try again.',
-  };
 }
 
 
@@ -713,17 +904,18 @@ export async function processSingleQueuedAction(
 
   switch (action_type) {
     case 'send_text': {
-      const { to, text } = payload as { to: string; text: string };
+      const { to, text, workflowLogId } = payload as { to: string; text: string; workflowLogId?: string };
       return sendMessageServerless(supabaseAdmin, workspace_id, {
         to: normalizeJid(to),
         type: 'text',
         text,
+        workflowLogId,
       });
     }
 
     case 'send_media': {
-      const { to, mediaUrl, caption, mimeType } = payload as {
-        to: string; mediaUrl: string; caption?: string; mimeType: string;
+      const { to, mediaUrl, caption, mimeType, workflowLogId } = payload as {
+        to: string; mediaUrl: string; caption?: string; mimeType: string; workflowLogId?: string;
       };
       const mediaType = mimeType.startsWith('image/') ? 'image' :
                         mimeType.startsWith('video/') ? 'video' :
@@ -735,12 +927,13 @@ export async function processSingleQueuedAction(
         mediaUrl,
         caption,
         mimeType,
+        workflowLogId,
       });
     }
 
     case 'send_template': {
-      const { to, templateId, variables } = payload as {
-        to: string; templateId: string; variables?: Record<string, string>;
+      const { to, templateId, variables, workflowLogId } = payload as {
+        to: string; templateId: string; variables?: Record<string, string>; workflowLogId?: string;
       };
 
       let tpl: any = null;
@@ -798,6 +991,7 @@ export async function processSingleQueuedAction(
           text: body,
           pollOptions: options,
           pollSelectableCount: tplPayload.allowMultiple ? 0 : 1,
+          workflowLogId,
         });
       }
 
@@ -827,6 +1021,7 @@ export async function processSingleQueuedAction(
           caption: body,
           mimeType,
           fileName: tplPayload.fileName || 'document',
+          workflowLogId,
         });
       }
 
@@ -855,6 +1050,7 @@ export async function processSingleQueuedAction(
         to: normalizeJid(to),
         type: 'text',
         text: body,
+        workflowLogId,
       });
     }
 

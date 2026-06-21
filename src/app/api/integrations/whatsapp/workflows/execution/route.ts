@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { parseShortcodes } from '@/lib/baileys-serverless';
 
 // Helper to format date in Indian Standard Time (IST)
 function formatIST(dateInput: Date | string | number | null | undefined): string {
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
     if (workflow.target_group_id) {
       const { data: leadsData, error: leadsError } = await supabaseAdmin
         .from('leads')
-        .select('id, name, phone, whatsapp_group_id, created_at, updated_at')
+        .select('id, name, email, phone, source, status, score, raw_payload, whatsapp_group_id, created_at, updated_at')
         .eq('workspace_id', tenantId)
         .eq('whatsapp_group_id', workflow.target_group_id);
 
@@ -77,7 +78,57 @@ export async function GET(req: NextRequest) {
 
     const allLogs = logs || [];
 
-    // 4. Assemble Telemetry and calculations
+    // 4. Load template details for shortcode preview parsing
+    const templateIds = Array.from(new Set(
+      (workflow.workflow_steps || [])
+        .map((step: any) => step.template_id)
+        .filter(Boolean)
+    )) as string[];
+
+    const templatesMap: Record<string, any> = {};
+    if (templateIds.length > 0) {
+      try {
+        // Fetch from tenant templates
+        const { data: tenantTpls } = await supabaseAdmin
+          .from('tenant_whatsapp_templates')
+          .select('id, body_text, media_url_payload')
+          .in('id', templateIds)
+          .eq('tenant_id', tenantId);
+
+        if (tenantTpls) {
+          tenantTpls.forEach(t => {
+            templatesMap[t.id] = {
+              body: t.body_text || '',
+              type: t.media_url_payload ? 'media' : 'text'
+            };
+          });
+        }
+
+        // Fetch remaining from legacy templates
+        const missingIds = templateIds.filter(id => !templatesMap[id]);
+        if (missingIds.length > 0) {
+          const { data: legacyTpls } = await supabaseAdmin
+            .from('whatsapp_templates')
+            .select('id, type, payload')
+            .in('id', missingIds)
+            .eq('workspace_id', tenantId);
+
+          if (legacyTpls) {
+            legacyTpls.forEach(t => {
+              const pl = t.payload || {};
+              templatesMap[t.id] = {
+                body: pl.body || pl.question || '',
+                type: t.type
+              };
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error prefetching templates for shortcode parsing:', err);
+      }
+    }
+
+    // 5. Assemble Telemetry and calculations
     const totalStepsCount = workflow.workflow_steps?.length || 0;
 
     const executions = leads.map(lead => {
@@ -147,6 +198,11 @@ export async function GET(req: NextRequest) {
           }
         }
 
+        // Get template and parse shortcodes dynamically for this lead
+        const tpl = templatesMap[step.template_id];
+        const rawBody = tpl?.body || '';
+        const parsedBody = parseShortcodes(rawBody, lead);
+
         return {
           id: matchedLog?.id || null,
           step_index: step.sort_index,
@@ -156,7 +212,8 @@ export async function GET(req: NextRequest) {
           sent_at: sentAtIso,
           sent_at_formatted: sentAtFormatted,
           updated_at: matchedLog?.updated_at || null,
-          updated_at_formatted: updatedAtFormatted
+          updated_at_formatted: updatedAtFormatted,
+          parsed_body: parsedBody
         };
       });
 
