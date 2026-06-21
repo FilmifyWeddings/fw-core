@@ -11,16 +11,18 @@ export async function GET(req: NextRequest) {
 
   const cmd = req.nextUrl.searchParams.get('cmd') || 'pm2 status';
 
-  return new Promise((resolve) => {
+  const result = await new Promise<{ error: string | null; stdout: string; stderr: string }>((resolve) => {
     exec(cmd, (error, stdout, stderr) => {
-      resolve(
-        NextResponse.json({
-          command: cmd,
-          error: error ? error.message : null,
-          stdout: stdout,
-          stderr: stderr,
-        })
-      );
+      resolve({
+        error: error ? error.message : null,
+        stdout: stdout,
+        stderr: stderr,
+      });
     });
+  });
+
+  return NextResponse.json({
+    command: cmd,
+    ...result,
   });
 }
