@@ -378,10 +378,13 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       </button>
 
       {/* Dynamic Fields Dropdown */}
-      <div className="relative inline-block text-left ml-auto z-10">
+      <div className="relative inline-block text-left ml-auto z-30">
         <button
           type="button"
-          onClick={() => setShowShortcodeDropdown(!showShortcodeDropdown)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowShortcodeDropdown(!showShortcodeDropdown);
+          }}
           className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all font-sans cursor-pointer"
         >
           <span>Insert Dynamic Field</span>
@@ -390,10 +393,13 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         {showShortcodeDropdown && (
           <>
             <div 
-              className="fixed inset-0 z-10" 
-              onClick={() => setShowShortcodeDropdown(false)} 
+              className="fixed inset-0 z-30" 
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowShortcodeDropdown(false);
+              }}
             />
-            <div className="absolute right-0 mt-1 w-52 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-850 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-20 overflow-hidden py-1">
+            <div className="absolute right-0 mt-1 w-52 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-850 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-40 overflow-hidden py-1">
               {[
                 { label: 'Client Name', tag: '{name}' },
                 { label: 'Phone Number', tag: '{phone_number}' },
@@ -405,7 +411,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                 <button
                   key={item.tag}
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     insertAtCursor(item.tag);
                     setShowShortcodeDropdown(false);
                   }}
