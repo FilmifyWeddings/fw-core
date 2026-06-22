@@ -157,27 +157,40 @@ async function sendTemplateMessage(
   templateId: string,
   variables: Record<string, string>
 ): Promise<string | null> {
-  let tpl: { body_text: string; media_url: string | null; media_type: string | null } | null = null;
+  // Full template row including type, buttons, and payload_json
+  type TplRow = {
+    body_text: string;
+    media_url: string | null;
+    media_type: string | null;
+    tpl_type?: string | null;
+    tpl_buttons?: any[] | null;
+    tpl_payload?: any | null;
+  };
+  let tpl: TplRow | null = null;
 
-  // 1. Query tenant_whatsapp_templates first
+  // 1. Query tenant_whatsapp_templates first (new schema with type/buttons/payload_json)
   const { data: tenantTpl } = await supabase
     .from('tenant_whatsapp_templates')
-    .select('body_text, media_url_payload')
+    .select('body_text, media_url_payload, type, buttons, payload_json')
     .eq('id', templateId)
     .eq('tenant_id', WORKSPACE_ID)
     .maybeSingle();
 
   if (tenantTpl) {
+    const pj = (tenantTpl.payload_json as any) || {};
     tpl = {
-      body_text: tenantTpl.body_text || '',
-      media_url: tenantTpl.media_url_payload || null,
-      media_type: tenantTpl.media_url_payload ? 'image' : null
+      body_text: tenantTpl.body_text || pj.body || pj.question || '',
+      media_url: tenantTpl.media_url_payload || pj.mediaUrl || null,
+      media_type: tenantTpl.media_url_payload ? 'image' : null,
+      tpl_type: (tenantTpl as any).type || null,
+      tpl_buttons: (tenantTpl as any).buttons || [],
+      tpl_payload: pj,
     };
   } else {
     // 2. Fallback to legacy whatsapp_templates
     const { data: legacyTpl } = await supabase
       .from('whatsapp_templates')
-      .select('payload')
+      .select('payload, type, buttons')
       .eq('id', templateId)
       .eq('workspace_id', WORKSPACE_ID)
       .maybeSingle();
@@ -187,7 +200,10 @@ async function sendTemplateMessage(
       tpl = {
         body_text: payloadObj.body || payloadObj.question || '',
         media_url: payloadObj.mediaUrl || null,
-        media_type: payloadObj.mediaUrl ? 'image' : null
+        media_type: payloadObj.mediaUrl ? 'image' : null,
+        tpl_type: (legacyTpl as any).type || null,
+        tpl_buttons: (legacyTpl as any).buttons || [],
+        tpl_payload: payloadObj,
       };
     }
   }
@@ -205,14 +221,17 @@ async function sendTemplateMessage(
       tpl = {
         body_text: baileysTpl.body_text || '',
         media_url: baileysTpl.media_url || null,
-        media_type: baileysTpl.media_type || null
+        media_type: baileysTpl.media_type || null,
+        tpl_type: baileysTpl.media_url ? 'media' : 'text',
+        tpl_buttons: [],
+        tpl_payload: {},
       };
     }
   }
 
   if (!tpl) throw new Error(`Template ${templateId} not found`);
 
-  // Replace placeholders (Must support both {{key}} and {key})
+  // Replace placeholders (supports {{key}} and {key})
   let body = tpl.body_text;
   if (body) {
     const replaceFn = (match: string, key: string) => {
@@ -273,9 +292,81 @@ async function sendTemplateMessage(
     body = body.replace(/\{([^{}]+)\}/g, replaceFn);
   }
 
+  if (!sock) throw new Error('Socket not connected');
+
+  const tplType = tpl.tpl_type || (tpl.media_url ? 'media' : 'text');
+  const pj = tpl.tpl_payload || {};
+  const footer: string = pj.footer || '';
+
+  // ── LIST message ────────────────────────────────────────────────────────────
+  if (tplType === 'list') {
+    const sections: any[] = pj.sections || [];
+    const buttonText: string = pj.buttonText || pj.button_text || 'Options';
+    const result = await sock.sendMessage(to, {
+      listMessage: {
+        title: body,
+        description: footer,
+        buttonText,
+        footerText: footer,
+        listType: 1,
+        sections,
+      }
+    } as any);
+    return result?.key?.id ?? null;
+  }
+
+  // ── POLL message ─────────────────────────────────────────────────────────────
+  if (tplType === 'poll') {
+    const pollOpts: any[] = (pj.options || []).map((o: any) => (typeof o === 'string' ? o : o.text));
+    const allowMultiple: boolean = !!(pj.allowMultiple || pj.multipleAnswers);
+    const result = await sock.sendMessage(to, {
+      poll: {
+        name: body,
+        values: pollOpts,
+        selectableCount: allowMultiple ? pollOpts.length : 1,
+      }
+    });
+    return result?.key?.id ?? null;
+  }
+
+  // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────────
+  const rawButtons: any[] = tpl.tpl_buttons || [];
+  if (rawButtons.length > 0) {
+    const formattedButtons = rawButtons.map((btn: any, i: number) => ({
+      buttonId: btn.id || String(i + 1),
+      buttonText: { displayText: btn.text || btn.label || `Option ${i + 1}` },
+      type: btn.type === 'url' ? 2 : 1, // 1 = quick_reply, 2 = URL
+      ...(btn.type === 'url' && btn.value ? { urlButton: { displayText: btn.text, url: btn.value } } : {}),
+    }));
+
+    if (tpl.media_url) {
+      // Media + buttons
+      const isImage = tpl.media_type === 'image' || (tpl.media_url && !tpl.media_url.match(/\.mp4|video/i));
+      const result = await sock.sendMessage(to, {
+        [isImage ? 'image' : 'video']: { url: tpl.media_url },
+        caption: body,
+        buttons: formattedButtons,
+        footer,
+        headerType: isImage ? 4 : 5,
+      } as any);
+      return result?.key?.id ?? null;
+    } else {
+      const result = await sock.sendMessage(to, {
+        text: body,
+        buttons: formattedButtons,
+        footer,
+        headerType: 1,
+      } as any);
+      return result?.key?.id ?? null;
+    }
+  }
+
+  // ── MEDIA (no buttons) ────────────────────────────────────────────────────
   if (tpl.media_url) {
     return sendMediaMessage(to, tpl.media_url, body, tpl.media_type === 'image' ? 'image/jpeg' : 'video/mp4');
   }
+
+  // ── PLAIN TEXT ────────────────────────────────────────────────────────────
   return sendTextMessage(to, body);
 }
 
@@ -807,6 +898,42 @@ function startHealthServer(): void {
             });
             waMessageId = pollResult?.key?.id ?? null;
             break;
+          case 'list': {
+            // Interactive List Message
+            const { listButtonText, listSections, footer: listFooter } = payload as any;
+            if (!text) throw new Error('Missing: text (list title)');
+            const listResult = await sock.sendMessage(jid, {
+              listMessage: {
+                title: text,
+                description: listFooter || '',
+                buttonText: listButtonText || 'Options',
+                footerText: listFooter || '',
+                listType: 1,
+                sections: listSections || [],
+              }
+            } as any);
+            waMessageId = listResult?.key?.id ?? null;
+            break;
+          }
+          case 'buttons': {
+            // Interactive Quick-Reply / URL / Phone buttons
+            const { rawButtons, footer: btnFooter } = payload as any;
+            if (!text) throw new Error('Missing: text (buttons body)');
+            const formattedButtons = (rawButtons || []).map((btn: any, i: number) => ({
+              buttonId: btn.id || String(i + 1),
+              buttonText: { displayText: btn.text || btn.label || `Option ${i + 1}` },
+              type: btn.type === 'url' ? 2 : 1,
+              ...(btn.type === 'url' && btn.value ? { urlButton: { displayText: btn.text, url: btn.value } } : {}),
+            }));
+            const btnResult = await sock.sendMessage(jid, {
+              text,
+              buttons: formattedButtons,
+              footer: btnFooter || '',
+              headerType: 1,
+            } as any);
+            waMessageId = btnResult?.key?.id ?? null;
+            break;
+          }
           default:
             throw new Error(`Unsupported type: ${type}`);
         }

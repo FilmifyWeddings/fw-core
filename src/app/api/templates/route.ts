@@ -21,22 +21,37 @@ export async function GET(req: NextRequest) {
 
     if (!tenantError && tenantTemplates) {
       // Map to standard template structure expected by UI
-      const results = tenantTemplates.map(t => ({
-        id: t.id,
-        name: t.template_name,
-        category: t.category,
-        language: 'en_US',
-        type: t.media_url_payload ? 'media' : 'text',
-        status: 'approved',
-        payload: {
-          body: t.body_text || '',
-          mediaUrl: t.media_url_payload || ''
-        },
-        buttons: [],
-        meta_approval_required: false,
-        created_at: t.created_at,
-        updated_at: t.updated_at
-      }));
+      const results = tenantTemplates.map(t => {
+        // payload_json stores list_sections, poll_options, footer, etc.
+        const payloadJson = (t.payload_json as any) || {};
+        // Derive type: prefer explicit DB column, then fall back by presence of media URL
+        const templateType: string = t.type || (t.media_url_payload ? 'media' : 'text');
+        return {
+          id: t.id,
+          name: t.template_name,
+          category: t.category,
+          language: 'en_US',
+          type: templateType,
+          status: 'approved',
+          payload: {
+            body: t.body_text || payloadJson.body || '',
+            footer: payloadJson.footer || '',
+            mediaUrl: t.media_url_payload || payloadJson.mediaUrl || '',
+            mediaMime: payloadJson.mediaMime || '',
+            // List fields
+            buttonText: payloadJson.buttonText || '',
+            sections: payloadJson.sections || [],
+            // Poll fields
+            question: payloadJson.question || t.body_text || '',
+            allowMultiple: payloadJson.allowMultiple || false,
+            options: payloadJson.options || [],
+          },
+          buttons: (t.buttons as any[]) || [],
+          meta_approval_required: false,
+          created_at: t.created_at,
+          updated_at: t.updated_at
+        };
+      });
 
       // Filter by shoot type category if not 'all'
       const filtered = shootType === 'all' 
@@ -92,8 +107,12 @@ export async function POST(req: NextRequest) {
     const templateStatus = 'approved';
 
     // 1. Try insert into tenant_whatsapp_templates first
+    // Derive the primary body text — for polls, use `question`; for others, use `body`
     const bodyText = payload?.body || payload?.question || '';
     const mediaUrl = payload?.mediaUrl || payload?.default_send_media_url || '';
+
+    // Build the full payload_json that preserves list sections, poll options, footer, etc.
+    const payloadJson = payload || {};
 
     const { data: tenantData, error: tenantInsertError } = await supabaseAdmin
       .from('tenant_whatsapp_templates')
@@ -102,7 +121,10 @@ export async function POST(req: NextRequest) {
         template_name: name,
         category: category,
         body_text: bodyText,
-        media_url_payload: mediaUrl || null
+        media_url_payload: mediaUrl || null,
+        type: type,                      // FIX: persist the actual type ('text'|'media'|'list'|'poll')
+        buttons: buttons || [],          // FIX: persist action buttons array
+        payload_json: payloadJson        // FIX: persist full structured payload
       })
       .select()
       .maybeSingle();
@@ -111,10 +133,11 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from('live_logs').insert({
         workspace_id: workspaceId,
         event_type: 'sync_templates_success',
-        message: `WhatsApp template "${name}" created in tenant storage.`,
-        metadata: { templateId: tenantData.id, status: templateStatus }
+        message: `WhatsApp template "${name}" (${type}) created in tenant storage.`,
+        metadata: { templateId: tenantData.id, status: templateStatus, type }
       });
 
+      const payloadJsonOut = (tenantData.payload_json as any) || {};
       return NextResponse.json({
         success: true,
         template: {
@@ -122,9 +145,14 @@ export async function POST(req: NextRequest) {
           name: tenantData.template_name,
           category: tenantData.category,
           language: 'en_US',
-          type: type,
+          type: tenantData.type || type,
           status: 'approved',
-          payload: { body: tenantData.body_text, mediaUrl: tenantData.media_url_payload }
+          payload: {
+            body: tenantData.body_text,
+            mediaUrl: tenantData.media_url_payload,
+            ...payloadJsonOut
+          },
+          buttons: tenantData.buttons || []
         }
       });
     }
@@ -190,6 +218,7 @@ export async function PATCH(req: NextRequest) {
     const templateStatus = 'approved';
     const bodyText = payload?.body || payload?.question || '';
     const mediaUrl = payload?.mediaUrl || payload?.default_send_media_url || '';
+    const payloadJson = payload || {};
 
     // 1. Try update in tenant_whatsapp_templates first
     const { data: tenantData, error: tenantUpdateError } = await supabaseAdmin
@@ -198,7 +227,10 @@ export async function PATCH(req: NextRequest) {
         template_name: name,
         category: category,
         body_text: bodyText,
-        media_url_payload: mediaUrl || null
+        media_url_payload: mediaUrl || null,
+        type: type,                      // FIX: persist the actual type
+        buttons: buttons || [],          // FIX: persist action buttons array
+        payload_json: payloadJson        // FIX: persist full structured payload
       })
       .eq('id', templateId)
       .eq('tenant_id', workspaceId)
@@ -209,10 +241,11 @@ export async function PATCH(req: NextRequest) {
       await supabaseAdmin.from('live_logs').insert({
         workspace_id: workspaceId,
         event_type: 'sync_templates_success',
-        message: `WhatsApp template "${name}" updated in tenant storage.`,
-        metadata: { templateId: tenantData.id }
+        message: `WhatsApp template "${name}" (${type}) updated in tenant storage.`,
+        metadata: { templateId: tenantData.id, type }
       });
 
+      const payloadJsonOut = (tenantData.payload_json as any) || {};
       return NextResponse.json({
         success: true,
         template: {
@@ -220,9 +253,14 @@ export async function PATCH(req: NextRequest) {
           name: tenantData.template_name,
           category: tenantData.category,
           language: 'en_US',
-          type: type,
+          type: tenantData.type || type,
           status: 'approved',
-          payload: { body: tenantData.body_text, mediaUrl: tenantData.media_url_payload }
+          payload: {
+            body: tenantData.body_text,
+            mediaUrl: tenantData.media_url_payload,
+            ...payloadJsonOut
+          },
+          buttons: tenantData.buttons || []
         }
       });
     }
