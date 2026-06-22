@@ -55,7 +55,7 @@ export interface HydrationResult {
 
 export interface SendPayload {
   to: string;                        // JID or phone number digits
-  type: 'text' | 'image' | 'video' | 'document' | 'audio' | 'poll';
+  type: 'text' | 'image' | 'video' | 'document' | 'audio' | 'poll' | 'buttons' | 'list';
   text?: string;
   mediaUrl?: string;
   caption?: string;
@@ -64,6 +64,11 @@ export interface SendPayload {
   pollOptions?: string[];
   pollSelectableCount?: number;
   workflowLogId?: string;
+  buttons?: any[];
+  rawButtons?: any[];
+  listButtonText?: string;
+  listSections?: any[];
+  footer?: string;
 }
 
 // ─── /tmp Path Helper ─────────────────────────────────────────────────────────
@@ -383,6 +388,11 @@ export async function sendMessageServerless(
           mimeType: payload.mimeType,
           pollOptions: payload.pollOptions,
           pollSelectableCount: payload.pollSelectableCount,
+          buttons: payload.buttons,
+          rawButtons: payload.rawButtons,
+          listButtonText: payload.listButtonText,
+          listSections: payload.listSections,
+          footer: payload.footer,
         }),
       });
 

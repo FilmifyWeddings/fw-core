@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     const { to, type, mode = 'direct', leadId } = body;
 
     if (!to) return NextResponse.json({ error: 'Missing field: to' }, { status: 400 });
-    if (!['text', 'media', 'template'].includes(type)) {
+    if (!['text', 'media', 'template', 'list', 'poll', 'buttons'].includes(type)) {
       return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
     }
 
@@ -126,14 +126,22 @@ export async function POST(req: NextRequest) {
           mimeType: body.mimeType,
         });
       } else {
-        // Template — fetch and render
+        // ── TEMPLATE ── Fetch full row including type, buttons, payload_json ──────────
         if (!body.templateId) return NextResponse.json({ error: 'Missing: templateId' }, { status: 400 });
-        
-        let tpl: { body_text: string; media_url: string | null; media_type: string | null } | null = null;
-        
+
+        type FullTplRow = {
+          body_text: string;
+          media_url_payload: string | null;
+          type: string | null;
+          buttons: any[] | null;
+          payload_json: any | null;
+        };
+        let tpl: FullTplRow | null = null;
+
+        // 1. Try tenant_whatsapp_templates with ALL fields including type/buttons/payload_json
         const { data: tenantTpl } = await supabaseAdmin
           .from('tenant_whatsapp_templates')
-          .select('body_text, media_url_payload')
+          .select('body_text, media_url_payload, type, buttons, payload_json')
           .eq('id', body.templateId)
           .eq('tenant_id', user.id)
           .maybeSingle();
@@ -141,48 +149,96 @@ export async function POST(req: NextRequest) {
         if (tenantTpl) {
           tpl = {
             body_text: tenantTpl.body_text || '',
-            media_url: tenantTpl.media_url_payload || null,
-            media_type: tenantTpl.media_url_payload ? 'image' : null
+            media_url_payload: tenantTpl.media_url_payload || null,
+            type: (tenantTpl as any).type || (tenantTpl.media_url_payload ? 'media' : 'text'),
+            buttons: (tenantTpl as any).buttons || [],
+            payload_json: (tenantTpl as any).payload_json || {},
           };
         } else {
-          // Fallback to legacy whatsapp_templates
+          // 2. Fallback to legacy whatsapp_templates
           const { data: legacyTpl } = await supabaseAdmin
             .from('whatsapp_templates')
-            .select('payload')
+            .select('payload, type, buttons')
             .eq('id', body.templateId)
             .eq('workspace_id', user.id)
             .maybeSingle();
 
           if (legacyTpl) {
+            const p = (legacyTpl.payload as any) || {};
             tpl = {
-              body_text: (legacyTpl.payload as any)?.body || '',
-              media_url: (legacyTpl.payload as any)?.mediaUrl || null,
-              media_type: (legacyTpl.payload as any)?.mediaUrl ? 'image' : null
+              body_text: p.body || p.question || '',
+              media_url_payload: p.mediaUrl || null,
+              type: (legacyTpl as any).type || (p.mediaUrl ? 'media' : 'text'),
+              buttons: (legacyTpl as any).buttons || [],
+              payload_json: p,
             };
           }
         }
 
         if (!tpl) return NextResponse.json({ error: 'Template not found' }, { status: 404 });
 
-        let rendered = tpl.body_text as string;
+        // Replace template variables in body text
+        let rendered = tpl.body_text;
         if (body.variables) {
           for (const [k, v] of Object.entries(body.variables)) {
-            // Support {{Name}}, {{1}}, {Name}, {1} — all common template variable formats
             rendered = rendered
-              .replaceAll(`{{${k}}}`, v)   // Double-brace Mustache: {{Name}}, {{1}}
-              .replaceAll(`{${k}}`, v);    // Single-brace: {Name}, {1}
+              .replaceAll(`{{${k}}}`, v)
+              .replaceAll(`{${k}}`, v);
           }
         }
 
+        const pj = tpl.payload_json || {};
+        const tplType = tpl.type || 'text';
+        const tplButtons: any[] = tpl.buttons || [];
 
-        if (tpl.media_url) {
+        // ── POLL ──────────────────────────────────────────────────────────
+        if (tplType === 'poll') {
           result = await sendMessageServerless(supabaseAdmin, user.id, {
             to: chatJid,
-            type: tpl.media_type as 'image' | 'video' | 'audio' | 'document',
-            mediaUrl: tpl.media_url as string,
-            caption: rendered,
-            mimeType: tpl.media_type === 'image' ? 'image/jpeg' : 'video/mp4',
+            type: 'poll',
+            text: rendered,
+            pollOptions: (pj.options || []).map((o: any) => typeof o === 'string' ? o : o.text),
+            pollSelectableCount: pj.allowMultiple ? 0 : 1,
           });
+
+        // ── LIST ──────────────────────────────────────────────────────────
+        } else if (tplType === 'list') {
+          result = await sendMessageServerless(supabaseAdmin, user.id, {
+            to: chatJid,
+            type: 'list' as any,
+            text: rendered,
+            listButtonText: pj.buttonText || 'Options',
+            listSections: pj.sections || [],
+            footer: pj.footer || '',
+          } as any);
+
+        // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────
+        } else if (tplButtons.length > 0) {
+          result = await sendMessageServerless(supabaseAdmin, user.id, {
+            to: chatJid,
+            type: 'buttons' as any,
+            text: rendered,
+            rawButtons: tplButtons,
+            footer: pj.footer || '',
+            mediaUrl: tpl.media_url_payload || undefined,
+            mimeType: tpl.media_url_payload ? (pj.mediaMime || 'image/jpeg') : undefined,
+          } as any);
+
+        // ── MEDIA (no buttons) ────────────────────────────────────────────────
+        } else if (tpl.media_url_payload) {
+          const mimeType = pj.mediaMime || 'image/jpeg';
+          const mediaType = mimeType.startsWith('image/') ? 'image' :
+                            mimeType.startsWith('video/') ? 'video' :
+                            mimeType.startsWith('audio/') ? 'audio' : 'document';
+          result = await sendMessageServerless(supabaseAdmin, user.id, {
+            to: chatJid,
+            type: mediaType as any,
+            mediaUrl: tpl.media_url_payload,
+            caption: rendered,
+            mimeType,
+          });
+
+        // ── PLAIN TEXT ──────────────────────────────────────────────────────────
         } else {
           result = await sendMessageServerless(supabaseAdmin, user.id, {
             to: chatJid, type: 'text', text: rendered,

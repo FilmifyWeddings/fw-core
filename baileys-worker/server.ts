@@ -896,10 +896,18 @@ function startHealthServer(): void {
           return;
         }
 
-        const { to, type, text, mediaUrl, caption, mimeType, pollOptions, pollSelectableCount } = payload;
+        const to = payload.to || payload.jid;
+        const type = payload.type;
+        const text = payload.text;
+        const mediaUrl = payload.mediaUrl;
+        const caption = payload.caption;
+        const mimeType = payload.mimeType;
+        const pollOptions = payload.pollOptions;
+        const pollSelectableCount = payload.pollSelectableCount;
+
         if (!to) {
           res.writeHead(400);
-          res.end(JSON.stringify({ success: false, error: 'Missing field: to' }));
+          res.end(JSON.stringify({ success: false, error: 'Missing field: to or jid' }));
           return;
         }
 
@@ -948,21 +956,35 @@ function startHealthServer(): void {
           }
           case 'buttons': {
             // Interactive Quick-Reply / URL / Phone buttons
-            const { rawButtons, footer: btnFooter } = payload as any;
+            const { rawButtons, buttons: payloadButtons, footer: btnFooter } = payload as any;
+            const targetButtons = payloadButtons || rawButtons || [];
             if (!text) throw new Error('Missing: text (buttons body)');
-            const formattedButtons = (rawButtons || []).map((btn: any, i: number) => ({
+            const formattedButtons = targetButtons.map((btn: any, i: number) => ({
               buttonId: btn.id || String(i + 1),
               buttonText: { displayText: btn.text || btn.label || `Option ${i + 1}` },
               type: btn.type === 'url' ? 2 : 1,
               ...(btn.type === 'url' && btn.value ? { urlButton: { displayText: btn.text, url: btn.value } } : {}),
             }));
-            const btnResult = await sock.sendMessage(jid, {
-              text,
-              buttons: formattedButtons,
-              footer: btnFooter || '',
-              headerType: 1,
-            } as any);
-            waMessageId = btnResult?.key?.id ?? null;
+
+            if (mediaUrl) {
+              const isImage = !mediaUrl.match(/\.mp4|video/i) && (!mimeType || mimeType.startsWith('image/'));
+              const btnResult = await sock.sendMessage(jid, {
+                [isImage ? 'image' : 'video']: { url: mediaUrl },
+                caption: text,
+                buttons: formattedButtons,
+                footer: btnFooter || '',
+                headerType: isImage ? 4 : 5,
+              } as any);
+              waMessageId = btnResult?.key?.id ?? null;
+            } else {
+              const btnResult = await sock.sendMessage(jid, {
+                text,
+                buttons: formattedButtons,
+                footer: btnFooter || '',
+                headerType: 1,
+              } as any);
+              waMessageId = btnResult?.key?.id ?? null;
+            }
             break;
           }
           default:
