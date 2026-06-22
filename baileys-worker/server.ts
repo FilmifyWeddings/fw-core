@@ -72,7 +72,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
   realtime: {
-    websocket: ws,
+    transport: ws,
   },
 });
 
