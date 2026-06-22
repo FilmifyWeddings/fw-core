@@ -355,7 +355,7 @@ async function sendTemplateMessage(
           index,
           quickReplyButton: {
             displayText: btn.text || btn.label || 'Reply',
-            id: btn.id || btn.value || String(index)
+            id: btn.value || btn.id || String(index)
           }
         };
       }
@@ -368,14 +368,14 @@ async function sendTemplateMessage(
         [isImage ? 'image' : 'video']: { url: tpl.media_url },
         caption: body,
         templateButtons,
-        footer,
+        footer: footer || "",
       } as any);
       return result?.key?.id ?? null;
     } else {
       const result = await sock.sendMessage(to, {
         text: body,
         templateButtons,
-        footer,
+        footer: footer || "",
       } as any);
       return result?.key?.id ?? null;
     }
@@ -1003,7 +1003,7 @@ function startHealthServer(): void {
                   index,
                   quickReplyButton: {
                     displayText: btn.text || btn.label || 'Reply',
-                    id: btn.id || btn.value || String(index)
+                    id: btn.value || btn.id || String(index)
                   }
                 };
               }
