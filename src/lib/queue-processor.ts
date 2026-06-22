@@ -134,7 +134,7 @@ export async function processQueueAction(
   const newAttemptCount = attempt_count + 1;
 
   // ── Step 1: Mark as PROCESSING (optimistic lock in DB) ────────────────────
-  const { error: lockError } = await supabaseAdmin
+  const { data: claimedRows, error: lockError } = await supabaseAdmin
     .from('baileys_action_queue')
     .update({
       status: 'processing',
@@ -142,10 +142,17 @@ export async function processQueueAction(
       processed_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .eq('status', 'pending'); // Only claim if still pending (prevents race conditions)
+    .eq('status', 'pending') // Only claim if still pending (prevents race conditions)
+    .select('id');           // Returns the row only if the update affected it
 
   if (lockError) {
     console.error(`[QueueProcessor] Failed to claim action ${id}:`, lockError.message);
+    return;
+  }
+
+  // If 0 rows returned, another processor already claimed this action — skip it
+  if (!claimedRows || claimedRows.length === 0) {
+    console.warn(`[QueueProcessor] Action ${id} already claimed by another processor — skipping.`);
     return;
   }
 
@@ -158,14 +165,24 @@ export async function processQueueAction(
     }
 
     // ── Step 3: Mark as DONE ─────────────────────────────────────────────────
-    await supabaseAdmin
+    // The handler (executeAction) may have already written 'done' to the DB as an
+    // ACID guarantee immediately after sock.sendMessage succeeded. Check first.
+    const { data: currentRow } = await supabaseAdmin
       .from('baileys_action_queue')
-      .update({
-        status: 'done',
-        result_message_id: result.waMessageId ?? null,
-        failure_reason: null,
-      })
-      .eq('id', id);
+      .select('status')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (currentRow?.status !== 'done') {
+      await supabaseAdmin
+        .from('baileys_action_queue')
+        .update({
+          status: 'done',
+          result_message_id: result.waMessageId ?? null,
+          failure_reason: null,
+        })
+        .eq('id', id);
+    }
 
     // Log success to live_logs
     await supabaseAdmin.from('live_logs').insert({
@@ -183,69 +200,36 @@ export async function processQueueAction(
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
 
-    // ── Step 4: Handle failure — retry or permanently fail ───────────────────
-    if (newAttemptCount >= MAX_RETRIES) {
-      // MAX RETRIES REACHED → Mark as permanently FAILED
-      await supabaseAdmin
-        .from('baileys_action_queue')
-        .update({
-          status: 'failed',
-          failure_reason: `[Attempt ${newAttemptCount}/${MAX_RETRIES}] PERMANENTLY FAILED: ${errMsg}`,
-          next_retry_at: null,
-        })
-        .eq('id', id);
+    // ── Step 4: Permanent FAILURE — no auto-retry ────────────────────────────
+    // Per architecture decision: failed actions must be manually retried via the UI.
+    // Auto-retry caused infinite loop bugs when messages were sent but DB write failed.
+    await supabaseAdmin
+      .from('baileys_action_queue')
+      .update({
+        status: 'failed',
+        failure_reason: `[Attempt ${newAttemptCount}/${MAX_RETRIES}] ${errMsg}`,
+        next_retry_at: null,
+      })
+      .eq('id', id);
 
-      // Critical failure alert in live_logs
-      await supabaseAdmin.from('live_logs').insert({
-        workspace_id,
-        event_type: 'queue_action_failed',
-        message: `⚠️ Action ${action.action_type} [${id}] permanently failed after ${MAX_RETRIES} attempts.`,
-        metadata: {
-          action_id: id,
-          action_type: action.action_type,
-          payload: action.payload,
-          error: errMsg,
-          total_attempts: newAttemptCount,
-        },
-      });
+    // Log failure to live_logs
+    await supabaseAdmin.from('live_logs').insert({
+      workspace_id,
+      event_type: 'queue_action_failed',
+      message: `❌ Action ${action.action_type} [${id}] failed after attempt ${newAttemptCount}. Manual retry required.`,
+      metadata: {
+        action_id: id,
+        action_type: action.action_type,
+        payload: action.payload,
+        error: errMsg,
+        total_attempts: newAttemptCount,
+      },
+    });
 
-      console.error(`[QueueProcessor] ❌ PERMANENT FAILURE — Action ${id} exhausted ${MAX_RETRIES} retries. Error: ${errMsg}`);
-
-    } else {
-      // RETRYABLE FAILURE → Compute backoff and reschedule
-      const nextRetryAt = computeNextRetryAt(newAttemptCount);
-      const backoffDesc = describeBackoff(newAttemptCount);
-
-      await supabaseAdmin
-        .from('baileys_action_queue')
-        .update({
-          status: 'pending', // Reset to pending so poller picks it up again
-          failure_reason: `[Attempt ${newAttemptCount}/${MAX_RETRIES}] ${errMsg}`,
-          next_retry_at: nextRetryAt,
-          attempt_count: newAttemptCount,
-        })
-        .eq('id', id);
-
-      // Log retry scheduling
-      await supabaseAdmin.from('live_logs').insert({
-        workspace_id,
-        event_type: 'queue_action_retry_scheduled',
-        message: `↩️ Action ${action.action_type} [${id}] failed. Retry ${newAttemptCount}/${MAX_RETRIES} in ${backoffDesc}.`,
-        metadata: {
-          action_id: id,
-          action_type: action.action_type,
-          error: errMsg,
-          attempt_count: newAttemptCount,
-          next_retry_at: nextRetryAt,
-          backoff_delay: backoffDesc,
-        },
-      });
-
-      console.warn(
-        `[QueueProcessor] ↩️ Retry ${newAttemptCount}/${MAX_RETRIES} for action ${id} ` +
-        `(${action.action_type}). Next attempt in ${backoffDesc}. Error: ${errMsg}`
-      );
-    }
+    console.error(
+      `[QueueProcessor] ❌ FAILED — Action ${id} (${action.action_type}) failed at attempt ${newAttemptCount}. ` +
+      `Status set to 'failed'. Manual retry required. Error: ${errMsg}`
+    );
   }
 }
 

@@ -394,6 +394,11 @@ async function dispatchGroupCard(groupJid: string, leadData: Record<string, unkn
 /**
  * Executes a single action from the queue.
  * Called by the queue-processor engine for each dequeued action.
+ *
+ * ACID GUARANTEE: This function writes status='done' to the DB IMMEDIATELY after
+ * sock.sendMessage succeeds. This prevents the infinite-loop bug where the processor's
+ * own DB update fails after dispatch, leaving the row as 'pending' and re-queuing it.
+ *
  * Must return { success: boolean, waMessageId?, error? }
  */
 async function executeAction(action: {
@@ -410,6 +415,7 @@ async function executeAction(action: {
 
   let waMessageId: string | null = null;
 
+  // ── Dispatch: throws on failure so the processor marks it 'failed' ──────────
   switch (action.action_type) {
     case 'send_text': {
       const { to, text } = action.payload as { to: string; text: string };
@@ -441,7 +447,32 @@ async function executeAction(action: {
       logger.warn({ type: action.action_type }, 'Unknown action type — skipping');
   }
 
-  logger.info({ actionId: action.id, type: action.action_type, waMessageId }, '✅ Action executed');
+  // ── ACID: Write 'done' to DB immediately after successful dispatch ──────────
+  // This is the critical mutation that prevents re-queuing. Even if the processor's
+  // own update after this point fails, the row will already be 'done'.
+  try {
+    const { error: doneErr } = await supabase
+      .from('baileys_action_queue')
+      .update({
+        status: 'done',
+        result_message_id: waMessageId,
+        failure_reason: null,
+      })
+      .eq('id', action.id)
+      .eq('status', 'processing'); // Only update if still 'processing' (idempotent)
+
+    if (doneErr) {
+      logger.error({ actionId: action.id, err: doneErr.message }, '⚠️  Message sent but done-write failed. Processor will handle.');
+    } else {
+      logger.info({ actionId: action.id, type: action.action_type, waMessageId }, '✅ Action executed and status=done written immediately');
+    }
+  } catch (dbWriteErr: unknown) {
+    // DB write failed but message was already sent — log and continue.
+    // The processor's status check in processQueueAction will not re-queue because
+    // we still return { success: true } here.
+    logger.error({ actionId: action.id, err: dbWriteErr }, '⚠️  ACID done-write threw unexpectedly. Message was sent.');
+  }
+
   return { success: true, waMessageId };
 }
 
