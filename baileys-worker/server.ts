@@ -38,14 +38,26 @@ const logger = pino({
 });
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const SUPABASE_URL = process.env.SUPABASE_URL!;
+// Load from parent .env.local if present (Next.js config location)
+try {
+  const parentEnvPath = path.join(__dirname, '..', '.env.local');
+  if (fs.existsSync(parentEnvPath)) {
+    const dotenv = require('dotenv');
+    dotenv.config({ path: parentEnvPath });
+    logger.info('✅ Loaded env from parent .env.local');
+  }
+} catch (e) {
+  logger.warn('Failed to load parent .env.local');
+}
+
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const WORKSPACE_ID = process.env.WORKER_WORKSPACE_ID!;
-const PORT = parseInt(process.env.PORT ?? '3001', 10);
+const WORKSPACE_ID = process.env.WORKER_WORKSPACE_ID || '37c63a54-d4f1-4b99-b546-3d965cd23a37';
+const PORT = parseInt(process.env.PORT ?? '3002', 10); // default to 3002 to avoid collision with webhook on 3001
 const AUTH_FOLDER = path.join(__dirname, '.baileys_auth');
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
-  logger.fatal('Missing required env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_WORKSPACE_ID');
+  logger.fatal('Missing required env vars: SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_WORKSPACE_ID');
   process.exit(1);
 }
 
