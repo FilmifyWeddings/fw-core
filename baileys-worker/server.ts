@@ -17,7 +17,6 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-  makeInMemoryStore,
   proto,
   useMultiFileAuthState,
   WAMessageContent,
@@ -73,8 +72,7 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-// ─── In-Memory Store (Chat cache) ────────────────────────────────────────────
-const store = makeInMemoryStore({ logger: logger.child({ module: 'store' }) });
+// (In-Memory Store chat cache removed to comply with ESM build of @whiskeysockets/baileys)
 
 // ─── Active Socket Reference ─────────────────────────────────────────────────
 let sock: ReturnType<typeof makeWASocket> | null = null;
@@ -423,7 +421,7 @@ async function startBaileysSocket(): Promise<void> {
     markOnlineOnConnect: false,
   });
 
-  store.bind(sock.ev);
+  // Store binding removed
 
   // ── Event: creds.update — save creds on every update ──
   sock.ev.on('creds.update', async () => {
