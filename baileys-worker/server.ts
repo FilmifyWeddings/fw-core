@@ -26,6 +26,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import pino from 'pino';
+import ws from 'ws';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -70,6 +71,9 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
 // ─── Supabase Admin Client ────────────────────────────────────────────────────
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
+  realtime: {
+    websocket: ws,
+  },
 });
 
 // (In-Memory Store chat cache removed to comply with ESM build of @whiskeysockets/baileys)
