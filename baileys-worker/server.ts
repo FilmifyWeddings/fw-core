@@ -332,12 +332,34 @@ async function sendTemplateMessage(
   // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────────
   const rawButtons: any[] = tpl.tpl_buttons || [];
   if (rawButtons.length > 0) {
-    const formattedButtons = rawButtons.map((btn: any, i: number) => ({
-      buttonId: btn.id || String(i + 1),
-      buttonText: { displayText: btn.text || btn.label || `Option ${i + 1}` },
-      type: btn.type === 'url' ? 2 : 1, // 1 = quick_reply, 2 = URL
-      ...(btn.type === 'url' && btn.value ? { urlButton: { displayText: btn.text, url: btn.value } } : {}),
-    }));
+    const templateButtons = rawButtons.map((btn: any, i: number) => {
+      const index = i + 1;
+      if (btn.type === 'url') {
+        return {
+          index,
+          urlButton: {
+            displayText: btn.text || btn.label || 'Link',
+            url: btn.value || ''
+          }
+        };
+      } else if (btn.type === 'phone' || btn.type === 'call') {
+        return {
+          index,
+          callButton: {
+            displayText: btn.text || btn.label || 'Call',
+            phoneNumber: btn.value || ''
+          }
+        };
+      } else {
+        return {
+          index,
+          quickReplyButton: {
+            displayText: btn.text || btn.label || 'Reply',
+            id: btn.id || btn.value || String(index)
+          }
+        };
+      }
+    });
 
     if (tpl.media_url) {
       // Media + buttons
@@ -345,17 +367,15 @@ async function sendTemplateMessage(
       const result = await sock.sendMessage(to, {
         [isImage ? 'image' : 'video']: { url: tpl.media_url },
         caption: body,
-        buttons: formattedButtons,
+        templateButtons,
         footer,
-        headerType: isImage ? 4 : 5,
       } as any);
       return result?.key?.id ?? null;
     } else {
       const result = await sock.sendMessage(to, {
         text: body,
-        buttons: formattedButtons,
+        templateButtons,
         footer,
-        headerType: 1,
       } as any);
       return result?.key?.id ?? null;
     }
@@ -959,29 +979,50 @@ function startHealthServer(): void {
             const { rawButtons, buttons: payloadButtons, footer: btnFooter } = payload as any;
             const targetButtons = payloadButtons || rawButtons || [];
             if (!text) throw new Error('Missing: text (buttons body)');
-            const formattedButtons = targetButtons.map((btn: any, i: number) => ({
-              buttonId: btn.id || String(i + 1),
-              buttonText: { displayText: btn.text || btn.label || `Option ${i + 1}` },
-              type: btn.type === 'url' ? 2 : 1,
-              ...(btn.type === 'url' && btn.value ? { urlButton: { displayText: btn.text, url: btn.value } } : {}),
-            }));
+            
+            const templateButtons = targetButtons.map((btn: any, i: number) => {
+              const index = i + 1;
+              if (btn.type === 'url') {
+                return {
+                  index,
+                  urlButton: {
+                    displayText: btn.text || btn.label || 'Link',
+                    url: btn.value || ''
+                  }
+                };
+              } else if (btn.type === 'phone' || btn.type === 'call') {
+                return {
+                  index,
+                  callButton: {
+                    displayText: btn.text || btn.label || 'Call',
+                    phoneNumber: btn.value || ''
+                  }
+                };
+              } else {
+                return {
+                  index,
+                  quickReplyButton: {
+                    displayText: btn.text || btn.label || 'Reply',
+                    id: btn.id || btn.value || String(index)
+                  }
+                };
+              }
+            });
 
             if (mediaUrl) {
               const isImage = !mediaUrl.match(/\.mp4|video/i) && (!mimeType || mimeType.startsWith('image/'));
               const btnResult = await sock.sendMessage(jid, {
                 [isImage ? 'image' : 'video']: { url: mediaUrl },
                 caption: text,
-                buttons: formattedButtons,
+                templateButtons,
                 footer: btnFooter || '',
-                headerType: isImage ? 4 : 5,
               } as any);
               waMessageId = btnResult?.key?.id ?? null;
             } else {
               const btnResult = await sock.sendMessage(jid, {
                 text,
-                buttons: formattedButtons,
+                templateButtons,
                 footer: btnFooter || '',
-                headerType: 1,
               } as any);
               waMessageId = btnResult?.key?.id ?? null;
             }
