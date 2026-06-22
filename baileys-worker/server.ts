@@ -23,7 +23,7 @@ import makeWASocket, {
   WAMessageContent,
   WAMessageKey,
   BaileysEventMap,
-} from '@adiwajshing/baileys';
+} from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import pino from 'pino';
