@@ -18,9 +18,9 @@ pm2 restart fw-core
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
 npm install
-npm run build
 
 echo "Restarting WhatsApp Persistent Worker under PM2..."
-pm2 describe baileys-worker > /dev/null && pm2 restart baileys-worker || pm2 start dist/server.js --name "baileys-worker"
+pm2 delete baileys-worker 2>/dev/null || true
+pm2 start "npx tsx server.ts" --name "baileys-worker"
 
 echo "=== Deployment completed at $(date) ==="
