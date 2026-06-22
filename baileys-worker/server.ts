@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 
-import 'dotenv/config';
+import { config } from 'dotenv';
 import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
@@ -30,6 +30,13 @@ import pino from 'pino';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import { fileURLToPath } from 'url';
+
+// Initialize dotenv configuration
+config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
 const logger = pino({
@@ -42,13 +49,13 @@ const logger = pino({
 try {
   const parentEnvPath = path.join(__dirname, '..', '.env.local');
   if (fs.existsSync(parentEnvPath)) {
-    const dotenv = require('dotenv');
-    dotenv.config({ path: parentEnvPath });
+    config({ path: parentEnvPath });
     logger.info('✅ Loaded env from parent .env.local');
   }
 } catch (e) {
   logger.warn('Failed to load parent .env.local');
 }
+
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
