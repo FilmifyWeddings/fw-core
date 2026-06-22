@@ -157,12 +157,58 @@ async function sendTemplateMessage(
   templateId: string,
   variables: Record<string, string>
 ): Promise<string | null> {
-  const { data: tpl } = await supabase
-    .from('baileys_templates')
-    .select('body_text, media_url, media_type')
+  let tpl: { body_text: string; media_url: string | null; media_type: string | null } | null = null;
+
+  // 1. Query tenant_whatsapp_templates first
+  const { data: tenantTpl } = await supabase
+    .from('tenant_whatsapp_templates')
+    .select('body_text, media_url_payload')
     .eq('id', templateId)
-    .eq('workspace_id', WORKSPACE_ID)
-    .single();
+    .eq('tenant_id', WORKSPACE_ID)
+    .maybeSingle();
+
+  if (tenantTpl) {
+    tpl = {
+      body_text: tenantTpl.body_text || '',
+      media_url: tenantTpl.media_url_payload || null,
+      media_type: tenantTpl.media_url_payload ? 'image' : null
+    };
+  } else {
+    // 2. Fallback to legacy whatsapp_templates
+    const { data: legacyTpl } = await supabase
+      .from('whatsapp_templates')
+      .select('payload')
+      .eq('id', templateId)
+      .eq('workspace_id', WORKSPACE_ID)
+      .maybeSingle();
+
+    if (legacyTpl) {
+      const payloadObj = (legacyTpl.payload as any) || {};
+      tpl = {
+        body_text: payloadObj.body || payloadObj.question || '',
+        media_url: payloadObj.mediaUrl || null,
+        media_type: payloadObj.mediaUrl ? 'image' : null
+      };
+    }
+  }
+
+  // 3. Fallback to baileys_templates
+  if (!tpl) {
+    const { data: baileysTpl } = await supabase
+      .from('baileys_templates')
+      .select('body_text, media_url, media_type')
+      .eq('id', templateId)
+      .eq('workspace_id', WORKSPACE_ID)
+      .maybeSingle();
+
+    if (baileysTpl) {
+      tpl = {
+        body_text: baileysTpl.body_text || '',
+        media_url: baileysTpl.media_url || null,
+        media_type: baileysTpl.media_type || null
+      };
+    }
+  }
 
   if (!tpl) throw new Error(`Template ${templateId} not found`);
 
