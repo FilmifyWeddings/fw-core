@@ -32,6 +32,9 @@ import * as path from 'path';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
 
+// Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
+globalThis.WebSocket = ws as any;
+
 // Initialize dotenv configuration
 config();
 
@@ -61,7 +64,23 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABAS
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const WORKSPACE_ID = process.env.WORKER_WORKSPACE_ID || '37c63a54-d4f1-4b99-b546-3d965cd23a37';
 const PORT = parseInt(process.env.WORKER_PORT ?? '3002', 10); // use WORKER_PORT to avoid collision with Next.js on 3000
-const AUTH_FOLDER = path.join(__dirname, '.baileys_auth');
+
+const AUTH_ROOT = '/var/www/fw-core/.baileys_auth';
+
+function getAuthPath(workspaceId: string): string {
+  let root = AUTH_ROOT;
+  try {
+    if (!fs.existsSync(root)) {
+      fs.mkdirSync(root, { recursive: true });
+    }
+  } catch (e) {
+    root = path.join(__dirname, '.baileys_auth');
+    if (!fs.existsSync(root)) {
+      fs.mkdirSync(root, { recursive: true });
+    }
+  }
+  return path.join(root, workspaceId);
+}
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
   logger.fatal('Missing required env vars: SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_WORKSPACE_ID');
@@ -72,7 +91,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
   realtime: {
-    transport: ws,
+    transport: ws as any,
   },
 });
 
@@ -83,57 +102,6 @@ let sock: ReturnType<typeof makeWASocket> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ─── Session State Helpers ────────────────────────────────────────────────────
-async function loadCredsFromSupabase(): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('baileys_sessions')
-    .select('creds_json, keys_json')
-    .eq('workspace_id', WORKSPACE_ID)
-    .maybeSingle();
-
-  if (error || !data?.creds_json) return false;
-
-  try {
-    if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
-    fs.writeFileSync(path.join(AUTH_FOLDER, 'creds.json'), data.creds_json, 'utf-8');
-    if (data.keys_json) {
-      const keys = JSON.parse(data.keys_json);
-      for (const [file, content] of Object.entries(keys)) {
-        fs.writeFileSync(path.join(AUTH_FOLDER, file), JSON.stringify(content), 'utf-8');
-      }
-    }
-    logger.info('✅ Loaded credentials from Supabase');
-    return true;
-  } catch (e) {
-    logger.error({ err: e }, 'Failed to write creds from Supabase');
-    return false;
-  }
-}
-
-async function saveCredsToSupabase(credsJson: string): Promise<void> {
-  // Also save any key files alongside creds
-  const keysObj: Record<string, unknown> = {};
-  if (fs.existsSync(AUTH_FOLDER)) {
-    const files = fs.readdirSync(AUTH_FOLDER).filter(f => f !== 'creds.json');
-    for (const file of files) {
-      try {
-        keysObj[file] = JSON.parse(fs.readFileSync(path.join(AUTH_FOLDER, file), 'utf-8'));
-      } catch { /* skip */ }
-    }
-  }
-
-  const { error } = await supabase
-    .from('baileys_sessions')
-    .upsert({
-      workspace_id: WORKSPACE_ID,
-      creds_json: credsJson,
-      keys_json: JSON.stringify(keysObj),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'workspace_id' });
-
-  if (error) logger.error({ err: error }, 'Failed to save creds to Supabase');
-  else logger.debug('💾 Credentials synced to Supabase');
-}
-
 async function updateSessionState(
   state: 'disconnected' | 'connecting' | 'open',
   extras: Record<string, unknown> = {}
@@ -347,7 +315,8 @@ async function runQueueDrain(): Promise<void> {
     return;
   }
   try {
-    const { drainQueue } = await import('../src/lib/queue-processor.js');
+    const importPath = '../src/lib/queue-processor.js';
+    const { drainQueue } = await import(importPath);
     await drainQueue(WORKSPACE_ID, executeAction as any, 3);
   } catch (err: unknown) {
     logger.error({ err }, 'Queue drain error');
@@ -356,7 +325,8 @@ async function runQueueDrain(): Promise<void> {
 
 async function runSweeper(): Promise<void> {
   try {
-    const { sweepExpiredRetries } = await import('../src/lib/queue-processor.js');
+    const importPath = '../src/lib/queue-processor.js';
+    const { sweepExpiredRetries } = await import(importPath);
     const recovered = await sweepExpiredRetries(WORKSPACE_ID);
     if (recovered > 0) logger.info({ recovered }, '🧹 Sweeper recovered stuck actions');
   } catch (err: unknown) {
@@ -404,12 +374,8 @@ async function startBaileysSocket(): Promise<void> {
 
   await updateSessionState('connecting');
 
-  // Load creds from Supabase if available
-  await loadCredsFromSupabase();
-
-  if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
-
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
+  const authDir = getAuthPath(WORKSPACE_ID);
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version, isLatest } = await fetchLatestBaileysVersion();
   logger.info({ version, isLatest }, '📦 WhatsApp Web version');
 
@@ -428,10 +394,8 @@ async function startBaileysSocket(): Promise<void> {
   // Store binding removed
 
   // ── Event: creds.update — save creds on every update ──
-  sock.ev.on('creds.update', async () => {
+  sock.ev.on('creds.update', () => {
     saveCreds();
-    const credsJson = fs.readFileSync(path.join(AUTH_FOLDER, 'creds.json'), 'utf-8');
-    await saveCredsToSupabase(credsJson);
   });
 
   // ── Event: connection.update — handle QR, open, close ──
@@ -471,30 +435,43 @@ async function startBaileysSocket(): Promise<void> {
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       const isReplaced = statusCode === DisconnectReason.connectionReplaced;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && !isReplaced;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+      const shouldReconnect = !isLoggedOut && !isReplaced;
 
       logger.warn({ statusCode, shouldReconnect }, '🔌 Connection closed');
 
       await updateSessionState('disconnected');
 
-      if (shouldReconnect) {
+      if (isLoggedOut) {
+        logger.warn('🚪 Logged out (401). Wiping credentials folder and triggering fresh QR...');
+        const authDir = getAuthPath(WORKSPACE_ID);
+        if (fs.existsSync(authDir)) {
+          try {
+            fs.rmSync(authDir, { recursive: true, force: true });
+          } catch (e) {
+            logger.error({ err: e }, 'Failed to wipe auth folder');
+          }
+        }
+        await supabase
+          .from('baileys_sessions')
+          .update({
+            conn_state: 'disconnected',
+            qr_string: null,
+            qr_expires_at: null,
+            phone_number: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('workspace_id', WORKSPACE_ID);
+
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(startBaileysSocket, 1000);
+      } else if (shouldReconnect) {
         logger.info('♻️  Reconnecting in 5s...');
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(startBaileysSocket, 5_000);
       } else {
         if (isReplaced) {
           logger.warn('⚠️ Connection replaced. Another socket has taken over. Stopping auto-reconnect.');
-        } else {
-          // Logged out — clear session
-          logger.warn('🚪 Logged out. Clearing session from DB...');
-          await supabase
-            .from('baileys_sessions')
-            .update({ creds_json: null, keys_json: null, conn_state: 'disconnected' })
-            .eq('workspace_id', WORKSPACE_ID);
-
-          if (fs.existsSync(AUTH_FOLDER)) {
-            fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-          }
         }
       }
     }
@@ -528,7 +505,7 @@ async function startBaileysSocket(): Promise<void> {
       });
 
       // ─── Click-to-WhatsApp Ad Lead Parser Hook ───
-      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo as any;
       const isAdReferral = 
         contextInfo?.sourceType === 'ad' ||
         contextInfo?.referredImageUrl ||
@@ -629,17 +606,17 @@ async function startBaileysSocket(): Promise<void> {
   });
 
   // ── Event: chats.set — Bulk sync chat list on connect ──
-  sock.ev.on('chats.set', async ({ chats }) => {
-    if (!chats.length) return;
+  (sock.ev as any).on('chats.set', async ({ chats }: any) => {
+    if (!chats || !chats.length) return;
     logger.info({ count: chats.length }, '📂 Syncing chat list...');
 
-    const rows = chats.slice(0, 200).map((chat) => ({
+    const rows = chats.slice(0, 200).map((chat: any) => ({
       workspace_id: WORKSPACE_ID,
       jid: chat.id,
-      display_name: (chat as unknown as Record<string,string>).name ?? chat.id.split('@')[0],
+      display_name: chat.name ?? chat.id.split('@')[0],
       is_group: chat.id.endsWith('@g.us'),
       unread_count: chat.unreadCount ?? 0,
-      last_message: (chat as unknown as Record<string,string>).lastMessage ?? null,
+      last_message: chat.lastMessage ?? null,
       updated_at: new Date().toISOString(),
     }));
 
@@ -649,26 +626,157 @@ async function startBaileysSocket(): Promise<void> {
   });
 }
 
-// ─── Health Check HTTP Server ────────────────────────────────────────────────
+function getRequestBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      resolve(body);
+    });
+    req.on('error', err => {
+      reject(err);
+    });
+  });
+}
+
+// ─── Health Check & API Bridge HTTP Server ───────────────────────────────────
 function startHealthServer(): void {
   const server = http.createServer(async (req, res) => {
-    if (req.url === '/health') {
-      const { data } = await supabase
-        .from('baileys_sessions')
-        .select('conn_state, phone_number, last_connected')
-        .eq('workspace_id', WORKSPACE_ID)
-        .maybeSingle();
+    res.setHeader('Content-Type', 'application/json');
 
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        status: 'ok',
-        worker: 'baileys',
-        socket: sock ? 'alive' : 'null',
-        session: data,
-      }));
-    } else {
+    try {
+      const parsedUrl = new URL(req.url ?? '', `http://localhost:${PORT}`);
+
+      if (req.method === 'GET' && parsedUrl.pathname === '/health') {
+        const { data } = await supabase
+          .from('baileys_sessions')
+          .select('conn_state, phone_number, last_connected')
+          .eq('workspace_id', WORKSPACE_ID)
+          .maybeSingle();
+
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          status: 'ok',
+          worker: 'baileys',
+          socket: sock ? 'alive' : 'null',
+          session: data,
+        }));
+        return;
+      }
+
+      if (req.method === 'POST' && parsedUrl.pathname === '/trigger') {
+        logger.info('Manual trigger hit — executing queue drain');
+        runQueueDrain().catch(err => logger.error({ err }, 'Manual trigger queue drain error'));
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Queue drain triggered.' }));
+        return;
+      }
+
+      if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
+        logger.info('Wiping session and initiating fresh QR pairing flow...');
+        
+        // 1. Close current socket
+        if (sock) {
+          try {
+            sock.end(undefined);
+          } catch {}
+          sock = null;
+        }
+
+        // 2. Wipe auth folder
+        const authDir = getAuthPath(WORKSPACE_ID);
+        if (fs.existsSync(authDir)) {
+          try {
+            fs.rmSync(authDir, { recursive: true, force: true });
+          } catch (e) {
+            logger.error({ err: e }, 'Failed to wipe auth folder on init-qr');
+          }
+        }
+
+        // 3. Mark state as connecting
+        await supabase
+          .from('baileys_sessions')
+          .upsert({
+            workspace_id: WORKSPACE_ID,
+            conn_state: 'connecting',
+            qr_string: null,
+            qr_expires_at: null,
+            phone_number: null,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'workspace_id' });
+
+        // 4. Start new socket
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(startBaileysSocket, 1000);
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Pairing flow initialized. QR code is being generated.' }));
+        return;
+      }
+
+      if (req.method === 'POST' && parsedUrl.pathname === '/send') {
+        const bodyStr = await getRequestBody(req);
+        const payload = JSON.parse(bodyStr);
+
+        logger.info({ payload }, 'Received send message request');
+
+        if (!sock) {
+          res.writeHead(503);
+          res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
+          return;
+        }
+
+        const { to, type, text, mediaUrl, caption, mimeType, pollOptions, pollSelectableCount } = payload;
+        if (!to) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Missing field: to' }));
+          return;
+        }
+
+        let waMessageId: string | null = null;
+        const jid = to;
+
+        switch (type) {
+          case 'text':
+            if (!text) throw new Error('Missing: text');
+            waMessageId = await sendTextMessage(jid, text);
+            break;
+          case 'image':
+          case 'video':
+          case 'audio':
+          case 'document':
+            if (!mediaUrl || !mimeType) throw new Error('Missing: mediaUrl, mimeType');
+            waMessageId = await sendMediaMessage(jid, mediaUrl, caption ?? '', mimeType);
+            break;
+          case 'poll':
+            if (!text) throw new Error('Missing: text (poll name)');
+            const pollResult = await sock.sendMessage(jid, {
+              poll: {
+                name: text,
+                values: pollOptions || [],
+                selectableCount: pollSelectableCount ?? 1
+              }
+            });
+            waMessageId = pollResult?.key?.id ?? null;
+            break;
+          default:
+            throw new Error(`Unsupported type: ${type}`);
+        }
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, waMessageId }));
+        return;
+      }
+
       res.writeHead(404);
-      res.end('Not Found');
+      res.end(JSON.stringify({ error: 'Not Found' }));
+
+    } catch (err: any) {
+      logger.error({ err }, 'Error handling server request');
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: err.message || 'Internal Server Error' }));
     }
   });
 

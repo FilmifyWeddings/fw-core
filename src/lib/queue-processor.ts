@@ -273,6 +273,7 @@ export async function drainQueue(
 
   try {
     const now = new Date().toISOString();
+    console.log("Worker polling at", now);
 
     // Fetch pending actions that are due (respects next_retry_at backoff)
     const { data: actions, error } = await supabaseAdmin
@@ -289,6 +290,9 @@ export async function drainQueue(
       console.error(`[QueueProcessor] Poll error for workspace ${workspaceId}:`, error.message);
       return;
     }
+
+    const tasksCount = actions ? actions.length : 0;
+    console.log("Found pending tasks:", tasksCount);
 
     if (!actions || actions.length === 0) return; // Nothing to process
 

@@ -77,92 +77,21 @@ function getTmpAuthPath(workspaceId: string): string {
   return authDir;
 }
 
-// ─── Load Creds from Supabase → /tmp ─────────────────────────────────────────
 export async function hydrateCredsFromSupabase(
   supabaseAdmin: SupabaseClient,
   workspaceId: string
 ): Promise<{ authDir: string; hasExistingCreds: boolean }> {
-  const authDir = getTmpAuthPath(workspaceId);
-
-  const { data, error } = await supabaseAdmin
-    .from('baileys_sessions')
-    .select('creds_json, keys_json')
-    .eq('workspace_id', workspaceId)
-    .maybeSingle();
-
-  if (error) {
-    console.error('[hydrate] Supabase fetch error:', error.message);
-    return { authDir, hasExistingCreds: false };
-  }
-
-  let hasExistingCreds = false;
-
-  if (data?.creds_json) {
-    try {
-      // Write creds.json to /tmp
-      fs.writeFileSync(path.join(authDir, 'creds.json'), data.creds_json, 'utf-8');
-      hasExistingCreds = true;
-
-      // Write any key files back too
-      if (data.keys_json) {
-        const keysMap = JSON.parse(data.keys_json) as Record<string, unknown>;
-        for (const [filename, content] of Object.entries(keysMap)) {
-          fs.writeFileSync(
-            path.join(authDir, filename),
-            typeof content === 'string' ? content : JSON.stringify(content),
-            'utf-8'
-          );
-        }
-      }
-      console.log('[hydrate] Credentials loaded from Supabase → /tmp ✅');
-    } catch (e) {
-      console.error('[hydrate] Failed to write creds to /tmp:', e);
-    }
-  } else {
-    console.log('[hydrate] No existing credentials — fresh session, QR needed');
-  }
-
-  return { authDir, hasExistingCreds };
+  // Purged Render legacy credentials hydration
+  return { authDir: '', hasExistingCreds: true };
 }
 
-// ─── Save Updated Creds back to Supabase ─────────────────────────────────────
 export async function persistCredsToSupabase(
   supabaseAdmin: SupabaseClient,
   workspaceId: string,
   authDir: string
 ): Promise<void> {
-  try {
-    const credsPath = path.join(authDir, 'creds.json');
-    if (!fs.existsSync(credsPath)) return;
-
-    const credsJson = fs.readFileSync(credsPath, 'utf-8');
-
-    // Collect all key files (everything except creds.json)
-    const keysObj: Record<string, unknown> = {};
-    const files = fs.readdirSync(authDir).filter(f => f !== 'creds.json');
-    for (const file of files) {
-      try {
-        const content = fs.readFileSync(path.join(authDir, file), 'utf-8');
-        try { keysObj[file] = JSON.parse(content); } catch { keysObj[file] = content; }
-      } catch { /* skip unreadable files */ }
-    }
-    const { error } = await supabaseAdmin
-      .from('baileys_sessions')
-      .upsert({
-        workspace_id: workspaceId,
-        creds_json: credsJson,
-        keys_json: JSON.stringify(keysObj),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id' });
-
-    if (error) {
-      console.error('[persist] Supabase save error:', error.message);
-    } else {
-      console.log('[persist] Credentials saved to Supabase ✅');
-    }
-  } catch (e: any) {
-    console.error('[persist] Failed to persist credentials:', e.message);
-  }
+  // Purged Render legacy credentials persistence
+  return Promise.resolve();
 }
 
 export function normalizeJid(to: string): string {
@@ -172,158 +101,17 @@ export function normalizeJid(to: string): string {
   return `${digits}@s.whatsapp.net`;
 }
 
-// ─── PERSISTENT WORKER CONNECTION MANAGER (RENDER.COM 24/7) ───────────────────
 export async function getOrCreateSocket(
   supabaseAdmin: SupabaseClient,
   workspaceId: string
 ): Promise<any> {
-  if (globalSockets.has(workspaceId)) {
-    const sock = globalSockets.get(workspaceId);
-    // Verify connection is alive, open, or connecting (readyState: 0=CONNECTING, 1=OPEN)
-    // If it's still connecting or initializing, do NOT recreate it to prevent race condition reconnect loops.
-    if (sock && (!sock.ws || sock.ws.readyState === 1 || sock.ws.readyState === 0)) {
-      return sock;
-    }
-    console.log(`[manager] Socket for ${workspaceId} is dead/closing (ws: ${!!sock.ws}, readyState: ${sock.ws?.readyState}). Recreating...`);
-    try { sock.end(undefined); } catch {}
-    globalSockets.delete(workspaceId);
-  }
-
-  // Load credentials from Supabase to /tmp
-  const { authDir, hasExistingCreds } = await hydrateCredsFromSupabase(supabaseAdmin, workspaceId);
-  if (!hasExistingCreds) {
-    throw new Error('No active credentials. Scan QR first.');
-  }
-
-  const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, fetchLatestBaileysVersion } =
-    await import('@whiskeysockets/baileys') as any;
-  const pino = (await import('pino') as any).default;
-  const logger = pino({ level: 'silent' });
-
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
-
-  const sock = makeWASocket({
-    version,
-    logger,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
-    },
-    printQRInTerminal: false,
-    markOnlineOnConnect: true,
-    syncFullHistory: false,
-    shouldSyncHistoryMessage: () => false,
-    downloadHistoryWithMediaFiles: false,
-    receivedPendingNotifications: false,
-    manageIntegrity: false,
-    forceConnect: true,
-    connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 30000,
-    emitOwnEvents: true,
-    retryRequestDelayMs: 2000,
-  });
-
-  sock.ev.on('creds.update', async () => {
-    saveCreds();
-    await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-  });
-
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect }: any) => {
-    if (connection === 'open') {
-      console.log(`[manager] WhatsApp socket opened for workspace ${workspaceId} ✅`);
-      const phoneNumber = sock?.user?.id?.split(':')[0] ?? '';
-      await supabaseAdmin
-        .from('baileys_sessions')
-        .upsert({
-          workspace_id: workspaceId,
-          conn_state: 'open',
-          qr_string: null,
-          phone_number: phoneNumber,
-          last_connected: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id' });
-    }
-
-    if (connection === 'close') {
-      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-      console.log(`[manager] WhatsApp socket closed for workspace ${workspaceId}. Code: ${statusCode}, Error:`, lastDisconnect?.error);
-
-      if (statusCode === 401) {
-        console.log(`[manager] Credentials rejected for ${workspaceId}. Resetting session...`);
-        globalSockets.delete(workspaceId);
-        try {
-          if (fs.existsSync(authDir)) {
-            fs.rmSync(authDir, { recursive: true });
-          }
-        } catch {}
-        await supabaseAdmin
-          .from('baileys_sessions')
-          .upsert({
-            workspace_id: workspaceId,
-            conn_state: 'disconnected',
-            qr_string: null,
-            creds_json: null,
-            keys_json: null,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id' });
-      } else if (statusCode === 440) {
-        console.warn(`[manager] Connection replaced (Code 440) for workspace ${workspaceId}. Another socket took over. Stopping auto-reconnect.`);
-        globalSockets.delete(workspaceId);
-        await supabaseAdmin
-          .from('baileys_sessions')
-          .upsert({
-            workspace_id: workspaceId,
-            conn_state: 'disconnected',
-            qr_string: null,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id' });
-      } else {
-        // Schedule silent reconnect
-        console.log(`[manager] Scheduling silent reconnect for workspace ${workspaceId} in 5s...`);
-        globalSockets.delete(workspaceId);
-        setTimeout(() => {
-          getOrCreateSocket(supabaseAdmin, workspaceId).catch(err => {
-            console.error(`[manager] Reconnect failed for workspace ${workspaceId}:`, err.message);
-          });
-        }, 5000);
-      }
-    }
-  });
-
-  globalSockets.set(workspaceId, sock);
-  return sock;
+  // Socket is managed by the standalone singleton worker process
+  return Promise.resolve(null);
 }
 
 export async function autoReconnectSessions(supabaseAdmin: SupabaseClient) {
-  try {
-    console.log('[manager] Bootup auto-reconnect: Fetching active sessions from Supabase...');
-    const { data: sessions, error } = await supabaseAdmin
-      .from('baileys_sessions')
-      .select('workspace_id')
-      .eq('conn_state', 'open');
-
-    if (error) {
-      console.error('[manager] Error fetching active sessions:', error.message);
-      return;
-    }
-
-    if (!sessions || sessions.length === 0) {
-      console.log('[manager] No active sessions found to reconnect.');
-      return;
-    }
-
-    console.log(`[manager] Found ${sessions.length} active sessions to reconnect.`);
-    for (const session of sessions) {
-      console.log(`[manager] Reconnecting workspace ${session.workspace_id}...`);
-      getOrCreateSocket(supabaseAdmin, session.workspace_id).catch(err => {
-        console.error(`[manager] Failed to reconnect workspace ${session.workspace_id}:`, err.message);
-      });
-    }
-  } catch (e: any) {
-    console.error('[manager] Critical error during auto-reconnect:', e.message);
-  }
+  // Managed by standalone worker
+  return Promise.resolve();
 }
 
 // ─── Token Replacement Parser (Regex Parser) ──────────────────────────────────
@@ -447,19 +235,13 @@ export function parseShortcodes(text: string, lead: any): string {
   return parsed;
 }
 
-// ─── CORE: Send Message via On-Demand Hydration ───────────────────────────────
+// ─── CORE: Send Message via Standalone Worker Bridge ──────────────────────────
 export async function sendMessageServerless(
   supabaseAdmin: SupabaseClient,
   workspaceId: string,
   payload: SendPayload,
   timeoutMs = 25_000
 ): Promise<HydrationResult> {
-  const { hasExistingCreds } = await hydrateCredsFromSupabase(supabaseAdmin, workspaceId);
-
-  if (!hasExistingCreds) {
-    return { success: false, error: 'No active session. Please scan QR code first.' };
-  }
-
   let tempFileToClean: string | null = null;
 
   try {
@@ -584,78 +366,38 @@ export async function sendMessageServerless(
       }
     }
 
-    // ── Helper: Build message content from payload ────────────────────────────
-    const buildMsgContent = (p: SendPayload): WAMessageContent => {
-      switch (p.type) {
-        case 'image':
-          return { image: { url: p.mediaUrl! }, caption: p.caption ?? '' };
-        case 'video':
-          return { video: { url: p.mediaUrl! }, caption: p.caption ?? '' };
-        case 'audio':
-          return { audio: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'audio/mpeg', ptt: false };
-        case 'document':
-          return { document: { url: p.mediaUrl! }, mimetype: p.mimeType ?? 'application/pdf', fileName: p.fileName ?? 'file' };
-        case 'poll':
-          return { poll: { name: p.text!, values: p.pollOptions || [], selectableCount: p.pollSelectableCount ?? 1 } };
-        default:
-          return { text: p.text! };
-      }
-    };
-
-    // ── Helper: Try to send via a connected socket ────────────────────────────
-    const trySend = async (sock: BaileysSocket): Promise<HydrationResult> => {
-      const jid = normalizeJid(payload.to);
-      const msgContent = buildMsgContent(payload);
-      const result = await sock.sendMessage(jid, msgContent);
-      const waMessageId = result?.key?.id ?? null;
-
-      if (waMessageId) {
-        await supabaseAdmin
-          .from('baileys_messages')
-          .update({ status: 'sent', wa_message_id: waMessageId })
-          .eq('workspace_id', workspaceId)
-          .eq('chat_jid', jid)
-          .eq('status', 'queued')
-          .order('created_at', { ascending: false })
-          .limit(1);
-      }
-      return { success: true, waMessageId: waMessageId ?? undefined };
-    };
-
-    // ── Attempt 1: Use primary persistent socket ──────────────────────────────
+    // ── Call Standalone Worker Bridge ──────────────────────────────────────────
+    const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
     try {
-      const sock = await getOrCreateSocket(supabaseAdmin, workspaceId);
-      return await trySend(sock);
-    } catch (err: any) {
-      console.error('[send] Primary socket send failed:', err.message);
-    }
+      const res = await fetch(`http://localhost:${WORKER_PORT}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: normalizeJid(payload.to),
+          type: payload.type,
+          text: payload.text,
+          mediaUrl: payload.mediaUrl,
+          caption: payload.caption,
+          mimeType: payload.mimeType,
+          pollOptions: payload.pollOptions,
+          pollSelectableCount: payload.pollSelectableCount,
+        }),
+      });
 
-    // ── Attempt 2: SAFE RETRY — Wait for the manager socket to recover ────────
-    console.log(`[send] Waiting for manager socket to recover (workspace ${workspaceId})...`);
-
-    const startTime = Date.now();
-    const POLL_INTERVAL_MS = 1_200;
-    const WAIT_TIMEOUT_MS = Math.min(timeoutMs, 18_000); // max 18s wait
-
-    while (Date.now() - startTime < WAIT_TIMEOUT_MS) {
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-      const existingSock = globalSockets.get(workspaceId);
-      if (existingSock && existingSock.ws && existingSock.ws.readyState === 1) {
-        try {
-          console.log(`[send] Socket recovered! Retrying send for workspace ${workspaceId}...`);
-          return await trySend(existingSock);
-        } catch (retryErr: any) {
-          console.error('[send] Retry send also failed:', retryErr.message);
-          return { success: false, error: `Send failed after socket recovery: ${retryErr.message}` };
-        }
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        return { success: false, error: errBody.error || `Worker returned HTTP ${res.status}` };
       }
+
+      const resData = await res.json();
+      return { success: true, waMessageId: resData.waMessageId };
+    } catch (err: any) {
+      console.error('[send] Failed to call worker /send API:', err.message);
+      return { success: false, error: `Worker connection issue: ${err.message}` };
     }
 
-    console.error(`[send] Manager socket did not recover within ${WAIT_TIMEOUT_MS}ms`);
-    return {
-      success: false,
-      error: 'WhatsApp is reconnecting. Please wait 5–10 seconds and try again.',
-    };
   } finally {
     // 4. Temp File Cleanup
     if (tempFileToClean) {
@@ -674,14 +416,7 @@ export async function sendMessageServerless(
 
 
 
-// ─── CORE: Generate QR Code via On-Demand Socket ─────────────────────────────
-/**
- * Initializes a socket to get a QR code.
- * Saves QR string to Supabase so the UI can poll and display it.
- * On successful connection (QR scanned), saves creds and marks session open.
- *
- * This runs in a long-lived (up to 55s) Vercel function with streaming response.
- */
+// ─── CORE: Generate QR Code via Standalone Worker Bridge ─────────────────────
 export async function generateQrServerless(
   supabaseAdmin: SupabaseClient,
   workspaceId: string,
@@ -690,254 +425,62 @@ export async function generateQrServerless(
   onError: (msg: string) => void,
   timeoutMs = 55_000
 ): Promise<void> {
-  const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, fetchLatestBaileysVersion } =
-    await import('@whiskeysockets/baileys') as any;
-  const pino = (await import('pino') as any).default;
-  const fs = await import('fs');
-  const path = await import('path');
-
-  const logger = pino({ level: 'silent' });
-  const authDir = getTmpAuthPath(workspaceId);
-
-  // Clear old creds so we get a fresh QR
+  const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+  
+  // 1. Tell worker to start the pairing flow
   try {
-    if (fs.existsSync(authDir)) {
-      fs.rmSync(authDir, { recursive: true });
-      fs.mkdirSync(authDir, { recursive: true });
-    }
-  } catch { /* ignore */ }
-
-  await supabaseAdmin
-    .from('baileys_sessions')
-    .upsert({
-      workspace_id: workspaceId,
-      conn_state: 'connecting',
-      creds_json: null,
-      keys_json: null,
-      qr_string: null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'workspace_id' });
-
-  return new Promise<void>(async (resolve) => {
-    let sock: BaileysSocket | null = null;
-    let done = false;
-    let credsSavePromise: Promise<void> | null = null;
-    let hasOpened = false;
-
-    const finish = async () => {
-      if (done) return;
-      done = true;
-      try { sock?.end(undefined); } catch { /* already closed */ }
-      resolve();
-    };
-
-    setTimeout(async () => {
-      if (!done) {
-        onError('QR session timed out. Please try again.');
-        await supabaseAdmin
-          .from('baileys_sessions')
-          .update({ conn_state: 'disconnected', qr_string: null })
-          .eq('workspace_id', workspaceId);
-        await finish();
-      }
-    }, timeoutMs);
-
-    async function connect() {
-      if (done) return;
-      try {
-        const { state, saveCreds } = await useMultiFileAuthState(authDir);
-        const { version } = await fetchLatestBaileysVersion();
-
-        sock = makeWASocket({
-          version,
-          logger,
-          auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, logger),
-          },
-          printQRInTerminal: false,
-          markOnlineOnConnect: false,
-          syncFullHistory: false,
-          shouldSyncHistoryMessage: () => false,
-          downloadHistoryWithMediaFiles: false,
-          receivedPendingNotifications: false,
-          manageIntegrity: false,
-          forceConnect: true,
-          connectTimeoutMs: 60000,
-          defaultQueryTimeoutMs: 60000,
-          keepAliveIntervalMs: 30000,
-          emitOwnEvents: true,
-          retryRequestDelayMs: 2000,
-        });
-
-        sock.ev.on('creds.update', async () => {
-          saveCreds();
-
-          // Immediate token eviction if successfully paired
-          const credsPath = path.join(authDir, 'creds.json');
-          if (fs.existsSync(credsPath)) {
-            try {
-              const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
-              if (creds?.me?.id) {
-                console.log(`[generateQrServerless] creds.update has valid me.id (${creds.me.id}). Saving and scheduling close...`);
-                hasOpened = true;
-
-                await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-
-                const phoneNumber = creds.me.id.split(':')[0] || '';
-                await supabaseAdmin
-                  .from('baileys_sessions')
-                  .upsert({
-                    workspace_id: workspaceId,
-                    conn_state: 'open',
-                    qr_string: null,
-                    phone_number: phoneNumber,
-                    last_connected: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                  }, { onConflict: 'workspace_id' });
-
-                onConnected(phoneNumber);
-                
-                // Delay closure by 3 seconds to let the cryptographic handshake finalize
-                setTimeout(async () => {
-                  await finish();
-                }, 3000);
-                return;
-              }
-            } catch (e) {
-              console.error('[generateQrServerless] creds.update check error:', e);
-            }
-          }
-
-          credsSavePromise = persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-        });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        sock.ev.on('connection.update', async ({ connection, qr, lastDisconnect }: { connection: any; qr: any; lastDisconnect: any }) => {
-          if (qr) {
-            // New QR code generated — write to Supabase + fire callback
-            const expiresAt = new Date(Date.now() + 60_000).toISOString();
-            await supabaseAdmin
-              .from('baileys_sessions')
-              .upsert({
-                workspace_id: workspaceId,
-                qr_string: qr,
-                qr_expires_at: expiresAt,
-                conn_state: 'connecting',
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'workspace_id' });
-
-            onQr(qr);
-          }
-
-          if (connection === 'open') {
-            hasOpened = true;
-            const phoneNumber = sock?.user?.id?.split(':')[0] ?? '';
-            
-            // Wait for any active credentials commit to Supabase first
-            if (credsSavePromise) {
-              console.log('[generateQrServerless] Awaiting pending credentials save...');
-              await credsSavePromise;
-            }
-            await persistCredsToSupabase(supabaseAdmin, workspaceId, authDir);
-
-            await supabaseAdmin
-              .from('baileys_sessions')
-              .upsert({
-                workspace_id: workspaceId,
-                conn_state: 'open',
-                qr_string: null,
-                phone_number: phoneNumber,
-                last_connected: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'workspace_id' });
-
-            onConnected(phoneNumber);
-            await finish();
-          }
-
-          if (connection === 'close') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-            console.log(`[generateQrServerless] Connection closed. Code: ${statusCode}`);
-
-            // If it's a restart required (515) or non-401 error, and we haven't timed out, retry!
-            const shouldRetry = statusCode !== 401 && !done;
-            if (shouldRetry) {
-              console.log(`[generateQrServerless] Restart/reconnect required (Code: ${statusCode}). Retrying in 1.5s...`);
-              setTimeout(() => {
-                connect().catch(err => {
-                  console.error('[generateQrServerless] Reconnect failed during retry:', err);
-                  onError(`Reconnect failed: ${err.message}`);
-                  finish();
-                });
-              }, 1500);
-              return;
-            }
-
-            if (!hasOpened) {
-              console.log(`[generateQrServerless] Connection closed before opening. Resetting session to disconnected.`);
-              
-              // Clear auth files to prevent dirty reconnect attempts
-              try {
-                if (fs.existsSync(authDir)) {
-                  fs.rmSync(authDir, { recursive: true });
-                }
-              } catch (e) {
-                console.error('[generateQrServerless] Clear auth dir error:', e);
-              }
-
-              // DB update to trigger a clean session reset state
-              await supabaseAdmin
-                .from('baileys_sessions')
-                .upsert({
-                  workspace_id: workspaceId,
-                  conn_state: 'disconnected',
-                  qr_string: null,
-                  qr_expires_at: null,
-                  creds_json: null,
-                  keys_json: null,
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id' });
-
-              onError(`Connection failed or timed out. Code: ${statusCode}`);
-            } else {
-              console.log(`[generateQrServerless] Connection closed after success. No reset required.`);
-            }
-            await finish();
-          }
-        });
-      } catch (err) {
-        console.error('[generateQrServerless] Error during setup:', err);
-        // Aggressive database state reset on exception if not retrying
-        try {
-          if (fs.existsSync(authDir)) {
-            fs.rmSync(authDir, { recursive: true });
-          }
-        } catch {}
-        await supabaseAdmin
-          .from('baileys_sessions')
-          .upsert({
-            workspace_id: workspaceId,
-            conn_state: 'disconnected',
-            qr_string: null,
-            qr_expires_at: null,
-            creds_json: null,
-            keys_json: null,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id' });
-        onError(`Setup error: ${err instanceof Error ? err.message : String(err)}`);
-        await finish();
-      }
-    }
-
-    // Trigger initial connection
-    connect().catch(err => {
-      console.error('[generateQrServerless] Initial connect error:', err);
-      onError(`Initial connection failed: ${err.message}`);
-      finish();
+    const res = await fetch(`http://localhost:${WORKER_PORT}/init-qr`, {
+      method: 'POST',
     });
-  });
+    if (!res.ok) {
+      throw new Error(`Worker returned HTTP ${res.status}`);
+    }
+  } catch (err: any) {
+    console.error('[generateQr] Failed to contact worker for init-qr:', err.message);
+    onError(`Failed to contact worker: ${err.message}`);
+    return;
+  }
+
+  // 2. Poll DB to retrieve the status and stream it
+  const startTime = Date.now();
+  let lastQr: string | null = null;
+
+  while (Date.now() - startTime < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const { data, error } = await supabaseAdmin
+      .from('baileys_sessions')
+      .select('conn_state, qr_string, qr_expires_at, phone_number')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[generateQr] DB query error:', error.message);
+      continue;
+    }
+
+    if (!data) continue;
+
+    if (data.conn_state === 'open' && data.phone_number) {
+      onConnected(data.phone_number);
+      return;
+    }
+
+    if (data.conn_state === 'disconnected') {
+      onError('Session disconnected. Please try again.');
+      return;
+    }
+
+    if (data.qr_string && data.qr_string !== lastQr) {
+      const qrExpired = data.qr_expires_at ? new Date(data.qr_expires_at) < new Date() : false;
+      if (!qrExpired) {
+        lastQr = data.qr_string;
+        onQr(data.qr_string);
+      }
+    }
+  }
+
+  onError('QR pairing timed out.');
 }
 
 // ─── QUEUE PROCESSOR & POLL ENGINE (SELF-CONTAINED IN NEXT.JS RUNTIME) ─────────
@@ -1146,6 +689,10 @@ export async function processSingleQueuedAction(
 }
 
 export function startQueuePoller(supabaseAdmin: SupabaseClient) {
+  if (process.env.DISABLE_WHATSAPP_WORKER === 'true') {
+    console.log('[poller] Queue poller disabled in Next.js because DISABLE_WHATSAPP_WORKER is true.');
+    return;
+  }
   if ((globalThis as any).__baileysQueuePollerInitialized) {
     console.log('[poller] Baileys background queue poller already initialized, skipping.');
     return;
@@ -1360,6 +907,19 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
 
 export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId: string): Promise<void> {
   console.log(`[poller] forceWakeQueue triggered for workspace ${workspaceId}`);
+  
+  if (process.env.DISABLE_WHATSAPP_WORKER === 'true') {
+    console.log('[poller] Next.js forwarding forceWakeQueue to worker /trigger endpoint');
+    const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+    try {
+      await fetch(`http://localhost:${WORKER_PORT}/trigger`, {
+        method: 'POST',
+      });
+    } catch (err: any) {
+      console.error('[poller] Failed to wake up worker via /trigger:', err.message);
+    }
+    return;
+  }
   
   // Run connection recovery and draining in the background (as per Law 3)
   (async () => {
