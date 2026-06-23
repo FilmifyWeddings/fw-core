@@ -58,7 +58,7 @@ function QrCodeImage({ qrString, animated }: { qrString: string; animated?: bool
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ state }: { state: ConnState }) {
   const configs: Record<ConnState, { label: string; color: string; dot: string }> = {
-    disconnected: { label: 'Disconnected', color: 'text-zinc-500 bg-zinc-800/60 border-zinc-700', dot: 'bg-zinc-600' },
+    disconnected: { label: 'Disconnected', color: 'text-zinc-600 dark:text-zinc-500 bg-zinc-100/60 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700', dot: 'bg-zinc-500 dark:bg-zinc-600' },
     connecting:   { label: 'Connecting...', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30', dot: 'bg-amber-400 animate-pulse' },
     open:         { label: 'Connected ✅', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', dot: 'bg-emerald-400 animate-pulse' },
     error:        { label: 'Connection Failed', color: 'text-red-400 bg-red-500/10 border-red-500/30', dot: 'bg-red-400' },
@@ -320,14 +320,14 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-2xl font-bold text-white">WhatsApp Connected!</h3>
+              <h3 className="text-2xl font-bold text-zinc-900 dark:text-white">WhatsApp Connected!</h3>
               {phoneNumber && (
                 <p className="text-emerald-400 font-mono text-sm bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full inline-block">
                   +{phoneNumber}
                 </p>
               )}
               {lastConnected && (
-                <p className="text-[11px] text-zinc-500 flex items-center gap-1 justify-center mt-1">
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-500 flex items-center gap-1 justify-center mt-1">
                   <Clock className="w-3 h-3" />
                   Connected at {new Date(lastConnected).toLocaleString('en-IN')}
                 </p>
@@ -348,7 +348,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
             <button
               onClick={handleDisconnect}
-              className="text-xs text-zinc-600 hover:text-red-400 underline underline-offset-2 transition-colors"
+              className="text-xs text-zinc-500 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 underline underline-offset-2 transition-colors"
             >
               Disconnect & Reset Session
             </button>
@@ -372,7 +372,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                   {qrString ? 'Scan QR Code' : 'Generating QR...'}
                 </span>
               </div>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-zinc-600 dark:text-zinc-500">
                 {qrString
                   ? 'Open WhatsApp → ⋮ Menu → Linked Devices → Link a Device'
                   : statusMsg || 'Please wait...'}
@@ -383,21 +383,21 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             {qrString ? (
               <QrCodeImage qrString={qrString} animated />
             ) : (
-              <div className="w-72 h-72 rounded-2xl border-2 border-dashed border-zinc-700 flex flex-col items-center justify-center gap-4 bg-zinc-900/30">
+              <div className="w-72 h-72 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex flex-col items-center justify-center gap-4 bg-zinc-100/30 dark:bg-zinc-900/30">
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
                 >
                   <RefreshCw className="w-8 h-8 text-emerald-400/60" />
                 </motion.div>
-                <span className="text-xs text-zinc-600">
+                <span className="text-xs text-zinc-500 dark:text-zinc-600">
                   {statusMsg || 'Starting socket...'}
                 </span>
               </div>
             )}
 
             {/* SSE indicator */}
-            <div className="flex items-center gap-2 text-[10px] text-zinc-600 bg-zinc-900/40 border border-zinc-800 px-3 py-1.5 rounded-full">
+            <div className="flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-600 bg-zinc-100/40 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 rounded-full">
               <motion.div
                 className="w-1.5 h-1.5 rounded-full bg-emerald-500"
                 animate={{ opacity: [1, 0.2, 1] }}
@@ -422,11 +422,11 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
               <div className={`w-24 h-24 rounded-3xl flex items-center justify-center shadow-xl border ${
                 connState === 'error'
                   ? 'bg-red-500/10 border-red-500/20'
-                  : 'bg-zinc-900 border-zinc-700'
+                  : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700'
               }`}>
-                <Smartphone className={`w-12 h-12 ${connState === 'error' ? 'text-red-400' : 'text-zinc-500'}`} />
+                <Smartphone className={`w-12 h-12 ${connState === 'error' ? 'text-red-400' : 'text-zinc-600 dark:text-zinc-500'}`} />
               </div>
-              <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-red-500 border-2 border-[#070708] flex items-center justify-center">
+              <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-red-500 border-2 border-white dark:border-[#070708] flex items-center justify-center">
                 <WifiOff className="w-3 h-3 text-white" />
               </div>
             </div>
@@ -439,10 +439,10 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             )}
 
             <div className="space-y-2">
-              <h3 className="text-lg font-bold text-white">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
                 {connState === 'error' ? 'Connection Failed' : 'WhatsApp Gateway — Not Connected'}
               </h3>
-              <p className="text-xs text-zinc-500 leading-relaxed">
+              <p className="text-xs text-zinc-600 dark:text-zinc-500 leading-relaxed">
                 {connState === 'error'
                   ? 'Dobara try karo. Agar problem continue kare toh session reset karo.'
                   : 'Connect your WhatsApp using the direct connection gateway. No API fees, no external worker needed! 🚀'}
@@ -452,7 +452,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             {/* Feature pills */}
             <div className="flex flex-wrap gap-2 justify-center">
               {['Direct Connection', 'SSE Real-time QR', 'Auto Session Persist', 'Blue Tick Tracking', 'Group Dispatch (WGL)'].map(f => (
-                <span key={f} className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-800/60 border border-zinc-700 text-zinc-400 font-medium">
+                <span key={f} className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-100/60 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 font-medium">
                   {f}
                 </span>
               ))}
@@ -481,7 +481,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             {/* Info note */}
             <div className="flex items-start gap-2 text-left bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3 max-w-sm w-full">
               <Zap className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-zinc-400 leading-relaxed">
+              <p className="text-[10px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
                 <span className="text-emerald-400 font-semibold">Direct Connection:</span>{' '}
                 Koi third-party server chahiye nahi! App directly secure connection generate karegi aur settings Supabase mein save karegi.
               </p>

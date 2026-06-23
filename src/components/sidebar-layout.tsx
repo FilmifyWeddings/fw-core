@@ -37,7 +37,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const searchParams = useSearchParams();
   
   const [collapsed, setCollapsed] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [userEmail, setUserEmail] = useState<string>('user@studio.com');
   const [workspaceName, setWorkspaceName] = useState<string>('My Studio');
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
@@ -52,7 +52,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     if (savedTheme) {
       setTheme(savedTheme);
     } else {
-      setTheme('dark');
+      setTheme('light');
     }
 
     // Get current user session

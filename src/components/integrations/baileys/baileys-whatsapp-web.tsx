@@ -93,23 +93,23 @@ function ChatItem({ chat, active, onClick }: { chat: Chat; active: boolean; onCl
   return (
     <motion.button
       onClick={onClick}
-      whileHover={{ backgroundColor: 'rgba(39,39,42,0.6)' }}
+      whileHover={{ backgroundColor: 'rgba(39,39,42,0.1)' }}
       className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left relative ${
-        active ? 'bg-zinc-800/80 border-l-2 border-emerald-500' : 'border-l-2 border-transparent hover:bg-zinc-800/40'
+        active ? 'bg-zinc-200/80 dark:bg-zinc-800/80 border-l-2 border-emerald-500' : 'border-l-2 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/40'
       }`}
     >
       <Avatar chat={chat} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-white truncate max-w-[130px]">
+          <span className="text-sm font-semibold text-zinc-900 dark:text-white truncate max-w-[130px]">
             {chat.display_name ?? chat.jid.split('@')[0]}
           </span>
-          <span className="text-[10px] text-zinc-600 flex-shrink-0 ml-1">
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-600 flex-shrink-0 ml-1">
             {formatChatTime(chat.last_message_at)}
           </span>
         </div>
         <div className="flex items-center justify-between mt-0.5">
-          <p className="text-[11px] text-zinc-500 truncate max-w-[140px]">
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-500 truncate max-w-[140px]">
             {chat.last_message ?? 'No messages yet'}
           </p>
           {chat.unread_count > 0 && (
@@ -137,7 +137,7 @@ function MessageBubble({ msg }: { msg: Message }) {
         className={`max-w-[70%] px-3 py-2 rounded-2xl shadow-md relative ${
           isOut
             ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 text-white rounded-br-sm'
-            : 'bg-zinc-800 text-white rounded-bl-sm'
+            : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-bl-sm'
         }`}
       >
         {/* Media preview */}
@@ -166,7 +166,7 @@ function MessageBubble({ msg }: { msg: Message }) {
 
         {/* Timestamp + status */}
         <div className={`flex items-center gap-1 mt-1 ${isOut ? 'justify-end' : 'justify-start'}`}>
-          <span className={`text-[10px] ${isOut ? 'text-emerald-200/70' : 'text-zinc-600'}`}>
+          <span className={`text-[10px] ${isOut ? 'text-emerald-200/70' : 'text-zinc-500 dark:text-zinc-600'}`}>
             {formatTime(msg.sent_at)}
           </span>
           {isOut && <StatusIcon status={msg.status} />}
@@ -235,14 +235,14 @@ function MediaUploadModal({
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
         onClick={e => e.stopPropagation()}
-        className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4"
+        className="w-full max-w-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 space-y-4"
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-white">Attach Media</h3>
-          <button onClick={onClose} className="p-1 text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+          <h3 className="text-sm font-bold text-zinc-900 dark:text-white">Attach Media</h3>
+          <button onClick={onClose} className="p-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-white"><X className="w-4 h-4" /></button>
         </div>
 
-        <label className="block border-2 border-dashed border-zinc-700 rounded-xl p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors">
+        <label className="block border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors">
           <input
             type="file"
             className="hidden"
@@ -252,13 +252,13 @@ function MediaUploadModal({
           {file ? (
             <div className="space-y-1">
               <Image className="w-8 h-8 text-emerald-400 mx-auto" />
-              <p className="text-xs text-white font-medium truncate">{file.name}</p>
-              <p className="text-[10px] text-zinc-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+              <p className="text-xs text-zinc-900 dark:text-white font-medium truncate">{file.name}</p>
+              <p className="text-[10px] text-zinc-500 dark:text-zinc-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
             </div>
           ) : (
             <div className="space-y-2">
-              <Paperclip className="w-8 h-8 text-zinc-600 mx-auto" />
-              <p className="text-xs text-zinc-500">Click to select file (max 16MB)</p>
+              <Paperclip className="w-8 h-8 text-zinc-400 dark:text-zinc-600 mx-auto" />
+              <p className="text-xs text-zinc-500 dark:text-zinc-500">Click to select file (max 16MB)</p>
             </div>
           )}
         </label>
@@ -268,7 +268,7 @@ function MediaUploadModal({
           value={caption}
           onChange={e => setCaption(e.target.value)}
           placeholder="Caption (optional)"
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-emerald-500"
+          className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-600 outline-none focus:border-emerald-500"
         />
 
         {error && <p className="text-xs text-red-400">{error}</p>}
@@ -433,53 +433,53 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-[calc(100vh-220px)] min-h-[500px] max-h-[800px] rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl bg-[#111b21]">
+    <div className="flex h-[calc(100vh-220px)] min-h-[500px] max-h-[800px] rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-2xl bg-zinc-100 dark:bg-[#111b21]">
 
       {/* ── LEFT: Chat List Sidebar ── */}
-      <div className={`${selectedChat && isMobileView ? 'hidden' : 'flex'} flex-col w-full md:w-80 lg:w-96 border-r border-zinc-800/80 bg-[#111b21]`}>
+      <div className={`${selectedChat && isMobileView ? 'hidden' : 'flex'} flex-col w-full md:w-80 lg:w-96 border-r border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-[#111b21]`}>
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#202c33] border-b border-zinc-800/50">
+        <div className="flex items-center justify-between px-4 py-3 bg-zinc-50 dark:bg-[#202c33] border-b border-zinc-200 dark:border-zinc-800/50">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center">
               <MessageSquare className="w-4 h-4 text-black" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">WhatsApp Gateway</h3>
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-white">WhatsApp Gateway</h3>
               <p className="text-[9px] text-emerald-400 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
                 Live
               </p>
             </div>
           </div>
-          <button onClick={loadChats} className="p-1.5 text-zinc-500 hover:text-white rounded-lg hover:bg-zinc-700/50 transition-colors">
+          <button onClick={loadChats} className="p-1.5 text-zinc-500 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700/50 transition-colors">
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
 
         {/* Search */}
-        <div className="px-3 py-2 bg-[#111b21]">
-          <div className="flex items-center gap-2 bg-[#202c33] rounded-xl px-3 py-2">
-            <Search className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
+        <div className="px-3 py-2 bg-white dark:bg-[#111b21]">
+          <div className="flex items-center gap-2 bg-zinc-100 dark:bg-[#202c33] rounded-xl px-3 py-2">
+            <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-600 flex-shrink-0" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search contacts..."
-              className="flex-1 bg-transparent text-xs text-white placeholder:text-zinc-600 outline-none"
+              className="flex-1 bg-transparent text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-600 outline-none"
             />
           </div>
         </div>
 
         {/* Chat Items */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
           {loadingChats ? (
             <div className="flex items-center justify-center py-16">
-              <RefreshCw className="w-6 h-6 animate-spin text-zinc-600" />
+              <RefreshCw className="w-6 h-6 animate-spin text-zinc-400 dark:text-zinc-600" />
             </div>
           ) : chats.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 px-6 text-center">
-              <MessageSquare className="w-10 h-10 text-zinc-700" />
-              <p className="text-xs text-zinc-600">No chats yet. Connect WhatsApp to sync your contacts.</p>
+              <MessageSquare className="w-10 h-10 text-zinc-300 dark:text-zinc-700" />
+              <p className="text-xs text-zinc-500 dark:text-zinc-600">No chats yet. Connect WhatsApp to sync your contacts.</p>
             </div>
           ) : (
             chats.map(chat => (
@@ -498,34 +498,34 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
       </div>
 
       {/* ── RIGHT: Chat Window ── */}
-      <div className={`${!selectedChat && isMobileView ? 'hidden md:flex' : 'flex'} flex-1 flex-col bg-[#0b141a]`}>
+      <div className={`${!selectedChat && isMobileView ? 'hidden md:flex' : 'flex'} flex-1 flex-col bg-zinc-50 dark:bg-[#0b141a]`}>
         {selectedChat ? (
           <>
             {/* Chat Header */}
-            <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] border-b border-zinc-800/50">
+            <div className="flex items-center gap-3 px-4 py-3 bg-zinc-50 dark:bg-[#202c33] border-b border-zinc-200 dark:border-zinc-800/50">
               <button
                 onClick={() => { setSelectedChat(null); setIsMobileView(false); }}
-                className="md:hidden p-1 text-zinc-400 hover:text-white"
+                className="md:hidden p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <Avatar chat={selectedChat} size="md" />
               <div className="flex-1">
-                <p className="text-sm font-bold text-white">
+                <p className="text-sm font-bold text-zinc-900 dark:text-white">
                   {selectedChat.display_name ?? selectedChat.jid.split('@')[0]}
                 </p>
-                <p className="text-[10px] text-zinc-500">
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-500">
                   {selectedChat.is_group ? 'Group' : selectedChat.phone_number ?? selectedChat.jid.split('@')[0]}
                 </p>
               </div>
               <div className="flex items-center gap-1">
-                <button className="p-2 text-zinc-500 hover:text-white rounded-lg hover:bg-zinc-700/50 transition-colors">
+                <button className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700/50 transition-colors">
                   <Phone className="w-4 h-4" />
                 </button>
-                <button className="p-2 text-zinc-500 hover:text-white rounded-lg hover:bg-zinc-700/50 transition-colors">
+                <button className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700/50 transition-colors">
                   <Video className="w-4 h-4" />
                 </button>
-                <button className="p-2 text-zinc-500 hover:text-white rounded-lg hover:bg-zinc-700/50 transition-colors">
+                <button className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700/50 transition-colors">
                   <MoreVertical className="w-4 h-4" />
                 </button>
               </div>
@@ -540,12 +540,12 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
             >
               {loadingMessages ? (
                 <div className="flex items-center justify-center py-16">
-                  <RefreshCw className="w-6 h-6 animate-spin text-zinc-600" />
+              <RefreshCw className="w-6 h-6 animate-spin text-zinc-400 dark:text-zinc-600" />
                 </div>
               ) : messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-2">
-                  <MessageSquare className="w-10 h-10 text-zinc-700" />
-                  <p className="text-xs text-zinc-600">No messages yet. Say hi! 👋</p>
+                  <MessageSquare className="w-10 h-10 text-zinc-300 dark:text-zinc-700" />
+                  <p className="text-xs text-zinc-500 dark:text-zinc-600">No messages yet. Say hi! 👋</p>
                 </div>
               ) : (
                 messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)
@@ -554,19 +554,19 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
             </div>
 
             {/* ── Message Input ── */}
-            <div className="px-3 py-3 bg-[#202c33] border-t border-zinc-800/50">
+            <div className="px-3 py-3 bg-zinc-50 dark:bg-[#202c33] border-t border-zinc-200 dark:border-zinc-800/50">
               <div className="flex items-end gap-2">
                 <button
                   onClick={() => setShowMediaModal(true)}
-                  className="p-2.5 text-zinc-500 hover:text-emerald-400 rounded-xl hover:bg-zinc-700/50 transition-colors flex-shrink-0"
+                  className="p-2.5 text-zinc-500 hover:text-emerald-500 dark:hover:text-emerald-400 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700/50 transition-colors flex-shrink-0"
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
-                <button className="p-2.5 text-zinc-500 hover:text-emerald-400 rounded-xl hover:bg-zinc-700/50 transition-colors flex-shrink-0">
+                <button className="p-2.5 text-zinc-500 hover:text-emerald-500 dark:hover:text-emerald-400 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700/50 transition-colors flex-shrink-0">
                   <Smile className="w-4 h-4" />
                 </button>
 
-                <div className="flex-1 bg-[#2a3942] rounded-2xl px-4 py-2.5 flex items-end gap-2">
+                <div className="flex-1 bg-zinc-200 dark:bg-[#2a3942] rounded-2xl px-4 py-2.5 flex items-end gap-2">
                   <textarea
                     ref={inputRef}
                     value={inputText}
@@ -574,7 +574,7 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
                     onKeyDown={handleKeyDown}
                     placeholder="Type a message..."
                     rows={1}
-                    className="flex-1 bg-transparent text-sm text-white placeholder:text-zinc-600 outline-none resize-none max-h-28 scrollbar-none"
+                    className="flex-1 bg-transparent text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-600 outline-none resize-none max-h-28 scrollbar-none"
                     style={{ fieldSizing: 'content' } as React.CSSProperties}
                   />
                 </div>
@@ -593,7 +593,7 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
                   )}
                 </motion.button>
               </div>
-              <p className="text-[9px] text-zinc-700 mt-1.5 ml-2">Press Enter to send · Shift+Enter for new line</p>
+              <p className="text-[9px] text-zinc-400 dark:text-zinc-700 mt-1.5 ml-2">Press Enter to send · Shift+Enter for new line</p>
             </div>
           </>
         ) : (
@@ -603,14 +603,14 @@ export function BaileysWhatsappWeb({ workspaceId }: BaileysWhatsappWebProps) {
               <MessageSquare className="w-10 h-10 text-emerald-500/60" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-lg font-bold text-white">WhatsApp Live Chat</h3>
-              <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-white">WhatsApp Live Chat</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-500 max-w-xs leading-relaxed">
                 Left sidebar se koi bhi contact select karo aur real-time messaging shuru karo.
               </p>
             </div>
             <div className="flex gap-2 flex-wrap justify-center">
               {['End-to-End Encrypted', 'Blue Tick Tracking', 'Media Support'].map(f => (
-                <span key={f} className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-500">
+                <span key={f} className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-500">
                   {f}
                 </span>
               ))}

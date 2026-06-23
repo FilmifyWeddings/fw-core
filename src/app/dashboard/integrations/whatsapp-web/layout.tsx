@@ -134,16 +134,16 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   return (
-    <div className="w-full min-h-screen bg-[#070708] text-white flex flex-col overflow-hidden font-sans">
+    <div className="w-full min-h-screen bg-white dark:bg-[#070708] text-zinc-900 dark:text-white flex flex-col overflow-hidden font-sans">
       
       {/* ═══ TOPBAR ═══ */}
-      <div className="flex-shrink-0 flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/70 bg-[#070708]/90 backdrop-blur-lg z-30">
+      <div className="flex-shrink-0 flex items-center justify-between px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/70 bg-white/90 dark:bg-[#070708]/90 backdrop-blur-lg z-30">
         
         {/* Left: Back + Breadcrumb */}
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/dashboard/integrations')}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-zinc-400 hover:text-white transition-all"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
@@ -153,8 +153,8 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
               <img src="/images/integrations/whatsapp.png" alt="WA" className="w-4.5 h-4.5 object-contain" />
             </div>
             <div>
-              <span className="text-[9px] text-zinc-600 font-mono tracking-widest uppercase block">Integration</span>
-              <span className="text-sm font-extrabold text-white tracking-tight leading-none">WhatsApp Web Gateway</span>
+              <span className="text-[9px] text-zinc-500 dark:text-zinc-600 font-mono tracking-widest uppercase block">Integration</span>
+              <span className="text-sm font-extrabold text-zinc-900 dark:text-white tracking-tight leading-none">WhatsApp Web Gateway</span>
             </div>
           </div>
         </div>
@@ -167,7 +167,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
             <div className="relative">
               <button
                 onClick={() => setCategoryOpen(o => !o)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-xs font-bold text-zinc-300 hover:text-white transition-all"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-all"
               >
                 <span className={activeCategory.color}>{activeCategory.icon}</span>
                 <span>{activeCategory.label}</span>
@@ -181,16 +181,16 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -6, scale: 0.97 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-1.5 w-52 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50"
+                    className="absolute right-0 top-full mt-1.5 w-52 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50"
                   >
                     {SHOOT_CATEGORIES.map(cat => (
                       <button
                         key={cat.value}
                         onClick={() => handleCategoryChange(cat.value)}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs hover:bg-zinc-800 transition-colors text-left"
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
                       >
                         <span className={cat.color}>{cat.icon}</span>
-                        <span className="text-zinc-300">{cat.label}</span>
+                        <span className="text-zinc-700 dark:text-zinc-300">{cat.label}</span>
                         {shootCategory === cat.value && <Check className="w-3 h-3 text-emerald-400 ml-auto" />}
                       </button>
                     ))}
@@ -205,7 +205,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
             wsStatus === 'connected'
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
               : wsStatus === 'checking'
-              ? 'bg-zinc-800/50 border-zinc-700 text-zinc-400'
+              ? 'bg-zinc-100/50 dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
               : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
           }`}>
             {wsStatus === 'connected' ? (
@@ -218,7 +218,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* RLS Badge */}
-          <div className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[9px] text-zinc-500 font-mono">
+          <div className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[9px] text-zinc-600 dark:text-zinc-500 font-mono">
             <Lock className="w-3 h-3 text-emerald-500" />
             RLS Bound
           </div>
@@ -226,7 +226,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ═══ TAB NAVIGATION ═══ */}
-      <div className="flex-shrink-0 flex items-end gap-0 border-b border-zinc-800/60 bg-zinc-950/40 bg-[#070708] px-5 z-20">
+      <div className="flex-shrink-0 flex items-end gap-0 border-b border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-950/40 dark:bg-[#070708] px-5 z-20">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
@@ -236,10 +236,10 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
               className={`relative flex items-center gap-2 px-4 py-3.5 text-xs font-bold transition-all whitespace-nowrap border-b-2 ${
                 isActive
                   ? 'text-emerald-400 border-emerald-500'
-                  : 'text-zinc-500 border-transparent hover:text-zinc-300 hover:border-zinc-700'
+                  : 'text-zinc-500 border-transparent hover:text-zinc-600 dark:hover:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
               }`}
             >
-              <span className={isActive ? 'text-emerald-400' : 'text-zinc-600'}>{tab.icon}</span>
+              <span className={isActive ? 'text-emerald-400' : 'text-zinc-400 dark:text-zinc-600'}>{tab.icon}</span>
               {tab.label}
             </button>
           );
@@ -248,7 +248,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
 
       {/* ═══ CONTENT AREA ═══ */}
       <div className="flex-1 overflow-hidden relative">
-        <div className="absolute top-0 right-1/3 w-[600px] h-[400px] bg-emerald-500/4 rounded-full blur-[150px] pointer-events-none" />
+        <div className="absolute top-0 right-1/3 w-[600px] h-[400px] bg-emerald-500/4 dark:bg-emerald-500/4 rounded-full blur-[150px] pointer-events-none" />
         
         <div className="h-full overflow-y-auto">
           {children}
@@ -256,7 +256,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ═══ STATUS BAR FOOTER ═══ */}
-      <div className="flex-shrink-0 flex items-center justify-between px-5 py-2 border-t border-zinc-900 bg-zinc-950/60 text-[9px] text-zinc-600 font-mono">
+      <div className="flex-shrink-0 flex items-center justify-between px-5 py-2 border-t border-zinc-200 dark:border-zinc-900 bg-zinc-100/60 dark:bg-zinc-950/60 text-[9px] text-zinc-500 dark:text-zinc-600 font-mono">
         <span className="flex items-center gap-1.5">
           <ShieldCheck className="w-3 h-3 text-emerald-600" />
           BRAHMASTRA LAW 1 — tenant_id RLS bound · workspace/{userId?.slice(0, 8) || '--------'}
