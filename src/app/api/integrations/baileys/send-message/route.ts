@@ -214,29 +214,43 @@ export async function POST(req: NextRequest) {
 
         // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────
         } else if (tplButtons.length > 0) {
+          const hasOverrideMedia = body.mediaUrl && body.mediaUrl !== 'null' && body.mediaUrl.trim() !== '';
+          const hasDbMedia = tpl.media_url_payload && tpl.media_url_payload !== 'null' && tpl.media_url_payload.trim() !== '';
+          
+          const finalMediaUrl = hasOverrideMedia ? body.mediaUrl : (body.mediaUrl === '' || body.mediaUrl === 'null' ? undefined : (hasDbMedia ? tpl.media_url_payload : undefined));
+          const finalMime = finalMediaUrl ? (hasOverrideMedia ? (body.mimeType || 'image/jpeg') : (pj.mediaMime || 'image/jpeg')) : undefined;
+
           result = await sendMessageServerless(supabaseAdmin, user.id, {
             to: chatJid,
             type: 'buttons' as any,
             text: rendered,
             rawButtons: tplButtons,
             footer: pj.footer || '',
-            mediaUrl: tpl.media_url_payload || undefined,
-            mimeType: tpl.media_url_payload ? (pj.mediaMime || 'image/jpeg') : undefined,
+            mediaUrl: finalMediaUrl,
+            mimeType: finalMime,
           } as any);
 
         // ── MEDIA (no buttons) ────────────────────────────────────────────────
-        } else if (tpl.media_url_payload) {
-          const mimeType = pj.mediaMime || 'image/jpeg';
-          const mediaType = mimeType.startsWith('image/') ? 'image' :
-                            mimeType.startsWith('video/') ? 'video' :
-                            mimeType.startsWith('audio/') ? 'audio' : 'document';
-          result = await sendMessageServerless(supabaseAdmin, user.id, {
-            to: chatJid,
-            type: mediaType as any,
-            mediaUrl: tpl.media_url_payload,
-            caption: rendered,
-            mimeType,
-          });
+        } else if (body.mediaUrl || tpl.media_url_payload) {
+          const finalMediaUrl = body.mediaUrl || tpl.media_url_payload;
+          
+          if (finalMediaUrl && finalMediaUrl !== 'null' && finalMediaUrl.trim() !== '') {
+            const mimeType = body.mimeType || pj.mediaMime || 'image/jpeg';
+            const mediaType = mimeType.startsWith('image/') ? 'image' :
+                              mimeType.startsWith('video/') ? 'video' :
+                              mimeType.startsWith('audio/') ? 'audio' : 'document';
+            result = await sendMessageServerless(supabaseAdmin, user.id, {
+              to: chatJid,
+              type: mediaType as any,
+              mediaUrl: finalMediaUrl,
+              caption: rendered,
+              mimeType,
+            });
+          } else {
+            result = await sendMessageServerless(supabaseAdmin, user.id, {
+              to: chatJid, type: 'text', text: rendered,
+            });
+          }
 
         // ── PLAIN TEXT ──────────────────────────────────────────────────────────
         } else {

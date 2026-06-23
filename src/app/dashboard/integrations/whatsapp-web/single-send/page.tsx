@@ -19,6 +19,7 @@ interface Template {
   payload?: {
     body?: string;
     mediaUrl?: string;
+    mediaMime?: string;
   };
 }
 
@@ -114,6 +115,16 @@ export default function WhatsAppSingleSendPage() {
   const handleTemplateChange = (id: string) => {
     setSelectedTemplateId(id);
     const tmpl = templates.find(t => t.id === id);
+    
+    // Auto-populate default template media override states if present
+    if (tmpl?.payload?.mediaUrl) {
+      setMediaUrlOverride(tmpl.payload.mediaUrl);
+      setMediaMimeOverride(tmpl.payload.mediaMime || 'image/jpeg');
+    } else {
+      setMediaUrlOverride('');
+      setMediaMimeOverride('');
+    }
+
     if (tmpl?.payload?.body) {
       const keys = extractTemplatePlaceholders(tmpl.payload.body);
       const defaults: Record<string, string> = {};
@@ -277,7 +288,26 @@ export default function WhatsAppSingleSendPage() {
         payload.variables = templateVariables;
         if (mediaUrlOverride) {
           payload.mediaUrl = mediaUrlOverride;
-          payload.mimeType = mediaMimeOverride;
+          
+          let mime = mediaMimeOverride;
+          if (!mime) {
+            // Auto-detect mimetype from override URL extension or default to image/jpeg
+            const lowerUrl = mediaUrlOverride.toLowerCase().split('?')[0];
+            if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
+              mime = 'video/mp4';
+            } else if (lowerUrl.endsWith('.png')) {
+              mime = 'image/png';
+            } else if (lowerUrl.endsWith('.webp')) {
+              mime = 'image/webp';
+            } else if (lowerUrl.endsWith('.gif')) {
+              mime = 'image/gif';
+            } else if (lowerUrl.endsWith('.pdf') || lowerUrl.includes('pdf')) {
+              mime = 'application/pdf';
+            } else {
+              mime = 'image/jpeg';
+            }
+          }
+          payload.mimeType = mime;
         }
       }
 
