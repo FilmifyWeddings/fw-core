@@ -152,6 +152,96 @@ function formatNativeFlowButtons(rawButtons: any[]): any[] {
   }).filter(Boolean);
 }
 
+// ─── Media Helpers ──────────────────────────────────────────────────────────
+function detectMimeTypeFromUrl(url: string): string {
+  const clean = url.toLowerCase().split('?')[0].split('#')[0];
+  if (clean.endsWith('.mp4') || clean.endsWith('.m4v') || clean.includes('.mp4')) return 'video/mp4';
+  if (clean.endsWith('.webm')) return 'video/webm';
+  if (clean.endsWith('.mov')) return 'video/quicktime';
+  if (clean.endsWith('.mp3')) return 'audio/mpeg';
+  if (clean.endsWith('.ogg') || clean.endsWith('.oga')) return 'audio/ogg';
+  if (clean.endsWith('.m4a')) return 'audio/mp4';
+  if (clean.endsWith('.wav')) return 'audio/wav';
+  if (clean.endsWith('.pdf')) return 'application/pdf';
+  if (clean.endsWith('.png')) return 'image/png';
+  if (clean.endsWith('.webp')) return 'image/webp';
+  if (clean.endsWith('.gif')) return 'image/gif';
+  if (clean.endsWith('.svg')) return 'image/svg+xml';
+  if (clean.endsWith('.bmp')) return 'image/bmp';
+  if (clean.endsWith('.jpg') || clean.endsWith('.jpeg')) return 'image/jpeg';
+  if (clean.endsWith('.txt') || clean.endsWith('.csv')) return 'text/plain';
+  if (clean.endsWith('.doc') || clean.endsWith('.docx')) return 'application/msword';
+  if (clean.endsWith('.xls') || clean.endsWith('.xlsx')) return 'application/vnd.ms-excel';
+  return 'image/jpeg';
+}
+
+function detectMediaCategory(mimeType: string): 'image' | 'video' | 'audio' | 'document' {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
+async function downloadMediaAsBuffer(
+  url: string,
+  overrideMimeType?: string,
+  maxRetries = 2
+): Promise<{ buffer: Buffer; mimeType: string; fileName?: string }> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      logger.info({ url: url.slice(0, 120), attempt }, '📥 Downloading media to buffer...');
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+        redirect: 'follow',
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FWCore/1.0)' },
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText} fetching media from ${url.slice(0, 100)}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      if (buffer.length === 0) {
+        throw new Error('Downloaded media buffer is empty');
+      }
+
+      const serverMimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || '';
+      const detectedFromUrl = detectMimeTypeFromUrl(url);
+      const finalMime = overrideMimeType || serverMimeType || detectedFromUrl;
+
+      logger.info({
+        url: url.slice(0, 80),
+        bufferSize: buffer.length,
+        serverMimeType,
+        detectedFromUrl,
+        finalMime,
+      }, '✅ Media downloaded successfully');
+
+      return { buffer, mimeType: finalMime };
+
+    } catch (err: any) {
+      lastError = err;
+      logger.warn({ url: url.slice(0, 100), attempt, error: err.message }, '⚠️ Media download attempt failed');
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw new Error(`Failed to download media after ${maxRetries + 1} attempts: ${lastError?.message}`);
+}
+
 // ─── Message Sending Helpers ──────────────────────────────────────────────────
 async function sendTextMessage(to: string, text: string): Promise<string | null> {
   if (!sock) throw new Error('Socket not connected');
@@ -167,23 +257,25 @@ async function sendMediaMessage(
 ): Promise<string | null> {
   if (!sock) throw new Error('Socket not connected');
 
-  const isImage = mimeType.startsWith('image/');
-  const isVideo = mimeType.startsWith('video/');
-  const isAudio = mimeType.startsWith('audio/');
+  const mediaCategory = detectMediaCategory(mimeType);
+
+  // Download media to buffer first — avoids VPS→URL network issues
+  const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(mediaUrl, mimeType);
+  const finalCategory = detectMediaCategory(resolvedMime);
 
   let result;
-  if (isImage) {
-    result = await sock.sendMessage(to, { image: { url: mediaUrl }, caption });
-  } else if (isVideo) {
-    result = await sock.sendMessage(to, { video: { url: mediaUrl }, caption });
-  } else if (isAudio) {
-    result = await sock.sendMessage(to, { audio: { url: mediaUrl }, mimetype: mimeType, ptt: false });
+  if (finalCategory === 'image') {
+    result = await sock.sendMessage(to, { image: buffer, caption, mimetype: resolvedMime } as any);
+  } else if (finalCategory === 'video') {
+    result = await sock.sendMessage(to, { video: buffer, caption, mimetype: resolvedMime } as any);
+  } else if (finalCategory === 'audio') {
+    result = await sock.sendMessage(to, { audio: buffer, mimetype: resolvedMime, ptt: false } as any);
   } else {
     result = await sock.sendMessage(to, {
-      document: { url: mediaUrl },
-      mimetype: mimeType,
+      document: buffer,
+      mimetype: resolvedMime,
       fileName: caption || 'file',
-    });
+    } as any);
   }
   return result?.key?.id ?? null;
 }
@@ -217,16 +309,7 @@ async function sendTemplateMessage(
     const mediaUrl = tenantTpl.media_url_payload || pj.mediaUrl || null;
     let mediaType: string | null = null;
     if (mediaUrl) {
-      const lowerUrl = mediaUrl.toLowerCase().split('?')[0];
-      if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
-        mediaType = 'video';
-      } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
-        mediaType = 'audio';
-      } else if (lowerUrl.endsWith('.pdf')) {
-        mediaType = 'document';
-      } else {
-        mediaType = 'image';
-      }
+      mediaType = detectMediaCategory(detectMimeTypeFromUrl(mediaUrl));
     }
     tpl = {
       body_text: tenantTpl.body_text || pj.body || pj.question || '',
@@ -250,16 +333,7 @@ async function sendTemplateMessage(
       const legacyMediaUrl = payloadObj.mediaUrl || null;
       let legacyMediaType: string | null = null;
       if (legacyMediaUrl) {
-        const lowerUrl = legacyMediaUrl.toLowerCase().split('?')[0];
-        if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
-          legacyMediaType = 'video';
-        } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
-          legacyMediaType = 'audio';
-        } else if (lowerUrl.endsWith('.pdf')) {
-          legacyMediaType = 'document';
-        } else {
-          legacyMediaType = 'image';
-        }
+        legacyMediaType = detectMediaCategory(detectMimeTypeFromUrl(legacyMediaUrl));
       }
       tpl = {
         body_text: payloadObj.body || payloadObj.question || '',
@@ -404,36 +478,29 @@ async function sendTemplateMessage(
     if (hasValidMedia) {
       const isVideo = tpl.media_type === 'video' || (tpl.media_url && tpl.media_url.toLowerCase().endsWith('.mp4'));
       
-      // Detect mime type from URL
-      let detectedMime = 'image/jpeg';
-      if (tpl.media_url) {
-        const lowerUrl = tpl.media_url.toLowerCase().split('?')[0];
-        if (isVideo || lowerUrl.endsWith('.mp4')) {
-          detectedMime = 'video/mp4';
-        } else if (lowerUrl.endsWith('.png')) {
-          detectedMime = 'image/png';
-        } else if (lowerUrl.endsWith('.webp')) {
-          detectedMime = 'image/webp';
-        } else if (lowerUrl.endsWith('.gif')) {
-          detectedMime = 'image/gif';
-        } else if (lowerUrl.endsWith('.pdf')) {
-          detectedMime = 'application/pdf';
-        }
+      try {
+        // Download media to buffer first — eliminates VPS→URL network issues
+        const detectedMime = detectMimeTypeFromUrl(tpl.media_url as string);
+        const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(tpl.media_url as string, detectedMime);
+        const finalIsVideo = resolvedMime.startsWith('video/');
+        
+        logger.info({ to, mediaUrl: (tpl.media_url as string).slice(0, 80), resolvedMime, bufferSize: buffer.length }, '📤 Preparing WAMessageMedia for template interactive message');
+        const mediaUploaded = await prepareWAMessageMedia(
+          finalIsVideo
+            ? { video: buffer, mimetype: resolvedMime } as any
+            : { image: buffer, mimetype: resolvedMime } as any,
+          { upload: sock.waUploadToServer, logger }
+        );
+        
+        headerStructure = {
+          title: body || "",
+          hasMediaAttachment: true,
+          ...(finalIsVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
+        };
+      } catch (mediaErr: any) {
+        logger.error({ to, error: mediaErr.message }, '❌ Failed to prepare media for template buttons — sending without media');
+        headerStructure = { title: body || "", hasMediaAttachment: false };
       }
-      
-      logger.info({ to, mediaUrl: tpl.media_url, isVideo, detectedMime }, '📤 Preparing WAMessageMedia for template interactive message');
-      const mediaUploaded = await prepareWAMessageMedia(
-        isVideo 
-          ? { video: { url: tpl.media_url as string }, mimetype: detectedMime as any } 
-          : { image: { url: tpl.media_url as string }, mimetype: detectedMime as any },
-        { upload: sock.waUploadToServer }
-      );
-      
-      headerStructure = {
-        title: body || "",
-        hasMediaAttachment: true,
-        ...(isVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
-      };
     } else {
       headerStructure = {
         title: "",
@@ -463,18 +530,7 @@ async function sendTemplateMessage(
 
   // ── MEDIA (no buttons) ────────────────────────────────────────────────────
   if (tpl.media_url) {
-    // Detect proper mime type from URL
-    const lowerUrl = tpl.media_url.toLowerCase().split('?')[0];
-    let mimeType: string;
-    if (tpl.media_type === 'video' || lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
-      mimeType = 'video/mp4';
-    } else if (tpl.media_type === 'audio' || lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
-      mimeType = 'audio/mpeg';
-    } else if (tpl.media_type === 'document' || lowerUrl.endsWith('.pdf')) {
-      mimeType = 'application/pdf';
-    } else {
-      mimeType = 'image/jpeg';
-    }
+    const mimeType = detectMimeTypeFromUrl(tpl.media_url);
     return sendMediaMessage(to, tpl.media_url, body, mimeType);
   }
 
@@ -1083,38 +1139,28 @@ function startHealthServer(): void {
             const hasValidMedia = mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '';
 
             if (hasValidMedia) {
-              const isVideo = mimeType?.includes('video') || mediaUrl.toLowerCase().endsWith('.mp4');
-              
-              // Detect mime type from URL or mimeType param
-              let detectedMime = mimeType || 'image/jpeg';
-              if (!mimeType) {
-                const lowerUrl = mediaUrl.toLowerCase().split('?')[0];
-                if (isVideo || lowerUrl.endsWith('.mp4')) {
-                  detectedMime = 'video/mp4';
-                } else if (lowerUrl.endsWith('.png')) {
-                  detectedMime = 'image/png';
-                } else if (lowerUrl.endsWith('.webp')) {
-                  detectedMime = 'image/webp';
-                } else if (lowerUrl.endsWith('.gif')) {
-                  detectedMime = 'image/gif';
-                } else if (lowerUrl.endsWith('.pdf')) {
-                  detectedMime = 'application/pdf';
-                }
+              try {
+                const detectedMime = mimeType || detectMimeTypeFromUrl(mediaUrl);
+                const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(mediaUrl, detectedMime);
+                const finalIsVideo = resolvedMime.startsWith('video/');
+                
+                logger.info({ jid, mediaUrl: mediaUrl.slice(0, 80), resolvedMime, bufferSize: buffer.length }, '📤 Preparing WAMessageMedia for interactive message');
+                const mediaUploaded = await prepareWAMessageMedia(
+                  finalIsVideo
+                    ? { video: buffer, mimetype: resolvedMime } as any
+                    : { image: buffer, mimetype: resolvedMime } as any,
+                  { upload: sock.waUploadToServer, logger }
+                );
+                
+                headerStructure = {
+                  title: text || "",
+                  hasMediaAttachment: true,
+                  ...(finalIsVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
+                };
+              } catch (mediaErr: any) {
+                logger.error({ jid, error: mediaErr.message }, '❌ Failed to prepare media for interactive message — sending without media');
+                headerStructure = { title: "", hasMediaAttachment: false };
               }
-              
-              logger.info({ jid, mediaUrl, isVideo, detectedMime }, '📤 Preparing WAMessageMedia for interactive message');
-              const mediaUploaded = await prepareWAMessageMedia(
-                isVideo 
-                  ? { video: { url: mediaUrl as string }, mimetype: detectedMime as any } 
-                  : { image: { url: mediaUrl as string }, mimetype: detectedMime as any },
-                { upload: sock.waUploadToServer }
-              );
-              
-              headerStructure = {
-                title: text || "",
-                hasMediaAttachment: true,
-                ...(isVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
-              };
             } else {
               headerStructure = {
                 title: "",
