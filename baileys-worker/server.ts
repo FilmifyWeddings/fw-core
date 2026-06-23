@@ -22,6 +22,7 @@ import makeWASocket, {
   WAMessageContent,
   WAMessageKey,
   BaileysEventMap,
+  prepareWAMessageMedia,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -114,6 +115,41 @@ async function updateSessionState(
       ...extras,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'workspace_id' });
+}
+
+function formatNativeFlowButtons(rawButtons: any[]): any[] {
+  return (rawButtons || []).map((btn: any) => {
+    const type = btn.type || '';
+    if (type === 'quick_reply') {
+      return {
+        name: "quick_reply",
+        buttonParamsJson: JSON.stringify({
+          display_text: btn.text || btn.label || '',
+          id: btn.value || btn.id || ''
+        })
+      };
+    }
+    if (type === 'url') {
+      return {
+        name: "cta_url",
+        buttonParamsJson: JSON.stringify({
+          display_text: btn.text || btn.label || 'Link',
+          url: btn.value || '',
+          merchant_url: btn.value || ''
+        })
+      };
+    }
+    if (type === 'phone' || type === 'call') {
+      return {
+        name: "cta_call",
+        buttonParamsJson: JSON.stringify({
+          display_text: btn.text || btn.label || 'Call',
+          phone_number: btn.value || ''
+        })
+      };
+    }
+    return null;
+  }).filter(Boolean);
 }
 
 // ─── Message Sending Helpers ──────────────────────────────────────────────────
@@ -332,52 +368,66 @@ async function sendTemplateMessage(
   // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────────
   const rawButtons: any[] = tpl.tpl_buttons || [];
   if (rawButtons.length > 0) {
-    const templateButtons = rawButtons.map((btn: any, i: number) => {
-      const index = i + 1;
-      if (btn.type === 'url') {
-        return {
-          index,
-          urlButton: {
-            displayText: btn.text || btn.label || 'Link',
-            url: btn.value || ''
-          }
-        };
-      } else if (btn.type === 'phone' || btn.type === 'call') {
-        return {
-          index,
-          callButton: {
-            displayText: btn.text || btn.label || 'Call',
-            phoneNumber: btn.value || ''
-          }
-        };
-      } else {
-        return {
-          index,
-          quickReplyButton: {
-            displayText: btn.text || btn.label || 'Reply',
-            id: btn.value || btn.id || String(index)
-          }
-        };
-      }
-    });
+    const nativeButtons = formatNativeFlowButtons(rawButtons);
 
     if (tpl.media_url) {
       // Media + buttons
       const isImage = tpl.media_type === 'image' || (tpl.media_url && !tpl.media_url.match(/\.mp4|video/i));
-      logger.info({ to, templateButtons, footer: footer || "" }, '📤 Sending media template message with templateButtons');
+      logger.info({ to, mediaUrl: tpl.media_url, isImage }, '📤 Preparing WAMessageMedia for template interactive message');
+      
+      const mediaAttachment = await prepareWAMessageMedia(
+        isImage ? { image: { url: tpl.media_url } } : { video: { url: tpl.media_url } },
+        { upload: sock.waUploadToServer }
+      );
+
+      logger.info({ to, nativeButtons, footer: footer || "" }, '📤 Sending media template message with interactiveMessage');
+      
       const result = await sock.sendMessage(to, {
-        [isImage ? 'image' : 'video']: { url: tpl.media_url },
-        caption: body,
-        templateButtons,
-        footer: footer || "",
+        viewOnceMessage: {
+          message: {
+            interactiveMessage: {
+              header: {
+                hasMediaAttachment: true,
+                ...mediaAttachment
+              },
+              body: {
+                text: body
+              },
+              footer: {
+                text: footer || ""
+              },
+              nativeFlowMessage: {
+                buttons: nativeButtons,
+                messageParamsVersion: 1
+              }
+            }
+          }
+        }
       } as any);
       return result?.key?.id ?? null;
     } else {
-      logger.info({ to, templateButtons, footer: footer || "" }, '📤 Sending text template message with templateButtons');
+      logger.info({ to, nativeButtons, footer: footer || "" }, '📤 Sending text template message with interactiveMessage');
       const result = await sock.sendMessage(to, {
-        text: body,
-        templateButtons,
-        footer: footer || "",
+        viewOnceMessage: {
+          message: {
+            interactiveMessage: {
+              header: {
+                title: "",
+                hasMediaAttachment: false
+              },
+              body: {
+                text: body
+              },
+              footer: {
+                text: footer || ""
+              },
+              nativeFlowMessage: {
+                buttons: nativeButtons,
+                messageParamsVersion: 1
+              }
+            }
+          }
+        }
       } as any);
       return result?.key?.id ?? null;
     }
@@ -982,51 +1032,65 @@ function startHealthServer(): void {
             const targetButtons = payloadButtons || rawButtons || [];
             if (!text) throw new Error('Missing: text (buttons body)');
             
-            const templateButtons = targetButtons.map((btn: any, i: number) => {
-              const index = i + 1;
-              if (btn.type === 'url') {
-                return {
-                  index,
-                  urlButton: {
-                    displayText: btn.text || btn.label || 'Link',
-                    url: btn.value || ''
-                  }
-                };
-              } else if (btn.type === 'phone' || btn.type === 'call') {
-                return {
-                  index,
-                  callButton: {
-                    displayText: btn.text || btn.label || 'Call',
-                    phoneNumber: btn.value || ''
-                  }
-                };
-              } else {
-                return {
-                  index,
-                  quickReplyButton: {
-                    displayText: btn.text || btn.label || 'Reply',
-                    id: btn.value || btn.id || String(index)
-                  }
-                };
-              }
-            });
+            const nativeButtons = formatNativeFlowButtons(targetButtons);
 
             if (mediaUrl) {
               const isImage = !mediaUrl.match(/\.mp4|video/i) && (!mimeType || mimeType.startsWith('image/'));
-              logger.info({ jid, templateButtons, footer: btnFooter || "" }, '📤 Sending media buttons message with templateButtons');
+              logger.info({ jid, mediaUrl, isImage }, '📤 Preparing WAMessageMedia for interactive message');
+              
+              const mediaAttachment = await prepareWAMessageMedia(
+                isImage ? { image: { url: mediaUrl } } : { video: { url: mediaUrl } },
+                { upload: sock.waUploadToServer }
+              );
+
+              logger.info({ jid, nativeButtons, footer: btnFooter || "" }, '📤 Sending media buttons message with interactiveMessage');
+              
               const btnResult = await sock.sendMessage(jid, {
-                [isImage ? 'image' : 'video']: { url: mediaUrl },
-                caption: text,
-                templateButtons,
-                footer: btnFooter || '',
+                viewOnceMessage: {
+                  message: {
+                    interactiveMessage: {
+                      header: {
+                        hasMediaAttachment: true,
+                        ...mediaAttachment
+                      },
+                      body: {
+                        text: text
+                      },
+                      footer: {
+                        text: btnFooter || ""
+                      },
+                      nativeFlowMessage: {
+                        buttons: nativeButtons,
+                        messageParamsVersion: 1
+                      }
+                    }
+                  }
+                }
               } as any);
               waMessageId = btnResult?.key?.id ?? null;
             } else {
-              logger.info({ jid, templateButtons, footer: btnFooter || "" }, '📤 Sending text buttons message with templateButtons');
+              logger.info({ jid, nativeButtons, footer: btnFooter || "" }, '📤 Sending text buttons message with interactiveMessage');
               const btnResult = await sock.sendMessage(jid, {
-                text,
-                templateButtons,
-                footer: btnFooter || '',
+                viewOnceMessage: {
+                  message: {
+                    interactiveMessage: {
+                      header: {
+                        title: "",
+                        hasMediaAttachment: false
+                      },
+                      body: {
+                        text: text
+                      },
+                      footer: {
+                        text: btnFooter || ""
+                      },
+                      nativeFlowMessage: {
+                        buttons: nativeButtons,
+                        messageParamsVersion: 1
+                      }
+                    }
+                  }
+                }
               } as any);
               waMessageId = btnResult?.key?.id ?? null;
             }
