@@ -19,5 +19,6 @@ jobs:
           git pull origin main
           npm install
           npm run build
+          npx kill-port 3000 || true
           pm2 restart all
           pm2 save
