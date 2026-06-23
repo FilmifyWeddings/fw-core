@@ -364,6 +364,7 @@ async function sendTemplateMessage(
     if (tpl.media_url) {
       // Media + buttons
       const isImage = tpl.media_type === 'image' || (tpl.media_url && !tpl.media_url.match(/\.mp4|video/i));
+      logger.info({ to, templateButtons, footer: footer || "" }, '📤 Sending media template message with templateButtons');
       const result = await sock.sendMessage(to, {
         [isImage ? 'image' : 'video']: { url: tpl.media_url },
         caption: body,
@@ -372,6 +373,7 @@ async function sendTemplateMessage(
       } as any);
       return result?.key?.id ?? null;
     } else {
+      logger.info({ to, templateButtons, footer: footer || "" }, '📤 Sending text template message with templateButtons');
       const result = await sock.sendMessage(to, {
         text: body,
         templateButtons,
@@ -1011,6 +1013,7 @@ function startHealthServer(): void {
 
             if (mediaUrl) {
               const isImage = !mediaUrl.match(/\.mp4|video/i) && (!mimeType || mimeType.startsWith('image/'));
+              logger.info({ jid, templateButtons, footer: btnFooter || "" }, '📤 Sending media buttons message with templateButtons');
               const btnResult = await sock.sendMessage(jid, {
                 [isImage ? 'image' : 'video']: { url: mediaUrl },
                 caption: text,
@@ -1019,6 +1022,7 @@ function startHealthServer(): void {
               } as any);
               waMessageId = btnResult?.key?.id ?? null;
             } else {
+              logger.info({ jid, templateButtons, footer: btnFooter || "" }, '📤 Sending text buttons message with templateButtons');
               const btnResult = await sock.sendMessage(jid, {
                 text,
                 templateButtons,
