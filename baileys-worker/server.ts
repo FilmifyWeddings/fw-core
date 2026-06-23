@@ -402,11 +402,30 @@ async function sendTemplateMessage(
     const hasValidMedia = tpl.media_url && tpl.media_url !== 'null' && tpl.media_url.trim() !== '';
 
     if (hasValidMedia) {
-      const isVideo = tpl.media_type === 'video' || (tpl.media_url && tpl.media_url.endsWith('.mp4'));
+      const isVideo = tpl.media_type === 'video' || (tpl.media_url && tpl.media_url.toLowerCase().endsWith('.mp4'));
       
-      logger.info({ to, mediaUrl: tpl.media_url, isVideo }, '📤 Preparing WAMessageMedia for template interactive message');
+      // Detect mime type from URL
+      let detectedMime = 'image/jpeg';
+      if (tpl.media_url) {
+        const lowerUrl = tpl.media_url.toLowerCase().split('?')[0];
+        if (isVideo || lowerUrl.endsWith('.mp4')) {
+          detectedMime = 'video/mp4';
+        } else if (lowerUrl.endsWith('.png')) {
+          detectedMime = 'image/png';
+        } else if (lowerUrl.endsWith('.webp')) {
+          detectedMime = 'image/webp';
+        } else if (lowerUrl.endsWith('.gif')) {
+          detectedMime = 'image/gif';
+        } else if (lowerUrl.endsWith('.pdf')) {
+          detectedMime = 'application/pdf';
+        }
+      }
+      
+      logger.info({ to, mediaUrl: tpl.media_url, isVideo, detectedMime }, '📤 Preparing WAMessageMedia for template interactive message');
       const mediaUploaded = await prepareWAMessageMedia(
-        isVideo ? { video: { url: tpl.media_url as string } } : { image: { url: tpl.media_url as string } },
+        isVideo 
+          ? { video: { url: tpl.media_url as string }, mimetype: detectedMime as any } 
+          : { image: { url: tpl.media_url as string }, mimetype: detectedMime as any },
         { upload: sock.waUploadToServer }
       );
       
@@ -1064,11 +1083,30 @@ function startHealthServer(): void {
             const hasValidMedia = mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '';
 
             if (hasValidMedia) {
-              const isVideo = mimeType?.includes('video') || mediaUrl.endsWith('.mp4');
+              const isVideo = mimeType?.includes('video') || mediaUrl.toLowerCase().endsWith('.mp4');
               
-              logger.info({ jid, mediaUrl, isVideo }, '📤 Preparing WAMessageMedia for interactive message');
+              // Detect mime type from URL or mimeType param
+              let detectedMime = mimeType || 'image/jpeg';
+              if (!mimeType) {
+                const lowerUrl = mediaUrl.toLowerCase().split('?')[0];
+                if (isVideo || lowerUrl.endsWith('.mp4')) {
+                  detectedMime = 'video/mp4';
+                } else if (lowerUrl.endsWith('.png')) {
+                  detectedMime = 'image/png';
+                } else if (lowerUrl.endsWith('.webp')) {
+                  detectedMime = 'image/webp';
+                } else if (lowerUrl.endsWith('.gif')) {
+                  detectedMime = 'image/gif';
+                } else if (lowerUrl.endsWith('.pdf')) {
+                  detectedMime = 'application/pdf';
+                }
+              }
+              
+              logger.info({ jid, mediaUrl, isVideo, detectedMime }, '📤 Preparing WAMessageMedia for interactive message');
               const mediaUploaded = await prepareWAMessageMedia(
-                isVideo ? { video: { url: mediaUrl as string } } : { image: { url: mediaUrl as string } },
+                isVideo 
+                  ? { video: { url: mediaUrl as string }, mimetype: detectedMime as any } 
+                  : { image: { url: mediaUrl as string }, mimetype: detectedMime as any },
                 { upload: sock.waUploadToServer }
               );
               
