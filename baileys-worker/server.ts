@@ -370,7 +370,7 @@ async function sendTemplateMessage(
   if (rawButtons.length > 0) {
     const nativeButtons = formatNativeFlowButtons(rawButtons);
 
-    if (tpl.media_url) {
+    if (tpl.media_url && tpl.media_url !== 'null' && tpl.media_url.trim() !== '') {
       // Media + buttons
       const isImage = tpl.media_type === 'image' || (tpl.media_url && !tpl.media_url.match(/\.mp4|video/i));
       logger.info({ to, mediaUrl: tpl.media_url, isImage }, '📤 Preparing WAMessageMedia for template interactive message');
@@ -1034,7 +1034,7 @@ function startHealthServer(): void {
             
             const nativeButtons = formatNativeFlowButtons(targetButtons);
 
-            if (mediaUrl) {
+            if (mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '') {
               const isImage = !mediaUrl.match(/\.mp4|video/i) && (!mimeType || mimeType.startsWith('image/'));
               logger.info({ jid, mediaUrl, isImage }, '📤 Preparing WAMessageMedia for interactive message');
               
