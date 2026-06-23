@@ -214,10 +214,24 @@ async function sendTemplateMessage(
 
   if (tenantTpl) {
     const pj = (tenantTpl.payload_json as any) || {};
+    const mediaUrl = tenantTpl.media_url_payload || pj.mediaUrl || null;
+    let mediaType: string | null = null;
+    if (mediaUrl) {
+      const lowerUrl = mediaUrl.toLowerCase().split('?')[0];
+      if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
+        mediaType = 'video';
+      } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
+        mediaType = 'audio';
+      } else if (lowerUrl.endsWith('.pdf')) {
+        mediaType = 'document';
+      } else {
+        mediaType = 'image';
+      }
+    }
     tpl = {
       body_text: tenantTpl.body_text || pj.body || pj.question || '',
-      media_url: tenantTpl.media_url_payload || pj.mediaUrl || null,
-      media_type: tenantTpl.media_url_payload ? 'image' : null,
+      media_url: mediaUrl,
+      media_type: mediaType,
       tpl_type: (tenantTpl as any).type || null,
       tpl_buttons: (tenantTpl as any).buttons || [],
       tpl_payload: pj,
@@ -233,10 +247,24 @@ async function sendTemplateMessage(
 
     if (legacyTpl) {
       const payloadObj = (legacyTpl.payload as any) || {};
+      const legacyMediaUrl = payloadObj.mediaUrl || null;
+      let legacyMediaType: string | null = null;
+      if (legacyMediaUrl) {
+        const lowerUrl = legacyMediaUrl.toLowerCase().split('?')[0];
+        if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
+          legacyMediaType = 'video';
+        } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
+          legacyMediaType = 'audio';
+        } else if (lowerUrl.endsWith('.pdf')) {
+          legacyMediaType = 'document';
+        } else {
+          legacyMediaType = 'image';
+        }
+      }
       tpl = {
         body_text: payloadObj.body || payloadObj.question || '',
-        media_url: payloadObj.mediaUrl || null,
-        media_type: payloadObj.mediaUrl ? 'image' : null,
+        media_url: legacyMediaUrl,
+        media_type: legacyMediaType,
         tpl_type: (legacyTpl as any).type || null,
         tpl_buttons: (legacyTpl as any).buttons || [],
         tpl_payload: payloadObj,
@@ -416,7 +444,19 @@ async function sendTemplateMessage(
 
   // ── MEDIA (no buttons) ────────────────────────────────────────────────────
   if (tpl.media_url) {
-    return sendMediaMessage(to, tpl.media_url, body, tpl.media_type === 'image' ? 'image/jpeg' : 'video/mp4');
+    // Detect proper mime type from URL
+    const lowerUrl = tpl.media_url.toLowerCase().split('?')[0];
+    let mimeType: string;
+    if (tpl.media_type === 'video' || lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
+      mimeType = 'video/mp4';
+    } else if (tpl.media_type === 'audio' || lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
+      mimeType = 'audio/mpeg';
+    } else if (tpl.media_type === 'document' || lowerUrl.endsWith('.pdf')) {
+      mimeType = 'application/pdf';
+    } else {
+      mimeType = 'image/jpeg';
+    }
+    return sendMediaMessage(to, tpl.media_url, body, mimeType);
   }
 
   // ── PLAIN TEXT ────────────────────────────────────────────────────────────

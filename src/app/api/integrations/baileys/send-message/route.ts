@@ -218,7 +218,26 @@ export async function POST(req: NextRequest) {
           const hasDbMedia = tpl.media_url_payload && tpl.media_url_payload !== 'null' && tpl.media_url_payload.trim() !== '';
           
           const finalMediaUrl = hasOverrideMedia ? body.mediaUrl : (body.mediaUrl === '' || body.mediaUrl === 'null' ? undefined : (hasDbMedia ? tpl.media_url_payload : undefined));
-          const finalMime = finalMediaUrl ? (hasOverrideMedia ? (body.mimeType || 'image/jpeg') : (pj.mediaMime || 'image/jpeg')) : undefined;
+          let finalMime = finalMediaUrl ? (hasOverrideMedia ? body.mimeType : pj.mediaMime) : undefined;
+          // Auto-detect mime type from URL if not explicitly provided
+          if (finalMediaUrl && !finalMime) {
+            const lowerUrl = finalMediaUrl.toLowerCase().split('?')[0];
+            if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
+              finalMime = 'video/mp4';
+            } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
+              finalMime = 'audio/mpeg';
+            } else if (lowerUrl.endsWith('.pdf')) {
+              finalMime = 'application/pdf';
+            } else if (lowerUrl.endsWith('.png')) {
+              finalMime = 'image/png';
+            } else if (lowerUrl.endsWith('.webp')) {
+              finalMime = 'image/webp';
+            } else if (lowerUrl.endsWith('.gif')) {
+              finalMime = 'image/gif';
+            } else {
+              finalMime = 'image/jpeg';
+            }
+          }
 
           result = await sendMessageServerless(supabaseAdmin, user.id, {
             to: chatJid,
@@ -235,7 +254,26 @@ export async function POST(req: NextRequest) {
           const finalMediaUrl = body.mediaUrl || tpl.media_url_payload;
           
           if (finalMediaUrl && finalMediaUrl !== 'null' && finalMediaUrl.trim() !== '') {
-            const mimeType = body.mimeType || pj.mediaMime || 'image/jpeg';
+            // Auto-detect mime type from URL if not explicitly provided
+            let mimeType = body.mimeType || pj.mediaMime;
+            if (!mimeType) {
+              const lowerUrl = finalMediaUrl.toLowerCase().split('?')[0];
+              if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('video')) {
+                mimeType = 'video/mp4';
+              } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.m4a') || lowerUrl.includes('audio')) {
+                mimeType = 'audio/mpeg';
+              } else if (lowerUrl.endsWith('.pdf')) {
+                mimeType = 'application/pdf';
+              } else if (lowerUrl.endsWith('.png')) {
+                mimeType = 'image/png';
+              } else if (lowerUrl.endsWith('.webp')) {
+                mimeType = 'image/webp';
+              } else if (lowerUrl.endsWith('.gif')) {
+                mimeType = 'image/gif';
+              } else {
+                mimeType = 'image/jpeg';
+              }
+            }
             const mediaType = mimeType.startsWith('image/') ? 'image' :
                               mimeType.startsWith('video/') ? 'video' :
                               mimeType.startsWith('audio/') ? 'audio' : 'document';
