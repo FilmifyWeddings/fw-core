@@ -368,69 +368,50 @@ async function sendTemplateMessage(
   // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────────
   const rawButtons: any[] = tpl.tpl_buttons || [];
   if (rawButtons.length > 0) {
-    const nativeButtons = formatNativeFlowButtons(rawButtons);
+    const nativeFlowButtons = formatNativeFlowButtons(rawButtons);
 
-    if (tpl.media_url && tpl.media_url !== 'null' && tpl.media_url.trim() !== '') {
-      // Media + buttons
-      const isImage = tpl.media_type === 'image' || (tpl.media_url && !tpl.media_url.match(/\.mp4|video/i));
-      logger.info({ to, mediaUrl: tpl.media_url, isImage }, '📤 Preparing WAMessageMedia for template interactive message');
+    let headerStructure: any = { hasMediaAttachment: false };
+    const hasValidMedia = tpl.media_url && tpl.media_url !== 'null' && tpl.media_url.trim() !== '';
+
+    if (hasValidMedia) {
+      const isVideo = tpl.media_type === 'video' || (tpl.media_url && tpl.media_url.endsWith('.mp4'));
       
-      const mediaAttachment = await prepareWAMessageMedia(
-        isImage ? { image: { url: tpl.media_url } } : { video: { url: tpl.media_url } },
+      logger.info({ to, mediaUrl: tpl.media_url, isVideo }, '📤 Preparing WAMessageMedia for template interactive message');
+      const mediaUploaded = await prepareWAMessageMedia(
+        isVideo ? { video: { url: tpl.media_url as string } } : { image: { url: tpl.media_url as string } },
         { upload: sock.waUploadToServer }
       );
-
-      logger.info({ to, nativeButtons, footer: footer || "" }, '📤 Sending media template message with interactiveMessage');
       
-      const result = await sock.sendMessage(to, {
-        viewOnceMessage: {
-          message: {
-            interactiveMessage: {
-              header: {
-                hasMediaAttachment: true,
-                ...mediaAttachment
-              },
-              body: {
-                text: body
-              },
-              footer: {
-                text: footer || ""
-              },
-              nativeFlowMessage: {
-                buttons: nativeButtons,
-                messageParamsVersion: 1
-              }
-            }
-          }
-        }
-      } as any);
-      return result?.key?.id ?? null;
+      headerStructure = {
+        title: body || "",
+        hasMediaAttachment: true,
+        ...(isVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
+      };
     } else {
-      logger.info({ to, nativeButtons, footer: footer || "" }, '📤 Sending text template message with interactiveMessage');
-      const result = await sock.sendMessage(to, {
-        viewOnceMessage: {
-          message: {
-            interactiveMessage: {
-              header: {
-                title: "",
-                hasMediaAttachment: false
-              },
-              body: {
-                text: body
-              },
-              footer: {
-                text: footer || ""
-              },
-              nativeFlowMessage: {
-                buttons: nativeButtons,
-                messageParamsVersion: 1
-              }
+      headerStructure = {
+        title: "",
+        hasMediaAttachment: false
+      };
+    }
+
+    logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
+
+    const result = await sock.sendMessage(to, {
+      viewOnceMessage: {
+        message: {
+          interactiveMessage: {
+            header: headerStructure,
+            body: { text: body || "" },
+            footer: { text: footer || "" },
+            nativeFlowMessage: {
+              buttons: nativeFlowButtons,
+              messageParamsVersion: 1
             }
           }
         }
-      } as any);
-      return result?.key?.id ?? null;
-    }
+      }
+    } as any);
+    return result?.key?.id ?? null;
   }
 
   // ── MEDIA (no buttons) ────────────────────────────────────────────────────
@@ -986,7 +967,12 @@ function startHealthServer(): void {
         let waMessageId: string | null = null;
         const jid = to;
 
-        switch (type) {
+        // Force 'buttons' type if the payload has rawButtons/buttons to prevent falling back to basic media/text sending
+        const buttons = payload.buttons || payload.rawButtons;
+        const rawButtons = buttons || [];
+        const effectiveType = rawButtons.length > 0 ? 'buttons' : type;
+
+        switch (effectiveType) {
           case 'text':
             if (!text) throw new Error('Missing: text');
             waMessageId = await sendTextMessage(jid, text);
@@ -1032,68 +1018,50 @@ function startHealthServer(): void {
             const targetButtons = payloadButtons || rawButtons || [];
             if (!text) throw new Error('Missing: text (buttons body)');
             
-            const nativeButtons = formatNativeFlowButtons(targetButtons);
+            const nativeFlowButtons = formatNativeFlowButtons(targetButtons);
 
-            if (mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '') {
-              const isImage = !mediaUrl.match(/\.mp4|video/i) && (!mimeType || mimeType.startsWith('image/'));
-              logger.info({ jid, mediaUrl, isImage }, '📤 Preparing WAMessageMedia for interactive message');
+            let headerStructure: any = { hasMediaAttachment: false };
+            const hasValidMedia = mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '';
+
+            if (hasValidMedia) {
+              const isVideo = mimeType?.includes('video') || mediaUrl.endsWith('.mp4');
               
-              const mediaAttachment = await prepareWAMessageMedia(
-                isImage ? { image: { url: mediaUrl } } : { video: { url: mediaUrl } },
+              logger.info({ jid, mediaUrl, isVideo }, '📤 Preparing WAMessageMedia for interactive message');
+              const mediaUploaded = await prepareWAMessageMedia(
+                isVideo ? { video: { url: mediaUrl as string } } : { image: { url: mediaUrl as string } },
                 { upload: sock.waUploadToServer }
               );
-
-              logger.info({ jid, nativeButtons, footer: btnFooter || "" }, '📤 Sending media buttons message with interactiveMessage');
               
-              const btnResult = await sock.sendMessage(jid, {
-                viewOnceMessage: {
-                  message: {
-                    interactiveMessage: {
-                      header: {
-                        hasMediaAttachment: true,
-                        ...mediaAttachment
-                      },
-                      body: {
-                        text: text
-                      },
-                      footer: {
-                        text: btnFooter || ""
-                      },
-                      nativeFlowMessage: {
-                        buttons: nativeButtons,
-                        messageParamsVersion: 1
-                      }
-                    }
-                  }
-                }
-              } as any);
-              waMessageId = btnResult?.key?.id ?? null;
+              headerStructure = {
+                title: text || "",
+                hasMediaAttachment: true,
+                ...(isVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
+              };
             } else {
-              logger.info({ jid, nativeButtons, footer: btnFooter || "" }, '📤 Sending text buttons message with interactiveMessage');
-              const btnResult = await sock.sendMessage(jid, {
-                viewOnceMessage: {
-                  message: {
-                    interactiveMessage: {
-                      header: {
-                        title: "",
-                        hasMediaAttachment: false
-                      },
-                      body: {
-                        text: text
-                      },
-                      footer: {
-                        text: btnFooter || ""
-                      },
-                      nativeFlowMessage: {
-                        buttons: nativeButtons,
-                        messageParamsVersion: 1
-                      }
+              headerStructure = {
+                title: "",
+                hasMediaAttachment: false
+              };
+            }
+
+            logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
+
+            const btnResult = await sock.sendMessage(jid, {
+              viewOnceMessage: {
+                message: {
+                  interactiveMessage: {
+                    header: headerStructure,
+                    body: { text: text || "" },
+                    footer: { text: btnFooter || "" },
+                    nativeFlowMessage: {
+                      buttons: nativeFlowButtons,
+                      messageParamsVersion: 1
                     }
                   }
                 }
-              } as any);
-              waMessageId = btnResult?.key?.id ?? null;
-            }
+              }
+            } as any);
+            waMessageId = btnResult?.key?.id ?? null;
             break;
           }
           default:
