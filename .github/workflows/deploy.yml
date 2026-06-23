@@ -13,7 +13,7 @@ jobs:
       with:
         host: "143.244.133.235"
         username: "root"
-        password: ${{ secrets.VPS_PASSWORD }} # चाबी की जगह पासवर्ड सेट कर दिया
+        key: ${{ secrets.VPS_SSH_KEY }} # तिजोरी से अपनी नई चाबी उठाएगा
         script: |
           cd /var/www/fw-core
           git pull origin main
