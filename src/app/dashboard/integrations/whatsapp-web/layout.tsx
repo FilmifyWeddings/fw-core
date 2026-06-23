@@ -99,18 +99,34 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   };
 
   // Sync WA connection status from DB
+  // NOTE: integration_credentials only tracks meta/google/custom_website.
+  // WhatsApp (Baileys) connection state lives in baileys_sessions.conn_state.
   useEffect(() => {
     if (!userId) return;
     const checkStatus = async () => {
       try {
-        const { data } = await supabase
-          .from('integration_credentials')
-          .select('status')
-          .eq('user_id', userId)
-          .eq('provider', 'whatsapp')
+        const { data, error } = await supabase
+          .from('baileys_sessions')
+          .select('conn_state')
+          .eq('workspace_id', userId)
           .maybeSingle();
-        setWsStatus(data?.status === 'connected' ? 'connected' : 'disconnected');
-      } catch {
+
+        if (error) {
+          // RLS or network error — fail gracefully
+          console.warn('[WhatsApp layout] baileys_sessions fetch error:', error.message);
+          setWsStatus('disconnected');
+          return;
+        }
+
+        if (!data) {
+          // No session row found — device has never been linked
+          setWsStatus('disconnected');
+          return;
+        }
+
+        setWsStatus(data.conn_state === 'open' ? 'connected' : 'disconnected');
+      } catch (err) {
+        console.warn('[WhatsApp layout] Unexpected error checking WA status:', err);
         setWsStatus('disconnected');
       }
     };
