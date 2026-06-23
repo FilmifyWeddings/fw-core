@@ -13,7 +13,10 @@ echo "Building application..."
 npm run build
 
 echo "Restarting application under PM2..."
+echo "Killing any ghost process on port 3000..."
+npx kill-port 3000 || true
 pm2 restart fw-core
+
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1

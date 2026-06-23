@@ -409,17 +409,20 @@ export async function sendMessageServerless(
     }
 
   } finally {
-    // 4. Temp File Cleanup
+    // 4. Temp File Cleanup (Delayed to allow worker to read it)
     if (tempFileToClean) {
-      try {
-        const fs = require('fs');
-        if (fs.existsSync(tempFileToClean)) {
-          fs.unlinkSync(tempFileToClean);
-          console.log('[compression] Cleaned up temporary compressed file:', tempFileToClean);
+      const fileToClean = tempFileToClean;
+      setTimeout(() => {
+        try {
+          const fs = require('fs');
+          if (fs.existsSync(fileToClean)) {
+            fs.unlinkSync(fileToClean);
+            console.log('[compression] Cleaned up temporary compressed file after delay:', fileToClean);
+          }
+        } catch (err: any) {
+          console.error('[compression] Error unlinking temp file after delay:', err.message);
         }
-      } catch (err: any) {
-        console.error('[compression] Error unlinking temp file:', err.message);
-      }
+      }, 120_000); // 2 minutes delay
     }
   }
 }
