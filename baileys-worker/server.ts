@@ -24,6 +24,7 @@ import makeWASocket, {
   BaileysEventMap,
   prepareWAMessageMedia,
   generateWAMessageFromContent,
+  generateMessageID,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -552,6 +553,13 @@ async function sendTemplateMessage(
             nativeFlowMessage: {
               buttons: nativeFlowButtons,
               messageParamsVersion: 1
+            },
+            businessMessageForwardInfo: {
+              businessOwnerJid: sock.user?.id || ''
+            },
+            contextInfo: {
+              forwardingScore: 0,
+              isForwarded: false
             }
           }
         }
@@ -559,7 +567,7 @@ async function sendTemplateMessage(
     };
     const userJid = sock.user?.id || '';
     const waMessage = generateWAMessageFromContent(to, messageContent, { userJid });
-    await sock.relayMessage(to, waMessage.message!, { messageId: waMessage.key.id! });
+    await sock.relayMessage(to, waMessage.message!, { messageId: generateMessageID() });
     return waMessage.key.id ?? null;
   }
 
@@ -1219,6 +1227,13 @@ function startHealthServer(): void {
                     nativeFlowMessage: {
                       buttons: nativeFlowButtons,
                       messageParamsVersion: 1
+                    },
+                    businessMessageForwardInfo: {
+                      businessOwnerJid: sock.user?.id || ''
+                    },
+                    contextInfo: {
+                      forwardingScore: 0,
+                      isForwarded: false
                     }
                   }
                 }
@@ -1226,7 +1241,7 @@ function startHealthServer(): void {
             };
             const userJid = sock.user?.id || '';
             const waMessage = generateWAMessageFromContent(jid, messageContent, { userJid });
-            await sock.relayMessage(jid, waMessage.message!, { messageId: waMessage.key.id! });
+            await sock.relayMessage(jid, waMessage.message!, { messageId: generateMessageID() });
             waMessageId = waMessage.key.id ?? null;
             break;
           }

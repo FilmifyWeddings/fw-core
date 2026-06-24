@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, prepareWAMessageMedia, generateWAMessageFromContent, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, prepareWAMessageMedia, generateWAMessageFromContent, generateMessageID, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -480,6 +480,13 @@ async function sendTemplateMessage(to, templateId, variables) {
                         nativeFlowMessage: {
                             buttons: nativeFlowButtons,
                             messageParamsVersion: 1
+                        },
+                        businessMessageForwardInfo: {
+                            businessOwnerJid: sock.user?.id || ''
+                        },
+                        contextInfo: {
+                            forwardingScore: 0,
+                            isForwarded: false
                         }
                     }
                 }
@@ -487,7 +494,7 @@ async function sendTemplateMessage(to, templateId, variables) {
         };
         const userJid = sock.user?.id || '';
         const waMessage = generateWAMessageFromContent(to, messageContent, { userJid });
-        await sock.relayMessage(to, waMessage.message, { messageId: waMessage.key.id });
+        await sock.relayMessage(to, waMessage.message, { messageId: generateMessageID() });
         return waMessage.key.id ?? null;
     }
     // ── MEDIA (no buttons) ────────────────────────────────────────────────────
@@ -1073,6 +1080,13 @@ function startHealthServer() {
                                         nativeFlowMessage: {
                                             buttons: nativeFlowButtons,
                                             messageParamsVersion: 1
+                                        },
+                                        businessMessageForwardInfo: {
+                                            businessOwnerJid: sock.user?.id || ''
+                                        },
+                                        contextInfo: {
+                                            forwardingScore: 0,
+                                            isForwarded: false
                                         }
                                     }
                                 }
@@ -1080,7 +1094,7 @@ function startHealthServer() {
                         };
                         const userJid = sock.user?.id || '';
                         const waMessage = generateWAMessageFromContent(jid, messageContent, { userJid });
-                        await sock.relayMessage(jid, waMessage.message, { messageId: waMessage.key.id });
+                        await sock.relayMessage(jid, waMessage.message, { messageId: generateMessageID() });
                         waMessageId = waMessage.key.id ?? null;
                         break;
                     }
