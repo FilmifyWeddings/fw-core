@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Plus, MoreVertical, CheckCircle2, XCircle, Clock, Timer, 
-  Trash2, ShieldCheck, FileText, Image as ImageIcon, ListCollapse, 
+  Trash2, ShieldCheck, FileText, Image as ImageIcon, 
   Vote, HelpCircle, PhoneCall, Link2, X, PlusCircle, Check, RefreshCw,
   Edit, Copy, ChevronDown
 } from 'lucide-react';
@@ -41,7 +41,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [nameError, setNameError] = useState(false);
   const [category, setCategory] = useState<'utility' | 'marketing' | 'authentication'>('utility');
   const [language, setLanguage] = useState('en_US');
-  const [activeTab, setActiveTab] = useState<'text' | 'media' | 'list' | 'poll'>('text');
+  const [activeTab, setActiveTab] = useState<'text' | 'media' | 'poll'>('text');
   
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaMime, setMediaMime] = useState('');
@@ -130,11 +130,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  // List menu builder states
-  const [listButtonText, setListButtonText] = useState('');
-  const [listSections, setListSections] = useState<Array<{ id: string; title: string; rows: Array<{ id: string; title: string; desc: string }> }>>([]);
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-
   // Poll states
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollAllowMultiple, setPollAllowMultiple] = useState(false);
@@ -154,14 +149,12 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setName(template.name);
     setCategory(template.category as any);
     setLanguage(template.language);
-    setActiveTab(template.type);
+    setActiveTab(template.type as 'text' | 'media' | 'poll');
     
     const payload = template.payload || {};
     setTextBody(payload.body || payload.question || '');
     setMediaUrl(payload.mediaUrl || payload.default_send_media_url || '');
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
-    setListButtonText(payload.buttonText || payload.button_text || '');
-    setListSections(payload.sections || []);
     setPollQuestion(payload.question || '');
     setPollAllowMultiple(!!payload.allowMultiple || !!payload.multipleAnswers);
     setPollOptions(payload.options || [{ id: '1', text: '' }, { id: '2', text: '' }]);
@@ -176,14 +169,12 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setName(`${template.name}_copy`);
     setCategory(template.category as any);
     setLanguage(template.language);
-    setActiveTab(template.type);
+    setActiveTab(template.type as 'text' | 'media' | 'poll');
     
     const payload = template.payload || {};
     setTextBody(payload.body || payload.question || '');
     setMediaUrl(payload.mediaUrl || payload.default_send_media_url || '');
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
-    setListButtonText(payload.buttonText || payload.button_text || '');
-    setListSections(payload.sections || []);
     setPollQuestion(payload.question || '');
     setPollAllowMultiple(!!payload.allowMultiple || !!payload.multipleAnswers);
     setPollOptions(payload.options || [{ id: '1', text: '' }, { id: '2', text: '' }]);
@@ -203,8 +194,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setTextBody('');
     setMediaUrl('');
     setMediaMime('');
-    setListButtonText('');
-    setListSections([]);
     setPollQuestion('');
     setPollAllowMultiple(false);
     setPollOptions([{ id: '1', text: '' }, { id: '2', text: '' }]);
@@ -254,8 +243,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       payload = { body: textBody };
     } else if (activeTab === 'media') {
       payload = { body: textBody, mediaUrl, mediaMime };
-    } else if (activeTab === 'list') {
-      payload = { body: textBody, buttonText: listButtonText, sections: listSections };
     } else if (activeTab === 'poll') {
       payload = { question: pollQuestion, allowMultiple: pollAllowMultiple, options: pollOptions.filter(o => o.text.trim()) };
     }
@@ -289,7 +276,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         setTextBody('');
         setMediaUrl('');
         setMediaMime('');
-        setListSections([]);
         setPollQuestion('');
         setPollOptions([{ id: '1', text: '' }, { id: '2', text: '' }]);
         setButtons([]);
@@ -448,11 +434,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     );
   };
 
-  // List menu rows count utility
-  const getTotalListRows = () => {
-    return listSections.reduce((acc, section) => acc + section.rows.length, 0);
-  };
-
   // Add Button Modifier
   const handleAddButton = (type: 'url' | 'phone') => {
     if (buttons.length >= 3) {
@@ -488,50 +469,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       return;
     }
     setPollOptions(prev => prev.filter(o => o.id !== id));
-  };
-
-  // Add List Section
-  const handleAddListSection = () => {
-    if (listSections.length >= 3) {
-      alert('WhatsApp list messages support a maximum of 3 sections.');
-      return;
-    }
-    const newId = String(Date.now());
-    const newSec = {
-      id: newId,
-      title: `Section ${listSections.length + 1}`,
-      rows: [{ id: String(Date.now() + 1), title: 'Item Title', desc: 'Item Description' }]
-    };
-    setListSections(prev => [...prev, newSec]);
-    setActiveSectionId(newId);
-  };
-
-  const handleAddListRow = (secId: string) => {
-    if (getTotalListRows() >= 30) {
-      alert('WhatsApp lists support a maximum of 30 total rows.');
-      return;
-    }
-    setListSections(prev => prev.map(sec => {
-      if (sec.id === secId) {
-        return {
-          ...sec,
-          rows: [...sec.rows, { id: String(Date.now()), title: 'Item Title', desc: 'Item Description' }]
-        };
-      }
-      return sec;
-    }));
-  };
-
-  const handleRemoveListRow = (secId: string, rowId: string) => {
-    setListSections(prev => prev.map(sec => {
-      if (sec.id === secId) {
-        return {
-          ...sec,
-          rows: sec.rows.filter(r => r.id !== rowId)
-        };
-      }
-      return sec;
-    }).filter(sec => sec.rows.length > 0)); // Remove section if rows become empty
   };
 
   // Filter templates by query
@@ -808,7 +745,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
                 {/* Content Tabs header */}
                 <div className="border border-zinc-200 dark:border-zinc-900 rounded-xl bg-zinc-50 dark:bg-zinc-950/40 p-1 flex gap-1.5">
-                  {(['text', 'media', 'list', 'poll'] as const).map((tab) => (
+                  {(['text', 'media', 'poll'] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -821,7 +758,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                     >
                       {tab === 'text' && <FileText className="w-3.5 h-3.5" />}
                       {tab === 'media' && <ImageIcon className="w-3.5 h-3.5" />}
-                      {tab === 'list' && <ListCollapse className="w-3.5 h-3.5" />}
                       {tab === 'poll' && <Vote className="w-3.5 h-3.5" />}
                       {tab}
                     </button>
@@ -941,132 +877,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                           rows={4}
                           className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
                         />
-                      </div>
-                    </div>
-                  )}
-
-                  {activeTab === 'list' && (
-                    <div className="space-y-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-zinc-550 dark:text-zinc-400">Template body</label>
-                        {renderFormattingToolbar()}
-                        <textarea
-                          ref={textareaRef}
-                          placeholder="Write introductory list description text..."
-                          value={textBody}
-                          onChange={(e) => setTextBody(e.target.value)}
-                          onFocus={() => setIsTextareaFocused(true)}
-                          onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)}
-                          rows={4}
-                          className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-zinc-500 dark:text-zinc-400">List button text</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Choose Option"
-                          value={listButtonText}
-                          onChange={(e) => setListButtonText(e.target.value)}
-                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                        />
-                      </div>
-
-                      {/* List options details */}
-                      <div className="pt-2 border-t border-zinc-200 dark:border-zinc-900 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h5 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">List Options Sections</h5>
-                            <p className="text-[9px] text-zinc-500">Max 3 sections. Max 30 total rows.</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs font-mono bg-white dark:bg-zinc-900 px-2 py-0.5 rounded text-zinc-500 dark:text-zinc-400 font-bold border border-zinc-200 dark:border-zinc-800">
-                              {getTotalListRows()}/30
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleAddListSection}
-                              className="px-2.5 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg transition-all"
-                            >
-                              Add Section
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* List Sections render */}
-                        <div className="space-y-3">
-                          {listSections.map((sec, sIdx) => (
-                            <div key={sec.id} className="p-3.5 border border-zinc-200 dark:border-zinc-800/60 rounded-xl bg-zinc-50 dark:bg-zinc-950 space-y-3">
-                              <div className="flex items-center justify-between">
-                                <input
-                                  type="text"
-                                  value={sec.title}
-                                  onChange={(e) => {
-                                    setListSections(prev => prev.map(s => s.id === sec.id ? { ...s, title: e.target.value } : s));
-                                  }}
-                                  className="bg-transparent border-b border-zinc-250 dark:border-zinc-800 text-xs font-bold text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-600 w-1/3"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddListRow(sec.id)}
-                                  className="text-[9px] font-bold text-orange-500 hover:text-orange-400"
-                                >
-                                  + Add Item
-                                </button>
-                              </div>
-
-                              {/* Rows inside section */}
-                              <div className="space-y-2">
-                                {sec.rows.map((row, rIdx) => (
-                                  <div key={row.id} className="flex gap-2 items-center">
-                                    <input
-                                      type="text"
-                                      placeholder="Item Title"
-                                      value={row.title}
-                                      onChange={(e) => {
-                                        setListSections(prev => prev.map(s => {
-                                          if (s.id === sec.id) {
-                                            return {
-                                              ...s,
-                                              rows: s.rows.map(r => r.id === row.id ? { ...r, title: e.target.value } : r)
-                                            };
-                                          }
-                                          return s;
-                                        }));
-                                      }}
-                                      className="flex-1 px-2.5 py-1 bg-white dark:bg-zinc-900 text-[11px] border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-800 dark:text-zinc-300 focus:outline-none focus:border-zinc-350 dark:focus:border-zinc-700"
-                                    />
-                                    <input
-                                      type="text"
-                                      placeholder="Description"
-                                      value={row.desc}
-                                      onChange={(e) => {
-                                        setListSections(prev => prev.map(s => {
-                                          if (s.id === sec.id) {
-                                            return {
-                                              ...s,
-                                              rows: s.rows.map(r => r.id === row.id ? { ...r, desc: e.target.value } : r)
-                                            };
-                                          }
-                                          return s;
-                                        }));
-                                      }}
-                                      className="flex-2 px-2.5 py-1 bg-white dark:bg-zinc-900 text-[11px] border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-400 focus:outline-none focus:border-zinc-350 dark:focus:border-zinc-700"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveListRow(sec.id, row.id)}
-                                      className="text-zinc-400 hover:text-rose-500"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
                       </div>
                     </div>
                   )}

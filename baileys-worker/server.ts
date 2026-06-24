@@ -446,23 +446,6 @@ async function sendTemplateMessage(
   const tplType = tpl.tpl_type || (tpl.media_url ? 'media' : 'text');
   const pj = tpl.tpl_payload || {};
 
-  // ── LIST message ────────────────────────────────────────────────────────────
-  if (tplType === 'list') {
-    const sections: any[] = pj.sections || [];
-    const buttonText: string = pj.buttonText || pj.button_text || 'Options';
-    const result = await sock.sendMessage(to, {
-      listMessage: {
-        title: body,
-        description: body,
-        buttonText,
-        footerText: '',
-        listType: 1,
-        sections,
-      }
-    } as any);
-    return result?.key?.id ?? null;
-  }
-
   // ── POLL message ─────────────────────────────────────────────────────────────
   if (tplType === 'poll') {
     const pollOpts: any[] = (pj.options || []).map((o: any) => (typeof o === 'string' ? o : o.text));
@@ -1082,23 +1065,6 @@ function startHealthServer(): void {
             });
             waMessageId = pollResult?.key?.id ?? null;
             break;
-          case 'list': {
-            // Interactive List Message
-            const { listButtonText, listSections } = payload as any;
-            if (!text) throw new Error('Missing: text (list title)');
-            const listResult = await sock.sendMessage(jid, {
-              listMessage: {
-                title: text,
-                description: text,
-                buttonText: listButtonText || 'Options',
-                footerText: '',
-                listType: 1,
-                sections: listSections || [],
-              }
-            } as any);
-            waMessageId = listResult?.key?.id ?? null;
-            break;
-          }
           case 'buttons': {
             // Action links (URL / Phone) — text-formatted for reliable delivery
             const { rawButtons, buttons: payloadButtons } = payload as any;
