@@ -120,9 +120,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     }
   };
   
-  // Text Body/Footer states
+  // Text Body state
   const [textBody, setTextBody] = useState('');
-  const [textFooter, setTextFooter] = useState('');
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const handleCopyId = (id: string) => {
@@ -159,7 +158,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     
     const payload = template.payload || {};
     setTextBody(payload.body || payload.question || '');
-    setTextFooter(payload.footer || '');
     setMediaUrl(payload.mediaUrl || payload.default_send_media_url || '');
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
     setListButtonText(payload.buttonText || payload.button_text || '');
@@ -182,7 +180,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     
     const payload = template.payload || {};
     setTextBody(payload.body || payload.question || '');
-    setTextFooter(payload.footer || '');
     setMediaUrl(payload.mediaUrl || payload.default_send_media_url || '');
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
     setListButtonText(payload.buttonText || payload.button_text || '');
@@ -204,7 +201,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setLanguage('en_US');
     setActiveTab('text');
     setTextBody('');
-    setTextFooter('');
     setMediaUrl('');
     setMediaMime('');
     setListButtonText('');
@@ -255,11 +251,11 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     // Build specific payload based on selected Tab type
     let payload: any = {};
     if (activeTab === 'text') {
-      payload = { body: textBody, footer: textFooter };
+      payload = { body: textBody };
     } else if (activeTab === 'media') {
-      payload = { body: textBody, footer: textFooter, mediaUrl, mediaMime };
+      payload = { body: textBody, mediaUrl, mediaMime };
     } else if (activeTab === 'list') {
-      payload = { body: textBody, footer: textFooter, buttonText: listButtonText, sections: listSections };
+      payload = { body: textBody, buttonText: listButtonText, sections: listSections };
     } else if (activeTab === 'poll') {
       payload = { question: pollQuestion, allowMultiple: pollAllowMultiple, options: pollOptions.filter(o => o.text.trim()) };
     }
@@ -291,7 +287,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         setCategory('utility');
         setActiveTab('text');
         setTextBody('');
-        setTextFooter('');
         setMediaUrl('');
         setMediaMime('');
         setListSections([]);
@@ -853,17 +848,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                           className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
                         />
                       </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-zinc-550 dark:text-zinc-400">Template footer</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Reply STOP to opt out"
-                          value={textFooter}
-                          onChange={(e) => setTextFooter(e.target.value)}
-                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                        />
-                      </div>
                     </div>
                   )}
 
@@ -956,17 +940,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                           onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)}
                           rows={4}
                           className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-zinc-555 dark:text-zinc-400">Template footer</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Click media to view"
-                          value={textFooter}
-                          onChange={(e) => setTextFooter(e.target.value)}
-                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
                         />
                       </div>
                     </div>

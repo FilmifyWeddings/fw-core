@@ -445,7 +445,6 @@ async function sendTemplateMessage(
 
   const tplType = tpl.tpl_type || (tpl.media_url ? 'media' : 'text');
   const pj = tpl.tpl_payload || {};
-  const footer: string = pj.footer || '';
 
   // ── LIST message ────────────────────────────────────────────────────────────
   if (tplType === 'list') {
@@ -454,9 +453,9 @@ async function sendTemplateMessage(
     const result = await sock.sendMessage(to, {
       listMessage: {
         title: body,
-        description: footer,
+        description: body,
         buttonText,
-        footerText: footer,
+        footerText: '',
         listType: 1,
         sections,
       }
@@ -1085,14 +1084,14 @@ function startHealthServer(): void {
             break;
           case 'list': {
             // Interactive List Message
-            const { listButtonText, listSections, footer: listFooter } = payload as any;
+            const { listButtonText, listSections } = payload as any;
             if (!text) throw new Error('Missing: text (list title)');
             const listResult = await sock.sendMessage(jid, {
               listMessage: {
                 title: text,
-                description: listFooter || '',
+                description: text,
                 buttonText: listButtonText || 'Options',
-                footerText: listFooter || '',
+                footerText: '',
                 listType: 1,
                 sections: listSections || [],
               }
@@ -1102,7 +1101,7 @@ function startHealthServer(): void {
           }
           case 'buttons': {
             // Action links (URL / Phone) — text-formatted for reliable delivery
-            const { rawButtons, buttons: payloadButtons, footer: btnFooter } = payload as any;
+            const { rawButtons, buttons: payloadButtons } = payload as any;
             const targetButtons = payloadButtons || rawButtons || [];
             if (!text) throw new Error('Missing: text (buttons body)');
             
