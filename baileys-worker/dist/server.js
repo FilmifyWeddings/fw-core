@@ -470,20 +470,14 @@ async function sendTemplateMessage(to, templateId, variables) {
             };
         }
         logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
-        // Use generateWAMessageFromContent to bypass generateWAMessageContent
-        // which doesn't recognize viewOnceMessage and falls through to prepareWAMessageMedia
         const messageContent = {
-            viewOnceMessage: {
-                message: {
-                    interactiveMessage: {
-                        header: headerStructure,
-                        body: { text: body || "" },
-                        footer: { text: footer || "" },
-                        nativeFlowMessage: {
-                            buttons: nativeFlowButtons,
-                            messageParamsVersion: 1
-                        }
-                    }
+            interactiveMessage: {
+                header: headerStructure,
+                body: { text: body || "" },
+                footer: { text: footer || "" },
+                nativeFlowMessage: {
+                    buttons: nativeFlowButtons,
+                    messageParamsVersion: 1
                 }
             }
         };
@@ -1065,20 +1059,14 @@ function startHealthServer() {
                             };
                         }
                         logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
-                        // Use generateWAMessageFromContent to bypass generateWAMessageContent
-                        // which doesn't recognize viewOnceMessage and falls through to prepareWAMessageMedia
                         const messageContent = {
-                            viewOnceMessage: {
-                                message: {
-                                    interactiveMessage: {
-                                        header: headerStructure,
-                                        body: { text: text || "" },
-                                        footer: { text: btnFooter || "" },
-                                        nativeFlowMessage: {
-                                            buttons: nativeFlowButtons,
-                                            messageParamsVersion: 1
-                                        }
-                                    }
+                            interactiveMessage: {
+                                header: headerStructure,
+                                body: { text: text || "" },
+                                footer: { text: btnFooter || "" },
+                                nativeFlowMessage: {
+                                    buttons: nativeFlowButtons,
+                                    messageParamsVersion: 1
                                 }
                             }
                         };
