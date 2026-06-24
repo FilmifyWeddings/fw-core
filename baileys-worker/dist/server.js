@@ -962,6 +962,14 @@ function startHealthServer() {
                     res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
                     return;
                 }
+                // ── Intercept: if rawButtons/buttons are present, force 'buttons' route ──
+                // Prevents type:"image"/"video"/"document" from bypassing the proto builder
+                if (Array.isArray(payload.rawButtons) && payload.rawButtons.length > 0) {
+                    payload.type = 'buttons';
+                }
+                if (Array.isArray(payload.buttons) && payload.buttons.length > 0) {
+                    payload.type = 'buttons';
+                }
                 const to = payload.to || payload.jid;
                 const type = payload.type;
                 const text = payload.text;
@@ -977,11 +985,7 @@ function startHealthServer() {
                 }
                 let waMessageId = null;
                 const jid = to;
-                // Force 'buttons' type if the payload has rawButtons/buttons to prevent falling back to basic media/text sending
-                const buttons = payload.buttons || payload.rawButtons;
-                const rawButtons = buttons || [];
-                const effectiveType = rawButtons.length > 0 ? 'buttons' : type;
-                switch (effectiveType) {
+                switch (type) {
                     case 'text':
                         if (!text)
                             throw new Error('Missing: text');
