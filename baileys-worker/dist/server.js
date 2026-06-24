@@ -749,8 +749,17 @@ async function startBaileysSocket() {
         if (type !== 'notify')
             return;
         for (const msg of messages) {
-            if (msg.key.fromMe)
-                continue; // Skip our own messages
+            // Sniff outgoing native flow button payloads (e.g. from WhatsBoost)
+            if (msg.key.fromMe) {
+                const msgStr = JSON.stringify(msg.message, null, 2);
+                if (msgStr.includes('nativeFlowMessage') || msgStr.includes('interactiveMessage')) {
+                    logger.info({ rawPayload: msg.message }, '🔍 DETECTED OUTGOING NATIVE FLOW PAYLOAD');
+                    console.log("================= DETECTED OUTGOING PAYLOAD =================");
+                    console.log(msgStr);
+                    console.log("=============================================================");
+                }
+                continue;
+            }
             const chatJid = msg.key.remoteJid;
             const text = msg.message?.conversation ??
                 msg.message?.extendedTextMessage?.text ??
