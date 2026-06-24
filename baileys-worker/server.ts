@@ -183,20 +183,51 @@ function detectMediaCategory(mimeType: string): 'image' | 'video' | 'audio' | 'd
 }
 
 async function downloadMediaAsBuffer(
-  url: string,
+  mediaSource: string,
   overrideMimeType?: string,
   maxRetries = 2
 ): Promise<{ buffer: Buffer; mimeType: string; fileName?: string }> {
-  let lastError: Error | null = null;
+  // ── LOCAL FILE PATH: /tmp/fw_comp_*.jpg, /var/www/..., relative paths ──
+  const isLocalPath = mediaSource.startsWith('/') || mediaSource.startsWith('./') || mediaSource.startsWith('../');
+  if (isLocalPath) {
+    try {
+      logger.info({ path: mediaSource }, '📂 Reading local media file...');
+      
+      if (!fs.existsSync(mediaSource)) {
+        throw new Error(`Local file not found: ${mediaSource}`);
+      }
+      
+      const stat = fs.statSync(mediaSource);
+      if (stat.size === 0) {
+        throw new Error(`Local file is empty: ${mediaSource}`);
+      }
+      
+      const buffer = fs.readFileSync(mediaSource);
+      const detectedMime = overrideMimeType || detectMimeTypeFromUrl(mediaSource);
+      
+      logger.info({
+        path: mediaSource,
+        bufferSize: buffer.length,
+        mimeType: detectedMime,
+      }, '✅ Local media file read successfully');
+      
+      return { buffer, mimeType: detectedMime };
+    } catch (err: any) {
+      logger.error({ path: mediaSource, error: err.message }, '❌ Failed to read local media file');
+      throw err;
+    }
+  }
 
+  // ── HTTP/HTTPS URL: download via fetch ──
+  let lastError: Error | null = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      logger.info({ url: url.slice(0, 120), attempt }, '📥 Downloading media to buffer...');
+      logger.info({ url: mediaSource.slice(0, 120), attempt }, '📥 Downloading media from URL...');
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30_000);
 
-      const response = await fetch(url, {
+      const response = await fetch(mediaSource, {
         method: 'GET',
         signal: controller.signal,
         redirect: 'follow',
@@ -206,7 +237,7 @@ async function downloadMediaAsBuffer(
       clearTimeout(timeout);
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${response.statusText} fetching media from ${url.slice(0, 100)}`);
+        throw new Error(`HTTP ${response.status} ${response.statusText} fetching media from ${mediaSource.slice(0, 100)}`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
@@ -217,11 +248,11 @@ async function downloadMediaAsBuffer(
       }
 
       const serverMimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || '';
-      const detectedFromUrl = detectMimeTypeFromUrl(url);
+      const detectedFromUrl = detectMimeTypeFromUrl(mediaSource);
       const finalMime = overrideMimeType || serverMimeType || detectedFromUrl;
 
       logger.info({
-        url: url.slice(0, 80),
+        url: mediaSource.slice(0, 80),
         bufferSize: buffer.length,
         serverMimeType,
         detectedFromUrl,
@@ -232,7 +263,7 @@ async function downloadMediaAsBuffer(
 
     } catch (err: any) {
       lastError = err;
-      logger.warn({ url: url.slice(0, 100), attempt, error: err.message }, '⚠️ Media download attempt failed');
+      logger.warn({ url: mediaSource.slice(0, 100), attempt, error: err.message }, '⚠️ Media download attempt failed');
       if (attempt < maxRetries) {
         await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
       }
