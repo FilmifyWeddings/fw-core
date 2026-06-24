@@ -23,6 +23,7 @@ import makeWASocket, {
   WAMessageKey,
   BaileysEventMap,
   prepareWAMessageMedia,
+  generateWAMessageFromContent,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -541,7 +542,9 @@ async function sendTemplateMessage(
 
     logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
 
-    const result = await sock.sendMessage(to, {
+    // Use generateWAMessageFromContent to bypass generateWAMessageContent
+    // which doesn't recognize viewOnceMessage and falls through to prepareWAMessageMedia
+    const messageContent = {
       viewOnceMessage: {
         message: {
           interactiveMessage: {
@@ -555,8 +558,11 @@ async function sendTemplateMessage(
           }
         }
       }
-    } as any);
-    return result?.key?.id ?? null;
+    };
+    const userJid = sock.user?.id || '';
+    const waMessage = generateWAMessageFromContent(to, messageContent, { userJid });
+    await sock.relayMessage(to, waMessage.message!, { messageId: waMessage.key.id! });
+    return waMessage.key.id ?? null;
   }
 
   // ── MEDIA (no buttons) ────────────────────────────────────────────────────
@@ -1201,7 +1207,9 @@ function startHealthServer(): void {
 
             logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
 
-            const btnResult = await sock.sendMessage(jid, {
+            // Use generateWAMessageFromContent to bypass generateWAMessageContent
+            // which doesn't recognize viewOnceMessage and falls through to prepareWAMessageMedia
+            const messageContent = {
               viewOnceMessage: {
                 message: {
                   interactiveMessage: {
@@ -1215,8 +1223,11 @@ function startHealthServer(): void {
                   }
                 }
               }
-            } as any);
-            waMessageId = btnResult?.key?.id ?? null;
+            };
+            const userJid = sock.user?.id || '';
+            const waMessage = generateWAMessageFromContent(jid, messageContent, { userJid });
+            await sock.relayMessage(jid, waMessage.message!, { messageId: waMessage.key.id! });
+            waMessageId = waMessage.key.id ?? null;
             break;
           }
           default:
