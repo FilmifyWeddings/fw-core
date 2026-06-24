@@ -471,13 +471,17 @@ async function sendTemplateMessage(to, templateId, variables) {
         }
         logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
         const messageContent = {
-            interactiveMessage: {
-                header: headerStructure,
-                body: { text: body || "" },
-                footer: { text: footer || "" },
-                nativeFlowMessage: {
-                    buttons: nativeFlowButtons,
-                    messageParamsVersion: 1
+            viewOnceMessageV2: {
+                message: {
+                    interactiveMessage: {
+                        header: headerStructure,
+                        body: { text: body || "" },
+                        footer: { text: footer || "" },
+                        nativeFlowMessage: {
+                            buttons: nativeFlowButtons,
+                            messageParamsVersion: 1
+                        }
+                    }
                 }
             }
         };
@@ -1060,13 +1064,17 @@ function startHealthServer() {
                         }
                         logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
                         const messageContent = {
-                            interactiveMessage: {
-                                header: headerStructure,
-                                body: { text: text || "" },
-                                footer: { text: btnFooter || "" },
-                                nativeFlowMessage: {
-                                    buttons: nativeFlowButtons,
-                                    messageParamsVersion: 1
+                            viewOnceMessageV2: {
+                                message: {
+                                    interactiveMessage: {
+                                        header: headerStructure,
+                                        body: { text: text || "" },
+                                        footer: { text: btnFooter || "" },
+                                        nativeFlowMessage: {
+                                            buttons: nativeFlowButtons,
+                                            messageParamsVersion: 1
+                                        }
+                                    }
                                 }
                             }
                         };
