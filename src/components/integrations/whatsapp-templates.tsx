@@ -1205,33 +1205,46 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   ) : (
                     <div className="space-y-2.5">
                       {buttons.map((btn, bIdx) => (
-                        <div key={btn.id} className="flex gap-3 items-center bg-zinc-50 dark:bg-zinc-900/40 p-2.5 border border-zinc-200 dark:border-zinc-800/80 rounded-xl">
-                          <span className="text-[9px] font-mono bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 rounded capitalize text-zinc-500 dark:text-zinc-400 font-bold">
-                            {btn.type.replace('_', ' ')}
-                          </span>
-                          <input 
-                            type="text"
-                            value={btn.text}
-                            onChange={(e) => {
-                              setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, text: e.target.value } : b));
-                            }}
-                            className="bg-transparent text-xs text-zinc-900 dark:text-white border-b border-zinc-250 dark:border-zinc-800 focus:outline-none w-1/3"
-                          />
+                        <div key={btn.id} className="flex flex-col gap-1.5 bg-zinc-50 dark:bg-zinc-900/40 p-2.5 border border-zinc-200 dark:border-zinc-800/80 rounded-xl">
+                          <div className="flex gap-2 items-center">
+                            <span className="text-[9px] font-mono bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 rounded capitalize text-zinc-500 dark:text-zinc-400 font-bold shrink-0">
+                              {btn.type.replace('_', ' ')}
+                            </span>
+                            <input 
+                              type="text"
+                              value={btn.text}
+                              onChange={(e) => {
+                                setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, text: e.target.value } : b));
+                              }}
+                              placeholder="Button label (shown on phone)"
+                              className="bg-transparent text-xs text-zinc-900 dark:text-white border-b border-zinc-250 dark:border-zinc-800 focus:outline-none flex-1"
+                            />
+                            <button 
+                              type="button"
+                              onClick={() => handleRemoveButton(btn.id)}
+                              className="text-zinc-400 hover:text-rose-500"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                           <input 
                             type="text"
                             value={btn.value}
                             onChange={(e) => {
                               setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, value: e.target.value } : b));
                             }}
-                            className="bg-transparent text-xs text-zinc-650 dark:text-zinc-400 border-b border-zinc-250 dark:border-zinc-800 focus:outline-none flex-1 font-mono"
+                            placeholder={
+                              btn.type === 'url' ? 'https://example.com/page' 
+                              : btn.type === 'phone' ? '+919876543210' 
+                              : 'unique_payload_id'
+                            }
+                            className="bg-transparent text-[11px] text-zinc-650 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 focus:outline-none w-full font-mono px-2 py-1 rounded"
                           />
-                          <button 
-                            type="button"
-                            onClick={() => handleRemoveButton(btn.id)}
-                            className="text-zinc-400 hover:text-rose-500"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <p className="text-[8px] text-zinc-400 dark:text-zinc-600 italic">
+                            {btn.type === 'url' ? 'Destination URL when tapped' 
+                              : btn.type === 'phone' ? 'Phone number to dial (include country code)' 
+                              : 'Payload ID sent when tapped (for webhook routing)'}
+                          </p>
                         </div>
                       ))}
                     </div>
