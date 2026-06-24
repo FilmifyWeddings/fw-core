@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, prepareWAMessageMedia, generateWAMessageFromContent, generateMessageID, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, prepareWAMessageMedia, generateWAMessageFromContent, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -471,30 +471,19 @@ async function sendTemplateMessage(to, templateId, variables) {
         }
         logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
         const messageContent = {
-            viewOnceMessageV2: {
-                message: {
-                    interactiveMessage: {
-                        header: headerStructure,
-                        body: { text: body || "" },
-                        footer: { text: footer || "" },
-                        nativeFlowMessage: {
-                            buttons: nativeFlowButtons,
-                            messageParamsVersion: 1
-                        },
-                        businessMessageForwardInfo: {
-                            businessOwnerJid: sock.user?.id || ''
-                        },
-                        contextInfo: {
-                            forwardingScore: 0,
-                            isForwarded: false
-                        }
-                    }
+            interactiveMessage: {
+                header: headerStructure,
+                body: { text: body || "" },
+                footer: { text: footer || "" },
+                nativeFlowMessage: {
+                    buttons: nativeFlowButtons,
+                    messageParamsVersion: 1
                 }
             }
         };
         const userJid = sock.user?.id || '';
         const waMessage = generateWAMessageFromContent(to, messageContent, { userJid });
-        await sock.relayMessage(to, waMessage.message, { messageId: generateMessageID() });
+        await sock.relayMessage(to, waMessage.message, { messageId: waMessage.key.id });
         return waMessage.key.id ?? null;
     }
     // ── MEDIA (no buttons) ────────────────────────────────────────────────────
@@ -1080,30 +1069,19 @@ function startHealthServer() {
                         }
                         logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
                         const messageContent = {
-                            viewOnceMessageV2: {
-                                message: {
-                                    interactiveMessage: {
-                                        header: headerStructure,
-                                        body: { text: text || "" },
-                                        footer: { text: btnFooter || "" },
-                                        nativeFlowMessage: {
-                                            buttons: nativeFlowButtons,
-                                            messageParamsVersion: 1
-                                        },
-                                        businessMessageForwardInfo: {
-                                            businessOwnerJid: sock.user?.id || ''
-                                        },
-                                        contextInfo: {
-                                            forwardingScore: 0,
-                                            isForwarded: false
-                                        }
-                                    }
+                            interactiveMessage: {
+                                header: headerStructure,
+                                body: { text: text || "" },
+                                footer: { text: btnFooter || "" },
+                                nativeFlowMessage: {
+                                    buttons: nativeFlowButtons,
+                                    messageParamsVersion: 1
                                 }
                             }
                         };
                         const userJid = sock.user?.id || '';
                         const waMessage = generateWAMessageFromContent(jid, messageContent, { userJid });
-                        await sock.relayMessage(jid, waMessage.message, { messageId: generateMessageID() });
+                        await sock.relayMessage(jid, waMessage.message, { messageId: waMessage.key.id });
                         waMessageId = waMessage.key.id ?? null;
                         break;
                     }

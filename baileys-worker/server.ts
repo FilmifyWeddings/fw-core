@@ -24,7 +24,6 @@ import makeWASocket, {
   BaileysEventMap,
   prepareWAMessageMedia,
   generateWAMessageFromContent,
-  generateMessageID,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -544,30 +543,19 @@ async function sendTemplateMessage(
     logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
 
     const messageContent = {
-      viewOnceMessageV2: {
-        message: {
-          interactiveMessage: {
-            header: headerStructure,
-            body: { text: body || "" },
-            footer: { text: footer || "" },
-            nativeFlowMessage: {
-              buttons: nativeFlowButtons,
-              messageParamsVersion: 1
-            },
-            businessMessageForwardInfo: {
-              businessOwnerJid: sock.user?.id || ''
-            },
-            contextInfo: {
-              forwardingScore: 0,
-              isForwarded: false
-            }
-          }
+      interactiveMessage: {
+        header: headerStructure,
+        body: { text: body || "" },
+        footer: { text: footer || "" },
+        nativeFlowMessage: {
+          buttons: nativeFlowButtons,
+          messageParamsVersion: 1
         }
       }
     };
     const userJid = sock.user?.id || '';
     const waMessage = generateWAMessageFromContent(to, messageContent, { userJid });
-    await sock.relayMessage(to, waMessage.message!, { messageId: generateMessageID() });
+    await sock.relayMessage(to, waMessage.message!, { messageId: waMessage.key.id! });
     return waMessage.key.id ?? null;
   }
 
@@ -1228,30 +1216,19 @@ function startHealthServer(): void {
             logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
 
             const messageContent = {
-              viewOnceMessageV2: {
-                message: {
-                  interactiveMessage: {
-                    header: headerStructure,
-                    body: { text: text || "" },
-                    footer: { text: btnFooter || "" },
-                    nativeFlowMessage: {
-                      buttons: nativeFlowButtons,
-                      messageParamsVersion: 1
-                    },
-                    businessMessageForwardInfo: {
-                      businessOwnerJid: sock.user?.id || ''
-                    },
-                    contextInfo: {
-                      forwardingScore: 0,
-                      isForwarded: false
-                    }
-                  }
+              interactiveMessage: {
+                header: headerStructure,
+                body: { text: text || "" },
+                footer: { text: btnFooter || "" },
+                nativeFlowMessage: {
+                  buttons: nativeFlowButtons,
+                  messageParamsVersion: 1
                 }
               }
             };
             const userJid = sock.user?.id || '';
             const waMessage = generateWAMessageFromContent(jid, messageContent, { userJid });
-            await sock.relayMessage(jid, waMessage.message!, { messageId: generateMessageID() });
+            await sock.relayMessage(jid, waMessage.message!, { messageId: waMessage.key.id! });
             waMessageId = waMessage.key.id ?? null;
             break;
           }
