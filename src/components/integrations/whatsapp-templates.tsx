@@ -55,7 +55,9 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [savedAlertTemplate, setSavedAlertTemplate] = useState('');
   const [alertSaving, setAlertSaving] = useState(false);
   const [alertTestSending, setAlertTestSending] = useState(false);
-  const [syncedGroups, setSyncedGroups] = useState<Array<{ jid: string; display_name: string | null }>>([]);
+  const [syncedGroups, setSyncedGroups] = useState<Array<{ jid: string; display_name: string | null; participant_count?: number }>>([]);
+  const [fetchingGroups, setFetchingGroups] = useState(false);
+  const [copiedJid, setCopiedJid] = useState<string | null>(null);
 
   // Builder form states
   const [name, setName] = useState('');
@@ -270,6 +272,35 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       loadSyncedGroups();
     }
   }, [activeSection, workspaceId]);
+
+  // Force-fetch all groups from the Baileys socket via worker endpoint
+  const handleFetchGroups = async () => {
+    setFetchingGroups(true);
+    try {
+      const WORKER_PORT = '3002';
+      const res = await fetch(`http://localhost:${WORKER_PORT}/fetch-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.success && data.groups) {
+        setSyncedGroups(data.groups);
+      } else {
+        alert('Failed to fetch groups: ' + (data.error || 'Worker returned error'));
+      }
+    } catch (err: any) {
+      alert('Could not reach Baileys worker: ' + (err.message || 'Network error'));
+    } finally {
+      setFetchingGroups(false);
+    }
+  };
+
+  // Copy JID to clipboard
+  const handleCopyJid = (jid: string) => {
+    navigator.clipboard.writeText(jid);
+    setCopiedJid(jid);
+    setTimeout(() => setCopiedJid(null), 1500);
+  };
 
   // Save alert configuration to localStorage (and optionally to DB)
   const handleSaveAlertConfig = async () => {
@@ -1335,6 +1366,82 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                     <CheckCircle2 className="w-3 h-3" />
                     <span>Active group: <span className="font-mono font-bold">{savedAlertGroupId}</span></span>
                   </div>
+                )}
+              </div>
+
+              {/* Fetch & List All Groups Sub-section */}
+              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-orange-400" />
+                    <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">All WhatsApp Groups</h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFetchGroups}
+                    disabled={fetchingGroups}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-orange-300 dark:hover:border-orange-600 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${fetchingGroups ? 'animate-spin' : ''}`} />
+                    {fetchingGroups ? 'Syncing...' : 'Fetch Active Groups'}
+                  </button>
+                </div>
+
+                {syncedGroups.length === 0 ? (
+                  <div className="py-6 text-center border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
+                    <Users className="w-6 h-6 text-zinc-300 dark:text-zinc-700 mx-auto mb-2" />
+                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500">
+                      {fetchingGroups ? 'Fetching groups from WhatsApp...' : 'No groups loaded yet. Click "Fetch Active Groups" to sync.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto rounded-xl border border-zinc-100 dark:border-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-900 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800">
+                    {syncedGroups.map((g) => (
+                      <div
+                        key={g.jid}
+                        className="flex items-center justify-between px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors group"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className="w-7 h-7 rounded-lg bg-orange-500/10 dark:bg-orange-500/5 flex items-center justify-center shrink-0">
+                            <Users className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate">
+                              {g.display_name || 'Unnamed Group'}
+                            </p>
+                            <p className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 truncate">
+                              {g.jid}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          {typeof g.participant_count === 'number' && g.participant_count > 0 && (
+                            <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-mono">
+                              {g.participant_count} members
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyJid(g.jid)}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-all opacity-60 group-hover:opacity-100"
+                            title="Copy JID"
+                          >
+                            {copiedJid === g.jid ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {syncedGroups.length > 0 && (
+                  <p className="text-[9px] text-zinc-400 dark:text-zinc-600 italic">
+                    {syncedGroups.length} group{syncedGroups.length !== 1 ? 's' : ''} synced. Click "Fetch Active Groups" to force-refresh from WhatsApp.
+                  </p>
                 )}
               </div>
 

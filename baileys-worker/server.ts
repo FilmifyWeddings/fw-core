@@ -1178,6 +1178,50 @@ function startHealthServer(): void {
         return;
       }
 
+      if (req.method === 'POST' && parsedUrl.pathname === '/fetch-groups') {
+        logger.info('Fetch groups requested');
+
+        if (!sock) {
+          res.writeHead(503);
+          res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
+          return;
+        }
+
+        try {
+          const groupMap = await sock.groupFetchAllParticipating();
+          const groups = Object.values(groupMap).map((g: any) => ({
+            jid: g.id,
+            display_name: g.subject || g.id.split('@')[0],
+            participant_count: g.participants?.length ?? 0,
+            is_group: true,
+          }));
+
+          // Upsert into baileys_chats for persistence
+          const rows = groups.map((g: any) => ({
+            workspace_id: WORKSPACE_ID,
+            jid: g.jid,
+            display_name: g.display_name,
+            is_group: true,
+            updated_at: new Date().toISOString(),
+          }));
+
+          if (rows.length > 0) {
+            await supabase
+              .from('baileys_chats')
+              .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+          }
+
+          logger.info({ count: groups.length }, '✅ Groups fetched and synced');
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, groups }));
+        } catch (err: any) {
+          logger.error({ err }, '❌ Failed to fetch groups');
+          res.writeHead(500);
+          res.end(JSON.stringify({ success: false, error: err.message || 'Failed to fetch groups' }));
+        }
+        return;
+      }
+
       if (req.method === 'POST' && parsedUrl.pathname === '/send-group-alert') {
         const bodyStr = await getRequestBody(req);
         const payload = JSON.parse(bodyStr);
