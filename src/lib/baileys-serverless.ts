@@ -696,6 +696,66 @@ export async function processSingleQueuedAction(
       });
     }
 
+    case 'group_lead_alert': {
+      const { groupId, leadData, templateStr } = payload as {
+        groupId: string;
+        leadData: Record<string, any>;
+        templateStr: string;
+      };
+
+      if (!templateStr) {
+        return sendMessageServerless(supabaseAdmin, workspace_id, {
+          to: groupId,
+          type: 'text',
+          text: '⚠️ Empty alert template. Please configure your Group Lead Alert template.',
+        });
+      }
+
+      const replaceFn = (match: string, key: string) => {
+        const normalizedKey = key.trim().toLowerCase();
+        if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
+          return new Date().toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+        }
+        const leadKeys = Object.keys(leadData);
+        const matched = leadKeys.find(k => k.toLowerCase() === normalizedKey);
+        if (matched !== undefined && leadData[matched] !== undefined && leadData[matched] !== null) {
+          return String(leadData[matched]);
+        }
+        const aliasMap: Record<string, string[]> = {
+          full_name: ['name', 'full_name', 'lead_name'],
+          phone: ['phone', 'phone_number', 'mobile'],
+          shoot_type: ['shoot_type', 'shoot', 'kind_of_shoot'],
+          location: ['location', 'city', 'address'],
+          budget: ['budget', 'max_budget', 'price'],
+        };
+        const aliases = aliasMap[normalizedKey] || [normalizedKey];
+        for (const alias of aliases) {
+          const found = leadKeys.find(k => k.toLowerCase() === alias);
+          if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null) {
+            return String(leadData[found]);
+          }
+        }
+        if (leadData.raw_payload && typeof leadData.raw_payload === 'object') {
+          for (const alias of aliases) {
+            const found = Object.keys(leadData.raw_payload).find(k => k.toLowerCase() === alias);
+            if (found && leadData.raw_payload[found] != null) return String(leadData.raw_payload[found]);
+          }
+        }
+        return '';
+      };
+
+      const formatted = templateStr.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
+      return sendMessageServerless(supabaseAdmin, workspace_id, {
+        to: groupId,
+        type: 'text',
+        text: formatted,
+      });
+    }
+
     default:
       return { success: false, error: `Unknown action type: ${action_type}` };
   }

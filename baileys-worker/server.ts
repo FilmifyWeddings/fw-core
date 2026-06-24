@@ -499,6 +499,86 @@ async function dispatchGroupCard(groupJid: string, leadData: Record<string, unkn
   logger.info({ groupJid, name }, '📤 Group dispatch sent');
 }
 
+/**
+ * Parses a dynamic lead alert template and sends it to a WhatsApp group.
+ * Placeholders: {{created_time}}, {{full_name}}, {{shoot_type}}, {{location}},
+ *               {{budget}}, {{phone}}, {{email}}, {{source}}, etc.
+ */
+async function sendGroupAlert(
+  groupId: string,
+  leadData: Record<string, any>,
+  templateStr: string
+): Promise<string | null> {
+  if (!sock) throw new Error('Socket not connected');
+  if (!templateStr || !templateStr.trim()) {
+    throw new Error('Template string is empty');
+  }
+
+  const replaceFn = (match: string, key: string) => {
+    const normalizedKey = key.trim().toLowerCase();
+
+    // Time fields
+    if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
+      return new Date().toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+
+    // Client fields — check leadData properties (case-insensitive)
+    const leadKeys = Object.keys(leadData);
+    const matchedKey = leadKeys.find(k => k.toLowerCase() === normalizedKey);
+    if (matchedKey !== undefined && leadData[matchedKey] !== undefined && leadData[matchedKey] !== null) {
+      return String(leadData[matchedKey]);
+    }
+
+    // Common alias mappings
+    const aliasMap: Record<string, string[]> = {
+      full_name: ['name', 'full_name', 'lead_name', 'client_name'],
+      phone: ['phone', 'phone_number', 'mobile', 'contact'],
+      email: ['email', 'email_address'],
+      source: ['source', 'lead_source', 'platform'],
+      shoot_type: ['shoot_type', 'shoot', 'kind_of_shoot', 'category'],
+      location: ['location', 'city', 'address', 'area'],
+      budget: ['budget', 'max_budget', 'price', 'amount'],
+      score: ['score', 'lead_score'],
+      status: ['status', 'lead_status'],
+    };
+
+    const aliases = aliasMap[normalizedKey] || [normalizedKey];
+    for (const alias of aliases) {
+      const found = leadKeys.find(k => k.toLowerCase() === alias);
+      if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null) {
+        return String(leadData[found]);
+      }
+    }
+
+    // Check raw_payload nested object
+    if (leadData.raw_payload && typeof leadData.raw_payload === 'object') {
+      const rp = leadData.raw_payload;
+      const rpKeys = Object.keys(rp);
+      for (const alias of aliases) {
+        const found = rpKeys.find(k => k.toLowerCase() === alias);
+        if (found !== undefined && rp[found] !== undefined && rp[found] !== null) {
+          return String(rp[found]);
+        }
+      }
+    }
+
+    return '';
+  };
+
+  const formatted = templateStr.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
+  const result = await sock.sendMessage(groupId, { text: formatted });
+  const waMessageId = result?.key?.id ?? null;
+  logger.info({ groupId, waMessageId }, '📤 Group lead alert sent');
+  return waMessageId;
+}
+
 // ─── Action Handler (implements ActionHandler interface from queue-processor) ──
 /**
  * Executes a single action from the queue.
@@ -550,6 +630,13 @@ async function executeAction(action: {
         groupJid: string; leadData: Record<string, unknown>;
       };
       await dispatchGroupCard(groupJid, leadData);
+      break;
+    }
+    case 'group_lead_alert': {
+      const { groupId, leadData, templateStr } = action.payload as {
+        groupId: string; leadData: Record<string, any>; templateStr: string;
+      };
+      waMessageId = await sendGroupAlert(groupId, leadData, templateStr);
       break;
     }
     default:
@@ -1088,6 +1175,36 @@ function startHealthServer(): void {
 
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, waMessageId }));
+        return;
+      }
+
+      if (req.method === 'POST' && parsedUrl.pathname === '/send-group-alert') {
+        const bodyStr = await getRequestBody(req);
+        const payload = JSON.parse(bodyStr);
+
+        logger.info({ payload }, 'Received send-group-alert request');
+
+        if (!sock) {
+          res.writeHead(503);
+          res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
+          return;
+        }
+
+        const { groupId, leadData, templateStr } = payload;
+        if (!groupId || !templateStr) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Missing required fields: groupId, templateStr' }));
+          return;
+        }
+
+        try {
+          const waMessageId = await sendGroupAlert(groupId, leadData || {}, templateStr);
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, waMessageId }));
+        } catch (err: any) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
         return;
       }
 

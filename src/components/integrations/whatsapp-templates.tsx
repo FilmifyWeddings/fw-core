@@ -6,7 +6,7 @@ import {
   Search, Plus, MoreVertical, CheckCircle2, XCircle, Clock, Timer, 
   Trash2, ShieldCheck, FileText, Image as ImageIcon, 
   Vote, HelpCircle, PhoneCall, Link2, X, PlusCircle, Check, RefreshCw,
-  Edit, Copy, ChevronDown
+  Edit, Copy, ChevronDown, Users, Bell, Send, MessageSquare
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -35,6 +35,27 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [loading, setLoading] = useState(true);
   const [showBuilder, setShowBuilder] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Top-level section toggle
+  const [activeSection, setActiveSection] = useState<'templates' | 'group-alerts'>('templates');
+
+  // Group Lead Alerts state
+  const [alertGroupId, setAlertGroupId] = useState('');
+  const [alertGroupIdManual, setAlertGroupIdManual] = useState('');
+  const [alertTemplate, setAlertTemplate] = useState(
+    '*🚨 New Lead Alert! 🚨*\n\n' +
+    '1. Created Time : *{{created_time}}*\n' +
+    '2. Full Name : *{{full_name}}*\n' +
+    '3. Kind of Shoot : *{{shoot_type}}*\n' +
+    '4. Location : *{{location}}*\n' +
+    '5. Max Budget : *{{budget}}*\n' +
+    '6. Phone Number : *{{phone}}*'
+  );
+  const [savedAlertGroupId, setSavedAlertGroupId] = useState('');
+  const [savedAlertTemplate, setSavedAlertTemplate] = useState('');
+  const [alertSaving, setAlertSaving] = useState(false);
+  const [alertTestSending, setAlertTestSending] = useState(false);
+  const [syncedGroups, setSyncedGroups] = useState<Array<{ jid: string; display_name: string | null }>>([]);
 
   // Builder form states
   const [name, setName] = useState('');
@@ -226,6 +247,161 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       loadTemplates();
     }
   }, [workspaceId, shootType]);
+
+  // Load synced WhatsApp groups for the group selector
+  const loadSyncedGroups = async () => {
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/integrations/baileys/group-dispatch', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.groups) {
+        setSyncedGroups(data.groups);
+      }
+    } catch (err) {
+      console.error('Failed to load synced groups:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSection === 'group-alerts' && workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      loadSyncedGroups();
+    }
+  }, [activeSection, workspaceId]);
+
+  // Save alert configuration to localStorage (and optionally to DB)
+  const handleSaveAlertConfig = async () => {
+    setAlertSaving(true);
+    try {
+      const effectiveGroupId = alertGroupId === '__manual__' ? alertGroupIdManual.trim() : alertGroupId;
+      if (!effectiveGroupId) {
+        alert('Please select or enter a WhatsApp Group JID.');
+        setAlertSaving(false);
+        return;
+      }
+      if (!alertTemplate.trim()) {
+        alert('Please enter an alert template message.');
+        setAlertSaving(false);
+        return;
+      }
+
+      // Persist to localStorage as workspace-scoped config
+      const configKey = `wa_group_alert_config_${workspaceId}`;
+      const config = { groupId: effectiveGroupId, template: alertTemplate };
+      localStorage.setItem(configKey, JSON.stringify(config));
+
+      setSavedAlertGroupId(effectiveGroupId);
+      setSavedAlertTemplate(alertTemplate);
+      alert('Group Lead Alert configuration saved successfully!');
+    } catch (err: any) {
+      alert('Failed to save: ' + (err.message || 'Unknown error'));
+    } finally {
+      setAlertSaving(false);
+    }
+  };
+
+  // Load saved alert config on mount
+  useEffect(() => {
+    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      try {
+        const configKey = `wa_group_alert_config_${workspaceId}`;
+        const raw = localStorage.getItem(configKey);
+        if (raw) {
+          const config = JSON.parse(raw);
+          if (config.groupId) {
+            // Check if it matches a synced group or is a manual entry
+            setSavedAlertGroupId(config.groupId);
+            setAlertGroupId(config.groupId);
+          }
+          if (config.template) {
+            setSavedAlertTemplate(config.template);
+            setAlertTemplate(config.template);
+          }
+        }
+      } catch {}
+    }
+  }, [workspaceId]);
+
+  // Send a test alert to the configured group
+  const handleSendTestAlert = async () => {
+    const effectiveGroupId = alertGroupId === '__manual__' ? alertGroupIdManual.trim() : alertGroupId;
+    if (!effectiveGroupId) {
+      alert('Please select or enter a WhatsApp Group JID first.');
+      return;
+    }
+    if (!alertTemplate.trim()) {
+      alert('Please enter a template message first.');
+      return;
+    }
+
+    setAlertTestSending(true);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) {
+        alert('Not authenticated. Please refresh and try again.');
+        return;
+      }
+
+      const mockLeadData = {
+        name: 'Riya Sharma',
+        phone: '+91 98765 43210',
+        email: 'riya@example.com',
+        source: 'Facebook Ads',
+        shoot_type: 'Wedding',
+        location: 'Mumbai, Maharashtra',
+        budget: '₹2,50,000',
+        created_time: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      };
+
+      const res = await fetch('/api/integrations/baileys/group-dispatch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          groupJid: effectiveGroupId,
+          leadData: mockLeadData,
+          templateStr: alertTemplate,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert('Test alert sent successfully to the group!');
+      } else {
+        alert('Failed to send test alert: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      alert('Network error: ' + (err.message || 'Failed to send'));
+    } finally {
+      setAlertTestSending(false);
+    }
+  };
+
+  // Live preview: replace placeholders with mock data
+  const getAlertPreview = () => {
+    const mockData: Record<string, string> = {
+      created_time: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      full_name: 'Riya Sharma',
+      phone: '+91 98765 43210',
+      email: 'riya@example.com',
+      source: 'Facebook Ads',
+      shoot_type: 'Wedding',
+      location: 'Mumbai, Maharashtra',
+      budget: '₹2,50,000',
+      score: 'High-Value',
+      status: 'New',
+    };
+
+    return alertTemplate.replace(/\{\{([^{}]+)\}\}/g, (match, key) => {
+      const normalizedKey = key.trim().toLowerCase();
+      const found = Object.keys(mockData).find(k => k.toLowerCase() === normalizedKey);
+      return found ? mockData[found] : `[${key}]`;
+    });
+  };
 
   // Form Submit Handler
   const handleCreateTemplate = async (e: React.FormEvent) => {
@@ -485,6 +661,38 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
   return (
     <div className="space-y-6">
+      {/* Top-level Section Tabs */}
+      <div className="border border-zinc-200 dark:border-zinc-900 rounded-xl bg-zinc-50 dark:bg-zinc-950/40 p-1 flex gap-1.5 max-w-md">
+        <button
+          type="button"
+          onClick={() => setActiveSection('templates')}
+          className={`flex-1 py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+            activeSection === 'templates'
+              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          Templates
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection('group-alerts')}
+          className={`flex-1 py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+            activeSection === 'group-alerts'
+              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+          }`}
+        >
+          <Bell className="w-3.5 h-3.5" />
+          Group Lead Alerts
+        </button>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION: Templates (existing content)                                  */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {activeSection === 'templates' && (<>
       {/* 1. KPI Stats Summary row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
         {/* USED Card */}
@@ -1055,6 +1263,228 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
           </div>
         )}
       </AnimatePresence>
+      </>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION: Group Lead Alerts & Mapping                                  */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {activeSection === 'group-alerts' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
+                <Bell className="w-5 h-5 text-black" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">Group Lead Alerts & Mapping</h3>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  Configure automatic WhatsApp group notifications when new leads arrive
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column — Configuration */}
+            <div className="space-y-5">
+              {/* Group Selector */}
+              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-orange-400" />
+                  <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">Target WhatsApp Group</h4>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Select from synced groups
+                  </label>
+                  <select
+                    value={alertGroupId}
+                    onChange={(e) => setAlertGroupId(e.target.value)}
+                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none"
+                  >
+                    <option value="">-- Choose a synced group --</option>
+                    {syncedGroups.map((g) => (
+                      <option key={g.jid} value={g.jid}>
+                        {g.display_name || g.jid}
+                      </option>
+                    ))}
+                    <option value="__manual__">Enter JID manually...</option>
+                  </select>
+                </div>
+
+                {alertGroupId === '__manual__' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
+                      Group JID (e.g. 1203630249481@g.us)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="1203630249481@g.us"
+                      value={alertGroupIdManual}
+                      onChange={(e) => setAlertGroupIdManual(e.target.value)}
+                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none font-mono"
+                    />
+                  </div>
+                )}
+
+                {savedAlertGroupId && (
+                  <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 dark:text-emerald-400">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Active group: <span className="font-mono font-bold">{savedAlertGroupId}</span></span>
+                  </div>
+                )}
+              </div>
+
+              {/* Template Editor */}
+              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-orange-400" />
+                  <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">Alert Message Template</h4>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Use dynamic placeholders
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: 'Created Time', tag: '{{created_time}}' },
+                      { label: 'Full Name', tag: '{{full_name}}' },
+                      { label: 'Shoot Type', tag: '{{shoot_type}}' },
+                      { label: 'Location', tag: '{{location}}' },
+                      { label: 'Budget', tag: '{{budget}}' },
+                      { label: 'Phone', tag: '{{phone}}' },
+                      { label: 'Email', tag: '{{email}}' },
+                      { label: 'Source', tag: '{{source}}' },
+                    ].map((item) => (
+                      <button
+                        key={item.tag}
+                        type="button"
+                        onClick={() => {
+                          setAlertTemplate(prev => prev + (prev.endsWith('\n') || prev === '' ? '' : '\n') + item.label + ' : *' + item.tag + '*\n');
+                        }}
+                        className="px-2 py-1 text-[10px] font-mono bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg hover:border-orange-300 dark:hover:border-orange-600 hover:text-orange-500 transition-colors cursor-pointer"
+                        title={`Insert ${item.label} placeholder`}
+                      >
+                        {item.tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Template message
+                  </label>
+                  <textarea
+                    placeholder="Write your alert template here using {{placeholders}}..."
+                    value={alertTemplate}
+                    onChange={(e) => setAlertTemplate(e.target.value)}
+                    rows={12}
+                    className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700 font-mono leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveAlertConfig}
+                    disabled={alertSaving}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 text-black text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 hover:opacity-95 disabled:opacity-50 transition-all"
+                  >
+                    {alertSaving ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    Save Configuration
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendTestAlert}
+                    disabled={alertTestSending}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-xl hover:border-zinc-300 dark:hover:border-zinc-700 disabled:opacity-50 transition-all"
+                  >
+                    {alertTestSending ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    Send Test Alert
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column — Live Preview */}
+            <div className="space-y-5">
+              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4 sticky top-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">Live Preview</h4>
+                </div>
+
+                {/* WhatsApp-style message bubble */}
+                <div className="bg-[#DCF8C6] dark:bg-[#005C4B] rounded-xl p-4 max-w-sm shadow-md">
+                  <div className="bg-white dark:bg-[#1F2C33] rounded-lg p-4 shadow-sm border border-zinc-100 dark:border-zinc-800">
+                    <pre className="whitespace-pre-wrap text-xs text-zinc-800 dark:text-zinc-200 font-sans leading-relaxed">
+                      {getAlertPreview()}
+                    </pre>
+                  </div>
+                  <div className="flex items-center justify-end gap-1 mt-1.5 px-1">
+                    <span className="text-[8px] text-zinc-500 dark:text-zinc-400">
+                      {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <CheckCircle2 className="w-3 h-3 text-blue-500" />
+                  </div>
+                </div>
+
+                {/* Placeholders Reference */}
+                <div className="mt-4 p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-900">
+                  <h5 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">
+                    Available Placeholders
+                  </h5>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { tag: '{{created_time}}', desc: 'Alert timestamp' },
+                      { tag: '{{full_name}}', desc: 'Lead full name' },
+                      { tag: '{{shoot_type}}', desc: 'Type of shoot' },
+                      { tag: '{{location}}', desc: 'City / area' },
+                      { tag: '{{budget}}', desc: 'Max budget' },
+                      { tag: '{{phone}}', desc: 'Phone number' },
+                      { tag: '{{email}}', desc: 'Email address' },
+                      { tag: '{{source}}', desc: 'Lead source' },
+                      { tag: '{{score}}', desc: 'Lead score' },
+                      { tag: '{{status}}', desc: 'Lead status' },
+                    ].map((item) => (
+                      <div key={item.tag} className="flex flex-col">
+                        <span className="text-[10px] font-mono text-orange-500 dark:text-orange-400 font-bold">{item.tag}</span>
+                        <span className="text-[9px] text-zinc-500 dark:text-zinc-500">{item.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* How it works */}
+                <div className="p-4 rounded-xl bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200/30 dark:border-orange-900/20">
+                  <h5 className="text-[10px] font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400 mb-2">
+                    How it works
+                  </h5>
+                  <ol className="text-[10px] text-zinc-600 dark:text-zinc-400 space-y-1.5 list-decimal list-inside">
+                    <li>Select or enter your WhatsApp Group JID above</li>
+                    <li>Design the alert message using dynamic placeholders</li>
+                    <li>Click <strong>Save Configuration</strong> to persist settings</li>
+                    <li>When a new lead arrives, the system auto-fires the formatted alert to your group</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

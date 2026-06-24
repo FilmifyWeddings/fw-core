@@ -12,8 +12,13 @@ type GroupDispatchPayload = {
     source?: string;
     budget?: string;
     weddingDate?: string;
+    shoot_type?: string;
+    location?: string;
+    created_time?: string;
     [key: string]: string | undefined;
   };
+  /** Optional dynamic template string with {{placeholders}}. When provided, uses group_lead_alert action type. */
+  templateStr?: string;
 };
 
 /**
@@ -67,16 +72,23 @@ export async function POST(req: NextRequest) {
     }
 
     // Queue group dispatch action
+    const useTemplate = !!body.templateStr;
     const { data: queueItem, error: queueError } = await supabaseAdmin
       .from('baileys_action_queue')
       .insert({
         workspace_id: user.id,
-        action_type: 'group_dispatch',
-        payload: {
-          groupJid: body.groupJid,
-          leadData: body.leadData,
-        },
-        priority: 3, // Higher priority than normal messages
+        action_type: useTemplate ? 'group_lead_alert' : 'group_dispatch',
+        payload: useTemplate
+          ? {
+              groupId: body.groupJid,
+              leadData: body.leadData,
+              templateStr: body.templateStr,
+            }
+          : {
+              groupJid: body.groupJid,
+              leadData: body.leadData,
+            },
+        priority: 3,
       })
       .select('id')
       .single();
@@ -88,7 +100,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       queueId: queueItem?.id,
-      message: `Group dispatch queued for ${body.leadData.name} → ${body.groupJid}`,
+      message: useTemplate
+        ? `Group lead alert (custom template) queued for ${body.leadData.name} → ${body.groupJid}`
+        : `Group dispatch queued for ${body.leadData.name} → ${body.groupJid}`,
     });
   } catch (err) {
     console.error('[baileys/group-dispatch] Error:', err);
