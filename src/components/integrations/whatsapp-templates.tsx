@@ -145,7 +145,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   ]);
 
   // Actions / Buttons states
-  const [buttons, setButtons] = useState<Array<{ id: string; type: 'quick_reply' | 'url' | 'phone'; text: string; value: string }>>([]);
+  const [buttons, setButtons] = useState<Array<{ id: string; type: 'url' | 'phone'; text: string; value: string }>>([]);
   const [metaApprovalRequired, setMetaApprovalRequired] = useState(false);
 
   const [editTemplateId, setEditTemplateId] = useState<string | null>(null);
@@ -459,19 +459,18 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   };
 
   // Add Button Modifier
-  const handleAddButton = (type: 'quick_reply' | 'url' | 'phone') => {
+  const handleAddButton = (type: 'url' | 'phone') => {
     if (buttons.length >= 3) {
-      alert('Maximum of 3 interactive buttons allowed.');
+      alert('Maximum of 3 action links allowed.');
       return;
     }
-    const label = type === 'quick_reply' ? 'Quick Reply' : type === 'url' ? 'Link URL' : 'Call Number';
-    const valPlaceholder = type === 'url' ? 'https://' : type === 'phone' ? '+91' : 'payload';
+    const label = type === 'url' ? 'Link URL' : 'Call Number';
     
     setButtons(prev => [...prev, {
       id: String(Date.now()),
       type,
       text: label,
-      value: valPlaceholder
+      value: ''
     }]);
   };
 
@@ -1171,17 +1170,10 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                 <div className="p-5 border border-zinc-250 dark:border-zinc-900 rounded-2xl bg-zinc-50/20 dark:bg-zinc-950/40 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-xs font-semibold text-zinc-900 dark:text-white">Interactive Action Buttons</h4>
-                      <p className="text-[9px] text-zinc-550 dark:text-zinc-500">Add interactive reply links or telephone click actions (max 3)</p>
+                      <h4 className="text-xs font-semibold text-zinc-900 dark:text-white">Quick Action Links (100% Reliable Delivery)</h4>
+                      <p className="text-[9px] text-zinc-550 dark:text-zinc-500">Add URL links or telephone click actions — delivered as text (max 3)</p>
                     </div>
                     <div className="flex gap-2">
-                      <button 
-                        type="button" 
-                        onClick={() => handleAddButton('quick_reply')}
-                        className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg"
-                      >
-                        + Quick Reply
-                      </button>
                       <button 
                         type="button" 
                         onClick={() => handleAddButton('url')}
@@ -1199,16 +1191,16 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                     </div>
                   </div>
 
-                  {/* Buttons lists */}
+                  {/* Action links list */}
                   {buttons.length === 0 ? (
-                    <p className="text-[10px] text-zinc-500 dark:text-zinc-600 italic">No buttons added yet.</p>
+                    <p className="text-[10px] text-zinc-500 dark:text-zinc-600 italic">No action links added yet.</p>
                   ) : (
                     <div className="space-y-2.5">
                       {buttons.map((btn, bIdx) => (
-                        <div key={btn.id} className="flex flex-col gap-1.5 bg-zinc-50 dark:bg-zinc-900/40 p-2.5 border border-zinc-200 dark:border-zinc-800/80 rounded-xl">
+                        <div key={btn.id} className="flex flex-col gap-2 bg-zinc-50 dark:bg-zinc-900/40 p-2.5 border border-zinc-200 dark:border-zinc-800/80 rounded-xl">
                           <div className="flex gap-2 items-center">
                             <span className="text-[9px] font-mono bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 rounded capitalize text-zinc-500 dark:text-zinc-400 font-bold shrink-0">
-                              {btn.type.replace('_', ' ')}
+                              {btn.type === 'url' ? '🔗 URL' : '📞 Call'}
                             </span>
                             <input 
                               type="text"
@@ -1216,7 +1208,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                               onChange={(e) => {
                                 setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, text: e.target.value } : b));
                               }}
-                              placeholder="Button label (shown on phone)"
+                              placeholder="Link label (shown on phone)"
                               className="bg-transparent text-xs text-zinc-900 dark:text-white border-b border-zinc-250 dark:border-zinc-800 focus:outline-none flex-1"
                             />
                             <button 
@@ -1227,24 +1219,27 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                          <input 
-                            type="text"
-                            value={btn.value}
-                            onChange={(e) => {
-                              setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, value: e.target.value } : b));
-                            }}
-                            placeholder={
-                              btn.type === 'url' ? 'https://example.com/page' 
-                              : btn.type === 'phone' ? '+919876543210' 
-                              : 'unique_payload_id'
-                            }
-                            className="bg-transparent text-[11px] text-zinc-650 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 focus:outline-none w-full font-mono px-2 py-1 rounded"
-                          />
-                          <p className="text-[8px] text-zinc-400 dark:text-zinc-600 italic">
-                            {btn.type === 'url' ? 'Destination URL when tapped' 
-                              : btn.type === 'phone' ? 'Phone number to dial (include country code)' 
-                              : 'Payload ID sent when tapped (for webhook routing)'}
-                          </p>
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                              {btn.type === 'url' ? 'Destination URL' : 'Phone Number'}
+                            </label>
+                            <input 
+                              type="text"
+                              value={btn.value}
+                              onChange={(e) => {
+                                setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, value: e.target.value } : b));
+                              }}
+                              placeholder={
+                                btn.type === 'url' ? 'https://example.com/page' 
+                                : '+919876543210'
+                              }
+                              className="bg-white dark:bg-zinc-900 text-xs text-zinc-900 dark:text-zinc-100 border border-zinc-300 dark:border-zinc-700 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-400/30 dark:focus:ring-blue-500/30 w-full font-mono px-2.5 py-1.5 rounded-lg"
+                            />
+                            <p className="text-[8px] text-zinc-400 dark:text-zinc-600 italic">
+                              {btn.type === 'url' ? 'Full URL — appears as a tappable text link in the message' 
+                                : 'Phone number to dial (include country code, e.g. +91...)'}
+                            </p>
+                          </div>
                         </div>
                       ))}
                     </div>

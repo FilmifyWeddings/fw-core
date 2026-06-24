@@ -118,39 +118,18 @@ async function updateSessionState(
     }, { onConflict: 'workspace_id' });
 }
 
-function formatNativeFlowButtons(rawButtons: any[]): any[] {
-  return (rawButtons || []).map((btn: any) => {
-    const type = btn.type || '';
-    if (type === 'quick_reply') {
-      return {
-        name: "quick_reply",
-        buttonParamsJson: JSON.stringify({
-          display_text: btn.text || btn.label || '',
-          id: btn.value || btn.id || ''
-        })
-      };
+function formatActionLinksText(rawButtons: any[]): string {
+  if (!rawButtons || rawButtons.length === 0) return '';
+  const lines = rawButtons.map((btn: any) => {
+    if (btn.type === 'url') {
+      return `🔗 ${btn.text}: ${btn.value}`;
     }
-    if (type === 'url') {
-      return {
-        name: "cta_url",
-        buttonParamsJson: JSON.stringify({
-          display_text: btn.text || btn.label || 'Link',
-          url: btn.value || '',
-          merchant_url: btn.value || ''
-        })
-      };
-    }
-    if (type === 'phone' || type === 'call') {
-      return {
-        name: "cta_call",
-        buttonParamsJson: JSON.stringify({
-          display_text: btn.text || btn.label || 'Call',
-          phone_number: btn.value || ''
-        })
-      };
+    if (btn.type === 'phone' || btn.type === 'call') {
+      return `📞 ${btn.text}: ${btn.value}`;
     }
     return null;
   }).filter(Boolean);
+  return lines.length > 0 ? '\n\n' + lines.join('\n') : '';
 }
 
 // ─── Media Helpers ──────────────────────────────────────────────────────────
@@ -499,74 +478,23 @@ async function sendTemplateMessage(
     return result?.key?.id ?? null;
   }
 
-  // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────────
+  // ── ACTION LINKS (URL / Phone — text-formatted for reliable delivery) ────
   const rawButtons: any[] = tpl.tpl_buttons || [];
-  if (rawButtons.length > 0) {
-    const nativeFlowButtons = formatNativeFlowButtons(rawButtons);
+  const actionLinksText = formatActionLinksText(rawButtons);
+  const finalBody = (body || '') + actionLinksText;
 
-    let headerStructure: any = { hasMediaAttachment: false };
-    const hasValidMedia = tpl.media_url && tpl.media_url !== 'null' && tpl.media_url.trim() !== '';
-
-    if (hasValidMedia) {
-      const isVideo = tpl.media_type === 'video' || (tpl.media_url && tpl.media_url.toLowerCase().endsWith('.mp4'));
-      
-      try {
-        // Download media to buffer first — eliminates VPS→URL network issues
-        const detectedMime = detectMimeTypeFromUrl(tpl.media_url as string);
-        const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(tpl.media_url as string, detectedMime);
-        const finalIsVideo = resolvedMime.startsWith('video/');
-        
-        logger.info({ to, mediaUrl: (tpl.media_url as string).slice(0, 80), resolvedMime, bufferSize: buffer.length }, '📤 Preparing WAMessageMedia for template interactive message');
-        const mediaUploaded = await prepareWAMessageMedia(
-          finalIsVideo
-            ? { video: buffer, mimetype: resolvedMime } as any
-            : { image: buffer, mimetype: resolvedMime } as any,
-          { upload: sock.waUploadToServer, logger }
-        );
-        
-        headerStructure = {
-          title: body || "",
-          hasMediaAttachment: true,
-          ...(finalIsVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
-        };
-      } catch (mediaErr: any) {
-        logger.error({ to, error: mediaErr.message }, '❌ Failed to prepare media for template buttons — sending without media');
-        headerStructure = { title: body || "", hasMediaAttachment: false };
-      }
-    } else {
-      headerStructure = {
-        title: "",
-        hasMediaAttachment: false
-      };
-    }
-
-    logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
-
-    const messageContent = {
-      interactiveMessage: {
-        header: headerStructure,
-        body: { text: body || "" },
-        footer: { text: footer || "" },
-        nativeFlowMessage: {
-          buttons: nativeFlowButtons,
-          messageParamsVersion: 1
-        }
-      }
-    };
-    const userJid = sock.user?.id || '';
-    const waMessage = generateWAMessageFromContent(to, messageContent, { userJid });
-    await sock.relayMessage(to, waMessage.message!, { messageId: waMessage.key.id! });
-    return waMessage.key.id ?? null;
+  if (actionLinksText) {
+    logger.info({ to, linkCount: rawButtons.length }, '📤 Sending template with action links as text');
   }
 
-  // ── MEDIA (no buttons) ────────────────────────────────────────────────────
+  // ── MEDIA (with or without action links) ─────────────────────────────────
   if (tpl.media_url) {
     const mimeType = detectMimeTypeFromUrl(tpl.media_url);
-    return sendMediaMessage(to, tpl.media_url, body, mimeType);
+    return sendMediaMessage(to, tpl.media_url, finalBody, mimeType);
   }
 
   // ── PLAIN TEXT ────────────────────────────────────────────────────────────
-  return sendTextMessage(to, body);
+  return sendTextMessage(to, finalBody);
 }
 
 async function dispatchGroupCard(groupJid: string, leadData: Record<string, unknown>): Promise<void> {
@@ -1173,63 +1101,20 @@ function startHealthServer(): void {
             break;
           }
           case 'buttons': {
-            // Interactive Quick-Reply / URL / Phone buttons
+            // Action links (URL / Phone) — text-formatted for reliable delivery
             const { rawButtons, buttons: payloadButtons, footer: btnFooter } = payload as any;
             const targetButtons = payloadButtons || rawButtons || [];
             if (!text) throw new Error('Missing: text (buttons body)');
             
-            const nativeFlowButtons = formatNativeFlowButtons(targetButtons);
+            const actionLinksText = formatActionLinksText(targetButtons);
+            const finalText = text + actionLinksText;
 
-            let headerStructure: any = { hasMediaAttachment: false };
-            const hasValidMedia = mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '';
-
-            if (hasValidMedia) {
-              try {
-                const detectedMime = mimeType || detectMimeTypeFromUrl(mediaUrl);
-                const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(mediaUrl, detectedMime);
-                const finalIsVideo = resolvedMime.startsWith('video/');
-                
-                logger.info({ jid, mediaUrl: mediaUrl.slice(0, 80), resolvedMime, bufferSize: buffer.length }, '📤 Preparing WAMessageMedia for interactive message');
-                const mediaUploaded = await prepareWAMessageMedia(
-                  finalIsVideo
-                    ? { video: buffer, mimetype: resolvedMime } as any
-                    : { image: buffer, mimetype: resolvedMime } as any,
-                  { upload: sock.waUploadToServer, logger }
-                );
-                
-                headerStructure = {
-                  title: text || "",
-                  hasMediaAttachment: true,
-                  ...(finalIsVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
-                };
-              } catch (mediaErr: any) {
-                logger.error({ jid, error: mediaErr.message }, '❌ Failed to prepare media for interactive message — sending without media');
-                headerStructure = { title: "", hasMediaAttachment: false };
-              }
+            if (mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '') {
+              const mimeTypeDetect = mimeType || detectMimeTypeFromUrl(mediaUrl);
+              waMessageId = await sendMediaMessage(jid, mediaUrl, finalText, mimeTypeDetect);
             } else {
-              headerStructure = {
-                title: "",
-                hasMediaAttachment: false
-              };
+              waMessageId = await sendTextMessage(jid, finalText);
             }
-
-            logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
-
-            const messageContent = {
-              interactiveMessage: {
-                header: headerStructure,
-                body: { text: text || "" },
-                footer: { text: btnFooter || "" },
-                nativeFlowMessage: {
-                  buttons: nativeFlowButtons,
-                  messageParamsVersion: 1
-                }
-              }
-            };
-            const userJid = sock.user?.id || '';
-            const waMessage = generateWAMessageFromContent(jid, messageContent, { userJid });
-            await sock.relayMessage(jid, waMessage.message!, { messageId: waMessage.key.id! });
-            waMessageId = waMessage.key.id ?? null;
             break;
           }
           default:
