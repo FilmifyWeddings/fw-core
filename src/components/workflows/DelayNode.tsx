@@ -1,8 +1,9 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Timer, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Timer, CheckCircle2, AlertCircle, Loader2, Plus } from 'lucide-react';
 
 interface DelayNodeProps {
+  id: string;
   data: {
     label: string;
     config?: {
@@ -10,11 +11,12 @@ interface DelayNodeProps {
       delay_unit?: string;
     };
     status?: 'idle' | 'running' | 'success' | 'failed';
+    onAddNode?: (e: React.MouseEvent, parentId: string) => void;
   };
   selected?: boolean;
 }
 
-export function DelayNode({ data, selected }: DelayNodeProps) {
+export function DelayNode({ id, data, selected }: DelayNodeProps) {
   const value = data.config?.delay_value ?? 1;
   const unit = data.config?.delay_unit ?? 'minutes';
   const displayDelay = `${value} ${unit.toLowerCase()}`;
@@ -59,6 +61,19 @@ export function DelayNode({ data, selected }: DelayNodeProps) {
           position={Position.Right}
           className="w-3 h-3 !bg-orange-500 !border-2 !border-zinc-950 hover:scale-125 transition-transform"
         />
+
+        {/* Floating Add Child Node Button */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            data.onAddNode?.(e, id);
+          }}
+          className="absolute -right-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-orange-500 border border-zinc-950 flex items-center justify-center text-black hover:scale-125 transition-all z-35 shadow"
+          title="Add child node"
+        >
+          <Plus className="w-3 h-3 stroke-[3]" />
+        </button>
       </div>
 
       {/* Label */}

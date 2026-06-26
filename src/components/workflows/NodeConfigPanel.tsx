@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Zap, RefreshCw, Plus, Trash2, Info } from 'lucide-react';
+import { X, Zap, RefreshCw, Plus, Trash2, Info, Link2 } from 'lucide-react';
 import { VariablePicker } from './VariablePicker';
 import { supabase } from '@/lib/supabase';
 
@@ -43,6 +43,7 @@ function ConfigField({
   upstreamNodes: UpstreamNode[];
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,7 +61,7 @@ function ConfigField({
     onChange(value ? `${value} ${token}` : token);
   };
 
-  const inputClass = "w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[12px] text-white placeholder-zinc-600 focus:outline-none focus:border-orange-500/50 transition-all";
+  const inputClass = "w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[12px] text-white placeholder-zinc-650 focus:outline-none focus:border-orange-500/50 transition-all";
 
   return (
     <div className="space-y-1 relative" ref={ref}>
@@ -71,7 +72,11 @@ function ConfigField({
         {upstreamNodes.length > 0 && (
           <button
             type="button"
-            onClick={() => setShowPicker(v => !v)}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              setAnchorRect(rect);
+              setShowPicker(v => !v);
+            }}
             className="flex items-center gap-1 text-[9px] font-extrabold text-orange-400/80 hover:text-orange-400 transition-colors px-1.5 py-0.5 rounded bg-orange-500/5 border border-orange-500/10 hover:border-orange-500/20"
           >
             <Zap className="w-2.5 h-2.5" /> + Variable
@@ -98,11 +103,12 @@ function ConfigField({
       )}
 
       <AnimatePresence>
-        {showPicker && (
+        {showPicker && anchorRect && (
           <VariablePicker
             upstreamNodes={upstreamNodes}
             onSelect={insertToken}
             onClose={() => setShowPicker(false)}
+            anchorRect={anchorRect}
           />
         )}
       </AnimatePresence>
@@ -122,6 +128,7 @@ export default function NodeConfigPanel({
 }: NodeConfigPanelProps) {
   const [label, setLabel] = useState(nodeLabel);
   const [loading, setLoading] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(true);
 
   // Google Sheets states
   const [spreadsheets, setSpreadsheets] = useState<{ id: string; name: string }[]>([]);
@@ -152,34 +159,79 @@ export default function NodeConfigPanel({
     onUpdate(localConfig, val);
   };
 
+  // Google OAuth popup flow
+  const startGoogleOAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const userId = session.user.id;
+      const width = 500;
+      const height = 620;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+
+      console.log('[Google OAuth] Opening popup window...');
+      const popup = window.open(
+        `/api/auth/google?workspace_id=${userId}`,
+        'Google OAuth',
+        `width=${width},height=${height},top=${top},left=${left}`
+      );
+
+      // Listen for message from callback popup
+      const handler = async (event: MessageEvent) => {
+        if (event.data && event.data.type === 'GOOGLE_AUTH_CALLBACK') {
+          window.removeEventListener('message', handler);
+          if (event.data.success) {
+            console.log('[Google OAuth] Connected successfully. Refreshing spreadsheets...');
+            setGoogleConnected(true);
+            loadSpreadsheets(session.access_token);
+          } else {
+            alert(`Authentication failed: ${event.data.message}`);
+          }
+        }
+      };
+      window.addEventListener('message', handler);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadSpreadsheets = async (token: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/workflows/google-sheets', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setSpreadsheets(json.spreadsheets || []);
+        setGoogleConnected(true);
+      } else {
+        setGoogleConnected(false);
+      }
+    } catch (err) {
+      console.error('Error loading spreadsheets:', err);
+      setGoogleConnected(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Google Sheets Fetchers
   useEffect(() => {
-    if (nodeType !== 'google_sheet_append') return;
+    if (nodeType !== 'google_sheet_append' && nodeType !== 'google_contact_create') return;
 
-    const loadSpreadsheets = async () => {
-      setLoading(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-
-        const res = await fetch('/api/workflows/google-sheets', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (res.ok) {
-          const json = await res.json();
-          setSpreadsheets(json.spreadsheets || []);
-        }
-      } catch (err) {
-        console.error('Error loading spreadsheets:', err);
-      } finally {
-        setLoading(false);
-      }
+    const initGoogleLoad = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      loadSpreadsheets(session.access_token);
     };
-    loadSpreadsheets();
+    initGoogleLoad();
   }, [nodeType]);
 
   useEffect(() => {
-    if (nodeType !== 'google_sheet_append' || !localConfig.spreadsheet_id) {
+    if (nodeType !== 'google_sheet_append' || !localConfig.spreadsheet_id || !googleConnected) {
       setWorksheets([]);
       return;
     }
@@ -201,10 +253,10 @@ export default function NodeConfigPanel({
       }
     };
     loadWorksheets();
-  }, [nodeType, localConfig.spreadsheet_id]);
+  }, [nodeType, localConfig.spreadsheet_id, googleConnected]);
 
   useEffect(() => {
-    if (nodeType !== 'google_sheet_append' || !localConfig.spreadsheet_id || !localConfig.sheet_name) {
+    if (nodeType !== 'google_sheet_append' || !localConfig.spreadsheet_id || !localConfig.sheet_name || !googleConnected) {
       setColumns([]);
       return;
     }
@@ -227,7 +279,7 @@ export default function NodeConfigPanel({
       }
     };
     loadColumns();
-  }, [nodeType, localConfig.spreadsheet_id, localConfig.sheet_name]);
+  }, [nodeType, localConfig.spreadsheet_id, localConfig.sheet_name, googleConnected]);
 
   // WhatsApp Fetchers
   useEffect(() => {
@@ -297,8 +349,10 @@ export default function NodeConfigPanel({
     updateConfigValue('branches', updated);
   };
 
+  const isGoogleNode = nodeType === 'google_sheet_append' || nodeType === 'google_contact_create';
+
   return (
-    <div className="w-80 h-full bg-[#0d0d0e]/95 border-l border-zinc-800/80 flex flex-col shadow-2xl relative">
+    <div className="w-80 h-full bg-[#0d0d0e]/95 border-l border-zinc-800/80 flex flex-col shadow-2xl relative select-none">
       {/* Header */}
       <div className="px-4 py-4 border-b border-zinc-850 flex items-center justify-between bg-[#070708]/90">
         <div>
@@ -307,7 +361,7 @@ export default function NodeConfigPanel({
             type="text"
             value={label}
             onChange={e => handleLabelChange(e.target.value)}
-            className="bg-transparent text-sm font-extrabold text-white placeholder-zinc-700 focus:outline-none w-full mt-0.5 border-b border-transparent focus:border-zinc-700"
+            className="bg-transparent text-sm font-extrabold text-white placeholder-zinc-700 focus:outline-none w-full mt-0.5 border-b border-transparent focus:border-zinc-800"
           />
         </div>
         <button
@@ -320,6 +374,26 @@ export default function NodeConfigPanel({
 
       {/* Scrollable Fields */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Render Connect Google Account Button if disconnected */}
+        {isGoogleNode && !googleConnected && (
+          <div className="p-4 bg-zinc-900/60 border border-zinc-850 rounded-2xl flex flex-col items-center justify-center text-center space-y-3">
+            <Link2 className="w-8 h-8 text-orange-500 animate-pulse" />
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold text-white">Link Google Workspace</h4>
+              <p className="text-[10px] text-zinc-500">
+                Grant secure OAuth permission to list spreadsheets and worksheets on the fly.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={startGoogleOAuth}
+              className="w-full py-2 rounded-xl bg-orange-500 text-black text-[11px] font-extrabold shadow-lg shadow-orange-500/10 hover:bg-orange-400 transition-all"
+            >
+              Connect Google Account
+            </button>
+          </div>
+        )}
+
         {/* 1. Triggers */}
         {nodeType === 'facebook_lead' && (
           <ConfigField
@@ -430,7 +504,7 @@ export default function NodeConfigPanel({
         )}
 
         {/* 4. Google Sheets: Append Row */}
-        {nodeType === 'google_sheet_append' && (
+        {nodeType === 'google_sheet_append' && googleConnected && (
           <div className="space-y-4">
             {loading ? (
               <div className="flex items-center justify-center py-6 text-zinc-500 gap-2 text-xs">
@@ -498,7 +572,7 @@ export default function NodeConfigPanel({
         )}
 
         {/* 5. Google Contacts: Create */}
-        {nodeType === 'google_contact_create' && (
+        {nodeType === 'google_contact_create' && googleConnected && (
           <div className="space-y-4">
             <ConfigField
               label="Contact Name"

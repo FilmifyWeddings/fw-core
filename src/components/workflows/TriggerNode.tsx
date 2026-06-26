@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Zap, Webhook, Users, MousePointer, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Zap, Webhook, Users, MousePointer, CheckCircle2, AlertCircle, Loader2, Plus } from 'lucide-react';
 
 const FacebookIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
@@ -23,15 +23,17 @@ const appColors: Record<string, string> = {
 };
 
 interface TriggerNodeProps {
+  id: string;
   data: {
     type: string;
     label: string;
     status?: 'idle' | 'running' | 'success' | 'failed';
+    onAddNode?: (e: React.MouseEvent, parentId: string) => void;
   };
   selected?: boolean;
 }
 
-export function TriggerNode({ data, selected }: TriggerNodeProps) {
+export function TriggerNode({ id, data, selected }: TriggerNodeProps) {
   const icon = appIcons[data.type] || <Zap className="w-5 h-5 text-orange-400" />;
   const colorClass = appColors[data.type] || 'from-orange-500/20 to-amber-500/5 border-orange-500/40 shadow-orange-500/10';
 
@@ -68,6 +70,19 @@ export function TriggerNode({ data, selected }: TriggerNodeProps) {
           position={Position.Right}
           className="w-3 h-3 !bg-orange-500 !border-2 !border-zinc-950 hover:scale-125 transition-transform"
         />
+
+        {/* Floating Add Child Node Button */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            data.onAddNode?.(e, id);
+          }}
+          className="absolute -right-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-orange-500 border border-zinc-950 flex items-center justify-center text-black hover:scale-125 transition-all z-35 shadow"
+          title="Add child node"
+        >
+          <Plus className="w-3 h-3 stroke-[3]" />
+        </button>
       </div>
 
       {/* Label */}

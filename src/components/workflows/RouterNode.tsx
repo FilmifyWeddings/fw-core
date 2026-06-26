@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { GitBranch, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { GitBranch, CheckCircle2, AlertCircle, Loader2, Plus } from 'lucide-react';
 
 interface BranchConfig {
   id: string;
@@ -9,15 +9,17 @@ interface BranchConfig {
 }
 
 interface RouterNodeProps {
+  id: string;
   data: {
     label: string;
     branches?: BranchConfig[];
     status?: 'idle' | 'running' | 'success' | 'failed';
+    onAddNode?: (e: React.MouseEvent, parentId: string) => void;
   };
   selected?: boolean;
 }
 
-export function RouterNode({ data, selected }: RouterNodeProps) {
+export function RouterNode({ id, data, selected }: RouterNodeProps) {
   const branches = data.branches || [
     { id: 'branch-1', label: 'Branch 1', condition: '' },
     { id: 'branch-2', label: 'Branch 2', condition: '' },
@@ -65,7 +67,7 @@ export function RouterNode({ data, selected }: RouterNodeProps) {
                 style={{ top: percentage }}
                 className="w-3 h-3 !bg-indigo-500 !border-2 !border-zinc-950 hover:scale-125 transition-transform"
               />
-              {/* Optional tiny branch label tooltip on hover */}
+              {/* Tooltip on hover */}
               <div
                 className="absolute left-full ml-2 opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-950 border border-zinc-850 px-1 py-0.5 rounded text-[8px] text-zinc-400 pointer-events-none whitespace-nowrap"
                 style={{ top: `calc(${percentage} - 8px)` }}
@@ -75,6 +77,19 @@ export function RouterNode({ data, selected }: RouterNodeProps) {
             </div>
           );
         })}
+
+        {/* Floating Add Child Node Button */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            data.onAddNode?.(e, id);
+          }}
+          className="absolute -right-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-indigo-500 border border-zinc-950 flex items-center justify-center text-black hover:scale-125 transition-all z-35 shadow"
+          title="Add child node"
+        >
+          <Plus className="w-3 h-3 stroke-[3]" />
+        </button>
       </div>
 
       {/* Label */}
