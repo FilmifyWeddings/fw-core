@@ -2,435 +2,215 @@
 
 /**
  * ══════════════════════════════════════════════════════════════════
- * AUTOMATION BUILDER — Visual step-stack workflow editor
+ * AUTOMATION CANVAS — Infinite Visual Node-Graph Builder
  * Route: /dashboard/workflows/[id]  (id = 'new' for creation)
+ * Uses React Flow (@xyflow/react)
  * ══════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  GitBranch, Plus, Save, Play, ArrowLeft, Trash2, ChevronDown,
-  MessageSquare, Table2, Contact, Timer, Globe, Zap, AlertCircle,
-  CheckCircle2, X, GripVertical, Webhook, MousePointer,
-  Users, RefreshCw, Eye, Settings2, ChevronRight, Info
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  addEdge,
+  useNodesState,
+  useEdgesState,
+  Panel,
+  Connection,
+  Edge,
+  Node,
+  MarkerType
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+import {
+  GitBranch, Plus, Save, Play, ArrowLeft, Eye, Settings2, CheckCircle2,
+  X, Zap, AlertCircle, RefreshCw, Info, LayoutTemplate, Trash2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-const FacebookIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
-  </svg>
-);
+// Custom nodes
+import { TriggerNode } from '@/components/workflows/TriggerNode';
+import { ActionNode } from '@/components/workflows/ActionNode';
+import { DelayNode } from '@/components/workflows/DelayNode';
+import { RouterNode } from '@/components/workflows/RouterNode';
+import NodeConfigPanel from '@/components/workflows/NodeConfigPanel';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type TriggerType = 'facebook_lead' | 'webhook' | 'manual' | 'crm_entry';
-type StepType = 'whatsapp_send' | 'whatsapp_group_alert' | 'google_sheet_append' | 'google_contact_create' | 'whatsapp_delay_sequence' | 'http_request';
-
-interface StepDefinition {
-  id: string;
-  type: StepType;
-  label: string;
-  config: Record<string, unknown>;
-}
-
-interface WorkflowState {
-  name: string;
-  description: string;
-  is_enabled: boolean;
-  trigger_type: TriggerType;
-  trigger_config: Record<string, unknown>;
-  steps: StepDefinition[];
-}
-
-// ─── Config ───────────────────────────────────────────────────────────────────
-
-const TRIGGERS: { type: TriggerType; label: string; icon: React.ReactNode; color: string; description: string; fields: { key: string; label: string; placeholder: string; required?: boolean }[] }[] = [
-  {
-    type: 'facebook_lead',
-    label: 'Facebook Lead',
-    icon: <FacebookIcon className="w-4 h-4" />,
-    color: 'from-blue-500/20 to-indigo-500/10 border-blue-500/30',
-    description: 'Fires when a new lead submits your Facebook Lead Ad form',
-    fields: [{ key: 'form_id', label: 'Form ID (optional)', placeholder: 'e.g. 1234567890 — leave blank to match any form' }],
-  },
-  {
-    type: 'webhook',
-    label: 'Webhook / HTTP',
-    icon: <Webhook className="w-4 h-4" />,
-    color: 'from-purple-500/20 to-violet-500/10 border-purple-500/30',
-    description: 'Receives an HTTP POST from any external system',
-    fields: [{ key: 'secret', label: 'Webhook Secret (optional)', placeholder: 'Optional secret to validate payloads' }],
-  },
-  {
-    type: 'manual',
-    label: 'Manual / Test',
-    icon: <MousePointer className="w-4 h-4" />,
-    color: 'from-zinc-500/20 to-zinc-400/10 border-zinc-500/30',
-    description: 'Triggered only by clicking "Test Run" — great for testing',
-    fields: [],
-  },
-  {
-    type: 'crm_entry',
-    label: 'New CRM Lead',
-    icon: <Users className="w-4 h-4" />,
-    color: 'from-emerald-500/20 to-green-500/10 border-emerald-500/30',
-    description: 'Fires when a new lead is added to the CRM',
-    fields: [{ key: 'status_filter', label: 'Status Filter (optional)', placeholder: 'e.g. new — leave blank for any status' }],
-  },
-];
-
-const ACTION_TYPES: { type: StepType; label: string; icon: React.ReactNode; color: string; description: string; fields: { key: string; label: string; placeholder: string; type?: string; required?: boolean }[] }[] = [
-  {
-    type: 'whatsapp_send',
-    label: 'Send WhatsApp Message',
-    icon: <MessageSquare className="w-4 h-4" />,
-    color: 'from-emerald-500/20 to-green-500/10 border-emerald-500/30',
-    description: 'Send a text or template message via WhatsApp',
-    fields: [
-      { key: 'to', label: 'To (phone / JID)', placeholder: '{{trigger.phone}} or 919876543210', required: true },
-      { key: 'message', label: 'Message Text', placeholder: 'Hello {{trigger.name}}, welcome!', type: 'textarea' },
-      { key: 'template_id', label: 'Template ID (optional)', placeholder: 'Leave blank to send plain text message' },
-    ],
-  },
-  {
-    type: 'whatsapp_group_alert',
-    label: 'WhatsApp Group Alert',
-    icon: <MessageSquare className="w-4 h-4" />,
-    color: 'from-teal-500/20 to-cyan-500/10 border-teal-500/30',
-    description: 'Send an alert message to a WhatsApp Group JID',
-    fields: [
-      { key: 'group_jid', label: 'Group JID', placeholder: '120363xxxxxxxxx@g.us', required: true },
-      { key: 'message', label: 'Message', placeholder: 'New lead: {{trigger.name}} ({{trigger.phone}})', type: 'textarea', required: true },
-    ],
-  },
-  {
-    type: 'google_sheet_append',
-    label: 'Google Sheets: Append Row',
-    icon: <Table2 className="w-4 h-4" />,
-    color: 'from-green-500/20 to-lime-500/10 border-green-500/30',
-    description: 'Append a new row to a Google Spreadsheet',
-    fields: [
-      { key: 'spreadsheet_id', label: 'Spreadsheet ID', placeholder: 'Paste the spreadsheet ID from the URL', required: true },
-      { key: 'range', label: 'Sheet Range', placeholder: 'Sheet1!A:Z' },
-      { key: 'values_csv', label: 'Row Values (comma separated)', placeholder: '{{trigger.name}},{{trigger.phone}},{{trigger.email}}', required: true },
-    ],
-  },
-  {
-    type: 'google_contact_create',
-    label: 'Google Contacts: Create',
-    icon: <Contact className="w-4 h-4" />,
-    color: 'from-blue-500/20 to-sky-500/10 border-blue-500/30',
-    description: 'Create a new contact in Google Contacts',
-    fields: [
-      { key: 'name', label: 'Full Name', placeholder: '{{trigger.name}}', required: true },
-      { key: 'phone', label: 'Phone Number', placeholder: '{{trigger.phone}}' },
-      { key: 'email', label: 'Email Address', placeholder: '{{trigger.email}}' },
-    ],
-  },
-  {
-    type: 'whatsapp_delay_sequence',
-    label: 'Delayed WhatsApp Follow-up',
-    icon: <Timer className="w-4 h-4" />,
-    color: 'from-amber-500/20 to-yellow-500/10 border-amber-500/30',
-    description: 'Schedule a WhatsApp template message after N days',
-    fields: [
-      { key: 'to', label: 'To (phone / JID)', placeholder: '{{trigger.phone}}', required: true },
-      { key: 'delay_days', label: 'Delay (days)', placeholder: '5', required: true },
-      { key: 'template_id', label: 'Template ID', placeholder: 'The template to send after the delay', required: true },
-    ],
-  },
-  {
-    type: 'http_request',
-    label: 'HTTP Request (Webhook Out)',
-    icon: <Globe className="w-4 h-4" />,
-    color: 'from-violet-500/20 to-purple-500/10 border-violet-500/30',
-    description: 'Send an HTTP request to any external URL',
-    fields: [
-      { key: 'url', label: 'URL', placeholder: 'https://your-api.com/webhook', required: true },
-      { key: 'method', label: 'Method', placeholder: 'POST' },
-      { key: 'body_json', label: 'Body (JSON)', placeholder: '{"name": "{{trigger.name}}", "phone": "{{trigger.phone}}"}', type: 'textarea' },
-    ],
-  },
-];
-
-const TRIGGER_TOKENS: Record<TriggerType, string[]> = {
-  facebook_lead: ['{{trigger.name}}', '{{trigger.phone}}', '{{trigger.email}}', '{{trigger.city}}', '{{trigger.form_id}}', '{{trigger.ad_name}}'],
-  webhook:       ['{{trigger.name}}', '{{trigger.phone}}', '{{trigger.email}}', '{{trigger.data}}'],
-  manual:        ['{{trigger.name}}', '{{trigger.phone}}'],
-  crm_entry:     ['{{trigger.name}}', '{{trigger.phone}}', '{{trigger.email}}', '{{trigger.status}}', '{{trigger.source}}'],
+const nodeTypes = {
+  triggerNode: TriggerNode,
+  actionNode: ActionNode,
+  delayNode: DelayNode,
+  routerNode: RouterNode,
 };
 
-const STEP_OUTPUT_TOKENS: Record<StepType, string[]> = {
-  whatsapp_send:           ['waMessageId'],
-  whatsapp_group_alert:    ['waMessageId'],
-  google_sheet_append:     ['updatedRange', 'updatedRows'],
-  google_contact_create:   ['resourceName'],
-  whatsapp_delay_sequence: ['scheduled_at', 'delay_days'],
-  http_request:            ['status', 'response'],
-};
+// ─── Constants ─────────────────────────────────────────────────────────────────
+const TRIGGERS = [
+  { type: 'facebook_lead', label: 'Facebook Lead', desc: 'Fires on new Facebook Lead Ad submissions' },
+  { type: 'webhook', label: 'Webhook / HTTP', desc: 'Fires when an external system posts to a URL' },
+  { type: 'manual', label: 'Manual / Test', desc: 'Triggered manually by clicking Test Run' },
+  { type: 'crm_entry', label: 'New CRM Lead', desc: 'Fires when a new lead is added to the CRM' },
+];
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const ACTIONS = [
+  { type: 'whatsapp_send', label: 'Send WhatsApp Message', desc: 'Send custom text or template messages' },
+  { type: 'whatsapp_group_alert', label: 'WhatsApp Group Alert', desc: 'Alert message to a WhatsApp Group' },
+  { type: 'google_sheet_append', label: 'Google Sheets: Append Row', desc: 'Append rows to a spreadsheet' },
+  { type: 'google_contact_create', label: 'Google Contacts: Create', desc: 'Create Google Contact card' },
+  { type: 'http_request', label: 'HTTP Request', desc: 'Send webhooks to external API endpoints' },
+  { type: 'delay', label: 'Delay / Wait', desc: 'Wait seconds, minutes, hours, or days' },
+  { type: 'router', label: 'Conditional Router', desc: 'Route executions along distinct branches' },
+];
 
-function TokenPicker({
-  tokens,
-  onSelect,
-  onClose,
-}: {
-  tokens: string[];
-  onSelect: (t: string) => void;
-  onClose: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.96, y: -4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96, y: -4 }}
-      className="absolute top-full left-0 mt-1 z-50 w-72 bg-zinc-900 border border-zinc-700/60 rounded-xl shadow-2xl overflow-hidden"
-    >
-      <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
-        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Insert Variable</span>
-        <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-3.5 h-3.5" /></button>
-      </div>
-      <div className="max-h-52 overflow-y-auto p-2 space-y-0.5">
-        {tokens.map(token => (
-          <button
-            key={token}
-            onClick={() => { onSelect(token); onClose(); }}
-            className="w-full text-left px-3 py-1.5 rounded-lg text-[11px] font-mono text-orange-300 hover:bg-zinc-800 hover:text-orange-200 transition-colors"
-          >
-            {token}
-          </button>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
+// Helper to trace upstream parent nodes recursively
+function getUpstreamNodesList(nodeId: string, nodes: Node[], edges: Edge[]): { id: string; label: string; type: string }[] {
+  const list: { id: string; label: string; type: string }[] = [];
+  const visited = new Set<string>();
 
-function FieldInput({
-  fieldKey,
-  label,
-  placeholder,
-  value,
-  onChange,
-  type,
-  availableTokens,
-  required,
-}: {
-  fieldKey: string;
-  label: string;
-  placeholder: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  availableTokens: string[];
-  required?: boolean;
-}) {
-  const [showPicker, setShowPicker] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const trace = (currId: string) => {
+    if (visited.has(currId)) return;
+    visited.add(currId);
 
-  // Close picker on outside click
-  useEffect(() => {
-    if (!showPicker) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setShowPicker(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showPicker]);
-
-  const insertToken = (token: string) => {
-    onChange(value ? `${value} ${token}` : token);
+    // Find all edges ending at current node
+    const incoming = edges.filter(e => e.target === currId);
+    for (const edge of incoming) {
+      const parent = nodes.find(n => n.id === edge.source);
+      if (parent) {
+        list.push({
+          id: parent.id,
+          label: parent.data?.label as string || parent.id,
+          type: (parent.data?.type as string) || (parent.type === 'triggerNode' ? parent.data?.type as string : parent.type || ''),
+        });
+        trace(parent.id);
+      }
+    }
   };
 
-  const baseInputClass = "w-full bg-zinc-800/60 border border-zinc-700/60 rounded-lg px-3 py-2 text-[12px] text-white placeholder-zinc-600 focus:outline-none focus:border-orange-500/50 focus:bg-zinc-800 transition-all resize-none";
-
-  return (
-    <div className="space-y-1" ref={ref}>
-      <div className="flex items-center justify-between">
-        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">
-          {label} {required && <span className="text-rose-400">*</span>}
-        </label>
-        {availableTokens.length > 0 && (
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowPicker(v => !v)}
-              className="flex items-center gap-1 text-[9px] font-bold text-orange-400/70 hover:text-orange-400 transition-colors px-1.5 py-0.5 rounded bg-orange-500/5 border border-orange-500/10 hover:border-orange-500/20"
-            >
-              <Zap className="w-2.5 h-2.5" /> + Variable
-            </button>
-            <AnimatePresence>
-              {showPicker && (
-                <TokenPicker tokens={availableTokens} onSelect={insertToken} onClose={() => setShowPicker(false)} />
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
-
-      {type === 'textarea' ? (
-        <textarea
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          rows={3}
-          className={baseInputClass}
-        />
-      ) : (
-        <input
-          type="text"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          className={baseInputClass}
-        />
-      )}
-    </div>
-  );
+  trace(nodeId);
+  return list;
 }
 
-function StepCard({
-  step,
-  index,
-  totalSteps,
-  onUpdate,
-  onDelete,
-  availableTokens,
-}: {
-  step: StepDefinition;
-  index: number;
-  totalSteps: number;
-  onUpdate: (id: string, config: Record<string, unknown>) => void;
-  onDelete: (id: string) => void;
-  availableTokens: string[];
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const actionDef = ACTION_TYPES.find(a => a.type === step.type);
-  if (!actionDef) return null;
-
-  return (
-    <div className="relative">
-      {/* Connector line */}
-      {index < totalSteps - 1 && (
-        <div className="absolute left-6 top-full h-4 w-0.5 bg-gradient-to-b from-zinc-700 to-transparent z-10" />
-      )}
-
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, x: -10 }}
-        className={`relative rounded-2xl border bg-gradient-to-br ${actionDef.color} overflow-hidden`}
-      >
-        {/* Step header */}
-        <div
-          className="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none"
-          onClick={() => setExpanded(e => !e)}
-        >
-          <div className="w-7 h-7 rounded-xl bg-zinc-900/60 flex items-center justify-center flex-shrink-0">
-            {actionDef.icon}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Step {index + 1}</span>
-            </div>
-            <p className="text-xs font-bold text-white truncate">{step.label || actionDef.label}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); onDelete(step.id); }}
-              className="p-1.5 rounded-lg text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-            <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-          </div>
-        </div>
-
-        {/* Step fields */}
-        <AnimatePresence initial={false}>
-          {expanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="px-4 pb-4 space-y-3 border-t border-zinc-800/40"
-            >
-              <div className="pt-3 space-y-3">
-                {/* Custom label */}
-                <FieldInput
-                  fieldKey="label"
-                  label="Step Label"
-                  placeholder={actionDef.label}
-                  value={step.label}
-                  onChange={v => onUpdate(step.id, { ...step.config, _label: v })}
-                  availableTokens={[]}
-                />
-                {/* Action-specific fields */}
-                {actionDef.fields.map(field => (
-                  <FieldInput
-                    key={field.key}
-                    fieldKey={field.key}
-                    label={field.label}
-                    placeholder={field.placeholder}
-                    value={String(step.config[field.key] || '')}
-                    onChange={v => onUpdate(step.id, { ...step.config, [field.key]: v })}
-                    type={field.type}
-                    availableTokens={availableTokens}
-                    required={field.required}
-                  />
-                ))}
-
-                {/* Output tokens hint */}
-                {STEP_OUTPUT_TOKENS[step.type]?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    <span className="text-[9px] text-zinc-600 font-bold uppercase tracking-wide mr-1">Output vars:</span>
-                    {STEP_OUTPUT_TOKENS[step.type].map(token => (
-                      <span key={token} className="text-[9px] font-mono text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
-                        {`{{step_${index}.${token}}}`}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    </div>
-  );
-}
-
-// ─── Main Builder ─────────────────────────────────────────────────────────────
-
-export default function WorkflowBuilderPage() {
+export default function WorkflowBuilderCanvas() {
   const router = useRouter();
   const params = useParams();
   const workflowId = params?.id as string;
   const isNew = workflowId === 'new';
 
-  const [workflow, setWorkflow] = useState<WorkflowState>({
-    name: '',
-    description: '',
-    is_enabled: true,
-    trigger_type: 'facebook_lead',
-    trigger_config: {},
-    steps: [],
-  });
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isEnabled, setIsEnabled] = useState(true);
 
+  // React Flow states
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  // Editor states
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!isNew);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [runningTest, setRunningTest] = useState(false);
-  const [showActionPicker, setShowActionPicker] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Active configuration drawer
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  // Get active config panel node metadata
+  const activeNode = useMemo(() => {
+    if (!selectedNodeId) return null;
+    return nodes.find(n => n.id === selectedNodeId) || null;
+  }, [selectedNodeId, nodes]);
+
+  // Derive upstream nodes for the currently selected node config panel
+  const upstreamNodes = useMemo(() => {
+    if (!selectedNodeId) return [];
+    return getUpstreamNodesList(selectedNodeId, nodes, edges);
+  }, [selectedNodeId, nodes, edges]);
+
+  // Convert old step-stack arrays to sequential horizontal graph layouts (backwards compatibility)
+  const loadLegacyWorkflowSteps = useCallback((legacySteps: any[], triggerType: string, triggerConfig: any) => {
+    const layoutNodes: Node[] = [];
+    const layoutEdges: Edge[] = [];
+
+    // 1. Add Trigger Node
+    const triggerId = 'trigger_root';
+    layoutNodes.push({
+      id: triggerId,
+      type: 'triggerNode',
+      position: { x: 100, y: 250 },
+      data: {
+        type: triggerType || 'manual',
+        label: 'Trigger Node',
+        config: triggerConfig || {},
+        status: 'idle',
+      },
+    });
+
+    // 2. Add sequential actions
+    let lastId = triggerId;
+    legacySteps.forEach((step, idx) => {
+      const nodeId = step.id || `step_${idx}_${Date.now()}`;
+      const isDelay = step.type === 'whatsapp_delay_sequence';
+      const nodeType = isDelay ? 'delayNode' : 'actionNode';
+
+      let stepConfig = step.config || {};
+      if (isDelay) {
+        stepConfig = {
+          delay_value: stepConfig.delay_days || 1,
+          delay_unit: 'days',
+        };
+      }
+
+      layoutNodes.push({
+        id: nodeId,
+        type: nodeType,
+        position: { x: 100 + (idx + 1) * 220, y: 250 },
+        data: {
+          type: step.type === 'whatsapp_delay_sequence' ? 'delay' : step.type,
+          label: step.label || step.type,
+          config: stepConfig,
+          status: 'idle',
+        },
+      });
+
+      layoutEdges.push({
+        id: `edge_${lastId}_${nodeId}`,
+        source: lastId,
+        target: nodeId,
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' },
+        style: { stroke: '#f97316', strokeWidth: 2 },
+      });
+
+      lastId = nodeId;
+    });
+
+    setNodes(layoutNodes);
+    setEdges(layoutEdges);
+  }, [setNodes, setEdges]);
 
   // Load existing workflow
   useEffect(() => {
-    if (isNew) return;
+    if (isNew) {
+      // Set default Trigger Node for blank workflow
+      setNodes([
+        {
+          id: 'trigger_root',
+          type: 'triggerNode',
+          position: { x: 150, y: 250 },
+          data: {
+            type: 'manual',
+            label: 'Trigger Start',
+            config: {},
+            status: 'idle',
+          },
+        }
+      ]);
+      setLoading(false);
+      return;
+    }
+
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.push('/login'); return; }
@@ -441,78 +221,190 @@ export default function WorkflowBuilderPage() {
       if (res.ok) {
         const json = await res.json();
         const wf = json.workflow;
-        setWorkflow({
-          name: wf.name,
-          description: wf.description || '',
-          is_enabled: wf.is_enabled,
-          trigger_type: wf.trigger_type,
-          trigger_config: wf.trigger_config || {},
-          steps: wf.steps || [],
-        });
+        setName(wf.name);
+        setDescription(wf.description || '');
+        setIsEnabled(wf.is_enabled);
+
+        const stepsData = wf.steps || {};
+        if (stepsData.nodes && Array.isArray(stepsData.nodes)) {
+          // React Flow Graph schema
+          setNodes(stepsData.nodes || []);
+          setEdges(stepsData.edges || []);
+        } else if (Array.isArray(stepsData)) {
+          // Legacy Array schema
+          loadLegacyWorkflowSteps(stepsData, wf.trigger_type, wf.trigger_config);
+        } else {
+          // Empty graph fallback
+          setNodes([
+            {
+              id: 'trigger_root',
+              type: 'triggerNode',
+              position: { x: 150, y: 250 },
+              data: {
+                type: wf.trigger_type || 'manual',
+                label: 'Trigger Start',
+                config: wf.trigger_config || {},
+                status: 'idle',
+              },
+            }
+          ]);
+        }
       }
       setLoading(false);
     };
     load();
-  }, [workflowId, isNew, router]);
+  }, [workflowId, isNew, router, loadLegacyWorkflowSteps, setNodes]);
 
-  const addStep = (type: StepType) => {
-    const def = ACTION_TYPES.find(a => a.type === type)!;
-    const newStep: StepDefinition = {
-      id: `step_${Date.now()}`,
-      type,
-      label: def.label,
-      config: {},
-    };
-    setWorkflow(w => ({ ...w, steps: [...w.steps, newStep] }));
-    setShowActionPicker(false);
-  };
+  // Connect handler
+  const onConnect = useCallback((connection: Connection) => {
+    const newEdge: Edge = {
+      ...connection,
+      id: `edge_${connection.source}_${connection.target}`,
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' },
+      style: { stroke: '#f97316', strokeWidth: 2 }
+    } as Edge;
+    setEdges(eds => addEdge(newEdge, eds));
+  }, [setEdges]);
 
-  const updateStepConfig = (stepId: string, newConfig: Record<string, unknown>) => {
-    setWorkflow(w => ({
-      ...w,
-      steps: w.steps.map(s => {
-        if (s.id !== stepId) return s;
-        const label = (newConfig._label as string) || s.label;
-        const { _label, ...cleanConfig } = newConfig;
-        return { ...s, label, config: cleanConfig };
-      }),
-    }));
-  };
+  // Add a new Trigger or Action node to the canvas
+  const addNewNode = (appType: string, isTrigger = false) => {
+    const id = `${appType}_${Date.now()}`;
+    const type = isTrigger
+      ? 'triggerNode'
+      : appType === 'delay'
+      ? 'delayNode'
+      : appType === 'router'
+      ? 'routerNode'
+      : 'actionNode';
 
-  const deleteStep = (stepId: string) => {
-    setWorkflow(w => ({ ...w, steps: w.steps.filter(s => s.id !== stepId) }));
-  };
+    const defaultLabel = isTrigger
+      ? TRIGGERS.find(t => t.type === appType)?.label || 'Trigger'
+      : ACTIONS.find(a => a.type === appType)?.label || 'Action';
 
-  const getAvailableTokensForStep = (stepIndex: number): string[] => {
-    const tokens = [...(TRIGGER_TOKENS[workflow.trigger_type] || [])];
-    for (let i = 0; i < stepIndex; i++) {
-      const step = workflow.steps[i];
-      for (const token of STEP_OUTPUT_TOKENS[step.type] || []) {
-        tokens.push(`{{step_${i}.${token}}}`);
-      }
+    const defaultConfigs: Record<string, any> = {};
+    if (appType === 'router') {
+      defaultConfigs.branches = [
+        { id: `branch_1_${Date.now()}`, label: 'Branch 1', condition: '' },
+        { id: `branch_2_${Date.now()}`, label: 'Branch 2', condition: '' }
+      ];
+    } else if (appType === 'delay') {
+      defaultConfigs.delay_value = 5;
+      defaultConfigs.delay_unit = 'minutes';
     }
-    return tokens;
+
+    const newNode: Node = {
+      id,
+      type,
+      position: { x: 300, y: 200 },
+      data: {
+        type: appType,
+        label: defaultLabel,
+        config: defaultConfigs,
+        status: 'idle',
+      },
+    };
+
+    setNodes(nds => [...nds, newNode]);
+    setSelectedNodeId(id);
   };
 
+  // Node selection handler opens panel
+  const onNodeClick = useCallback((_: any, node: Node) => {
+    setSelectedNodeId(node.id);
+  }, []);
+
+  // Update configuration inside a node
+  const updateNodeConfig = useCallback((nodeId: string, newConfig: Record<string, any>, customLabel?: string) => {
+    setNodes(nds =>
+      nds.map(n => {
+        if (n.id !== nodeId) return n;
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            config: newConfig,
+            label: customLabel || n.data.label,
+          },
+        };
+      })
+    );
+  }, [setNodes]);
+
+  // Delete node from canvas
+  const deleteSelectedNode = useCallback((id: string) => {
+    setNodes(nds => nds.filter(n => n.id !== id));
+    setEdges(eds => eds.filter(e => e.source !== id && e.target !== id));
+    if (selectedNodeId === id) setSelectedNodeId(null);
+  }, [selectedNodeId, setNodes, setEdges]);
+
+  // Auto layout helper: aligns nodes in horizontal lanes starting from triggers
+  const autoAlignLayout = useCallback(() => {
+    const paddingX = 220;
+    const paddingY = 150;
+
+    // Find trigger nodes
+    const triggerNodes = nodes.filter(n => n.type === 'triggerNode');
+    if (triggerNodes.length === 0) return;
+
+    const positioned = new Set<string>();
+    const nextNodes = [...nodes];
+
+    const arrangeChildren = (parentId: string, parentX: number, parentY: number, laneIndex: number) => {
+      const childEdges = edges.filter(e => e.source === parentId);
+      childEdges.forEach((edge, idx) => {
+        const child = nextNodes.find(n => n.id === edge.target);
+        if (child && !positioned.has(child.id)) {
+          child.position = {
+            x: parentX + paddingX,
+            y: parentY + (idx * paddingY) - ((childEdges.length - 1) * paddingY) / 2,
+          };
+          positioned.add(child.id);
+          arrangeChildren(child.id, child.position.x, child.position.y, laneIndex + idx);
+        }
+      });
+    };
+
+    // Position trigger root nodes
+    triggerNodes.forEach((trg, idx) => {
+      trg.position = { x: 100, y: 150 + idx * 300 };
+      positioned.add(trg.id);
+      arrangeChildren(trg.id, trg.position.x, trg.position.y, idx);
+    });
+
+    setNodes(nextNodes);
+  }, [nodes, edges, setNodes]);
+
+  // Save the full React Flow JSON graph object schema to custom_workflows table
   const handleSave = async () => {
-    if (!workflow.name.trim()) { alert('Please enter a workflow name'); return; }
+    if (!name.trim()) { alert('Please enter a workflow name'); return; }
 
     setSaving(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
+    // Extract the primary trigger type from trigger_root (or first trigger node found)
+    const triggerNode = nodes.find(n => n.type === 'triggerNode');
+    const triggerType = triggerNode ? (triggerNode.data.type as string) : 'manual';
+    const triggerConfig = triggerNode ? (triggerNode.data.config as Record<string, any>) : {};
+
     const payload = {
-      name: workflow.name,
-      description: workflow.description,
-      is_enabled: workflow.is_enabled,
-      trigger_type: workflow.trigger_type,
-      trigger_config: workflow.trigger_config,
-      steps: workflow.steps,
+      name,
+      description,
+      is_enabled: isEnabled,
+      trigger_type: triggerType,
+      trigger_config: triggerConfig,
+      steps: {
+        nodes,
+        edges,
+      },
     };
 
     const res = await fetch(isNew ? '/api/workflows' : `/api/workflows/${workflowId}`, {
       method: isNew ? 'POST' : 'PUT',
-      headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(payload),
     });
 
@@ -530,10 +422,15 @@ export default function WorkflowBuilderPage() {
     }
   };
 
+  // Run test execution on the graph
   const handleTestRun = async () => {
     if (isNew) { alert('Save the workflow first before running a test.'); return; }
     setRunningTest(true);
     setTestResult(null);
+
+    // Reset all node statuses to idle/running
+    setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, status: 'idle' } })));
+
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
@@ -543,57 +440,102 @@ export default function WorkflowBuilderPage() {
     });
     const json = await res.json();
     setRunningTest(false);
-    setTestResult({
-      success: json.success,
-      message: json.success
-        ? `✅ ${json.stepsCompleted} step(s) completed successfully`
-        : `⚠️ ${json.stepsFailed} step(s) failed — check run logs`,
-    });
-  };
 
-  const triggerDef = TRIGGERS.find(t => t.type === workflow.trigger_type)!;
+    // Refresh nodes statuses to show run results by fetching logs or parsing response
+    if (res.ok) {
+      setTestResult({
+        success: json.success,
+        message: json.success
+          ? `✅ Execution completed successfully`
+          : `⚠️ Execution failed — check runs history log`,
+      });
+      // Try to load runs logs and show successful nodes
+      if (json.runId) {
+        // Fetch step logs to highlight nodes status on canvas
+        const runRes = await fetch(`/api/workflows/${workflowId}/runs`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (runRes.ok) {
+          const runJson = await runRes.json();
+          // Find our runId in the logs
+          const runDetails = await fetch(`/api/workflows/${workflowId}`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          // For simplicity, we can also query workflow_step_logs for runId
+          const { data: stepLogs } = await supabase
+            .from('workflow_step_logs')
+            .select('step_id, status')
+            .eq('run_id', json.runId);
+
+          if (stepLogs && stepLogs.length > 0) {
+            setNodes(nds =>
+              nds.map(n => {
+                const log = stepLogs.find(l => l.step_id === n.id);
+                return log ? { ...n, data: { ...n.data, status: log.status } } : n;
+              })
+            );
+          }
+        }
+      }
+    } else {
+      setTestResult({
+        success: false,
+        message: `⚠️ Connection failed: ${json.error || 'Server error'}`,
+      });
+    }
+  };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#070708] flex items-center justify-center text-zinc-600">
-        <RefreshCw className="w-5 h-5 animate-spin mr-3" /> Loading workflow...
+        <RefreshCw className="w-5 h-5 animate-spin mr-3 text-orange-500" /> Loading canvas editor...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#070708] text-white font-sans">
+    <div className="h-screen w-screen bg-[#070708] text-white font-sans flex flex-col overflow-hidden">
       {/* ── Top Toolbar ── */}
-      <div className="sticky top-0 z-30 flex items-center gap-3 px-5 py-3 border-b border-zinc-800/60 bg-[#070708]/90 backdrop-blur-lg">
-        <button
-          onClick={() => router.push('/dashboard/workflows')}
-          className="p-2 rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-
-        <div className="flex-1 min-w-0">
-          <input
-            type="text"
-            value={workflow.name}
-            onChange={e => setWorkflow(w => ({ ...w, name: e.target.value }))}
-            placeholder="Workflow name..."
-            className="bg-transparent text-base font-extrabold text-white placeholder-zinc-700 focus:outline-none w-full"
-          />
+      <div className="h-14 border-b border-zinc-800/60 bg-[#070708]/90 backdrop-blur-lg flex items-center justify-between px-5 z-20 flex-shrink-0">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <button
+            onClick={() => router.push('/dashboard/workflows')}
+            className="p-2 rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Workflow name..."
+              className="bg-transparent text-sm font-extrabold text-white placeholder-zinc-700 focus:outline-none w-full border-b border-transparent focus:border-zinc-800 py-0.5"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Auto Align */}
+          <button
+            onClick={autoAlignLayout}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-white text-[11px] font-bold transition-all"
+            title="Auto-align canvas node layout"
+          >
+            <LayoutTemplate className="w-3.5 h-3.5" /> Auto Align
+          </button>
+
           {/* Enable toggle */}
           <button
-            onClick={() => setWorkflow(w => ({ ...w, is_enabled: !w.is_enabled }))}
+            onClick={() => setIsEnabled(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all ${
-              workflow.is_enabled
+              isEnabled
                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                 : 'bg-zinc-800/60 border-zinc-700 text-zinc-500'
             }`}
           >
-            {workflow.is_enabled ? <CheckCircle2 className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-            {workflow.is_enabled ? 'Enabled' : 'Disabled'}
+            {isEnabled ? <CheckCircle2 className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+            {isEnabled ? 'Enabled' : 'Disabled'}
           </button>
 
           {/* View runs */}
@@ -636,7 +578,7 @@ export default function WorkflowBuilderPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className={`px-5 py-3 border-b text-sm font-semibold flex items-center justify-between ${
+            className={`px-5 py-2.5 border-b text-xs font-semibold flex items-center justify-between z-20 flex-shrink-0 ${
               testResult.success
                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                 : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
@@ -648,182 +590,119 @@ export default function WorkflowBuilderPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Canvas ── */}
-      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-
-        {/* Description */}
-        <div className="mb-2">
-          <input
-            type="text"
-            value={workflow.description}
-            onChange={e => setWorkflow(w => ({ ...w, description: e.target.value }))}
-            placeholder="Add a description (optional)..."
-            className="w-full bg-transparent text-sm text-zinc-500 placeholder-zinc-700 focus:outline-none focus:text-zinc-300 transition-colors"
-          />
-        </div>
-
-        {/* ── TRIGGER CARD ── */}
-        <div className="relative">
-          <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-orange-500/20 border-2 border-orange-500/40 flex items-center justify-center">
-            <Zap className="w-2.5 h-2.5 text-orange-400" />
-          </div>
-
-          <div className={`rounded-2xl border bg-gradient-to-br ${triggerDef.color} overflow-hidden`}>
-            <div className="px-5 py-4">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Trigger</span>
-              </div>
-              <p className="text-sm font-extrabold text-white mb-0.5">When this happens…</p>
-              <p className="text-[11px] text-zinc-400">{triggerDef.description}</p>
-            </div>
-
-            <div className="px-5 pb-4 space-y-3">
-              {/* Trigger type selector */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">Trigger Type</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {TRIGGERS.map(t => (
-                    <button
-                      key={t.type}
-                      onClick={() => setWorkflow(w => ({ ...w, trigger_type: t.type, trigger_config: {} }))}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold border transition-all ${
-                        workflow.trigger_type === t.type
-                          ? 'bg-zinc-800 border-orange-500/40 text-white'
-                          : 'bg-zinc-900/60 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
-                      }`}
-                    >
-                      {t.icon} {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Trigger config fields */}
-              {triggerDef.fields.map(field => (
-                <FieldInput
-                  key={field.key}
-                  fieldKey={field.key}
-                  label={field.label}
-                  placeholder={field.placeholder}
-                  value={String(workflow.trigger_config[field.key] || '')}
-                  onChange={v => setWorkflow(w => ({ ...w, trigger_config: { ...w.trigger_config, [field.key]: v } }))}
-                  availableTokens={[]}
-                />
+      {/* ── Main Workspace Body ── */}
+      <div className="flex-1 flex overflow-hidden relative">
+        
+        {/* Node Selection Side Palette (Drag/Add Nodes) */}
+        <div className="w-56 border-r border-zinc-800 bg-[#070708]/95 overflow-y-auto flex flex-col p-4 space-y-5 z-10">
+          <div>
+            <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Triggers</span>
+            <div className="mt-2 space-y-1.5">
+              {TRIGGERS.map(trg => (
+                <button
+                  key={trg.type}
+                  onClick={() => addNewNode(trg.type, true)}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl border border-zinc-850 hover:border-orange-500/20 bg-zinc-900/40 hover:bg-orange-500/5 text-left transition-all group"
+                >
+                  <div>
+                    <p className="text-[11px] font-extrabold text-white group-hover:text-orange-400 transition-colors">{trg.label}</p>
+                    <p className="text-[8px] text-zinc-500 truncate max-w-[130px] mt-0.5">{trg.desc}</p>
+                  </div>
+                  <Plus className="w-3.5 h-3.5 text-zinc-600 group-hover:text-orange-400 transition-colors" />
+                </button>
               ))}
-
-              {/* Available trigger tokens hint */}
-              <div>
-                <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-wide">Available variables from this trigger: </span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {TRIGGER_TOKENS[workflow.trigger_type].map(t => (
-                    <span key={t} className="text-[9px] font-mono bg-zinc-800/80 text-orange-300/70 px-1.5 py-0.5 rounded">{t}</span>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* Connector to first step */}
-          {workflow.steps.length > 0 && (
-            <div className="absolute left-6 top-full h-4 w-0.5 bg-gradient-to-b from-zinc-700 to-zinc-800 z-10" />
-          )}
-        </div>
-
-        {/* ── STEPS ── */}
-        <AnimatePresence>
-          {workflow.steps.map((step, i) => (
-            <div key={step.id} className="relative pl-3">
-              {/* Step number badge */}
-              <div className="absolute -left-3 top-5 w-6 h-6 rounded-full bg-zinc-800 border-2 border-zinc-700 flex items-center justify-center">
-                <span className="text-[9px] font-black text-zinc-400">{i + 1}</span>
-              </div>
-
-              <StepCard
-                step={step}
-                index={i}
-                totalSteps={workflow.steps.length}
-                onUpdate={updateStepConfig}
-                onDelete={deleteStep}
-                availableTokens={getAvailableTokensForStep(i)}
-              />
+          <div>
+            <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Actions</span>
+            <div className="mt-2 space-y-1.5">
+              {ACTIONS.map(act => (
+                <button
+                  key={act.type}
+                  onClick={() => addNewNode(act.type, false)}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl border border-zinc-850 hover:border-orange-500/20 bg-zinc-900/40 hover:bg-orange-500/5 text-left transition-all group"
+                >
+                  <div>
+                    <p className="text-[11px] font-extrabold text-white group-hover:text-orange-400 transition-colors">{act.label}</p>
+                    <p className="text-[8px] text-zinc-500 truncate max-w-[130px] mt-0.5">{act.desc}</p>
+                  </div>
+                  <Plus className="w-3.5 h-3.5 text-zinc-600 group-hover:text-orange-400 transition-colors" />
+                </button>
+              ))}
             </div>
-          ))}
-        </AnimatePresence>
-
-        {/* ── ADD STEP BUTTON ── */}
-        <div className="relative pl-3">
-          {workflow.steps.length > 0 && (
-            <div className="absolute -left-3 top-0 bottom-0 w-0.5 bg-zinc-800/60 rounded-full" />
-          )}
-
-          <AnimatePresence>
-            {showActionPicker ? (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.97 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.97 }}
-                className="bg-zinc-900/80 border border-zinc-700/60 rounded-2xl overflow-hidden"
-              >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-                  <span className="text-xs font-extrabold text-white">Add an Action Step</span>
-                  <button onClick={() => setShowActionPicker(false)}><X className="w-4 h-4 text-zinc-500" /></button>
-                </div>
-                <div className="p-3 grid grid-cols-1 gap-1.5 max-h-72 overflow-y-auto">
-                  {ACTION_TYPES.map(action => (
-                    <button
-                      key={action.type}
-                      onClick={() => addStep(action.type)}
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-zinc-800/60 transition-all group border border-transparent hover:border-zinc-700/60"
-                    >
-                      <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${action.color} flex items-center justify-center flex-shrink-0`}>
-                        {action.icon}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white group-hover:text-orange-400 transition-colors">{action.label}</p>
-                        <p className="text-[10px] text-zinc-500 mt-0.5">{action.description}</p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-zinc-700 ml-auto" />
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            ) : (
-              <motion.button
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                onClick={() => setShowActionPicker(true)}
-                className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl border-2 border-dashed border-zinc-800 hover:border-orange-500/30 hover:bg-orange-500/5 text-zinc-600 hover:text-orange-400 text-xs font-bold transition-all group"
-              >
-                <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
-                Add Action Step
-              </motion.button>
-            )}
-          </AnimatePresence>
+          </div>
         </div>
 
-        {/* ── Help Panel ── */}
-        {workflow.steps.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="mt-4 p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800/40"
+        {/* Infinite React Flow Canvas */}
+        <div className="flex-1 h-full bg-[#09090b] relative">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            nodeTypes={nodeTypes}
+            fitView
+            minZoom={0.2}
+            maxZoom={1.5}
+            defaultEdgeOptions={{
+              style: { stroke: '#52525b', strokeWidth: 1.5 },
+              markerEnd: { type: MarkerType.ArrowClosed }
+            }}
           >
-            <div className="flex items-start gap-3">
-              <Info className="w-4 h-4 text-zinc-600 flex-shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="text-[11px] font-bold text-zinc-400">How it works</p>
-                <ul className="text-[11px] text-zinc-600 space-y-0.5 list-disc list-inside">
-                  <li>Choose a <span className="text-zinc-400 font-semibold">Trigger</span> — when the workflow fires</li>
-                  <li>Add <span className="text-zinc-400 font-semibold">Action Steps</span> — what happens in sequence</li>
-                  <li>Use <span className="text-orange-400/70 font-mono text-[10px]">{'{{trigger.phone}}'}</span> tokens to pass data between steps</li>
-                  <li>Click <span className="text-zinc-400 font-semibold">Test Run</span> to validate with sample data</li>
-                </ul>
-              </div>
-            </div>
-          </motion.div>
-        )}
+            <Background color="#1f1f23" gap={24} size={1} />
+            <Controls className="!bg-zinc-950 !border !border-zinc-800 !text-white" />
+            <MiniMap
+              nodeColor={node => {
+                if (node.type === 'triggerNode') return '#f97316';
+                if (node.type === 'routerNode') return '#6366f1';
+                if (node.type === 'delayNode') return '#f59e0b';
+                return '#10b981';
+              }}
+              maskColor="rgba(7, 7, 8, 0.7)"
+              className="!bg-zinc-950/80 !border !border-zinc-850"
+            />
+            
+            {/* Panel delete help */}
+            {activeNode && (
+              <Panel position="bottom-center" className="bg-zinc-950 border border-zinc-850 px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2">
+                <span className="text-[10px] text-zinc-400 font-bold">Selected: <b>{String(activeNode.data.label)}</b> ({activeNode.id})</span>
+                <button
+                  onClick={() => deleteSelectedNode(activeNode.id)}
+                  className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all"
+                  title="Delete selected node"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </Panel>
+            )}
+          </ReactFlow>
+        </div>
+
+        {/* Configuration Drawer Drawer */}
+        <AnimatePresence>
+          {activeNode && (
+            <motion.div
+              initial={{ x: 320 }}
+              animate={{ x: 0 }}
+              exit={{ x: 320 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="h-full z-10 flex-shrink-0"
+            >
+              <NodeConfigPanel
+                nodeId={activeNode.id}
+                nodeType={activeNode.data.type as string}
+                nodeLabel={activeNode.data.label as string}
+                config={activeNode.data.config as Record<string, any>}
+                upstreamNodes={upstreamNodes}
+                onUpdate={(cfg, label) => updateNodeConfig(activeNode.id, cfg, label)}
+                onClose={() => setSelectedNodeId(null)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
