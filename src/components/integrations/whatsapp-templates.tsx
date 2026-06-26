@@ -273,14 +273,22 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     }
   }, [activeSection, workspaceId]);
 
-  // Force-fetch all groups from the Baileys socket via worker endpoint
+  // Force-fetch all groups from the Baileys socket via server-side API proxy
   const handleFetchGroups = async () => {
     setFetchingGroups(true);
     try {
-      const WORKER_PORT = '3002';
-      const res = await fetch(`http://localhost:${WORKER_PORT}/fetch-groups`, {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) {
+        alert('Not authenticated. Please refresh and try again.');
+        setFetchingGroups(false);
+        return;
+      }
+      const res = await fetch('/api/integrations/baileys/fetch-groups', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       });
       const data = await res.json();
       if (data.success && data.groups) {
