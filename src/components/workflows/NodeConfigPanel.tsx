@@ -352,7 +352,7 @@ export default function NodeConfigPanel({
   const isGoogleNode = nodeType === 'google_sheet_append' || nodeType === 'google_contact_create';
 
   return (
-    <div className="w-80 h-full bg-[#0d0d0e]/95 border-l border-zinc-800/80 flex flex-col shadow-2xl relative select-none">
+    <div className="w-[400px] max-w-full h-full bg-[#0d0d0e]/95 border-l border-zinc-800/80 flex flex-col shadow-2xl relative select-none">
       {/* Header */}
       <div className="px-4 py-4 border-b border-zinc-850 flex items-center justify-between bg-[#070708]/90">
         <div>
@@ -373,7 +373,7 @@ export default function NodeConfigPanel({
       </div>
 
       {/* Scrollable Fields */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
         {/* Render Connect Google Account Button if disconnected */}
         {isGoogleNode && !googleConnected && (
           <div className="p-4 bg-zinc-900/60 border border-zinc-850 rounded-2xl flex flex-col items-center justify-center text-center space-y-3">

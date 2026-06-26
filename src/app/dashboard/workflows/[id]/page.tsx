@@ -627,9 +627,9 @@ function WorkflowBuilderCanvasInner() {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#070708] text-white font-sans flex flex-col overflow-hidden relative select-none">
+    <div className="h-screen w-full bg-[#070708] text-white font-sans flex flex-col overflow-hidden relative select-none">
       {/* ── Top Toolbar ── */}
-      <div className="h-14 border-b border-zinc-800/60 bg-[#070708]/90 backdrop-blur-lg flex items-center justify-between px-5 z-25 flex-shrink-0">
+      <div className="h-14 border-b border-zinc-800/60 bg-[#070708]/90 backdrop-blur-lg flex items-center justify-between pl-5 pr-6 z-25 flex-shrink-0">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <button
             onClick={() => router.push('/dashboard/workflows')}
@@ -861,11 +861,11 @@ function WorkflowBuilderCanvasInner() {
         <AnimatePresence>
           {activeNode && (
             <motion.div
-              initial={{ x: 320 }}
+              initial={{ x: 400 }}
               animate={{ x: 0 }}
-              exit={{ x: 320 }}
+              exit={{ x: 400 }}
               transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-              className="absolute top-0 right-0 h-full z-30 shadow-2xl flex-shrink-0"
+              className="absolute top-0 right-0 h-full z-50 shadow-2xl flex-shrink-0"
             >
               <NodeConfigPanel
                 nodeId={activeNode.id}
