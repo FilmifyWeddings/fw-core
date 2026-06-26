@@ -36,6 +36,7 @@ function IntegrationsCore() {
   const [websiteConnected, setWebsiteConnected] = useState(true);
   const [contactsConnected, setGoogleContactsConnected] = useState(false);
   const [calendarConnected, setGoogleCalendarConnected] = useState(false);
+  const [sheetsConnected, setGoogleSheetsConnected] = useState(false);
   const [smtpConnected, setSmtpConnected] = useState(false);
 
   // Sync state with database (Law 1 Multi-Tenancy)
@@ -58,6 +59,7 @@ function IntegrationsCore() {
             if (c.provider === 'google') {
               setGoogleContactsConnected(c.status === 'connected');
               setGoogleCalendarConnected(c.status === 'connected');
+              setGoogleSheetsConnected(c.status === 'connected');
             }
           });
         }
@@ -75,6 +77,7 @@ function IntegrationsCore() {
     if (id === 'personal-website') setWebsiteConnected(nextStatus);
     if (id === 'google-contacts') setGoogleContactsConnected(nextStatus);
     if (id === 'google-calendar') setGoogleCalendarConnected(nextStatus);
+    if (id === 'google-sheets') setGoogleSheetsConnected(nextStatus);
     if (id === 'gmail-smtp') setSmtpConnected(nextStatus);
 
     try {
@@ -118,6 +121,16 @@ function IntegrationsCore() {
       status: whatsappConnected ? 'connected' : 'disconnected',
       path: '/dashboard/integrations/whatsapp-web',
       metaText: 'WhatsApp Socket Gateway API'
+    },
+    {
+      id: 'google-sheets',
+      name: 'Google Sheets',
+      category: 'workspace',
+      description: 'Fetch and append rows, map columns, and sync spreadsheet databases.',
+      logoName: 'google-sheets.png',
+      status: sheetsConnected ? 'connected' : 'disconnected',
+      path: '/dashboard/integrations/google-sheets',
+      metaText: 'Spreadsheet Cloud Integration'
     },
     {
       id: 'personal-website',

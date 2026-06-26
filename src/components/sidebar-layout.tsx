@@ -333,6 +333,17 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   <span>Meta Ads</span>
                 </Link>
                 <Link
+                  href="/dashboard/integrations/google-sheets"
+                  className={`flex items-center gap-2 py-1.5 px-2.5 rounded-md text-[11px] font-medium transition-all ${
+                    activeSubTab === 'google-sheets'
+                      ? 'text-orange-500 bg-zinc-200/30 dark:bg-zinc-900/20'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Google Sheets</span>
+                </Link>
+                <Link
                   href="/dashboard/integrations/google-contacts"
                   className={`flex items-center gap-2 py-1.5 px-2.5 rounded-md text-[11px] font-medium transition-all ${
                     activeSubTab === 'google-contacts'

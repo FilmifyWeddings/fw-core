@@ -94,6 +94,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || clientId === 'your_google_client_id_here') {
+      throw new Error('GOOGLE_CLIENT_ID is not configured');
+    }
+    if (!clientSecret || clientSecret === 'your_google_client_secret_here') {
+      throw new Error('GOOGLE_CLIENT_SECRET is not configured');
+    }
+
+    // Dynamically resolve redirect URI using current request origin
+    const origin = req.nextUrl.origin;
+    const redirectUri = `${origin}/api/auth/google/callback`;
+
     // Exchange Authorization Code for Access & Refresh Tokens
     const tokenUrl = 'https://oauth2.googleapis.com/token';
     const res = await fetch(tokenUrl, {
@@ -101,9 +115,9 @@ export async function GET(req: NextRequest) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,
-        client_id: process.env.GOOGLE_CLIENT_ID || '',
-        client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
-        redirect_uri: `${appUrl}/api/auth/google/callback`,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
     });

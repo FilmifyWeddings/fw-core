@@ -9,16 +9,17 @@ export async function GET(req: NextRequest) {
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-  if (!clientId) {
+  if (!clientId || clientId === 'your_google_client_id_here') {
     return NextResponse.json(
-      { error: 'GOOGLE_CLIENT_ID not configured in .env.local' },
+      { error: 'GOOGLE_CLIENT_ID is not configured in .env.local' },
       { status: 500 }
     );
   }
 
-  const redirectUri = `${appUrl}/api/auth/google/callback`;
+  // Dynamically resolve redirect URI using current request origin
+  const origin = req.nextUrl.origin;
+  const redirectUri = `${origin}/api/auth/google/callback`;
 
   // Encode state as base64url
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');

@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { 
   ArrowLeft, ShieldCheck, RefreshCw, Key, Copy, Check,
   BarChart3, Globe, Mail, Calendar, UserPlus,
-  CheckCircle2, Lock
+  CheckCircle2, Lock, FileSpreadsheet
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -57,6 +57,96 @@ function ProviderConfigCore() {
 
   // Contacts States
   const [contactsCount, setContactsCount] = useState(148);
+
+  // Google Sheets States
+  const [spreadsheets, setSpreadsheets] = useState<{ id: string; name: string }[]>([]);
+  const [worksheets, setWorksheets] = useState<{ id: string; title: string }[]>([]);
+  const [googleSheetsConfig, setGoogleSheetsConfig] = useState({
+    spreadsheet_id: '',
+    sheet_name: '',
+    sync_trigger: 'any'
+  });
+
+  const startGoogleOAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const width = 500;
+      const height = 620;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+
+      console.log('[Google OAuth] Opening popup window...');
+      const popup = window.open(
+        `/api/auth/google?workspace_id=${session.user.id}`,
+        'Google OAuth',
+        `width=${width},height=${height},top=${top},left=${left}`
+      );
+
+      const handler = async (event: MessageEvent) => {
+        if (event.data && event.data.type === 'GOOGLE_AUTH_CALLBACK') {
+          window.removeEventListener('message', handler);
+          if (event.data.success) {
+            console.log('[Google OAuth] Connected successfully.');
+            setStatus('connected');
+          } else {
+            alert(`Authentication failed: ${event.data.message}`);
+          }
+        }
+      };
+      window.addEventListener('message', handler);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (provider !== 'google-sheets' || status !== 'connected') return;
+
+    const loadSheets = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const res = await fetch('/api/workflows/google-sheets', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          setSpreadsheets(json.spreadsheets || []);
+        }
+      } catch (err) {
+        console.error('Error loading spreadsheets:', err);
+      }
+    };
+    loadSheets();
+  }, [provider, status]);
+
+  useEffect(() => {
+    if (provider !== 'google-sheets' || status !== 'connected' || !googleSheetsConfig.spreadsheet_id) {
+      setWorksheets([]);
+      return;
+    }
+
+    const loadWorksheets = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const res = await fetch(`/api/workflows/google-sheets/worksheets?spreadsheetId=${googleSheetsConfig.spreadsheet_id}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          setWorksheets(json.worksheets || []);
+        }
+      } catch (err) {
+        console.error('Error loading worksheets:', err);
+      }
+    };
+    loadWorksheets();
+  }, [provider, status, googleSheetsConfig.spreadsheet_id]);
 
   // Sync state initially
   useEffect(() => {
@@ -141,6 +231,7 @@ function ProviderConfigCore() {
       case 'personal-website': return 'wordpress.png';
       case 'google-contacts': return 'google-contacts.png';
       case 'google-calendar': return 'google-calendar.png';
+      case 'google-sheets': return 'google-sheets.png';
       case 'gmail-smtp': return 'gmail.png';
       default: return '';
     }
@@ -314,6 +405,125 @@ function ProviderConfigCore() {
                     <option value="cal-2">Personal Tasks - Amit</option>
                   </select>
                 </div>
+              </div>
+            )}
+
+            {/* 7. GOOGLE SHEETS VIEW */}
+            {provider === 'google-sheets' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-zinc-400 leading-normal">
+                    Link your Google Workspace spreadsheet documents to dynamically map columns and sync data.
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-850/60 flex justify-between items-center">
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-200">OAuth Credentials State</h4>
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      {status === 'connected' 
+                        ? 'Authenticated workspace active. Google Sheets node active in builder.'
+                        : 'No valid Google OAuth credentials found for this workspace.'
+                      }
+                    </p>
+                  </div>
+                  <div className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                    status === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  }`}>
+                    {status === 'connected' ? 'Authorized ✓' : 'Unauthorized'}
+                  </div>
+                </div>
+
+                {status === 'connected' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Select Spreadsheet</label>
+                      <select 
+                        value={googleSheetsConfig.spreadsheet_id}
+                        onChange={e => setGoogleSheetsConfig(prev => ({ ...prev, spreadsheet_id: e.target.value, sheet_name: '' }))}
+                        className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
+                      >
+                        <option value="">-- Select Spreadsheet --</option>
+                        {spreadsheets.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Worksheet Tab</label>
+                      <select 
+                        value={googleSheetsConfig.sheet_name}
+                        onChange={e => setGoogleSheetsConfig(prev => ({ ...prev, sheet_name: e.target.value }))}
+                        className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
+                        disabled={!googleSheetsConfig.spreadsheet_id}
+                      >
+                        <option value="">-- Select Worksheet --</option>
+                        {worksheets.map(w => (
+                          <option key={w.title} value={w.title}>{w.title}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Sync Trigger Mode</label>
+                      <select 
+                        value={googleSheetsConfig.sync_trigger}
+                        onChange={e => setGoogleSheetsConfig(prev => ({ ...prev, sync_trigger: e.target.value }))}
+                        className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
+                      >
+                        <option value="any">Export all leads immediately upon ingestion</option>
+                        <option value="high_value">Export only "High-Value 🔥" scored leads</option>
+                        <option value="won">Export leads only when marked "Won" or "Warm"</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {status !== 'connected' ? (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={startGoogleOAuth}
+                      className="px-5 py-2.5 bg-orange-500 text-black hover:bg-orange-400 font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                    >
+                      Connect Google Account
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={startGoogleOAuth}
+                      className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-xl text-xs text-zinc-350 hover:text-white"
+                    >
+                      Reconnect Account
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm('Disconnect Google Sheets integration?')) {
+                          try {
+                            const { data: { session } } = await supabase.auth.getSession();
+                            if (!session) return;
+                            await supabase
+                              .from('integration_credentials')
+                              .delete()
+                              .eq('user_id', userId)
+                              .eq('provider', 'google');
+                            setStatus('disconnected');
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }
+                      }}
+                      className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 rounded-xl text-xs"
+                    >
+                      Disconnect Account
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
