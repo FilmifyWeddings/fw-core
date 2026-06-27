@@ -17,9 +17,10 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Dynamically resolve redirect URI using current request origin
-  const origin = req.nextUrl.origin;
-  const redirectUri = `${origin}/api/auth/google/callback`;
+  // Resolve redirect URI: explicit env var > request host. Never fallback to localhost.
+  // GOOGLE_REDIRECT_URI must be registered in Google Cloud Console → Credentials → Authorized redirect URIs.
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI
+    || `${req.nextUrl.origin}/api/auth/google/callback`;
 
   // Encode state as base64url
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');

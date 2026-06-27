@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
 
   const closeWindowWithHTML = (success: boolean, message: string) => {
     return new NextResponse(
@@ -104,9 +104,9 @@ export async function GET(req: NextRequest) {
       throw new Error('GOOGLE_CLIENT_SECRET is not configured');
     }
 
-    // Dynamically resolve redirect URI using current request origin
-    const origin = req.nextUrl.origin;
-    const redirectUri = `${origin}/api/auth/google/callback`;
+    // Resolve redirect URI: explicit env var > request host. Must match the initiation route exactly.
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI
+      || `${req.nextUrl.origin}/api/auth/google/callback`;
 
     // Exchange Authorization Code for Access & Refresh Tokens
     const tokenUrl = 'https://oauth2.googleapis.com/token';
