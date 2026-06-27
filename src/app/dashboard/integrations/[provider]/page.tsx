@@ -65,10 +65,19 @@ function ProviderConfigCore() {
   const [showSpreadsheetDropdown, setShowSpreadsheetDropdown] = useState(false);
   const [sheetHeaders, setSheetHeaders] = useState<Record<string, string[]>>({});
   const [sheetsError, setSheetsError] = useState<string | null>(null);
+  interface CustomMappingEntry {
+    id: string;
+    key: string;
+    value: string;
+  }
+
   const [sheetsConfig, setSheetsConfig] = useState<{
     spreadsheet_id: string;
     sync_trigger: string;
-    sheets: Record<string, {
+    active_sheets: Record<string, {
+      spreadsheet_id: string;
+      spreadsheet_name: string;
+      sheet_name: string;
       enabled: boolean;
       mappings: Record<string, string>;
       last_row_count?: number;
@@ -76,8 +85,10 @@ function ProviderConfigCore() {
   }>({
     spreadsheet_id: '',
     sync_trigger: 'any',
-    sheets: {}
+    active_sheets: {}
   });
+
+  const [customMappingsState, setCustomMappingsState] = useState<Record<string, CustomMappingEntry[]>>({});
 
   const startGoogleOAuth = async () => {
     try {
@@ -123,54 +134,105 @@ function ProviderConfigCore() {
       if (res.ok) {
         const json = await res.json();
         const headers = (json.columns || []).map((c: any) => c.name);
-        setSheetHeaders(prev => ({ ...prev, [sheetName]: headers }));
+        setSheetHeaders(prev => ({ ...prev, [`${spreadsheetId}:${sheetName}`]: headers }));
       }
     } catch (err) {
       console.error(`Error loading columns for ${sheetName}:`, err);
     }
   };
 
-  const updateMapping = (sheetTitle: string, field: string, value: string) => {
+  const triggerInitialSync = async (spreadsheetId: string, sheetName: string, mappings: Record<string, string>) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      await fetch('/api/workflows/google-sheets/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ spreadsheetId, sheetName, mappings })
+      });
+    } catch (err) {
+      console.error('[Google Sync] Exception during initial sync:', err);
+    }
+  };
+
+  const updateMapping = (spreadsheetId: string, spreadsheetName: string, sheetName: string, field: string, value: string) => {
+    const compositeKey = `${spreadsheetId}:${sheetName}`;
     setSheetsConfig(prev => {
-      const sheets = { ...prev.sheets };
-      if (!sheets[sheetTitle]) {
-        sheets[sheetTitle] = { enabled: true, mappings: {} };
+      const activeSheets = { ...prev.active_sheets };
+      if (!activeSheets[compositeKey]) {
+        activeSheets[compositeKey] = {
+          spreadsheet_id: spreadsheetId,
+          spreadsheet_name: spreadsheetName,
+          sheet_name: sheetName,
+          enabled: true,
+          mappings: { name: '', phone: '', email: '' }
+        };
       }
-      sheets[sheetTitle].mappings = {
-        ...sheets[sheetTitle].mappings,
+      activeSheets[compositeKey].mappings = {
+        ...activeSheets[compositeKey].mappings,
         [field]: value
       };
-      return { ...prev, sheets };
+      return { ...prev, active_sheets: activeSheets };
     });
   };
 
-  const addCustomField = (sheetTitle: string) => {
-    const tempKey = `custom_${Math.random().toString(36).substring(5)}`;
-    updateMapping(sheetTitle, tempKey, '');
+  const addCustomField = (spreadsheetId: string, sheetName: string) => {
+    const compositeKey = `${spreadsheetId}:${sheetName}`;
+    const newEntry = {
+      id: `c_${Math.random().toString(36).substr(2, 9)}`,
+      key: '',
+      value: ''
+    };
+    setCustomMappingsState(prev => ({
+      ...prev,
+      [compositeKey]: [...(prev[compositeKey] || []), newEntry]
+    }));
   };
 
-  const renameCustomKey = (sheetTitle: string, oldKey: string, newKeyRaw: string) => {
-    const newKey = newKeyRaw.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    if (!newKey || oldKey === newKey) return;
-    
-    setSheetsConfig(prev => {
-      const sheets = { ...prev.sheets };
-      const mappings = { ...sheets[sheetTitle]?.mappings };
-      const val = mappings[oldKey];
-      delete mappings[oldKey];
-      mappings[newKey] = val;
-      sheets[sheetTitle].mappings = mappings;
-      return { ...prev, sheets };
+  const handleCustomKeyChange = (compositeKey: string, id: string, newKey: string) => {
+    setCustomMappingsState(prev => {
+      const list = prev[compositeKey] || [];
+      return {
+        ...prev,
+        [compositeKey]: list.map(item => item.id === id ? { ...item, key: newKey } : item)
+      };
     });
   };
 
-  const removeCustomField = (sheetTitle: string, key: string) => {
+  const handleCustomValueChange = (compositeKey: string, id: string, newValue: string) => {
+    setCustomMappingsState(prev => {
+      const list = prev[compositeKey] || [];
+      return {
+        ...prev,
+        [compositeKey]: list.map(item => item.id === id ? { ...item, value: newValue } : item)
+      };
+    });
+  };
+
+  const removeCustomField = (compositeKey: string, id: string) => {
+    setCustomMappingsState(prev => {
+      const list = prev[compositeKey] || [];
+      return {
+        ...prev,
+        [compositeKey]: list.filter(item => item.id !== id)
+      };
+    });
+  };
+
+  const deactivateSheetSync = (compositeKey: string) => {
     setSheetsConfig(prev => {
-      const sheets = { ...prev.sheets };
-      const mappings = { ...sheets[sheetTitle]?.mappings };
-      delete mappings[key];
-      sheets[sheetTitle].mappings = mappings;
-      return { ...prev, sheets };
+      const activeSheets = { ...prev.active_sheets };
+      if (activeSheets[compositeKey]) {
+        activeSheets[compositeKey] = {
+          ...activeSheets[compositeKey],
+          enabled: false
+        };
+      }
+      return { ...prev, active_sheets: activeSheets };
     });
   };
 
@@ -266,18 +328,31 @@ function ProviderConfigCore() {
             const restoredConfig = {
               spreadsheet_id: cfg.spreadsheet_id || '',
               sync_trigger: cfg.sync_trigger || 'any',
-              sheets: cfg.sheets || {}
+              active_sheets: cfg.active_sheets || {}
             };
             setSheetsConfig(restoredConfig);
             
-            // Pre-fetch headers for active sheets
-            if (restoredConfig.spreadsheet_id) {
-              Object.entries(restoredConfig.sheets).forEach(([sheetName, sheet]: [string, any]) => {
-                if (sheet.enabled) {
-                  fetchHeadersForSheet(restoredConfig.spreadsheet_id, sheetName);
-                }
-              });
-            }
+            // Populate custom mappings arrays and fetch headers
+            const newCustomMappings: Record<string, CustomMappingEntry[]> = {};
+            Object.entries(restoredConfig.active_sheets).forEach(([compKey, sheet]: [string, any]) => {
+              if (sheet.mappings) {
+                const entries: CustomMappingEntry[] = [];
+                Object.entries(sheet.mappings).forEach(([k, v]) => {
+                  if (!['name', 'phone', 'email'].includes(k)) {
+                    entries.push({
+                      id: `c_${Math.random().toString(36).substr(2, 9)}`,
+                      key: k,
+                      value: v as string
+                    });
+                  }
+                });
+                newCustomMappings[compKey] = entries;
+              }
+              if (sheet.enabled) {
+                fetchHeadersForSheet(sheet.spreadsheet_id, sheet.sheet_name);
+              }
+            });
+            setCustomMappingsState(newCustomMappings);
           }
         } else {
           if (['meta-ads', 'whatsapp-web', 'personal-website'].includes(provider)) {
@@ -309,7 +384,7 @@ function ProviderConfigCore() {
                            provider === 'whatsapp-web' ? 'whatsapp' :
                            provider === 'meta-ads' ? 'meta' : 'google';
 
-        // Build upsert payload — include Google Sheets config in the config JSONB column
+        // Build upsert payload
         const upsertPayload: Record<string, unknown> = {
           user_id: userId,
           provider: dbProvider,
@@ -319,85 +394,115 @@ function ProviderConfigCore() {
         };
 
         if (provider === 'google-sheets') {
-          upsertPayload.config = {
-            spreadsheet_id: sheetsConfig.spreadsheet_id,
-            sync_trigger: sheetsConfig.sync_trigger,
-            sheets: sheetsConfig.sheets,
-          };
-        }
-
-        await supabase
-          .from('integration_credentials')
-          .upsert(upsertPayload, { onConflict: 'user_id, provider' });
-
-        // Register custom mapped columns in table_layouts or profiles leads_table_preferences
-        if (provider === 'google-sheets' && userId) {
-          const customKeys = new Set<string>();
-          Object.entries(sheetsConfig.sheets).forEach(([_, sheet]) => {
-            if (sheet.enabled && sheet.mappings) {
-              Object.keys(sheet.mappings).forEach(key => {
-                if (!['name', 'phone', 'email'].includes(key)) {
-                  customKeys.add(key);
-                }
-              });
-            }
-          });
-
-          if (customKeys.size > 0) {
-            let currentPrefs: Record<string, any> = {};
+          // Construct mappings for each active sheet incorporating custom mappings
+          const finalActiveSheets: Record<string, any> = {};
+          
+          Object.entries(sheetsConfig.active_sheets).forEach(([compKey, sheet]: [string, any]) => {
+            const customEntries = customMappingsState[compKey] || [];
+            const mappingsObj: Record<string, string> = {
+              name: sheet.mappings.name || '',
+              phone: sheet.mappings.phone || '',
+              email: sheet.mappings.email || ''
+            };
             
-            // Try fetching from table_layouts
-            const { data: layout } = await supabase
-              .from('table_layouts')
-              .select('columns')
-              .eq('workspace_id', userId)
-              .eq('layout_name', 'default')
-              .maybeSingle();
-
-            if (layout?.columns) {
-              currentPrefs = layout.columns;
-            } else {
-              // Try profiles leads_table_preferences
-              const { data: profile } = await supabase
-                .from('profiles')
-                .select('leads_table_preferences')
-                .eq('id', userId)
-                .maybeSingle();
-
-              if (profile?.leads_table_preferences) {
-                currentPrefs = profile.leads_table_preferences;
-              }
-            }
-
-            // Sync/augment mapped keys
-            const updatedPrefs = { ...currentPrefs };
-            let hasChanged = false;
-            customKeys.forEach(k => {
-              const colId = `meta_${k}`;
-              if (updatedPrefs[colId] === undefined) {
-                updatedPrefs[colId] = true;
-                hasChanged = true;
+            customEntries.forEach(entry => {
+              const cleanKey = entry.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+              if (cleanKey) {
+                mappingsObj[cleanKey] = entry.value;
               }
             });
 
-            if (hasChanged) {
-              // Write back to table_layouts
-              await supabase
-                .from('table_layouts')
-                .upsert({
-                  workspace_id: userId,
-                  layout_name: 'default',
-                  columns: updatedPrefs,
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'workspace_id,layout_name' });
+            finalActiveSheets[compKey] = {
+              ...sheet,
+              mappings: mappingsObj
+            };
+          });
 
-              // Update profiles as fallback
-              await supabase
-                .from('profiles')
-                .update({ leads_table_preferences: updatedPrefs })
-                .eq('id', userId);
+          upsertPayload.config = {
+            spreadsheet_id: sheetsConfig.spreadsheet_id,
+            sync_trigger: sheetsConfig.sync_trigger,
+            active_sheets: finalActiveSheets
+          };
+
+          await supabase
+            .from('integration_credentials')
+            .upsert(upsertPayload, { onConflict: 'user_id, provider' });
+
+          // Trigger sync for enabled sheets immediately (Initial Data Pull)
+          Object.entries(finalActiveSheets).forEach(([_, sheet]: [string, any]) => {
+            if (sheet.enabled) {
+              triggerInitialSync(sheet.spreadsheet_id, sheet.sheet_name, sheet.mappings);
+            }
+          });
+
+          // Register custom columns in table_layouts or profiles
+          if (userId) {
+            const customKeys = new Set<string>();
+            Object.values(finalActiveSheets).forEach((sheet: any) => {
+              if (sheet.enabled && sheet.mappings) {
+                Object.keys(sheet.mappings).forEach(key => {
+                  if (!['name', 'phone', 'email'].includes(key)) {
+                    customKeys.add(key);
+                  }
+                });
+              }
+            });
+
+            if (customKeys.size > 0) {
+              let currentPrefs: Record<string, any> = {};
+              
+              const { data: layout } = await supabase
+                .from('table_layouts')
+                .select('columns')
+                .eq('workspace_id', userId)
+                .eq('layout_name', 'default')
+                .maybeSingle();
+
+              if (layout?.columns) {
+                currentPrefs = layout.columns;
+              } else {
+                const { data: profile } = await supabase
+                  .from('profiles')
+                  .select('leads_table_preferences')
+                  .eq('id', userId)
+                  .maybeSingle();
+
+                if (profile?.leads_table_preferences) {
+                  currentPrefs = profile.leads_table_preferences;
+                }
+              }
+
+              const updatedPrefs = { ...currentPrefs };
+              let hasChanged = false;
+              customKeys.forEach(k => {
+                const colId = `meta_${k}`;
+                if (updatedPrefs[colId] === undefined) {
+                  updatedPrefs[colId] = true;
+                  hasChanged = true;
+                }
+              });
+
+              if (hasChanged) {
+                await supabase
+                  .from('table_layouts')
+                  .upsert({
+                    workspace_id: userId,
+                    layout_name: 'default',
+                    columns: updatedPrefs,
+                    updated_at: new Date().toISOString()
+                  }, { onConflict: 'workspace_id,layout_name' });
+
+                await supabase
+                  .from('profiles')
+                  .update({ leads_table_preferences: updatedPrefs })
+                  .eq('id', userId);
+              }
             }
           }
+        } else {
+          await supabase
+            .from('integration_credentials')
+            .upsert(upsertPayload, { onConflict: 'user_id, provider' });
         }
       } catch (err) {
         console.log('Skipped DB save.', err);
@@ -636,6 +741,39 @@ function ProviderConfigCore() {
 
                 {status === 'connected' && (
                   <div className="space-y-6">
+                    {/* Currently Active Sheets Sync (Overview) */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Check className="w-4 h-4 text-emerald-400" /> Currently Active Sheets Sync
+                      </h4>
+                      
+                      {Object.entries(sheetsConfig.active_sheets || {}).filter(([_, s]) => s.enabled).length === 0 ? (
+                        <div className="p-4 rounded-2xl bg-zinc-900/10 border border-zinc-850/60 text-center text-xs text-zinc-500 italic">
+                          No worksheets are currently synced. Select a spreadsheet below to configure a sync.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2.5">
+                          {Object.entries(sheetsConfig.active_sheets || {})
+                            .filter(([_, s]) => s.enabled)
+                            .map(([key, s]) => (
+                              <div key={key} className="flex justify-between items-center p-4 bg-zinc-900/30 border border-zinc-850/50 rounded-2xl">
+                                <div className="space-y-0.5">
+                                  <div className="text-xs font-bold text-zinc-200">{s.spreadsheet_name || 'Spreadsheet'}</div>
+                                  <div className="text-[10px] text-zinc-500 font-mono">Worksheet: {s.sheet_name}</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => deactivateSheetSync(key)}
+                                  className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-[10px] font-bold rounded-lg transition-all"
+                                >
+                                  Deactivate
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Searchable Spreadsheet Selector */}
                     <div className="space-y-1.5 relative">
                       <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Select Spreadsheet</label>
@@ -660,10 +798,9 @@ function ProviderConfigCore() {
                                   key={s.id}
                                   type="button"
                                   onClick={() => {
-                                    setSheetsConfig(prev => ({ ...prev, spreadsheet_id: s.id, sheets: {} }));
+                                    setSheetsConfig(prev => ({ ...prev, spreadsheet_id: s.id }));
                                     setSpreadsheetSearch(s.name);
                                     setShowSpreadsheetDropdown(false);
-                                    setSheetHeaders({});
                                   }}
                                   className="w-full text-left px-4 py-3 text-xs text-zinc-350 hover:bg-zinc-900 hover:text-white transition-colors"
                                 >
@@ -684,41 +821,55 @@ function ProviderConfigCore() {
                         <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Worksheet Configurations</label>
                         <div className="space-y-4">
                           {worksheets.map(w => {
-                            const sheetConf = sheetsConfig.sheets[w.title] || { enabled: false, mappings: {} };
+                            const spreadsheetName = spreadsheets.find(s => s.id === sheetsConfig.spreadsheet_id)?.name || 'Spreadsheet';
+                            const compositeKey = `${sheetsConfig.spreadsheet_id}:${w.title}`;
+                            const sheetConf = sheetsConfig.active_sheets[compositeKey] || { enabled: false, mappings: {} };
                             const isEnabled = sheetConf.enabled;
                             const mappings = sheetConf.mappings || {};
-                            const headers = sheetHeaders[w.title] || [];
+                            const headers = sheetHeaders[compositeKey] || [];
+                            const customMappings = customMappingsState[compositeKey] || [];
 
                             return (
                               <div key={w.title} className="p-5 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 space-y-4">
                                 <div className="flex justify-between items-center">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2.5">
                                     <div className={`w-2 h-2 rounded-full ${isEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-650'}`} />
                                     <span className="text-sm font-bold text-zinc-200">{w.title}</span>
                                   </div>
+                                  
+                                  {/* Premium Animated iOS Toggle switch */}
                                   <button
                                     type="button"
                                     onClick={() => {
                                       const nextVal = !isEnabled;
                                       setSheetsConfig(prev => {
-                                        const updatedSheets = { ...prev.sheets };
-                                        if (!updatedSheets[w.title]) {
-                                          updatedSheets[w.title] = { enabled: false, mappings: { name: '', phone: '', email: '' } };
+                                        const activeSheets = { ...prev.active_sheets };
+                                        if (!activeSheets[compositeKey]) {
+                                          activeSheets[compositeKey] = {
+                                            spreadsheet_id: sheetsConfig.spreadsheet_id,
+                                            spreadsheet_name: spreadsheetName,
+                                            sheet_name: w.title,
+                                            enabled: false,
+                                            mappings: { name: '', phone: '', email: '' }
+                                          };
                                         }
-                                        updatedSheets[w.title].enabled = nextVal;
-                                        return { ...prev, sheets: updatedSheets };
+                                        activeSheets[compositeKey].enabled = nextVal;
+                                        return { ...prev, active_sheets: activeSheets };
                                       });
-                                      if (nextVal && !sheetHeaders[w.title]) {
+                                      if (nextVal && !sheetHeaders[compositeKey]) {
                                         fetchHeadersForSheet(sheetsConfig.spreadsheet_id, w.title);
                                       }
                                     }}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all border ${
-                                      isEnabled 
-                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                                        : 'bg-zinc-900 text-zinc-500 border-zinc-800'
+                                    className={`w-10 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 focus:outline-none ${
+                                      isEnabled ? 'bg-emerald-500' : 'bg-zinc-700'
                                     }`}
                                   >
-                                    {isEnabled ? 'Active ✓' : 'Inactive'}
+                                    <motion.div
+                                      layout
+                                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                      className="bg-white w-4 h-4 rounded-full shadow-md"
+                                      animate={{ x: isEnabled ? 20 : 0 }}
+                                    />
                                   </button>
                                 </div>
 
@@ -731,7 +882,7 @@ function ProviderConfigCore() {
                                         <label className="text-[10px] font-bold text-zinc-400 uppercase">Name Field</label>
                                         <select
                                           value={mappings.name || ''}
-                                          onChange={e => updateMapping(w.title, 'name', e.target.value)}
+                                          onChange={e => updateMapping(sheetsConfig.spreadsheet_id, spreadsheetName, w.title, 'name', e.target.value)}
                                           className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
                                         >
                                           <option value="">-- Select Header --</option>
@@ -743,7 +894,7 @@ function ProviderConfigCore() {
                                         <label className="text-[10px] font-bold text-zinc-400 uppercase">Phone Field</label>
                                         <select
                                           value={mappings.phone || ''}
-                                          onChange={e => updateMapping(w.title, 'phone', e.target.value)}
+                                          onChange={e => updateMapping(sheetsConfig.spreadsheet_id, spreadsheetName, w.title, 'phone', e.target.value)}
                                           className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
                                         >
                                           <option value="">-- Select Header --</option>
@@ -755,7 +906,7 @@ function ProviderConfigCore() {
                                         <label className="text-[10px] font-bold text-zinc-400 uppercase">Email Field</label>
                                         <select
                                           value={mappings.email || ''}
-                                          onChange={e => updateMapping(w.title, 'email', e.target.value)}
+                                          onChange={e => updateMapping(sheetsConfig.spreadsheet_id, spreadsheetName, w.title, 'email', e.target.value)}
                                           className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
                                         >
                                           <option value="">-- Select Header --</option>
@@ -770,7 +921,7 @@ function ProviderConfigCore() {
                                         <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Custom Metadata Fields</span>
                                         <button
                                           type="button"
-                                          onClick={() => addCustomField(w.title)}
+                                          onClick={() => addCustomField(sheetsConfig.spreadsheet_id, w.title)}
                                           className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] font-extrabold uppercase hover:bg-emerald-500/20"
                                         >
                                           + Add Custom Mapping
@@ -778,35 +929,32 @@ function ProviderConfigCore() {
                                       </div>
 
                                       <div className="space-y-2">
-                                        {Object.entries(mappings).map(([key, val]) => {
-                                          if (['name', 'phone', 'email'].includes(key)) return null;
-                                          return (
-                                            <div key={key} className="flex gap-2 items-center">
-                                              <input
-                                                type="text"
-                                                value={key.startsWith('custom_') ? '' : key}
-                                                onChange={e => renameCustomKey(w.title, key, e.target.value)}
-                                                placeholder="Field Name (e.g. venue)"
-                                                className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none"
-                                              />
-                                              <select
-                                                value={val}
-                                                onChange={e => updateMapping(w.title, key, e.target.value)}
-                                                className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
-                                              >
-                                                <option value="">-- Map to Header --</option>
-                                                {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                                              </select>
-                                              <button
-                                                type="button"
-                                                onClick={() => removeCustomField(w.title, key)}
-                                                className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold"
-                                              >
-                                                Delete
-                                              </button>
-                                            </div>
-                                          );
-                                        })}
+                                        {customMappings.map(entry => (
+                                          <div key={entry.id} className="flex gap-2 items-center">
+                                            <input
+                                              type="text"
+                                              value={entry.key}
+                                              onChange={e => handleCustomKeyChange(compositeKey, entry.id, e.target.value)}
+                                              placeholder="Field Name (e.g. venue)"
+                                              className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                            />
+                                            <select
+                                              value={entry.value}
+                                              onChange={e => handleCustomValueChange(compositeKey, entry.id, e.target.value)}
+                                              className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                            >
+                                              <option value="">-- Map to Header --</option>
+                                              {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                                            </select>
+                                            <button
+                                              type="button"
+                                              onClick={() => removeCustomField(compositeKey, entry.id)}
+                                              className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold"
+                                            >
+                                              Delete
+                                            </button>
+                                          </div>
+                                        ))}
                                       </div>
                                     </div>
                                   </div>

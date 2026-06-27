@@ -114,6 +114,46 @@ export default function LeadsPage() {
     checkAuth();
   }, [router]);
 
+  // Supabase Realtime subscription to leads changes
+  useEffect(() => {
+    if (isDemoMode || !userId) return;
+
+    console.log('[Leads] Subscribing to realtime database changes for workspace:', userId);
+    const channel = supabase
+      .channel(`leads_realtime_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'leads',
+          filter: `workspace_id=eq.${userId}`,
+        },
+        (payload) => {
+          console.log('[Leads] Realtime change detected:', payload);
+          if (payload.eventType === 'INSERT') {
+            const newLead = payload.new as Lead;
+            setLeads(prev => {
+              if (prev.some(l => l.id === newLead.id)) return prev;
+              return [newLead, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedLead = payload.new as Lead;
+            setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
+          } else if (payload.eventType === 'DELETE') {
+            const deletedLead = payload.old as { id: string };
+            setLeads(prev => prev.filter(l => l.id !== deletedLead.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[Leads] Unsubscribing from realtime changes');
+      supabase.removeChannel(channel);
+    };
+  }, [userId, isDemoMode]);
+
   const loadLeadsAndPreferences = async (targetUserId: string) => {
     setLoading(true);
     try {

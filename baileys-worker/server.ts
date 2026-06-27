@@ -1492,27 +1492,47 @@ async function runGoogleSheetsWatchCycle(): Promise<void> {
 
     for (const integration of integrations) {
       const config = (integration.config as Record<string, any>) || {};
-      const spreadsheetId = config.spreadsheet_id as string | undefined;
-      if (!spreadsheetId || !integration.access_token) continue;
+      if (!integration.access_token) continue;
 
+      const activeSheetsList = config.active_sheets || {};
       const sheetsList = config.sheets || {};
-      const activeSheets: { name: string; mappings: Record<string, string>; last_row_count: number }[] = [];
+      const activeSheets: { 
+        spreadsheet_id: string; 
+        name: string; 
+        mappings: Record<string, string>; 
+        last_row_count: number;
+        composite_key?: string;
+      }[] = [];
 
-      if (Object.keys(sheetsList).length > 0) {
+      if (Object.keys(activeSheetsList).length > 0) {
+        Object.entries(activeSheetsList).forEach(([key, sheet]: [string, any]) => {
+          if (sheet.enabled && sheet.sheet_name) {
+            activeSheets.push({
+              spreadsheet_id: sheet.spreadsheet_id || config.spreadsheet_id || '',
+              name: sheet.sheet_name,
+              mappings: sheet.mappings || { name: 'name', phone: 'phone', email: 'email' },
+              last_row_count: sheet.last_row_count || 1,
+              composite_key: key
+            });
+          }
+        });
+      } else if (Object.keys(sheetsList).length > 0) {
         Object.entries(sheetsList).forEach(([title, sheet]: [string, any]) => {
           if (sheet.enabled) {
             activeSheets.push({
+              spreadsheet_id: config.spreadsheet_id || '',
               name: title,
               mappings: sheet.mappings || { name: 'name', phone: 'phone', email: 'email' },
               last_row_count: sheet.last_row_count || 1
             });
           }
         });
-      } else {
+      } else if (config.spreadsheet_id) {
         // Fallback to legacy single sheet
         const sheetName = config.sheet_name || 'Sheet1';
         const lastRowCount = config.last_row_count || 1;
         activeSheets.push({
+          spreadsheet_id: config.spreadsheet_id,
           name: sheetName,
           mappings: { name: 'name', phone: 'phone', email: 'email' },
           last_row_count: lastRowCount
@@ -1520,16 +1540,17 @@ async function runGoogleSheetsWatchCycle(): Promise<void> {
       }
 
       for (const activeSheet of activeSheets) {
+        if (!activeSheet.spreadsheet_id) continue;
         try {
-          // Fetch the spreadsheet values
-          const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(activeSheet.name)}`;
+          // Fetch the spreadsheet values using correct spreadsheet ID
+          const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${activeSheet.spreadsheet_id}/values/${encodeURIComponent(activeSheet.name)}`;
           const res = await fetch(sheetsUrl, {
             headers: { Authorization: `Bearer ${integration.access_token}` },
           });
 
           if (!res.ok) {
             logger.warn(
-              { workspaceId: integration.user_id, status: res.status, sheetName: activeSheet.name },
+              { workspaceId: integration.user_id, status: res.status, sheetName: activeSheet.name, spreadsheetId: activeSheet.spreadsheet_id },
               'Google Sheets API call failed for worksheet'
             );
             continue;
@@ -1547,7 +1568,7 @@ async function runGoogleSheetsWatchCycle(): Promise<void> {
           const newRows = rows.slice(activeSheet.last_row_count); // rows after last processed index
 
           logger.info(
-            { workspaceId: integration.user_id, newRowCount: newRows.length, spreadsheetId, sheetName: activeSheet.name },
+            { workspaceId: integration.user_id, newRowCount: newRows.length, spreadsheetId: activeSheet.spreadsheet_id, sheetName: activeSheet.name },
             '📊 Google Sheets: new rows detected'
           );
 
@@ -1620,7 +1641,9 @@ async function runGoogleSheetsWatchCycle(): Promise<void> {
               );
 
               // Update last_row_count in config
-              if (config.sheets && config.sheets[activeSheet.name]) {
+              if (activeSheet.composite_key && config.active_sheets && config.active_sheets[activeSheet.composite_key]) {
+                config.active_sheets[activeSheet.composite_key].last_row_count = rows.length;
+              } else if (config.sheets && config.sheets[activeSheet.name]) {
                 config.sheets[activeSheet.name].last_row_count = rows.length;
               } else {
                 config.last_row_count = rows.length;
