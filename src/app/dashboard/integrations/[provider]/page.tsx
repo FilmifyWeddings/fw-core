@@ -64,6 +64,7 @@ function ProviderConfigCore() {
   const [spreadsheetSearch, setSpreadsheetSearch] = useState('');
   const [showSpreadsheetDropdown, setShowSpreadsheetDropdown] = useState(false);
   const [sheetHeaders, setSheetHeaders] = useState<Record<string, string[]>>({});
+  const [sheetsError, setSheetsError] = useState<string | null>(null);
   const [sheetsConfig, setSheetsConfig] = useState<{
     spreadsheet_id: string;
     sync_trigger: string;
@@ -187,9 +188,14 @@ function ProviderConfigCore() {
         if (res.ok) {
           const json = await res.json();
           setSpreadsheets(json.spreadsheets || []);
+          setSheetsError(null);
+        } else {
+          const json = await res.json();
+          setSheetsError(json.error || 'Failed to load spreadsheets');
         }
       } catch (err) {
         console.error('Error loading spreadsheets:', err);
+        setSheetsError('Error fetching spreadsheets list');
       }
     };
     loadSheets();
@@ -212,9 +218,14 @@ function ProviderConfigCore() {
         if (res.ok) {
           const json = await res.json();
           setWorksheets(json.worksheets || []);
+          setSheetsError(null);
+        } else {
+          const json = await res.json();
+          setSheetsError(json.error || 'Failed to load worksheets');
         }
       } catch (err) {
         console.error('Error loading worksheets:', err);
+        setSheetsError('Error fetching worksheets list');
       }
     };
     loadWorksheets();
@@ -612,6 +623,16 @@ function ProviderConfigCore() {
                     {status === 'connected' ? 'Authorized ✓' : 'Unauthorized'}
                   </div>
                 </div>
+
+                {sheetsError && (
+                  <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs leading-normal space-y-1">
+                    <strong className="block font-bold">Google API Integration Error:</strong>
+                    <p className="opacity-90">{sheetsError}</p>
+                    <p className="text-[10px] opacity-75 mt-1">
+                      If the error mentions a disabled API, please click the Google activation link shown above, enable the Google Drive API in Google Cloud Console, and reconnect your account.
+                    </p>
+                  </div>
+                )}
 
                 {status === 'connected' && (
                   <div className="space-y-6">
