@@ -160,6 +160,24 @@ function ProviderConfigCore() {
     }
   };
 
+  const registerDriveWatch = async (spreadsheetId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      await fetch('/api/workflows/google-sheets/watch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ spreadsheetId })
+      });
+    } catch (err) {
+      console.error('[Google Watch] Exception during registering drive watch:', err);
+    }
+  };
+
   const updateMapping = (spreadsheetId: string, spreadsheetName: string, sheetName: string, field: string, value: string) => {
     const compositeKey = `${spreadsheetId}:${sheetName}`;
     setSheetsConfig(prev => {
@@ -445,6 +463,11 @@ function ProviderConfigCore() {
               triggerInitialSync(sheet.spreadsheet_id, sheet.sheet_name, sheet.mappings);
             }
           });
+
+          // Register Drive webhook watch channel
+          if (sheetsConfig.spreadsheet_id) {
+            registerDriveWatch(sheetsConfig.spreadsheet_id);
+          }
 
           // Register custom columns in table_layouts or profiles
           if (userId) {
