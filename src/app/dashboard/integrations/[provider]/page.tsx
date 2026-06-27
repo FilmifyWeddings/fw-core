@@ -61,10 +61,21 @@ function ProviderConfigCore() {
   // Google Sheets States
   const [spreadsheets, setSpreadsheets] = useState<{ id: string; name: string }[]>([]);
   const [worksheets, setWorksheets] = useState<{ id: string; title: string }[]>([]);
-  const [googleSheetsConfig, setGoogleSheetsConfig] = useState({
+  const [spreadsheetSearch, setSpreadsheetSearch] = useState('');
+  const [showSpreadsheetDropdown, setShowSpreadsheetDropdown] = useState(false);
+  const [sheetHeaders, setSheetHeaders] = useState<Record<string, string[]>>({});
+  const [sheetsConfig, setSheetsConfig] = useState<{
+    spreadsheet_id: string;
+    sync_trigger: string;
+    sheets: Record<string, {
+      enabled: boolean;
+      mappings: Record<string, string>;
+      last_row_count?: number;
+    }>;
+  }>({
     spreadsheet_id: '',
-    sheet_name: '',
-    sync_trigger: 'any'
+    sync_trigger: 'any',
+    sheets: {}
   });
 
   const startGoogleOAuth = async () => {
@@ -101,6 +112,67 @@ function ProviderConfigCore() {
     }
   };
 
+  const fetchHeadersForSheet = async (spreadsheetId: string, sheetName: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch(`/api/workflows/google-sheets/columns?spreadsheetId=${spreadsheetId}&sheetName=${encodeURIComponent(sheetName)}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const headers = (json.columns || []).map((c: any) => c.name);
+        setSheetHeaders(prev => ({ ...prev, [sheetName]: headers }));
+      }
+    } catch (err) {
+      console.error(`Error loading columns for ${sheetName}:`, err);
+    }
+  };
+
+  const updateMapping = (sheetTitle: string, field: string, value: string) => {
+    setSheetsConfig(prev => {
+      const sheets = { ...prev.sheets };
+      if (!sheets[sheetTitle]) {
+        sheets[sheetTitle] = { enabled: true, mappings: {} };
+      }
+      sheets[sheetTitle].mappings = {
+        ...sheets[sheetTitle].mappings,
+        [field]: value
+      };
+      return { ...prev, sheets };
+    });
+  };
+
+  const addCustomField = (sheetTitle: string) => {
+    const tempKey = `custom_${Math.random().toString(36).substring(5)}`;
+    updateMapping(sheetTitle, tempKey, '');
+  };
+
+  const renameCustomKey = (sheetTitle: string, oldKey: string, newKeyRaw: string) => {
+    const newKey = newKeyRaw.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!newKey || oldKey === newKey) return;
+    
+    setSheetsConfig(prev => {
+      const sheets = { ...prev.sheets };
+      const mappings = { ...sheets[sheetTitle]?.mappings };
+      const val = mappings[oldKey];
+      delete mappings[oldKey];
+      mappings[newKey] = val;
+      sheets[sheetTitle].mappings = mappings;
+      return { ...prev, sheets };
+    });
+  };
+
+  const removeCustomField = (sheetTitle: string, key: string) => {
+    setSheetsConfig(prev => {
+      const sheets = { ...prev.sheets };
+      const mappings = { ...sheets[sheetTitle]?.mappings };
+      delete mappings[key];
+      sheets[sheetTitle].mappings = mappings;
+      return { ...prev, sheets };
+    });
+  };
+
   useEffect(() => {
     if (provider !== 'google-sheets' || status !== 'connected') return;
 
@@ -124,7 +196,7 @@ function ProviderConfigCore() {
   }, [provider, status]);
 
   useEffect(() => {
-    if (provider !== 'google-sheets' || status !== 'connected' || !googleSheetsConfig.spreadsheet_id) {
+    if (provider !== 'google-sheets' || status !== 'connected' || !sheetsConfig.spreadsheet_id) {
       setWorksheets([]);
       return;
     }
@@ -134,7 +206,7 @@ function ProviderConfigCore() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
 
-        const res = await fetch(`/api/workflows/google-sheets/worksheets?spreadsheetId=${googleSheetsConfig.spreadsheet_id}`, {
+        const res = await fetch(`/api/workflows/google-sheets/worksheets?spreadsheetId=${sheetsConfig.spreadsheet_id}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         if (res.ok) {
@@ -146,13 +218,21 @@ function ProviderConfigCore() {
       }
     };
     loadWorksheets();
-  }, [provider, status, googleSheetsConfig.spreadsheet_id]);
+  }, [provider, status, sheetsConfig.spreadsheet_id]);
+
+  useEffect(() => {
+    if (sheetsConfig.spreadsheet_id && spreadsheets.length > 0) {
+      const match = spreadsheets.find(s => s.id === sheetsConfig.spreadsheet_id);
+      if (match) {
+        setSpreadsheetSearch(match.name);
+      }
+    }
+  }, [sheetsConfig.spreadsheet_id, spreadsheets]);
 
   // Sync state initially
   useEffect(() => {
     if (!userId || !provider) return;
     
-    // Set mock webhook URL
     setWebhookUrl(`${window.location.origin}/api/integrations/website/webhook?key=web_sec_${userId.slice(0, 8)}_2026`);
 
     const loadCred = async () => {
@@ -170,18 +250,25 @@ function ProviderConfigCore() {
 
         if (data) {
           setStatus(data.status as any);
-          // Restore Google Sheets config if available
           if (provider === 'google-sheets' && data.config && typeof data.config === 'object') {
-            const cfg = data.config as Record<string, string>;
-            setGoogleSheetsConfig(prev => ({
-              ...prev,
+            const cfg = data.config as any;
+            const restoredConfig = {
               spreadsheet_id: cfg.spreadsheet_id || '',
-              sheet_name: cfg.sheet_name || '',
               sync_trigger: cfg.sync_trigger || 'any',
-            }));
+              sheets: cfg.sheets || {}
+            };
+            setSheetsConfig(restoredConfig);
+            
+            // Pre-fetch headers for active sheets
+            if (restoredConfig.spreadsheet_id) {
+              Object.entries(restoredConfig.sheets).forEach(([sheetName, sheet]: [string, any]) => {
+                if (sheet.enabled) {
+                  fetchHeadersForSheet(restoredConfig.spreadsheet_id, sheetName);
+                }
+              });
+            }
           }
         } else {
-          // Default mock values for better demo flows
           if (['meta-ads', 'whatsapp-web', 'personal-website'].includes(provider)) {
             setStatus('connected');
           }
@@ -222,17 +309,87 @@ function ProviderConfigCore() {
 
         if (provider === 'google-sheets') {
           upsertPayload.config = {
-            spreadsheet_id: googleSheetsConfig.spreadsheet_id,
-            sheet_name: googleSheetsConfig.sheet_name,
-            sync_trigger: googleSheetsConfig.sync_trigger,
+            spreadsheet_id: sheetsConfig.spreadsheet_id,
+            sync_trigger: sheetsConfig.sync_trigger,
+            sheets: sheetsConfig.sheets,
           };
         }
 
         await supabase
           .from('integration_credentials')
           .upsert(upsertPayload, { onConflict: 'user_id, provider' });
+
+        // Register custom mapped columns in table_layouts or profiles leads_table_preferences
+        if (provider === 'google-sheets' && userId) {
+          const customKeys = new Set<string>();
+          Object.entries(sheetsConfig.sheets).forEach(([_, sheet]) => {
+            if (sheet.enabled && sheet.mappings) {
+              Object.keys(sheet.mappings).forEach(key => {
+                if (!['name', 'phone', 'email'].includes(key)) {
+                  customKeys.add(key);
+                }
+              });
+            }
+          });
+
+          if (customKeys.size > 0) {
+            let currentPrefs: Record<string, any> = {};
+            
+            // Try fetching from table_layouts
+            const { data: layout } = await supabase
+              .from('table_layouts')
+              .select('columns')
+              .eq('workspace_id', userId)
+              .eq('layout_name', 'default')
+              .maybeSingle();
+
+            if (layout?.columns) {
+              currentPrefs = layout.columns;
+            } else {
+              // Try profiles leads_table_preferences
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('leads_table_preferences')
+                .eq('id', userId)
+                .maybeSingle();
+
+              if (profile?.leads_table_preferences) {
+                currentPrefs = profile.leads_table_preferences;
+              }
+            }
+
+            // Sync/augment mapped keys
+            const updatedPrefs = { ...currentPrefs };
+            let hasChanged = false;
+            customKeys.forEach(k => {
+              const colId = `meta_${k}`;
+              if (updatedPrefs[colId] === undefined) {
+                updatedPrefs[colId] = true;
+                hasChanged = true;
+              }
+            });
+
+            if (hasChanged) {
+              // Write back to table_layouts
+              await supabase
+                .from('table_layouts')
+                .upsert({
+                  workspace_id: userId,
+                  layout_name: 'default',
+                  columns: updatedPrefs,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'workspace_id,layout_name' });
+
+              // Update profiles as fallback
+              await supabase
+                .from('profiles')
+                .update({ leads_table_preferences: updatedPrefs })
+                .eq('id', userId);
+            }
+          }
+        }
       } catch (err) {
-        console.log('Skipped DB save.');
+        console.log('Skipped DB save.', err);
       }
 
       setTimeout(() => setSuccess(false), 3000);
@@ -457,41 +614,195 @@ function ProviderConfigCore() {
                 </div>
 
                 {status === 'connected' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
+                  <div className="space-y-6">
+                    {/* Searchable Spreadsheet Selector */}
+                    <div className="space-y-1.5 relative">
                       <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Select Spreadsheet</label>
-                      <select 
-                        value={googleSheetsConfig.spreadsheet_id}
-                        onChange={e => setGoogleSheetsConfig(prev => ({ ...prev, spreadsheet_id: e.target.value, sheet_name: '' }))}
-                        className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
-                      >
-                        <option value="">-- Select Spreadsheet --</option>
-                        {spreadsheets.map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search and select spreadsheet..."
+                          value={spreadsheetSearch}
+                          onChange={e => {
+                            setSpreadsheetSearch(e.target.value);
+                            setShowSpreadsheetDropdown(true);
+                          }}
+                          onFocus={() => setShowSpreadsheetDropdown(true)}
+                          className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
+                        />
+                        {showSpreadsheetDropdown && (
+                          <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-zinc-950 border border-zinc-900 rounded-xl shadow-xl">
+                            {spreadsheets
+                              .filter(s => s.name.toLowerCase().includes(spreadsheetSearch.toLowerCase()))
+                              .map(s => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSheetsConfig(prev => ({ ...prev, spreadsheet_id: s.id, sheets: {} }));
+                                    setSpreadsheetSearch(s.name);
+                                    setShowSpreadsheetDropdown(false);
+                                    setSheetHeaders({});
+                                  }}
+                                  className="w-full text-left px-4 py-3 text-xs text-zinc-350 hover:bg-zinc-900 hover:text-white transition-colors"
+                                >
+                                  {s.name}
+                                </button>
+                              ))}
+                            {spreadsheets.filter(s => s.name.toLowerCase().includes(spreadsheetSearch.toLowerCase())).length === 0 && (
+                              <div className="px-4 py-3 text-xs text-zinc-550 italic">No spreadsheets found</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
+                    {/* Worksheets Toggle List & Mapping */}
+                    {sheetsConfig.spreadsheet_id && worksheets.length > 0 && (
+                      <div className="space-y-4">
+                        <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Worksheet Configurations</label>
+                        <div className="space-y-4">
+                          {worksheets.map(w => {
+                            const sheetConf = sheetsConfig.sheets[w.title] || { enabled: false, mappings: {} };
+                            const isEnabled = sheetConf.enabled;
+                            const mappings = sheetConf.mappings || {};
+                            const headers = sheetHeaders[w.title] || [];
+
+                            return (
+                              <div key={w.title} className="p-5 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 space-y-4">
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${isEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-650'}`} />
+                                    <span className="text-sm font-bold text-zinc-200">{w.title}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextVal = !isEnabled;
+                                      setSheetsConfig(prev => {
+                                        const updatedSheets = { ...prev.sheets };
+                                        if (!updatedSheets[w.title]) {
+                                          updatedSheets[w.title] = { enabled: false, mappings: { name: '', phone: '', email: '' } };
+                                        }
+                                        updatedSheets[w.title].enabled = nextVal;
+                                        return { ...prev, sheets: updatedSheets };
+                                      });
+                                      if (nextVal && !sheetHeaders[w.title]) {
+                                        fetchHeadersForSheet(sheetsConfig.spreadsheet_id, w.title);
+                                      }
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all border ${
+                                      isEnabled 
+                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                        : 'bg-zinc-900 text-zinc-500 border-zinc-800'
+                                    }`}
+                                  >
+                                    {isEnabled ? 'Active ✓' : 'Inactive'}
+                                  </button>
+                                </div>
+
+                                {isEnabled && (
+                                  <div className="space-y-4 pt-4 border-t border-zinc-900/50">
+                                    <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Column Mapping</h5>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-zinc-400 uppercase">Name Field</label>
+                                        <select
+                                          value={mappings.name || ''}
+                                          onChange={e => updateMapping(w.title, 'name', e.target.value)}
+                                          className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                        >
+                                          <option value="">-- Select Header --</option>
+                                          {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                      </div>
+
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-zinc-400 uppercase">Phone Field</label>
+                                        <select
+                                          value={mappings.phone || ''}
+                                          onChange={e => updateMapping(w.title, 'phone', e.target.value)}
+                                          className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                        >
+                                          <option value="">-- Select Header --</option>
+                                          {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                      </div>
+
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-zinc-400 uppercase">Email Field</label>
+                                        <select
+                                          value={mappings.email || ''}
+                                          onChange={e => updateMapping(w.title, 'email', e.target.value)}
+                                          className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                        >
+                                          <option value="">-- Select Header --</option>
+                                          {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    {/* Custom columns */}
+                                    <div className="space-y-3 pt-2">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Custom Metadata Fields</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => addCustomField(w.title)}
+                                          className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] font-extrabold uppercase hover:bg-emerald-500/20"
+                                        >
+                                          + Add Custom Mapping
+                                        </button>
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        {Object.entries(mappings).map(([key, val]) => {
+                                          if (['name', 'phone', 'email'].includes(key)) return null;
+                                          return (
+                                            <div key={key} className="flex gap-2 items-center">
+                                              <input
+                                                type="text"
+                                                value={key.startsWith('custom_') ? '' : key}
+                                                onChange={e => renameCustomKey(w.title, key, e.target.value)}
+                                                placeholder="Field Name (e.g. venue)"
+                                                className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none"
+                                              />
+                                              <select
+                                                value={val}
+                                                onChange={e => updateMapping(w.title, key, e.target.value)}
+                                                className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                              >
+                                                <option value="">-- Map to Header --</option>
+                                                {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                                              </select>
+                                              <button
+                                                type="button"
+                                                onClick={() => removeCustomField(w.title, key)}
+                                                className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold"
+                                              >
+                                                Delete
+                                              </button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sync Trigger Mode */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Worksheet Tab</label>
-                      <select 
-                        value={googleSheetsConfig.sheet_name}
-                        onChange={e => setGoogleSheetsConfig(prev => ({ ...prev, sheet_name: e.target.value }))}
-                        className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
-                        disabled={!googleSheetsConfig.spreadsheet_id}
-                      >
-                        <option value="">-- Select Worksheet --</option>
-                        {worksheets.map(w => (
-                          <option key={w.title} value={w.title}>{w.title}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5 md:col-span-2">
                       <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Sync Trigger Mode</label>
                       <select 
-                        value={googleSheetsConfig.sync_trigger}
-                        onChange={e => setGoogleSheetsConfig(prev => ({ ...prev, sync_trigger: e.target.value }))}
+                        value={sheetsConfig.sync_trigger}
+                        onChange={e => setSheetsConfig(prev => ({ ...prev, sync_trigger: e.target.value }))}
                         className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
                       >
                         <option value="any">Export all leads immediately upon ingestion</option>

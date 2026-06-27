@@ -1480,7 +1480,6 @@ async function runGoogleSheetsWatchCycle(): Promise<void> {
       .eq('status', 'connected');
 
     if (error) {
-      // Table may not exist yet — skip silently
       if (error.message?.includes('schema cache')) {
         logger.debug('integration_credentials not in schema cache — skipping Google Sheets watch');
         return;
@@ -1492,95 +1491,154 @@ async function runGoogleSheetsWatchCycle(): Promise<void> {
     if (!integrations || integrations.length === 0) return;
 
     for (const integration of integrations) {
-      const config = (integration.config as Record<string, unknown>) || {};
+      const config = (integration.config as Record<string, any>) || {};
       const spreadsheetId = config.spreadsheet_id as string | undefined;
-      const sheetName = (config.sheet_name as string) || 'Sheet1';
-      const lastRowCount = (config.last_row_count as number) || 1; // 1 = header row
-
       if (!spreadsheetId || !integration.access_token) continue;
 
-      try {
-        // Fetch the spreadsheet values
-        const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}`;
-        const res = await fetch(sheetsUrl, {
-          headers: { Authorization: `Bearer ${integration.access_token}` },
-        });
+      const sheetsList = config.sheets || {};
+      const activeSheets: { name: string; mappings: Record<string, string>; last_row_count: number }[] = [];
 
-        if (!res.ok) {
-          logger.warn(
-            { workspaceId: integration.user_id, status: res.status },
-            'Google Sheets API call failed — token may need refresh'
-          );
-          continue;
-        }
-
-        const sheetsData = await res.json() as { values?: string[][] };
-        const rows = sheetsData.values || [];
-
-        if (rows.length <= lastRowCount) {
-          // No new rows
-          continue;
-        }
-
-        // Row 0 = headers
-        const headers: string[] = (rows[0] || []).map((h: string) => h.trim().toLowerCase());
-        const newRows = rows.slice(lastRowCount); // rows after last processed index
-
-        logger.info(
-          { workspaceId: integration.user_id, newRowCount: newRows.length, spreadsheetId },
-          '📊 Google Sheets: new rows detected'
-        );
-
-        const leadsToInsert: Record<string, unknown>[] = [];
-
-        for (const row of newRows) {
-          // Map columns to lead fields via header name matching
-          const rowObj: Record<string, string> = {};
-          headers.forEach((h, i) => { rowObj[h] = row[i] || ''; });
-
-          const name = rowObj['name'] || rowObj['full name'] || rowObj['full_name'] ||
-                       rowObj['client name'] || rowObj['lead name'] || `Sheet Lead`;
-          const phone = rowObj['phone'] || rowObj['mobile'] || rowObj['contact'] || rowObj['phone number'] || '';
-          const email = rowObj['email'] || rowObj['email address'] || '';
-
-          leadsToInsert.push({
-            workspace_id: integration.user_id,
-            name: name.trim(),
-            phone: phone.replace(/[^0-9]/g, ''),
-            email: email.trim(),
-            source: 'google_sheets',
-            status: 'new',
-            raw_payload: rowObj,
-          });
-        }
-
-        if (leadsToInsert.length > 0) {
-          const { error: insertErr } = await supabase
-            .from('leads')
-            .insert(leadsToInsert);
-
-          if (insertErr) {
-            logger.error({ err: insertErr.message }, 'Google Sheets watcher: lead insert error');
-          } else {
-            logger.info(
-              { count: leadsToInsert.length, workspaceId: integration.user_id },
-              '✅ Google Sheets leads ingested → Realtime pipeline will fire'
-            );
-
-            // Update last_row_count in config
-            const updatedConfig = { ...config, last_row_count: rows.length };
-            await supabase
-              .from('integration_credentials')
-              .update({ config: updatedConfig })
-              .eq('user_id', integration.user_id)
-              .eq('provider', 'google');
+      if (Object.keys(sheetsList).length > 0) {
+        Object.entries(sheetsList).forEach(([title, sheet]: [string, any]) => {
+          if (sheet.enabled) {
+            activeSheets.push({
+              name: title,
+              mappings: sheet.mappings || { name: 'name', phone: 'phone', email: 'email' },
+              last_row_count: sheet.last_row_count || 1
+            });
           }
+        });
+      } else {
+        // Fallback to legacy single sheet
+        const sheetName = config.sheet_name || 'Sheet1';
+        const lastRowCount = config.last_row_count || 1;
+        activeSheets.push({
+          name: sheetName,
+          mappings: { name: 'name', phone: 'phone', email: 'email' },
+          last_row_count: lastRowCount
+        });
+      }
+
+      for (const activeSheet of activeSheets) {
+        try {
+          // Fetch the spreadsheet values
+          const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(activeSheet.name)}`;
+          const res = await fetch(sheetsUrl, {
+            headers: { Authorization: `Bearer ${integration.access_token}` },
+          });
+
+          if (!res.ok) {
+            logger.warn(
+              { workspaceId: integration.user_id, status: res.status, sheetName: activeSheet.name },
+              'Google Sheets API call failed for worksheet'
+            );
+            continue;
+          }
+
+          const sheetsData = await res.json() as { values?: string[][] };
+          const rows = sheetsData.values || [];
+
+          if (rows.length <= activeSheet.last_row_count) {
+            continue;
+          }
+
+          // Row 0 = headers
+          const headers: string[] = (rows[0] || []).map((h: string) => h.trim().toLowerCase());
+          const newRows = rows.slice(activeSheet.last_row_count); // rows after last processed index
+
+          logger.info(
+            { workspaceId: integration.user_id, newRowCount: newRows.length, spreadsheetId, sheetName: activeSheet.name },
+            '📊 Google Sheets: new rows detected'
+          );
+
+          const leadsToInsert: Record<string, unknown>[] = [];
+          const mapping = activeSheet.mappings;
+
+          for (const row of newRows) {
+            // Map columns to lead fields via header name matching
+            const rowObj: Record<string, string> = {};
+            headers.forEach((h, i) => { rowObj[h] = row[i] || ''; });
+
+            let nameVal = '';
+            let phoneVal = '';
+            let emailVal = '';
+            const customPayload: Record<string, string> = {};
+
+            Object.entries(mapping).forEach(([field, headerCol]) => {
+              const cleanHeader = String(headerCol || '').trim().toLowerCase();
+              const matchedVal = rowObj[cleanHeader] || '';
+              
+              if (field === 'name') {
+                nameVal = matchedVal;
+              } else if (field === 'phone') {
+                phoneVal = matchedVal;
+              } else if (field === 'email') {
+                emailVal = matchedVal;
+              } else {
+                // Custom mapping key (renamed/assigned by user)
+                customPayload[field] = matchedVal;
+              }
+            });
+
+            // Set fallbacks if not mapped or blank
+            if (!nameVal) {
+              nameVal = rowObj['name'] || rowObj['full name'] || rowObj['full_name'] || 
+                        rowObj['client name'] || rowObj['lead name'] || `Sheet Lead`;
+            }
+            if (!phoneVal) {
+              phoneVal = rowObj['phone'] || rowObj['mobile'] || rowObj['contact'] || rowObj['phone number'] || '';
+            }
+            if (!emailVal) {
+              emailVal = rowObj['email'] || rowObj['email address'] || '';
+            }
+
+            leadsToInsert.push({
+              workspace_id: integration.user_id,
+              name: nameVal.trim(),
+              phone: phoneVal.replace(/[^0-9]/g, ''),
+              email: emailVal.trim(),
+              source: 'google_sheets',
+              status: 'new',
+              raw_payload: {
+                ...rowObj,
+                ...customPayload
+              },
+            });
+          }
+
+          if (leadsToInsert.length > 0) {
+            const { error: insertErr } = await supabase
+              .from('leads')
+              .insert(leadsToInsert);
+
+            if (insertErr) {
+              logger.error({ err: insertErr.message }, 'Google Sheets watcher: lead insert error');
+            } else {
+              logger.info(
+                { count: leadsToInsert.length, workspaceId: integration.user_id, sheetName: activeSheet.name },
+                '✅ Google Sheets leads ingested → Realtime pipeline will fire'
+              );
+
+              // Update last_row_count in config
+              if (config.sheets && config.sheets[activeSheet.name]) {
+                config.sheets[activeSheet.name].last_row_count = rows.length;
+              } else {
+                config.last_row_count = rows.length;
+              }
+
+              await supabase
+                .from('integration_credentials')
+                .update({ config })
+                .eq('user_id', integration.user_id)
+                .eq('provider', 'google');
+            }
+          }
+        } catch (innerErr: unknown) {
+          logger.error(
+            { err: innerErr, workspaceId: integration.user_id, sheetName: activeSheet.name },
+            'Google Sheets watcher: error processing sheet'
+          );
         }
-      } catch (innerErr: unknown) {
-        logger.error(
-          { err: innerErr, workspaceId: integration.user_id },
-          'Google Sheets watcher: error processing integration'
-        );
       }
     }
   } catch (err: unknown) {
