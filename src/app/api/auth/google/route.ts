@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * GET /api/auth/google?workspace_id=XXX
+ *
+ * Google OAuth 2.0 initiation.
+ * Redirects the user to Google's consent screen.
+ *
+ * CRITICAL: GOOGLE_REDIRECT_URI must be set in .env.local / Vercel env vars.
+ * It must be the EXACT URI registered in Google Cloud Console:
+ *   https://console.cloud.google.com/apis/credentials
+ * Example: https://yourdomain.com/api/auth/google/callback
+ */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const workspaceId = searchParams.get('workspace_id');
@@ -9,7 +20,6 @@ export async function GET(req: NextRequest) {
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
-
   if (!clientId || clientId === 'your_google_client_id_here') {
     return NextResponse.json(
       { error: 'GOOGLE_CLIENT_ID is not configured in .env.local' },
@@ -17,10 +27,27 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Resolve redirect URI: explicit env var > request host. Never fallback to localhost.
-  // GOOGLE_REDIRECT_URI must be registered in Google Cloud Console → Credentials → Authorized redirect URIs.
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI
-    || `${req.nextUrl.origin}/api/auth/google/callback`;
+  // ── Redirect URI: hardcoded env var ONLY — no dynamic fallback ─────────────
+  // The redirect_uri sent to Google MUST match the token exchange redirect_uri
+  // EXACTLY (character-for-character). Dynamic resolution via req.nextUrl.origin
+  // or Host headers breaks in production behind proxies/CDNs/serverless gateways.
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+
+  if (!redirectUri || !redirectUri.startsWith('https://')) {
+    console.error(
+      '[Google OAuth] GOOGLE_REDIRECT_URI is missing or invalid. ' +
+      'Set it to the EXACT URI registered in Google Cloud Console. ' +
+      `Got: "${redirectUri ?? '(undefined)'}"`
+    );
+    return NextResponse.json(
+      {
+        error: 'GOOGLE_REDIRECT_URI is not configured. Set it in .env.local to the exact URI registered in Google Cloud Console (e.g. https://yourdomain.com/api/auth/google/callback).',
+      },
+      { status: 500 }
+    );
+  }
+
+  console.log('[Google OAuth] Initiating flow. redirect_uri:', redirectUri);
 
   // Encode state as base64url
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');

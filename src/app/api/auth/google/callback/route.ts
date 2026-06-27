@@ -104,9 +104,19 @@ export async function GET(req: NextRequest) {
       throw new Error('GOOGLE_CLIENT_SECRET is not configured');
     }
 
-    // Resolve redirect URI: explicit env var > request host. Must match the initiation route exactly.
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI
-      || `${req.nextUrl.origin}/api/auth/google/callback`;
+    // ── Redirect URI: MUST match the initiation route EXACTLY ────────────────
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+
+    if (!redirectUri || !redirectUri.startsWith('https://')) {
+      throw new Error(
+        'GOOGLE_REDIRECT_URI is not configured. ' +
+        'Set it in .env.local to the exact URI registered in Google Cloud Console ' +
+        '(e.g. https://yourdomain.com/api/auth/google/callback). ' +
+        `Got: "${redirectUri ?? '(undefined)'}"`
+      );
+    }
+
+    console.log('[Google Callback] Exchanging code. redirect_uri:', redirectUri);
 
     // Exchange Authorization Code for Access & Refresh Tokens
     const tokenUrl = 'https://oauth2.googleapis.com/token';
