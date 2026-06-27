@@ -104,16 +104,15 @@ export async function GET(req: NextRequest) {
       throw new Error('GOOGLE_CLIENT_SECRET is not configured');
     }
 
-    // ── Redirect URI: MUST match the initiation route EXACTLY ────────────────
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    // ── Redirect URI: Reads env var first, then dynamically falls back ────────
+    let redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    if (!redirectUri) {
+      const origin = req.nextUrl.origin;
+      redirectUri = `${origin}/api/auth/google/callback`;
+    }
 
-    if (!redirectUri || !redirectUri.startsWith('https://')) {
-      throw new Error(
-        'GOOGLE_REDIRECT_URI is not configured. ' +
-        'Set it in .env.local to the exact URI registered in Google Cloud Console ' +
-        '(e.g. https://yourdomain.com/api/auth/google/callback). ' +
-        `Got: "${redirectUri ?? '(undefined)'}"`
-      );
+    if (!redirectUri || !redirectUri.startsWith('http')) {
+      throw new Error('Invalid Google Redirect URI configuration.');
     }
 
     console.log('[Google Callback] Exchanging code. redirect_uri:', redirectUri);

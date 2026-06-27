@@ -149,11 +149,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: Megaphone,
       path: '/broadcast-campaigns'
     },
-    {
-      name: 'Workflows',
-      icon: GitBranch,
-      path: '/dashboard/workflows'
-    }
+    // {
+    //   name: 'Workflows',
+    //   icon: GitBranch,
+    //   path: '/dashboard/workflows'
+    // }
   ];
 
   if (['/login', '/home', '/admin/sushant', '/admin/dashboard'].includes(pathname)) {

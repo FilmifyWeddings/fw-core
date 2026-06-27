@@ -27,21 +27,18 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ── Redirect URI: hardcoded env var ONLY — no dynamic fallback ─────────────
-  // The redirect_uri sent to Google MUST match the token exchange redirect_uri
-  // EXACTLY (character-for-character). Dynamic resolution via req.nextUrl.origin
-  // or Host headers breaks in production behind proxies/CDNs/serverless gateways.
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  // ── Redirect URI: Reads env var first, then dynamically falls back ────────
+  let redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!redirectUri) {
+    const origin = req.nextUrl.origin;
+    redirectUri = `${origin}/api/auth/google/callback`;
+  }
 
-  if (!redirectUri || !redirectUri.startsWith('https://')) {
-    console.error(
-      '[Google OAuth] GOOGLE_REDIRECT_URI is missing or invalid. ' +
-      'Set it to the EXACT URI registered in Google Cloud Console. ' +
-      `Got: "${redirectUri ?? '(undefined)'}"`
-    );
+  if (!redirectUri || !redirectUri.startsWith('http')) {
+    console.error('[Google OAuth] Invalid redirect_uri:', redirectUri);
     return NextResponse.json(
       {
-        error: 'GOOGLE_REDIRECT_URI is not configured. Set it in .env.local to the exact URI registered in Google Cloud Console (e.g. https://yourdomain.com/api/auth/google/callback).',
+        error: 'Invalid Google Redirect URI configuration. Ensure GOOGLE_REDIRECT_URI is configured correctly.',
       },
       { status: 500 }
     );
