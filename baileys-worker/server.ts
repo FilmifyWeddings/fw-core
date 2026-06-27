@@ -698,9 +698,10 @@ async function runSweeper(): Promise<void> {
   }
 }
 
-// ─── Supabase Realtime Subscription ─────────────────────────────────────────
-// Realtime triggers an immediate drain when a new action is inserted.
-// The 5-second polling interval below is the safety net for missed events.
+// ─── Supabase Realtime: baileys_action_queue Listener ────────────────────────
+// Triggers an immediate drain when a new action is inserted.
+// No polling interval — Realtime drives instant actions;
+// scheduleNextDelayedCheck() handles time-delayed nodes.
 function startActionQueueListener(): void {
   logger.info('📡 Subscribing to baileys_action_queue realtime...');
 
@@ -715,21 +716,32 @@ function startActionQueueListener(): void {
         filter: `workspace_id=eq.${WORKSPACE_ID}`,
       },
       async (payload) => {
-        const action = payload.new as { id: string; status: string; action_type: string };
+        const action = payload.new as { id: string; status: string; action_type: string; next_retry_at?: string };
         if (action.status !== 'pending') return;
-        logger.info({ actionId: action.id, type: action.action_type }, '🎯 Realtime trigger — draining queue');
-        // Trigger a queue drain instead of processing single action inline
-        // This ensures retry-eligible actions are also picked up in the same sweep
+
+        // If this action has a future next_retry_at it's a delayed node — reschedule
+        if (action.next_retry_at && new Date(action.next_retry_at) > new Date()) {
+          logger.info(
+            { actionId: action.id, type: action.action_type, next_retry_at: action.next_retry_at },
+            '⏱  Delayed action inserted — rescheduling next check'
+          );
+          await scheduleNextDelayedCheck();
+          return;
+        }
+
+        logger.info({ actionId: action.id, type: action.action_type }, '🎯 Realtime trigger — draining queue immediately');
         await runQueueDrain();
+        // After drain, reschedule in case delayed actions remain
+        await scheduleNextDelayedCheck();
       }
     )
     .subscribe((status) => {
-      logger.info({ status }, '📡 Realtime subscription status');
+      logger.info({ status }, '📡 baileys_action_queue realtime subscription status');
     });
 
   // Startup drain: catch any pending actions that arrived while worker was offline
   logger.info('📋 Running startup queue drain...');
-  runQueueDrain();
+  runQueueDrain().then(() => scheduleNextDelayedCheck());
 }
 
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
@@ -1278,26 +1290,343 @@ function startHealthServer(): void {
   });
 }
 
+// ─── Dynamic Delayed-Check Scheduler ─────────────────────────────────────────
+// Replaces the 5-second setInterval. Queries the earliest pending action whose
+// next_retry_at has not yet passed, then sets a single setTimeout to fire
+// exactly when that window opens. Eliminates constant polling egress.
+let delayedCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function scheduleNextDelayedCheck(): Promise<void> {
+  if (delayedCheckTimer) {
+    clearTimeout(delayedCheckTimer);
+    delayedCheckTimer = null;
+  }
+
+  try {
+    const now = new Date().toISOString();
+    const { data: nextAction } = await supabase
+      .from('baileys_action_queue')
+      .select('next_retry_at')
+      .eq('workspace_id', WORKSPACE_ID)
+      .eq('status', 'pending')
+      .not('next_retry_at', 'is', null)
+      .gt('next_retry_at', now)
+      .order('next_retry_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (nextAction?.next_retry_at) {
+      const fireAt = new Date(nextAction.next_retry_at).getTime();
+      const delayMs = Math.max(fireAt - Date.now(), 500); // at least 500ms
+      logger.info({ delayMs, fireAt: nextAction.next_retry_at }, '⏱  Scheduling next delayed queue drain');
+      delayedCheckTimer = setTimeout(async () => {
+        delayedCheckTimer = null;
+        await runQueueDrain().catch(err => logger.error({ err }, 'Delayed drain error'));
+        await scheduleNextDelayedCheck();
+      }, delayMs);
+    } else {
+      // No delayed actions pending — check again in 5 minutes as a safety net
+      delayedCheckTimer = setTimeout(async () => {
+        delayedCheckTimer = null;
+        await scheduleNextDelayedCheck();
+      }, 5 * 60 * 1000);
+    }
+  } catch (err) {
+    logger.error({ err }, 'scheduleNextDelayedCheck error — retrying in 60s');
+    delayedCheckTimer = setTimeout(() => {
+      delayedCheckTimer = null;
+      scheduleNextDelayedCheck();
+    }, 60_000);
+  }
+}
+
+// ─── triggerWorkflowsForLead ──────────────────────────────────────────────────
+// Maps a newly inserted lead's source field → trigger_type and fires all
+// matching enabled custom_workflows for that workspace.
+async function triggerWorkflowsForLead(
+  lead: Record<string, unknown>,
+  workspaceId: string
+): Promise<void> {
+  try {
+    const source = String(lead.source || 'manual').toLowerCase();
+
+    // Map raw lead source → workflow trigger_type
+    let triggerType: string;
+    if (source === 'facebook' || source === 'meta' || source === 'facebook_lead') {
+      triggerType = 'facebook_lead';
+    } else if (source === 'google_sheets' || source === 'sheets') {
+      triggerType = 'facebook_lead'; // Sheets leads re-use the same pipeline trigger
+    } else if (source === 'webhook' || source === 'website' || source === 'wordpress') {
+      triggerType = 'webhook';
+    } else if (source === 'manual' || source === 'crm') {
+      triggerType = 'crm_entry';
+    } else {
+      triggerType = 'crm_entry'; // default
+    }
+
+    // Fetch all enabled workflows matching this workspace + trigger
+    const { data: workflows, error } = await supabase
+      .from('custom_workflows')
+      .select('id, name, trigger_type, trigger_config, steps')
+      .eq('workspace_id', workspaceId)
+      .eq('is_enabled', true)
+      .eq('trigger_type', triggerType);
+
+    if (error) {
+      logger.error({ err: error.message, workspaceId, triggerType }, 'triggerWorkflowsForLead: DB query error');
+      return;
+    }
+
+    if (!workflows || workflows.length === 0) {
+      logger.debug({ workspaceId, triggerType, leadId: lead.id }, 'No matching workflows for lead trigger');
+      return;
+    }
+
+    logger.info(
+      { count: workflows.length, triggerType, leadId: lead.id, workspaceId },
+      '⚡ Triggering custom workflows for new lead'
+    );
+
+    // Fire each workflow asynchronously without blocking the Realtime callback
+    for (const wf of workflows) {
+      (async () => {
+        try {
+          // Import the workflow engine dynamically (avoids circular dependency)
+          const enginePath = '../src/lib/workflow-engine.js';
+          const { executeWorkflow } = await import(enginePath);
+
+          await executeWorkflow(
+            supabase,
+            {
+              id: wf.id,
+              workspace_id: workspaceId,
+              name: wf.name,
+              trigger_type: wf.trigger_type,
+              trigger_config: wf.trigger_config || {},
+              steps: wf.steps || [],
+              is_enabled: true,
+            },
+            triggerType as any,
+            lead // trigger payload
+          );
+
+          // Bump run stats
+          await supabase.rpc('rpc_bump_workflow_run_stats', {
+            p_workflow_id: wf.id,
+            p_status: 'success',
+          });
+
+          logger.info({ workflowId: wf.id, workflowName: wf.name }, '✅ Workflow executed successfully');
+        } catch (wfErr: unknown) {
+          const errMsg = wfErr instanceof Error ? wfErr.message : String(wfErr);
+          logger.error({ workflowId: wf.id, err: errMsg }, '❌ Workflow execution failed');
+
+          // Bump failed stat
+          await supabase.rpc('rpc_bump_workflow_run_stats', {
+            p_workflow_id: wf.id,
+            p_status: 'failed',
+          }).catch(() => {});
+        }
+      })();
+    }
+  } catch (err: unknown) {
+    logger.error({ err }, 'triggerWorkflowsForLead: unexpected error');
+  }
+}
+
+// ─── Supabase Realtime: Leads INSERT Listener ────────────────────────────────
+// Subscribes to INSERT events on the `leads` table.
+// The moment a new lead lands (from Facebook webhook, manual CRM entry, or Google Sheets
+// ingestion), this fires triggerWorkflowsForLead immediately — zero polling.
+function startLeadsRealtimeListener(): void {
+  logger.info('📡 Subscribing to leads table realtime (INSERT)...');
+
+  supabase
+    .channel('leads_ingestion_pipeline')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'leads',
+        filter: `workspace_id=eq.${WORKSPACE_ID}`,
+      },
+      async (payload) => {
+        const lead = payload.new as Record<string, unknown>;
+        logger.info(
+          { leadId: lead.id, source: lead.source, name: lead.name },
+          '🎯 Realtime: new lead inserted — triggering workflows'
+        );
+        await triggerWorkflowsForLead(lead, WORKSPACE_ID);
+      }
+    )
+    .subscribe((status) => {
+      logger.info({ status }, '📡 Leads realtime subscription status');
+    });
+}
+
+// ─── Google Sheets Background Watcher ────────────────────────────────────────
+// Polls every 60 seconds across all Google-connected workspaces.
+// Detects newly appended rows (beyond the last known row count stored in
+// integration_credentials.config.last_row_count), maps column headers to lead
+// fields, and inserts new leads to kick off the realtime workflow pipeline.
+async function runGoogleSheetsWatchCycle(): Promise<void> {
+  try {
+    // Fetch all google integrations that have a spreadsheet config
+    const { data: integrations, error } = await supabase
+      .from('integration_credentials')
+      .select('user_id, access_token, refresh_token, config')
+      .eq('provider', 'google')
+      .eq('status', 'connected');
+
+    if (error) {
+      // Table may not exist yet — skip silently
+      if (error.message?.includes('schema cache')) {
+        logger.debug('integration_credentials not in schema cache — skipping Google Sheets watch');
+        return;
+      }
+      logger.error({ err: error.message }, 'Google Sheets watcher: DB query error');
+      return;
+    }
+
+    if (!integrations || integrations.length === 0) return;
+
+    for (const integration of integrations) {
+      const config = (integration.config as Record<string, unknown>) || {};
+      const spreadsheetId = config.spreadsheet_id as string | undefined;
+      const sheetName = (config.sheet_name as string) || 'Sheet1';
+      const lastRowCount = (config.last_row_count as number) || 1; // 1 = header row
+
+      if (!spreadsheetId || !integration.access_token) continue;
+
+      try {
+        // Fetch the spreadsheet values
+        const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}`;
+        const res = await fetch(sheetsUrl, {
+          headers: { Authorization: `Bearer ${integration.access_token}` },
+        });
+
+        if (!res.ok) {
+          logger.warn(
+            { workspaceId: integration.user_id, status: res.status },
+            'Google Sheets API call failed — token may need refresh'
+          );
+          continue;
+        }
+
+        const sheetsData = await res.json() as { values?: string[][] };
+        const rows = sheetsData.values || [];
+
+        if (rows.length <= lastRowCount) {
+          // No new rows
+          continue;
+        }
+
+        // Row 0 = headers
+        const headers: string[] = (rows[0] || []).map((h: string) => h.trim().toLowerCase());
+        const newRows = rows.slice(lastRowCount); // rows after last processed index
+
+        logger.info(
+          { workspaceId: integration.user_id, newRowCount: newRows.length, spreadsheetId },
+          '📊 Google Sheets: new rows detected'
+        );
+
+        const leadsToInsert: Record<string, unknown>[] = [];
+
+        for (const row of newRows) {
+          // Map columns to lead fields via header name matching
+          const rowObj: Record<string, string> = {};
+          headers.forEach((h, i) => { rowObj[h] = row[i] || ''; });
+
+          const name = rowObj['name'] || rowObj['full name'] || rowObj['full_name'] ||
+                       rowObj['client name'] || rowObj['lead name'] || `Sheet Lead`;
+          const phone = rowObj['phone'] || rowObj['mobile'] || rowObj['contact'] || rowObj['phone number'] || '';
+          const email = rowObj['email'] || rowObj['email address'] || '';
+
+          leadsToInsert.push({
+            workspace_id: integration.user_id,
+            name: name.trim(),
+            phone: phone.replace(/[^0-9]/g, ''),
+            email: email.trim(),
+            source: 'google_sheets',
+            status: 'new',
+            raw_payload: rowObj,
+          });
+        }
+
+        if (leadsToInsert.length > 0) {
+          const { error: insertErr } = await supabase
+            .from('leads')
+            .insert(leadsToInsert);
+
+          if (insertErr) {
+            logger.error({ err: insertErr.message }, 'Google Sheets watcher: lead insert error');
+          } else {
+            logger.info(
+              { count: leadsToInsert.length, workspaceId: integration.user_id },
+              '✅ Google Sheets leads ingested → Realtime pipeline will fire'
+            );
+
+            // Update last_row_count in config
+            const updatedConfig = { ...config, last_row_count: rows.length };
+            await supabase
+              .from('integration_credentials')
+              .update({ config: updatedConfig })
+              .eq('user_id', integration.user_id)
+              .eq('provider', 'google');
+          }
+        }
+      } catch (innerErr: unknown) {
+        logger.error(
+          { err: innerErr, workspaceId: integration.user_id },
+          'Google Sheets watcher: error processing integration'
+        );
+      }
+    }
+  } catch (err: unknown) {
+    logger.error({ err }, 'runGoogleSheetsWatchCycle: unexpected error');
+  }
+}
+
+function startGoogleSheetsWatcher(): void {
+  logger.info('📊 Google Sheets watcher starting (60s interval)...');
+  // Initial run after a short delay, then every 60s
+  setTimeout(() => {
+    runGoogleSheetsWatchCycle().catch(err => logger.error({ err }, 'Sheets initial watch error'));
+    setInterval(() => {
+      runGoogleSheetsWatchCycle().catch(err => logger.error({ err }, 'Sheets watch cycle error'));
+    }, 60_000);
+  }, 10_000);
+}
+
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   logger.info('🔥 FW Core — Baileys Worker Starting...');
   logger.info({ workspaceId: WORKSPACE_ID }, '🏢 Workspace');
 
   startHealthServer();
+
+  // ── Supabase Realtime: queue + leads listeners ──
   startActionQueueListener();
+  startLeadsRealtimeListener();
+
+  // ── Google Sheets background watcher (60s polling) ──
+  startGoogleSheetsWatcher();
+
+  // ── Start WhatsApp Baileys socket ──
   await startBaileysSocket();
 
-  // ── Polling interval: drain queue every 5 seconds (safety net for missed Realtime events)
-  setInterval(() => {
-    runQueueDrain().catch(err => logger.error({ err }, 'Polling drain error'));
-  }, 5_000);
+  // ── Dynamic delayed-check scheduler replaces the old 5s setInterval ──
+  // Only delayed-node actions need a timer; instant actions are driven by Realtime.
+  await scheduleNextDelayedCheck();
 
-  // ── Sweeper: recover stuck 'processing' rows every 60 seconds
+  // ── Sweeper: recover stuck 'processing' rows every 60 seconds ──
   setInterval(() => {
     runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));
   }, 60_000);
 
-  logger.info('✅ Queue polling (5s) and sweeper (60s) active.');
+  logger.info('✅ Realtime listeners active. Dynamic delay scheduler running. Sweeper (60s) active.');
+  logger.info('✅ Polling setInterval REMOVED — egress now driven by Realtime + scheduleNextDelayedCheck.');
 }
 
 main().catch((err) => {

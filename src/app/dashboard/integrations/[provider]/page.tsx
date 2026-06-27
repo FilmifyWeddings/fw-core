@@ -170,6 +170,16 @@ function ProviderConfigCore() {
 
         if (data) {
           setStatus(data.status as any);
+          // Restore Google Sheets config if available
+          if (provider === 'google-sheets' && data.config && typeof data.config === 'object') {
+            const cfg = data.config as Record<string, string>;
+            setGoogleSheetsConfig(prev => ({
+              ...prev,
+              spreadsheet_id: cfg.spreadsheet_id || '',
+              sheet_name: cfg.sheet_name || '',
+              sync_trigger: cfg.sync_trigger || 'any',
+            }));
+          }
         } else {
           // Default mock values for better demo flows
           if (['meta-ads', 'whatsapp-web', 'personal-website'].includes(provider)) {
@@ -201,15 +211,26 @@ function ProviderConfigCore() {
                            provider === 'whatsapp-web' ? 'whatsapp' :
                            provider === 'meta-ads' ? 'meta' : 'google';
 
+        // Build upsert payload — include Google Sheets config in the config JSONB column
+        const upsertPayload: Record<string, unknown> = {
+          user_id: userId,
+          provider: dbProvider,
+          status: 'connected',
+          webhook_secret_key: provider === 'personal-website' ? `web_sec_${userId?.slice(0, 8)}_2026` : null,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (provider === 'google-sheets') {
+          upsertPayload.config = {
+            spreadsheet_id: googleSheetsConfig.spreadsheet_id,
+            sheet_name: googleSheetsConfig.sheet_name,
+            sync_trigger: googleSheetsConfig.sync_trigger,
+          };
+        }
+
         await supabase
           .from('integration_credentials')
-          .upsert({
-            user_id: userId,
-            provider: dbProvider,
-            status: 'connected',
-            webhook_secret_key: provider === 'personal-website' ? `web_sec_${userId?.slice(0, 8)}_2026` : null,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id, provider' });
+          .upsert(upsertPayload, { onConflict: 'user_id, provider' });
       } catch (err) {
         console.log('Skipped DB save.');
       }
