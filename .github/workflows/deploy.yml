@@ -1,9 +1,7 @@
 name: Remote Dispatch Deploy
-
 on:
   push:
     branches: [ main ]
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -13,12 +11,12 @@ jobs:
       with:
         host: "143.244.133.235"
         username: "root"
-        key: ${{ secrets.VPS_SSH_KEY }} # तिजोरी से अपनी नई चाबी उठाएगा
+        key: ${{ secrets.VPS_SSH_KEY }}
         script: |
           cd /var/www/fw-core
           git pull origin main
           npm install
           npm run build
           npx kill-port 3000 || true
-          pm2 restart all
+          pm2 restart all --update-env
           pm2 save
