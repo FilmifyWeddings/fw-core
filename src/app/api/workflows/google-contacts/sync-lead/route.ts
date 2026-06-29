@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
     const contactPayload = {
       names: [{ givenName: finalName }],
       phoneNumbers: [{ value: formattedPhone, type: 'mobile' }],
-      emails: lead.email ? [{ value: lead.email, type: 'work' }] : [],
+      emailAddresses: lead.email ? [{ value: lead.email, type: 'home' }] : [],
       biographies: [
         {
           value: `Lead Source: ${lead.source || 'N/A'}\nStatus: ${lead.status || 'N/A'}\nCreated via Brahmastra Leads Ingestion Hub on ${new Date().toLocaleDateString()}`,
