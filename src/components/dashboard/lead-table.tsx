@@ -57,6 +57,32 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'followup_sched', label: 'Followups', visible: true, type: 'system' },
 ];
 
+function PremiumTooltip({ content, children }: { content: string; children: React.ReactNode }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div 
+      className="relative inline-block"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children}
+      <AnimatePresenceComponent>
+        {hovered && (
+          <MotionDiv
+            initial={{ opacity: 0, y: 4, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="absolute z-50 px-2.5 py-1.5 text-[10px] font-medium text-white dark:text-[#121110] bg-[#1C1A18] dark:bg-[#FAF8F5] border border-[#2C2926] dark:border-[#E8E5DF] rounded-lg shadow-lg whitespace-nowrap bottom-full left-1/2 -translate-x-1/2 mb-2 pointer-events-none"
+          >
+            {content}
+          </MotionDiv>
+        )}
+      </AnimatePresenceComponent>
+    </div>
+  );
+}
+
 export function LeadTable({ 
   leads: initialLeads, 
   stages = [],
@@ -333,7 +359,9 @@ export function LeadTable({
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(100);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [showColumnFilters, setShowColumnFilters] = useState(false);
   
   // Ingested Meta Columns list (auto-discovered keys in lead.raw_payload)
   const [ingestedMetaKeys, setIngestedMetaKeys] = useState<string[]>([]);
@@ -652,7 +680,35 @@ export function LeadTable({
     const owner = lead.raw_payload?.lead_owner || 'Chad Thunderclock';
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
-    return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner;
+    // Column-level filters check
+    let matchesColumnFilters = true;
+    for (const [colId, filterVal] of Object.entries(columnFilters)) {
+      if (!filterVal.trim()) continue;
+      const val = filterVal.toLowerCase();
+      if (colId === 'name') {
+        if (!(lead.name || '').toLowerCase().includes(val)) matchesColumnFilters = false;
+      } else if (colId === 'contact') {
+        const phone = lead.phone || '';
+        const email = lead.email || '';
+        if (!phone.includes(val) && !email.toLowerCase().includes(val)) matchesColumnFilters = false;
+      } else if (colId === 'source') {
+        if (!(lead.source || '').toLowerCase().includes(val)) matchesColumnFilters = false;
+      } else if (colId === 'status') {
+        const stageName = stages?.find(s => s.id === lead.status)?.name || lead.status;
+        if (!(stageName || '').toLowerCase().includes(val)) matchesColumnFilters = false;
+      } else if (colId === 'owner') {
+        if (!owner.toLowerCase().includes(val)) matchesColumnFilters = false;
+      } else if (colId === 'date') {
+        const dateStr = lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '';
+        if (!dateStr.toLowerCase().includes(val)) matchesColumnFilters = false;
+      } else {
+        // Fallback for metadata or custom columns
+        const customVal = lead.raw_payload?.[colId] || '';
+        if (!String(customVal).toLowerCase().includes(val)) matchesColumnFilters = false;
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner && matchesColumnFilters;
   });
 
   // Pagination lists
@@ -870,14 +926,14 @@ export function LeadTable({
     <div className="w-full relative select-none">
       
       {/* Dynamic Views Switcher Panel */}
-      <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-6">
-        <div className="flex items-center gap-1.5 p-1 bg-zinc-950/80 border border-zinc-900 rounded-xl">
+      <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-4 mb-6">
+        <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl shadow-inner">
           <button 
             onClick={() => setViewMode('table')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
               viewMode === 'table' 
-                ? 'bg-zinc-900 text-white shadow-md' 
-                : 'text-zinc-550 hover:text-zinc-300'
+                ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
+                : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -885,10 +941,10 @@ export function LeadTable({
           </button>
           <button 
             onClick={() => setViewMode('kanban')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
               viewMode === 'kanban' 
-                ? 'bg-zinc-900 text-white shadow-md' 
-                : 'text-zinc-550 hover:text-zinc-300'
+                ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
+                : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
             }`}
           >
             <Kanban className="w-3.5 h-3.5" />
@@ -896,13 +952,13 @@ export function LeadTable({
           </button>
           <button 
             onClick={() => setViewMode('tasks')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
               viewMode === 'tasks' 
-                ? 'bg-zinc-900 text-white shadow-md' 
-                : 'text-zinc-550 hover:text-zinc-300'
+                ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
+                : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
             }`}
           >
-            <CheckSquare className="w-3.5 h-3.5 text-orange-550" />
+            <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] dark:text-[#C5A059]" />
             Team Tasks
           </button>
         </div>
@@ -910,7 +966,7 @@ export function LeadTable({
         {/* Primary Manual lead creation */}
         <button
           onClick={() => setCreateModalOpen(true)}
-          className="px-4 py-2 text-xs bg-white hover:bg-zinc-200 text-black font-extrabold rounded-xl transition-all shadow-md shadow-white/5 flex items-center gap-1.5 hover:scale-105"
+          className="px-4 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] flex items-center gap-1.5 hover:scale-105"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
           Add New Lead
@@ -922,63 +978,76 @@ export function LeadTable({
         
         {/* Search */}
         <div className="relative w-full md:w-80">
-          <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-500" />
+          <Search className="absolute left-3.5 top-3 w-4 h-4 text-[#706E6A] dark:text-[#A09E9A]" />
           <input
             type="text"
             placeholder="Search leads, contact, number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-slate-300 dark:focus:border-zinc-700 transition-all font-sans"
+            className="w-full pl-10 pr-4 py-2 text-sm bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A] dark:placeholder-[#A09E9A] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition-all font-sans"
           />
         </div>
 
         {/* Filters Panel */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
           
+          {/* Master Filter Button */}
+          <button
+            onClick={() => setShowColumnFilters(!showColumnFilters)}
+            className={`flex items-center justify-center p-2 rounded-xl border transition-all ${
+              showColumnFilters 
+                ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white shadow-[0_4px_12px_rgba(212,175,55,0.25)]' 
+                : 'bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A] hover:bg-white dark:hover:bg-[#1C1A18] hover:text-[#1A1A1A] dark:hover:text-white'
+            }`}
+            title="Toggle column-level filters"
+          >
+            <Filter className="w-3.5 h-3.5" />
+          </button>
+
           {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5">
-            <Tag className="w-3 h-3 text-zinc-550" />
+          <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5">
+            <Tag className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-slate-700 dark:text-zinc-300 focus:outline-none cursor-pointer border-none"
+              className="bg-transparent text-[11px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none cursor-pointer border-none"
             >
-              <option value="all" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Stages: All</option>
-              <option value="new" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">New</option>
-              <option value="contacted" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Open</option>
-              <option value="warm" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">In Progress</option>
-              <option value="hot" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Priority</option>
-              <option value="closed" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Won</option>
-              <option value="lost" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Lost</option>
+              <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Stages: All</option>
+              <option value="new" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">New</option>
+              <option value="contacted" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Open</option>
+              <option value="warm" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">In Progress</option>
+              <option value="hot" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Priority</option>
+              <option value="closed" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Won</option>
+              <option value="lost" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Lost</option>
             </select>
           </div>
 
           {/* Source Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5">
-            <ExternalLink className="w-3 h-3 text-zinc-550" />
+          <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5 font-sans">
+            <ExternalLink className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-zinc-300 focus:outline-none cursor-pointer border-none capitalize"
+              className="bg-transparent text-[11px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none cursor-pointer border-none capitalize"
             >
-              <option value="all" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Sources: All</option>
+              <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Sources: All</option>
               {customSources.map(src => (
-                <option key={src} value={src} className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">{src}</option>
+                <option key={src} value={src} className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">{src}</option>
               ))}
             </select>
           </div>
 
           {/* Owner Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-950/40 border border-slate-200 dark:border-zinc-800 rounded-xl px-2.5 py-1.5">
-            <User className="w-3 h-3 text-zinc-550" />
+          <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5 font-sans">
+            <User className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
             <select
               value={ownerFilter}
               onChange={(e) => setOwnerFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-slate-700 dark:text-zinc-300 focus:outline-none cursor-pointer border-none"
+              className="bg-transparent text-[11px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none cursor-pointer border-none"
             >
-              <option value="all" className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">Owners: All</option>
+              <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Owners: All</option>
               {uniqueOwners.map(owner => (
-                <option key={owner} value={owner} className="bg-white dark:bg-zinc-950 text-slate-800 dark:text-white">{owner}</option>
+                <option key={owner} value={owner} className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">{owner}</option>
               ))}
             </select>
           </div>
@@ -987,11 +1056,11 @@ export function LeadTable({
           <div className="relative" ref={manageColsRef}>
             <button
               onClick={() => setShowManageCols(!showManageCols)}
-              className="px-3 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 rounded-xl transition-all flex items-center gap-2"
+              className="px-3 py-1.5 text-xs bg-[#FAF8F5]/60 hover:bg-[#FAF8F5]/90 dark:bg-[#121110]/60 dark:hover:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white rounded-xl transition-all flex items-center gap-2"
             >
               <Columns className="w-3.5 h-3.5" />
               Columns Engine
-              <ChevronDown className="w-3 h-3 text-zinc-500" />
+              <ChevronDown className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
             </button>
 
             <AnimatePresenceComponent>
@@ -1001,39 +1070,39 @@ export function LeadTable({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-50 rounded-2xl bg-white dark:bg-zinc-950/95 border border-slate-200 dark:border-zinc-850 p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-slate-800 dark:text-zinc-300"
+                  className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-[#1A1A1A] dark:text-[#F5F5F5]"
                 >
                   {/* Contact subtext layout config */}
-                  <div className="space-y-1.5 pb-2 border-b border-zinc-900">
-                    <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Contact Sub-text Layout</span>
+                  <div className="space-y-1.5 pb-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
+                    <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider">Contact Sub-text Layout</span>
                     <select
                       value={contactSubtext}
                       onChange={(e) => {
                         setContactSubtext(e.target.value as any);
                         localStorage.setItem('leads_table_contact_subtext', e.target.value);
                       }}
-                      className="w-full bg-slate-50 dark:bg-zinc-900 text-xs text-slate-800 dark:text-white rounded-lg p-1.5 border border-slate-200 dark:border-zinc-800"
+                      className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926]"
                     >
-                      <option value="both">Show Phone & Email</option>
-                      <option value="phone">Show Phone Only</option>
-                      <option value="email">Show Email Only</option>
-                      <option value="none">Hide Sub-text</option>
+                      <option value="both" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Phone & Email</option>
+                      <option value="phone" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Phone Only</option>
+                      <option value="email" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Email Only</option>
+                      <option value="none" className="bg-[#FAF8F5] dark:bg-[#121110]">Hide Sub-text</option>
                     </select>
                   </div>
 
                   {/* Columns Toggles */}
                   <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider block mb-1">Visible Fields</span>
+                    <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block mb-1">Visible Fields</span>
                     {columns.map(col => (
-                      <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs text-slate-700 dark:text-zinc-300">
+                      <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
                         <button
                           onClick={() => toggleColumn(col.id)}
                           className="flex items-center gap-2 flex-1 text-left py-0.5"
                         >
                           <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
                             col.visible 
-                              ? 'bg-orange-500 border-orange-600 text-black' 
-                              : 'border-slate-300 dark:border-zinc-750 bg-transparent text-transparent'
+                              ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
+                              : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
                           }`}>
                             <Check className="w-2.5 h-2.5 stroke-[3]" />
                           </div>
@@ -1044,7 +1113,7 @@ export function LeadTable({
                         {col.type && col.type.startsWith('custom_') && (
                           <button 
                             onClick={() => handleDeleteCustomColumn(col.id)}
-                            className="p-1 text-zinc-500 hover:text-red-400 rounded transition-colors"
+                            className="p-1 text-[#706E6A] hover:text-red-400 rounded transition-colors"
                           >
                             <Trash className="w-3 h-3" />
                           </button>
@@ -1054,23 +1123,23 @@ export function LeadTable({
                   </div>
 
                   {/* Custom columns adding form */}
-                  <div className="pt-3 border-t border-zinc-900 space-y-2">
-                    <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider block">Add Custom Column</span>
+                  <div className="pt-3 border-t border-[#E8E5DF] dark:border-[#2C2926] space-y-2">
+                    <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block">Add Custom Column</span>
                     <input 
                       type="text" 
                       placeholder="Column Name (e.g. Shoot Type)"
                       value={newColLabel}
                       onChange={(e) => setNewColLabel(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-zinc-900 text-xs text-slate-800 dark:text-white rounded-lg p-1.5 border border-slate-200 dark:border-zinc-800 placeholder-slate-400 dark:placeholder-zinc-600"
+                      className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
                     />
                     <select
                       value={newColType}
                       onChange={(e) => setNewColType(e.target.value as any)}
-                      className="w-full bg-zinc-900 text-xs text-white rounded-lg p-1.5 border border-zinc-800"
+                      className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926]"
                     >
-                      <option value="dropdown">Custom Dropdown List</option>
-                      <option value="color">Color Highlight Label</option>
-                      <option value="text">Custom Text Field</option>
+                      <option value="dropdown" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Dropdown List</option>
+                      <option value="color" className="bg-[#FAF8F5] dark:bg-[#121110]">Color Highlight Label</option>
+                      <option value="text" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Text Field</option>
                     </select>
 
                     {newColType === 'dropdown' && (
@@ -1079,13 +1148,13 @@ export function LeadTable({
                         placeholder="Options: Pre-Wedding, Portrait"
                         value={newColOptionsText}
                         onChange={(e) => setNewColOptionsText(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-zinc-900 text-xs text-slate-800 dark:text-white rounded-lg p-1.5 border border-slate-200 dark:border-zinc-800 placeholder-slate-400 dark:placeholder-zinc-600"
+                        className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
                       />
                     )}
 
                     <button
                       onClick={handleAddCustomColumn}
-                      className="w-full py-1.5 bg-orange-500 text-black font-extrabold rounded-lg text-xs hover:bg-orange-400 transition-colors"
+                      className="w-full py-1.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-lg text-xs hover:opacity-95 transition-opacity"
                     >
                       Add Column
                     </button>
@@ -1123,16 +1192,16 @@ export function LeadTable({
                   </th>
                   
                   {/* Frozen Column Name (Sticky Left) */}
-                  <th className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#0c0c0e] z-30 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.4)] text-slate-800 dark:text-white">Lead Name</th>
+                  <th className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#1C1A18] z-30 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5]">Lead Name</th>
                   
                   {/* Dynamic Columns headers */}
                   {columns.map((col, idx) => col.visible && (
                     <th
                       key={col.id}
                       className={`py-4 px-4 font-bold relative group/header cursor-grab active:cursor-grabbing transition-all select-none ${
-                        draggedColIdx === idx ? 'opacity-40 bg-slate-100 dark:bg-zinc-900 border-dashed border border-orange-500' : ''
+                        draggedColIdx === idx ? 'opacity-40 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-dashed border border-[#D4AF37]' : ''
                       } ${
-                        dragOverColIdx === idx ? 'border-l-2 border-l-orange-500' : ''
+                        dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
                       }`}
                       draggable
                       onDragStart={(e) => handleDragStart(e, idx)}
@@ -1150,14 +1219,14 @@ export function LeadTable({
                             onChange={(e) => setEditingHeaderVal(e.target.value)}
                             onBlur={() => handleSaveRename(col.id)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
-                            className="bg-zinc-900 text-xs text-white p-1 rounded w-28 focus:outline-none"
+                            className="bg-[#FAF8F5] dark:bg-[#121110] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-28 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
                             autoFocus
                             onClick={(e) => e.stopPropagation()}
                           />
                         ) : (
                           <span 
                             onDoubleClick={() => handleStartRename(col.id, col.label)} 
-                            className="cursor-pointer hover:text-white border-b border-dashed border-transparent hover:border-zinc-500 select-text"
+                            className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text"
                             title="Double click to rename"
                           >
                             {col.label}
@@ -1168,14 +1237,14 @@ export function LeadTable({
                         <div className="opacity-0 group-hover/header:opacity-100 flex items-center transition-opacity gap-0.5 ml-1">
                           <button 
                             onClick={() => moveColumn(idx, 'left')}
-                            className="p-0.5 hover:bg-zinc-800 text-zinc-500 hover:text-white rounded"
+                            className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
                             title="Move column left"
                           >
                             <ArrowLeft className="w-3 h-3" />
                           </button>
                           <button 
                             onClick={() => moveColumn(idx, 'right')}
-                            className="p-0.5 hover:bg-zinc-800 text-zinc-500 hover:text-white rounded"
+                            className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
                             title="Move column right"
                           >
                             <ArrowRight className="w-3 h-3" />
@@ -1187,8 +1256,36 @@ export function LeadTable({
                   ))}
 
                   {/* Frozen Column Actions (Sticky Right) */}
-                  <th className="py-4 px-4 text-right sticky right-0 bg-white dark:bg-[#0c0c0e] border-l border-slate-200 dark:border-zinc-900/60 z-30 shadow-[-5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.4)] text-slate-800 dark:text-white">Actions</th>
+                  <th className="py-4 px-4 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-30 text-[#1A1A1A] dark:text-[#F5F5F5]">Actions</th>
                 </tr>
+
+                {/* Column filters input row */}
+                {showColumnFilters && (
+                  <tr className="border-b border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/40 dark:bg-[#121110]/40">
+                    <th className="py-2 px-4"></th>
+                    <th className="py-2 px-4 sticky left-0 bg-white dark:bg-[#1C1A18] z-30 border-r border-[#E8E5DF] dark:border-[#2C2926]">
+                      <input
+                        type="text"
+                        placeholder="Filter name..."
+                        value={columnFilters['name'] || ''}
+                        onChange={(e) => setColumnFilters(prev => ({ ...prev, name: e.target.value }))}
+                        className="w-full bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-xs px-2 py-1 rounded border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A]/60 dark:placeholder-[#A09E9A]/60 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
+                      />
+                    </th>
+                    {columns.map(col => col.visible && (
+                      <th key={`filter-${col.id}`} className="py-2 px-4">
+                        <input
+                          type="text"
+                          placeholder={`Filter ${col.label.toLowerCase()}...`}
+                          value={columnFilters[col.id] || ''}
+                          onChange={(e) => setColumnFilters(prev => ({ ...prev, [col.id]: e.target.value }))}
+                          className="w-full bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-xs px-2 py-1 rounded border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A]/60 dark:placeholder-[#A09E9A]/60 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
+                        />
+                      </th>
+                    ))}
+                    <th className="py-2 px-4 sticky right-0 bg-white dark:bg-[#1C1A18] z-30 border-l border-[#E8E5DF] dark:border-[#2C2926]"></th>
+                  </tr>
+                )}
               </thead>
 
               <tbody className="divide-y divide-zinc-900 text-sm">
