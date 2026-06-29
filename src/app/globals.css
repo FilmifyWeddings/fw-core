@@ -1,33 +1,34 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --border: #e2e8f0;
-  --card: #ffffff;
-  --card-border: #e2e8f0;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f97316;
+  --background: #FAF8F5;
+  --foreground: #1A1A1A;
+  --border: #E8E5DF;
+  --card: #FFFFFF;
+  --card-border: #E8E5DF;
+  --muted: #F3EFEA;
+  --muted-foreground: #706E6A;
+  --accent: #D4AF37;
 }
 
 .dark {
-  --background: #070708;
-  --foreground: #f8fafc;
-  --border: #18181b;
-  --card: #09090b;
-  --card-border: #18181b;
-  --muted: #18181b;
-  --muted-foreground: #a1a1aa;
-  --accent: #f97316;
+  --background: #121110;
+  --foreground: #F5F5F5;
+  --border: #2C2926;
+  --card: #1C1A18;
+  --card-border: #2C2926;
+  --muted: #23201E;
+  --muted-foreground: #A09E9A;
+  --accent: #C5A059;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
   transition-property: background-color, border-color, text-decoration-color, color, fill, stroke;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 200ms;

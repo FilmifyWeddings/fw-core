@@ -6,77 +6,41 @@ import { useRouter } from 'next/navigation';
 import { 
   Users, Layers, Calendar, Wallet, Settings, LayoutGrid, ArrowLeft,
   ChevronRight, ArrowRight, Activity, ShieldCheck, Sparkles, FolderKanban,
-  Image as ImageIcon, Printer, Landmark, Globe, RefreshCw, Plus, CheckCircle2,
-  DollarSign, Clock, Check
+  Image as ImageIcon, Globe, RefreshCw, Plus, Check, CreditCard, Monitor, Link2, UserPlus, Database
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 
-// Define the App items based on Sushant's uploaded image
-interface AppItem {
-  id: string;
-  title: string;
-  description: string;
-  icon: React.ComponentType<any>;
-  iconBg: string; // Tailored color classes
-  route?: string; // If it maps to an existing Next.js page
-  subAppId?: string; // If it renders an in-page sub-app viewport
+// Tooltip Wrapper Component using Framer Motion spring transition
+function PremiumTooltip({ content, children }: { content: string; children: React.ReactNode }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div 
+      className="relative inline-block w-full"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children}
+      <AnimatePresence>
+        {hovered && (
+          <motion.div
+            initial={{ opacity: 0, y: 4, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="absolute z-50 px-2.5 py-1.5 text-[10px] font-medium text-white dark:text-[#121110] bg-[#1C1A18] dark:bg-[#FAF8F5] border border-[#2C2926] dark:border-[#E8E5DF] rounded-lg shadow-lg whitespace-nowrap bottom-full left-1/2 -translate-x-1/2 mb-2 pointer-events-none"
+          >
+            {content}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
-
-const APPS_LIST: AppItem[] = [
-  {
-    id: 'studio-manager',
-    title: 'Studio Manager',
-    description: 'Manage clients, leads, bookings, and studio operations.',
-    icon: Users,
-    iconBg: 'bg-[#10b981]',
-    route: '/leads'
-  },
-  {
-    id: 'galleries',
-    title: 'Galleries',
-    description: 'AI photo sharing, album proofing, photo selection & storage.',
-    icon: ImageIcon,
-    iconBg: 'bg-[#10b981]',
-    subAppId: 'galleries'
-  },
-  {
-    id: 'workplace',
-    title: 'Workplace',
-    description: 'Collaborate with your team on tasks, shoots & deliverables.',
-    icon: FolderKanban,
-    iconBg: 'bg-[#10b981]',
-    subAppId: 'workplace'
-  },
-  {
-    id: 'finance',
-    title: 'Finance & Invoices',
-    description: 'Track bills, payments tracker, receipts, and financial insights.',
-    icon: Wallet,
-    iconBg: 'bg-[#10b981]',
-    subAppId: 'finance'
-  },
-  {
-    id: 'integrations',
-    title: 'Integrations Hub',
-    description: 'Connect WhatsApp Direct, Facebook Ads, Google Contacts & Sheets.',
-    icon: Layers,
-    iconBg: 'bg-[#10b981]',
-    route: '/dashboard/integrations'
-  },
-  {
-    id: 'website-builder',
-    title: 'Website Builder',
-    description: 'Create and manage your photography website portfolio.',
-    icon: Globe,
-    iconBg: 'bg-[#10b981]',
-    subAppId: 'website-builder'
-  }
-];
 
 function HomeCore() {
   const router = useRouter();
   const { workspaceName, userEmail } = useBhamstra();
-  const [activeSubApp, setActiveSubApp] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
 
   // Sub-App Interactive State Managers
   // 1. Galleries Proofing Mock
@@ -111,15 +75,6 @@ function HomeCore() {
   // 4. Website Builder Mock
   const [activeTheme, setActiveTheme] = useState('Glassmorphic Black');
 
-  // Trigger app open or route redirect
-  const handleAppClick = (app: AppItem) => {
-    if (app.route) {
-      router.push(app.route);
-    } else if (app.subAppId) {
-      setActiveSubApp(app.subAppId);
-    }
-  };
-
   const handleToggleTask = (id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
   };
@@ -128,151 +83,282 @@ function HomeCore() {
     setProofingImages(prev => prev.map(img => img.id === id ? { ...img, selected: !img.selected } : img));
   };
 
-  return (
-    <div className="min-h-screen bg-[#070708] text-white selection:bg-emerald-500/20 flex flex-col font-sans overflow-x-hidden relative">
-      {/* Dynamic Background Grid */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f293708_1px,transparent_1px),linear-gradient(to_bottom,#1f293708_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#10b981]/5 rounded-full blur-[120px] pointer-events-none" />
+  const handleTriggerTestSync = () => {
+    alert('Manual Sheets sync triggered successfully!');
+  };
 
-      {/* Main Hub Container */}
-      <main className="max-w-4xl mx-auto w-full px-4 sm:px-6 py-12 flex-1 flex flex-col justify-center relative z-10">
-        
-        <AnimatePresence mode="wait">
-          {!activeSubApp ? (
+  const handleAddTestLead = () => {
+    alert('Test Lead "Simran Kaur" added successfully to queue!');
+  };
+
+  // Nav Menu Config
+  const sidebarNavItems = [
+    { id: 'dashboard', label: 'Command Center', icon: LayoutGrid, desc: 'Overview, statuses & metrics' },
+    { id: 'galleries', label: 'AI Galleries', icon: ImageIcon, desc: 'Client photo proofing portal' },
+    { id: 'workplace', label: 'Workplace', icon: FolderKanban, desc: 'Tasks & crew calendar planner' },
+    { id: 'finance', label: 'Finance & Bills', icon: Wallet, desc: 'Payments, collections & tracking' },
+    { id: 'website-builder', label: 'Website Builder', icon: Globe, desc: 'Portfolio template settings' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5] transition-colors duration-300 flex font-sans overflow-hidden">
+      {/* 1. FIXED LEFT SIDEBAR NAVIGATION */}
+      <aside className="w-64 border-r border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF] dark:bg-[#1C1A18] flex flex-col justify-between flex-shrink-0 h-screen">
+        <div>
+          {/* Logo Brand Header */}
+          <div className="px-6 py-5 border-b border-[#E8E5DF] dark:border-[#2C2926] flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg bg-[var(--accent)] flex items-center justify-center font-bold text-xs text-white dark:text-black shadow-sm">
+              S
+            </div>
+            <div>
+              <span className="font-extrabold text-sm tracking-wider uppercase bg-gradient-to-r from-[#1A1A1A] to-[#706E6A] dark:from-[#F5F5F5] dark:to-[#A09E9A] bg-clip-text text-transparent">
+                StudioFlow
+              </span>
+              <span className="block text-[8px] text-[var(--accent)] font-bold tracking-widest uppercase mt-0.5">PLATFORM OS</span>
+            </div>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="p-4 space-y-1.5">
+            {sidebarNavItems.map(item => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <PremiumTooltip key={item.id} content={item.desc}>
+                  <button
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center gap-3.5 px-3 py-3 rounded-xl text-xs font-bold transition-all relative border border-transparent ${
+                      isActive 
+                        ? 'bg-[#FAF8F5] dark:bg-[#121110] border-[#E8E5DF] dark:border-[#2C2926] text-[var(--accent)]' 
+                        : 'text-[#706E6A] dark:text-[#A09E9A] hover:bg-[#FAF8F5] dark:hover:bg-[#121110]/50 hover:text-[#1A1A1A] dark:hover:text-white'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-[var(--accent)]' : ''}`} />
+                    <span>{item.label}</span>
+                    {isActive && (
+                      <motion.div 
+                        layoutId="activeSideBorder"
+                        className="absolute right-0 top-3 bottom-3 w-1 bg-[var(--accent)] rounded-full"
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                </PremiumTooltip>
+              );
+            })}
+
+            <div className="pt-4 border-t border-[#E8E5DF] dark:border-[#2C2926] space-y-1.5">
+              <PremiumTooltip content="View, search and manage client leads">
+                <button
+                  onClick={() => router.push('/leads')}
+                  className="w-full flex items-center gap-3.5 px-3 py-3 rounded-xl text-xs font-bold text-[#706E6A] dark:text-[#A09E9A] hover:bg-[#FAF8F5] dark:hover:bg-[#121110]/50 hover:text-[#1A1A1A] dark:hover:text-white transition-all"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Leads Database</span>
+                  <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-40" />
+                </button>
+              </PremiumTooltip>
+
+              <PremiumTooltip content="Configure sheets, webhooks & credentials">
+                <button
+                  onClick={() => router.push('/dashboard/integrations')}
+                  className="w-full flex items-center gap-3.5 px-3 py-3 rounded-xl text-xs font-bold text-[#706E6A] dark:text-[#A09E9A] hover:bg-[#FAF8F5] dark:hover:bg-[#121110]/50 hover:text-[#1A1A1A] dark:hover:text-white transition-all"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Integrations Hub</span>
+                  <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-40" />
+                </button>
+              </PremiumTooltip>
+            </div>
+          </nav>
+        </div>
+
+        {/* Workspace Footer details */}
+        <div className="p-4 border-t border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/30 dark:bg-[#121110]/20 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] flex items-center justify-center font-bold text-xs text-[var(--accent)] uppercase shadow-sm">
+            {workspaceName ? workspaceName.substring(0, 2) : 'WS'}
+          </div>
+          <div className="truncate min-w-0">
+            <span className="block text-xs font-extrabold truncate text-[#1A1A1A] dark:text-white">{workspaceName || 'My Studio'}</span>
+            <span className="block text-[9px] text-[#706E6A] dark:text-[#A09E9A] truncate">{userEmail || 'Active Workspace'}</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* 2. MAIN SCROLLABLE CONTENT PANEL */}
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAF8F5] dark:bg-[#121110] relative z-10">
+        {/* Top Header Navbar */}
+        <header className="px-8 py-5 border-b border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF]/70 dark:bg-[#1C1A18]/70 backdrop-blur-md sticky top-0 z-20 flex justify-between items-center">
+          <div>
+            <h1 className="text-xl font-extrabold tracking-tight capitalize text-[#1A1A1A] dark:text-[#F5F5F5]">
+              {sidebarNavItems.find(t => t.id === activeTab)?.label || 'Command Center'}
+            </h1>
+            <p className="text-xs text-[#706E6A] dark:text-[#A09E9A] mt-0.5">
+              {sidebarNavItems.find(t => t.id === activeTab)?.desc || 'Overview of your workspace operations.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3.5">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 text-[var(--accent)] text-[10px] font-bold tracking-wider font-mono uppercase">
+              <Sparkles className="w-3 h-3" /> LUXE COMMAND
+            </div>
+          </div>
+        </header>
+
+        {/* Tab content area with dynamic animation transition wrapper */}
+        <div className="p-8 max-w-5xl w-full mx-auto flex-1">
+          <AnimatePresence mode="wait">
             <motion.div
-              key="launcher"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25 }}
+              key={activeTab}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               className="space-y-8"
             >
-              {/* Header Title */}
-              <div className="text-center space-y-3">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold font-mono tracking-wide">
-                  <Sparkles className="w-3.5 h-3.5" /> STUDIO WORKSPACE SYSTEM
-                </div>
-                <h1 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">
-                  {workspaceName || 'Bhamstra OS'}
-                </h1>
-                <p className="text-sm text-zinc-400 max-w-md mx-auto">
-                  Select a workflow tool to manage client proofing, schedules, finances, and automations.
-                </p>
-              </div>
-
-              {/* Launcher Main Frame */}
-              <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-3 text-[10px] text-zinc-600 font-mono tracking-wider">
-                  SYSTEM READY
-                </div>
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-2 mb-6">
-                  Available Applications
-                </h3>
-
-                {/* 3D-Animated Grid List */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {APPS_LIST.map((app) => {
-                    const Icon = app.icon;
-                    return (
-                      <motion.div
-                        key={app.id}
-                        whileHover={{ scale: 1.02, y: -2 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => handleAppClick(app)}
-                        className="p-4 rounded-2xl bg-zinc-900/40 hover:bg-zinc-900/80 border border-zinc-800/80 hover:border-emerald-500/30 transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden"
-                      >
-                        {/* Hover glow effect */}
-                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/0 via-emerald-500/[0.02] to-emerald-500/0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-
-                        <div className="flex items-center gap-4.5 min-w-0 z-10">
-                          {/* App Icon matching diagram */}
-                          <div className={`w-11 h-11 rounded-xl ${app.iconBg} flex items-center justify-center text-white shadow-lg shrink-0`}>
-                            <Icon className="w-5 h-5" />
+              {/* ==================== COMMAND CENTER DASHBOARD ==================== */}
+              {activeTab === 'dashboard' && (
+                <>
+                  {/* Dynamic Analytics Overview Cards Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                    {[
+                      { label: 'Leads Ingested', val: '1,248', change: '+12% this month', icon: Users },
+                      { label: 'WhatsApp Sequences', val: '48 active', change: '94.2% delivery rate', icon: Activity },
+                      { label: 'Client Approvals', val: '18 pending', change: 'Galleries proofing', icon: ImageIcon },
+                      { label: 'Total Revenue', val: '₹2,00,000', change: 'Invoice ledger', icon: Wallet },
+                    ].map((card, idx) => {
+                      const Icon = card.icon;
+                      return (
+                        <div 
+                          key={idx}
+                          className="p-5 rounded-2xl bg-[#FFFFFF] dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] shadow-[0_4px_30px_rgba(0,0,0,0.03)] hover:border-[var(--accent)]/30 hover:scale-[1.01] transition-all duration-300"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-[#706E6A] dark:text-[#A09E9A] uppercase tracking-wider">{card.label}</span>
+                            <div className="w-8 h-8 rounded-xl bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] flex items-center justify-center text-[var(--accent)]">
+                              <Icon className="w-4 h-4" />
+                            </div>
                           </div>
-                          <div className="truncate">
-                            <h4 className="text-sm font-bold text-zinc-100 group-hover:text-white transition-colors">
-                              {app.title}
-                            </h4>
-                            <p className="text-xs text-zinc-400 mt-1 truncate max-w-[220px]">
-                              {app.description}
-                            </p>
+                          <div className="text-xl font-extrabold text-[#1A1A1A] dark:text-[#F5F5F5] mt-4 tracking-tight">{card.val}</div>
+                          <div className="text-[10px] text-[var(--accent)] font-semibold mt-1 font-mono">{card.change}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Connected Channels & Quick Actions dual columns */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Channel statuses column */}
+                    <div className="md:col-span-2 space-y-4">
+                      <h3 className="text-xs font-extrabold text-[#706E6A] dark:text-[#A09E9A] uppercase tracking-widest px-1">
+                        Connected Channels & Sync Pipelines
+                      </h3>
+                      
+                      <div className="space-y-3">
+                        {[
+                          { name: 'WhatsApp Node Integration', status: 'Online & Connected', desc: 'Direct message drip queue agent active', type: 'whatsapp' },
+                          { name: 'Google Sheets Influx Sync', status: 'Active (6 monitored sheets)', desc: 'Realtime sheet polling active', type: 'sheets' },
+                          { name: 'Google Contacts Sync API', status: 'Connected & Configured', desc: 'Lead prefix tagging active', type: 'contacts' },
+                          { name: 'Facebook Leads Webhook', status: 'Active listener', desc: 'Realtime form ingestion verified', type: 'fb' },
+                        ].map((ch, idx) => (
+                          <div 
+                            key={idx}
+                            className="p-4 rounded-xl bg-[#FFFFFF] dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] shadow-[0_4px_30px_rgba(0,0,0,0.03)] flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3.5 min-w-0">
+                              <div className="w-9 h-9 rounded-xl bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] flex items-center justify-center text-[var(--accent)] flex-shrink-0">
+                                {ch.type === 'whatsapp' && <Activity className="w-4.5 h-4.5" />}
+                                {ch.type === 'sheets' && <Layers className="w-4.5 h-4.5" />}
+                                {ch.type === 'contacts' && <Users className="w-4.5 h-4.5" />}
+                                {ch.type === 'fb' && <Link2 className="w-4.5 h-4.5" />}
+                              </div>
+                              <div className="truncate">
+                                <h4 className="text-xs font-bold text-[#1A1A1A] dark:text-[#F5F5F5]">{ch.name}</h4>
+                                <p className="text-[10px] text-[#706E6A] dark:text-[#A09E9A] mt-0.5">{ch.desc}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                              <span className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-wider font-mono">{ch.status}</span>
+                            </div>
                           </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Quick actions Column */}
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-extrabold text-[#706E6A] dark:text-[#A09E9A] uppercase tracking-widest px-1">
+                        Quick Operations
+                      </h3>
+                      
+                      <div className="p-5 rounded-2xl bg-[#FFFFFF] dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] shadow-[0_4px_30px_rgba(0,0,0,0.03)] space-y-3.5">
+                        <PremiumTooltip content="Run direct polling on all active spreadsheet configurations">
+                          <button 
+                            onClick={handleTriggerTestSync}
+                            className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#FAF8F5]/80 dark:bg-[#121110] dark:hover:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] text-xs font-bold text-[#1A1A1A] dark:text-white rounded-xl transition-all flex items-center justify-center gap-2"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Trigger Sheets Sync
+                          </button>
+                        </PremiumTooltip>
+
+                        <PremiumTooltip content="Add a simulation lead row to execute whatsapp drip automation flows">
+                          <button 
+                            onClick={handleAddTestLead}
+                            className="w-full py-2.5 px-4 bg-[var(--accent)] hover:opacity-90 text-white dark:text-black text-xs font-extrabold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Inject Test Lead
+                          </button>
+                        </PremiumTooltip>
+
+                        <div className="pt-3 border-t border-[#E8E5DF] dark:border-[#2C2926] text-[10px] text-[#706E6A] dark:text-[#A09E9A] leading-normal font-mono flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-[var(--accent)] shrink-0" />
+                          <span>Telemetry active. Auto-routing pipeline secure.</span>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
-                        <div className="p-1.5 rounded-lg bg-zinc-900/60 border border-zinc-800 group-hover:border-emerald-500/30 text-zinc-500 group-hover:text-emerald-400 transition-all shrink-0">
-                          <ChevronRight className="w-4 h-4" />
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Footer Panel */}
-              <div className="flex justify-between items-center text-[10px] text-zinc-500 px-3 font-mono">
-                <span className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> Secure Multi-Tenant Architecture
-                </span>
-                <span>Workspace: {userEmail || 'Active'}</span>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="viewport"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.25 }}
-              className="space-y-6"
-            >
-              {/* Back Button */}
-              <button
-                onClick={() => setActiveSubApp(null)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-zinc-300 hover:text-white transition-all shadow-md"
-              >
-                <ArrowLeft className="w-4 h-4" /> Back to Application Hub
-              </button>
-
-              {/* ==================== GALLERIES SUB-APP ==================== */}
-              {activeSubApp === 'galleries' && (
-                <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md space-y-6 shadow-xl">
+              {/* ==================== GALLERIES VIEW ==================== */}
+              {activeTab === 'galleries' && (
+                <div className="p-6 rounded-3xl border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF] dark:bg-[#1C1A18] shadow-[0_4px_30px_rgba(0,0,0,0.03)] space-y-6">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h2 className="text-xl font-bold flex items-center gap-2">
-                        <ImageIcon className="w-5 h-5 text-emerald-400" /> AI Galleries Proofing
+                      <h2 className="text-lg font-extrabold flex items-center gap-2 text-[#1A1A1A] dark:text-[#F5F5F5]">
+                        <ImageIcon className="w-5 h-5 text-[var(--accent)]" /> AI Galleries Proofing
                       </h2>
-                      <p className="text-xs text-zinc-500 mt-1">
+                      <p className="text-xs text-[#706E6A] dark:text-[#A09E9A] mt-1">
                         Client photo proofing workflow powered by Cloudflare R2 zero-egress bucket.
                       </p>
                     </div>
-                    <span className="text-xs font-bold bg-zinc-900 border border-zinc-800 text-zinc-300 px-3 py-1 rounded-full">
+                    <span className="text-xs font-bold bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A] px-3.5 py-1 rounded-full font-mono">
                       {proofingImages.filter(i => i.selected).length} / 6 selected
                     </span>
                   </div>
 
-                  {/* Dual-Resolution comments (Law 2: Zero-Egress Storage) */}
-                  <div className="p-3 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl text-[10px] text-zinc-400 leading-normal font-mono">
-                    <span className="text-emerald-400 font-bold">// Dual-Resolution CDN Egress:</span> Thumbnails serve via WebP R2 bucket, bypassing API server memory footprint to eliminate network costs.
+                  <div className="p-4 bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] rounded-2xl text-[10px] text-[#706E6A] dark:text-[#A09E9A] leading-normal font-mono">
+                    <span className="text-[var(--accent)] font-bold">// Dual-Resolution CDN Egress:</span> Thumbnails serve via WebP R2 bucket, bypassing API server memory footprint to eliminate network costs.
                   </div>
 
-                  {/* Photo selection grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     {proofingImages.map(img => (
                       <div
                         key={img.id}
                         onClick={() => handleToggleImage(img.id)}
                         className={`aspect-[3/2] rounded-2xl overflow-hidden border cursor-pointer relative transition-all ${
-                          img.selected ? 'border-emerald-500 shadow-lg ring-1 ring-emerald-500/20' : 'border-zinc-800/80 hover:border-zinc-700'
+                          img.selected ? 'border-[var(--accent)] shadow-lg ring-1 ring-[var(--accent)]/20' : 'border-[#E8E5DF] dark:border-[#2C2926] hover:border-zinc-400'
                         }`}
                       >
-                        <div className="absolute inset-0 bg-gradient-to-br from-zinc-800/85 to-zinc-950 flex flex-col items-center justify-center p-3">
-                          <ImageIcon className="w-6 h-6 text-zinc-600 mb-1" />
-                          <span className="text-[10px] text-zinc-400 font-mono">Photo_{img.num}.webp</span>
-                          <span className="text-[9px] text-zinc-500 font-mono mt-0.5">CF R2 Presigned</span>
+                        <div className="absolute inset-0 bg-gradient-to-br from-[#FAF8F5] to-[#FFFFFF] dark:from-[#1C1A18] dark:to-[#121110] flex flex-col items-center justify-center p-3">
+                          <ImageIcon className="w-6 h-6 text-[#706E6A] dark:text-[#A09E9A] mb-1" />
+                          <span className="text-[10px] text-[#1A1A1A] dark:text-[#F5F5F5] font-mono">Photo_{img.num}.webp</span>
+                          <span className="text-[9px] text-[#706E6A] dark:text-[#A09E9A] font-mono mt-0.5">CF R2 Presigned</span>
                         </div>
                         {img.selected && (
-                          <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-emerald-500 text-black flex items-center justify-center text-[10px] font-bold">
+                          <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-[var(--accent)] text-white dark:text-black flex items-center justify-center text-[10px] font-extrabold shadow-sm">
                             ✓
                           </div>
                         )}
@@ -280,11 +366,11 @@ function HomeCore() {
                     ))}
                   </div>
 
-                  <div className="flex justify-end pt-2 border-t border-zinc-900">
+                  <div className="flex justify-end pt-3 border-t border-[#E8E5DF] dark:border-[#2C2926]">
                     <button
                       onClick={() => setSelectionApproved(true)}
                       disabled={proofingImages.filter(i => i.selected).length === 0 || selectionApproved}
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl disabled:opacity-40 transition-all flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-[var(--accent)] hover:opacity-95 text-white dark:text-black font-extrabold text-xs rounded-xl disabled:opacity-40 transition-all flex items-center gap-1.5"
                     >
                       {selectionApproved ? 'Proofing Selection Confirmed ✓' : 'Approve Selected Images'}
                     </button>
@@ -292,29 +378,29 @@ function HomeCore() {
                 </div>
               )}
 
-              {/* ==================== WORKPLACE SUB-APP ==================== */}
-              {activeSubApp === 'workplace' && (
+              {/* ==================== WORKPLACE VIEW ==================== */}
+              {activeTab === 'workplace' && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Tasks list */}
-                  <div className="md:col-span-2 p-6 rounded-3xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md space-y-4 shadow-xl">
-                    <h2 className="text-lg font-bold flex items-center gap-2">
-                      <FolderKanban className="w-5 h-5 text-emerald-400" /> Workplace Tasks
+                  <div className="md:col-span-2 p-6 rounded-3xl border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF] dark:bg-[#1C1A18] shadow-[0_4px_30px_rgba(0,0,0,0.03)] space-y-4">
+                    <h2 className="text-lg font-extrabold flex items-center gap-2 text-[#1A1A1A] dark:text-[#F5F5F5]">
+                      <FolderKanban className="w-5 h-5 text-[var(--accent)]" /> Workplace Tasks
                     </h2>
-                    <p className="text-xs text-zinc-500">Collaborate and manage project deliverables.</p>
+                    <p className="text-xs text-[#706E6A] dark:text-[#A09E9A]">Collaborate and manage project deliverables.</p>
                     
                     <div className="space-y-2.5">
                       {tasks.map(task => (
                         <div
                           key={task.id}
                           onClick={() => handleToggleTask(task.id)}
-                          className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/80 flex items-center gap-3 cursor-pointer hover:border-zinc-700 transition-all"
+                          className="p-4 rounded-xl bg-[#FAF8F5]/50 dark:bg-[#121110]/50 border border-[#E8E5DF] dark:border-[#2C2926] flex items-center gap-3 cursor-pointer hover:border-zinc-400 dark:hover:border-zinc-650 transition-all"
                         >
                           <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                            task.done ? 'bg-emerald-500 border-emerald-500 text-black' : 'border-zinc-700'
+                            task.done ? 'bg-[var(--accent)] border-[var(--accent)] text-white dark:text-black' : 'border-[#E8E5DF] dark:border-[#2C2926]'
                           }`}>
                             {task.done && <Check className="w-3 h-3" />}
                           </div>
-                          <span className={`text-xs ${task.done ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
+                          <span className={`text-xs ${task.done ? 'line-through text-[#706E6A] dark:text-[#A09E9A]' : 'text-[#1A1A1A] dark:text-[#F5F5F5] font-semibold'}`}>
                             {task.text}
                           </span>
                         </div>
@@ -323,15 +409,15 @@ function HomeCore() {
                   </div>
 
                   {/* Crew info */}
-                  <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md space-y-4 shadow-xl">
-                    <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Crew Tracker</h3>
+                  <div className="p-6 rounded-3xl border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF] dark:bg-[#1C1A18] shadow-[0_4px_30px_rgba(0,0,0,0.03)] space-y-4">
+                    <h3 className="text-xs font-extrabold text-[#706E6A] dark:text-[#A09E9A] uppercase tracking-wider">Crew Tracker</h3>
                     <div className="space-y-3">
                       {crew.map(c => (
-                        <div key={c.name} className="p-3 bg-zinc-900/40 border border-zinc-800 rounded-2xl space-y-1">
-                          <div className="text-xs font-bold text-zinc-200">{c.name}</div>
+                        <div key={c.name} className="p-3 bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl space-y-1">
+                          <div className="text-xs font-bold text-[#1A1A1A] dark:text-[#F5F5F5]">{c.name}</div>
                           <div className="flex justify-between items-center text-[10px]">
-                            <span className="text-zinc-500">{c.role}</span>
-                            <span className={`font-mono font-bold ${c.status === 'Available' ? 'text-emerald-400' : 'text-amber-500'}`}>
+                            <span className="text-[#706E6A] dark:text-[#A09E9A] font-medium">{c.role}</span>
+                            <span className={`font-mono font-bold ${c.status === 'Available' ? 'text-emerald-500' : 'text-[var(--accent)]'}`}>
                               {c.status}
                             </span>
                           </div>
@@ -342,61 +428,61 @@ function HomeCore() {
                 </div>
               )}
 
-              {/* ==================== FINANCE SUB-APP ==================== */}
-              {activeSubApp === 'finance' && (
-                <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md space-y-6 shadow-xl">
+              {/* ==================== FINANCE VIEW ==================== */}
+              {activeTab === 'finance' && (
+                <div className="p-6 rounded-3xl border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF] dark:bg-[#1C1A18] shadow-[0_4px_30px_rgba(0,0,0,0.03)] space-y-6">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h2 className="text-xl font-bold flex items-center gap-2">
-                        <Wallet className="w-5 h-5 text-emerald-400" /> Finance & Invoices
+                      <h2 className="text-xl font-extrabold flex items-center gap-2 text-[#1A1A1A] dark:text-[#F5F5F5]">
+                        <Wallet className="w-5 h-5 text-[var(--accent)]" /> Finance & Invoices
                       </h2>
-                      <p className="text-xs text-zinc-500 mt-1">Monitor billing revenue, installments, and receipts.</p>
+                      <p className="text-xs text-[#706E6A] dark:text-[#A09E9A] mt-1">Monitor billing revenue, installments, and receipts.</p>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-zinc-500 font-mono">TOTAL REVENUE COLLECTED</span>
-                      <div className="text-lg font-extrabold text-emerald-400 font-mono">₹{totalRevenue.toLocaleString()}</div>
+                      <span className="text-[10px] text-[#706E6A] dark:text-[#A09E9A] font-mono font-bold">TOTAL REVENUE COLLECTED</span>
+                      <div className="text-lg font-extrabold text-[var(--accent)] font-mono">₹{totalRevenue.toLocaleString()}</div>
                     </div>
                   </div>
 
                   {/* Payment history list */}
                   <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Recent Collections</h3>
+                    <h3 className="text-xs font-extrabold text-[#706E6A] dark:text-[#A09E9A] uppercase tracking-wider">Recent Collections</h3>
                     <div className="space-y-2.5">
                       {payments.map((pay, idx) => (
-                        <div key={idx} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800/80 flex items-center justify-between">
+                        <div key={idx} className="p-4 rounded-xl bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] flex items-center justify-between">
                           <div>
-                            <div className="text-xs font-bold text-zinc-200">{pay.client}</div>
-                            <p className="text-[10px] text-zinc-500 mt-1">{pay.type} | Date: {pay.date}</p>
+                            <div className="text-xs font-bold text-[#1A1A1A] dark:text-[#F5F5F5]">{pay.client}</div>
+                            <p className="text-[10px] text-[#706E6A] dark:text-[#A09E9A] mt-1">{pay.type} | Date: {pay.date}</p>
                           </div>
-                          <span className="text-xs font-mono font-bold text-emerald-400">+₹{pay.amount.toLocaleString()}</span>
+                          <span className="text-xs font-mono font-bold text-[var(--accent)]">+₹{pay.amount.toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
                   {/* Simulated trigger dispatch note */}
-                  <div className="p-3 bg-zinc-900/40 border border-zinc-800/60 rounded-xl text-[10px] text-zinc-500 font-mono">
-                    <span className="text-amber-500 font-bold">[DATABASE TRIGGER]</span> Invoice updates dynamically recalculate telemetry indices and dispatch receipts via WhatsApp.
+                  <div className="p-3 bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[10px] text-[#706E6A] dark:text-[#A09E9A] font-mono">
+                    <span className="text-[var(--accent)] font-bold">[DATABASE TRIGGER]</span> Invoice updates dynamically recalculate telemetry indices and dispatch receipts via WhatsApp.
                   </div>
                 </div>
               )}
 
-              {/* ==================== WEBSITE BUILDER SUB-APP ==================== */}
-              {activeSubApp === 'website-builder' && (
-                <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md space-y-6 shadow-xl">
+              {/* ==================== WEBSITE BUILDER VIEW ==================== */}
+              {activeTab === 'website-builder' && (
+                <div className="p-6 rounded-3xl border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF] dark:bg-[#1C1A18] shadow-[0_4px_30px_rgba(0,0,0,0.03)] space-y-6">
                   <div>
-                    <h2 className="text-xl font-bold flex items-center gap-2">
-                      <Globe className="w-5 h-5 text-emerald-400" /> Website Builder
+                    <h2 className="text-xl font-extrabold flex items-center gap-2 text-[#1A1A1A] dark:text-[#F5F5F5]">
+                      <Globe className="w-5 h-5 text-[var(--accent)]" /> Website Builder
                     </h2>
-                    <p className="text-xs text-zinc-500 mt-1">Host and maintain your photography portfolio domain.</p>
+                    <p className="text-xs text-[#706E6A] dark:text-[#A09E9A] mt-1">Host and maintain your photography portfolio domain.</p>
                   </div>
 
                   {/* Active theme card */}
-                  <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
-                    <div className="text-xs font-mono text-zinc-500">CURRENT PORTFOLIO THEME</div>
+                  <div className="p-5 rounded-2xl bg-[#FAF8F5] dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] space-y-3">
+                    <div className="text-[10px] font-bold text-[#706E6A] dark:text-[#A09E9A] font-mono tracking-wider">CURRENT PORTFOLIO THEME</div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm font-extrabold text-zinc-200">{activeTheme}</span>
-                      <span className="text-[9px] bg-emerald-950/50 border border-emerald-900/50 text-emerald-400 px-2.5 py-0.5 rounded-full uppercase tracking-wider font-bold">
+                      <span className="text-sm font-extrabold text-[#1A1A1A] dark:text-[#F5F5F5]">{activeTheme}</span>
+                      <span className="text-[9px] bg-[var(--accent)]/10 border border-[var(--accent)]/20 text-[var(--accent)] px-3 py-1 rounded-full uppercase tracking-wider font-bold">
                         Online
                       </span>
                     </div>
@@ -404,7 +490,7 @@ function HomeCore() {
 
                   {/* Theme presets selection */}
                   <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Change Portfolio Theme</h3>
+                    <h3 className="text-xs font-extrabold text-[#706E6A] dark:text-[#A09E9A] uppercase tracking-wider">Change Portfolio Theme</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {['Glassmorphic Black', 'Minimalist White', 'Cyberpunk Amber'].map(theme => (
                         <button
@@ -412,8 +498,8 @@ function HomeCore() {
                           onClick={() => setActiveTheme(theme)}
                           className={`p-4 rounded-xl border text-xs font-bold transition-all text-center ${
                             activeTheme === theme
-                              ? 'bg-emerald-950/30 border-emerald-500 text-emerald-400'
-                              : 'bg-zinc-900/40 border-zinc-800/80 text-zinc-400 hover:border-zinc-700'
+                              ? 'bg-[var(--accent)]/10 border-[var(--accent)] text-[var(--accent)]'
+                              : 'bg-[#FAF8F5]/50 dark:bg-[#121110]/50 border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A] hover:border-zinc-400 dark:hover:border-zinc-550'
                           }`}
                         >
                           {theme}
@@ -423,11 +509,9 @@ function HomeCore() {
                   </div>
                 </div>
               )}
-
             </motion.div>
-          )}
-        </AnimatePresence>
-
+          </AnimatePresence>
+        </div>
       </main>
     </div>
   );
