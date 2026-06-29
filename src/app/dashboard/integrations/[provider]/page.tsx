@@ -56,7 +56,19 @@ function ProviderConfigCore() {
   const [syncForms, setSyncForms] = useState(true);
 
   // Contacts States
-  const [contactsCount, setContactsCount] = useState(148);
+  const [contactsCount, setContactsCount] = useState(0);
+  const [contactsLabelId, setContactsLabelId] = useState('');
+  const [contactsLabelName, setContactsLabelName] = useState('');
+  const [contactsPrefix, setContactsPrefix] = useState('');
+  const [contactsSuffix, setContactsSuffix] = useState('');
+  const [contactsEnabled, setContactsEnabled] = useState(true);
+  const [labelsList, setLabelsList] = useState<{ id: string; name: string; memberCount: number }[]>([]);
+  const [newLabelName, setNewLabelName] = useState('');
+  const [isCreatingLabel, setIsCreatingLabel] = useState(false);
+  const [isLoadingLabels, setIsLoadingLabels] = useState(false);
+  const [contactsTab, setContactsTab] = useState<'configure' | 'status'>('configure');
+  const [contactsSearchQuery, setContactsSearchQuery] = useState('');
+  const [showLabelsDropdown, setShowLabelsDropdown] = useState(false);
 
   // Google Sheets States
   const [spreadsheets, setSpreadsheets] = useState<{ id: string; name: string }[]>([]);
@@ -255,6 +267,71 @@ function ProviderConfigCore() {
     });
   };
 
+  const fetchContactsLabels = async () => {
+    try {
+      setIsLoadingLabels(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/workflows/google-contacts/labels', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setLabelsList(json.labels || []);
+        setSheetsError(null);
+      } else {
+        const json = await res.json();
+        setSheetsError(json.error || 'Failed to load labels');
+      }
+    } catch (err) {
+      console.error('Error loading labels:', err);
+      setSheetsError('Error fetching labels list');
+    } finally {
+      setIsLoadingLabels(false);
+    }
+  };
+
+  const createNewLabel = async () => {
+    if (!newLabelName.trim()) return;
+    try {
+      setIsCreatingLabel(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await fetch('/api/workflows/google-contacts/labels', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ name: newLabelName })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const created = json.label;
+        setLabelsList(prev => [...prev, created]);
+        setContactsLabelId(created.id);
+        setContactsLabelName(created.name);
+        setNewLabelName('');
+        setSheetsError(null);
+      } else {
+        const json = await res.json();
+        setSheetsError(json.error || 'Failed to create new label');
+      }
+    } catch (err) {
+      console.error('Error creating label:', err);
+      setSheetsError('Error creating new label');
+    } finally {
+      setIsCreatingLabel(false);
+    }
+  };
+
+  useEffect(() => {
+    if (provider !== 'google-contacts' || status !== 'connected') return;
+    fetchContactsLabels();
+  }, [provider, status]);
+
   useEffect(() => {
     if (provider !== 'google-sheets' || status !== 'connected') return;
 
@@ -373,6 +450,25 @@ function ProviderConfigCore() {
             });
             setCustomMappingsState(newCustomMappings);
           }
+
+          if (provider === 'google-contacts') {
+            if (data.config && typeof data.config === 'object') {
+              const cfg = data.config as any;
+              setContactsLabelId(cfg.contacts_label_id || '');
+              setContactsLabelName(cfg.contacts_label_name || '');
+              setContactsPrefix(cfg.contacts_prefix || '');
+              setContactsSuffix(cfg.contacts_suffix || '');
+              setContactsEnabled(cfg.contacts_enabled !== false);
+            }
+            
+            // Load synced contacts count from live_logs
+            const { count } = await supabase
+              .from('live_logs')
+              .select('*', { count: 'exact', head: true })
+              .eq('workspace_id', userId)
+              .eq('event_type', 'sync_google_contacts_success');
+            setContactsCount(count || 0);
+          }
         } else {
           if (['meta-ads', 'whatsapp-web', 'personal-website'].includes(provider)) {
             setStatus('connected');
@@ -412,36 +508,61 @@ function ProviderConfigCore() {
           updated_at: new Date().toISOString(),
         };
 
-        if (provider === 'google-sheets') {
-          // Construct mappings for each active sheet incorporating custom mappings
-          const finalActiveSheets: Record<string, any> = {};
-          
-          Object.entries(sheetsConfig.active_sheets).forEach(([compKey, sheet]: [string, any]) => {
-            const customEntries = customMappingsState[compKey] || [];
-            const mappingsObj: Record<string, string> = {
-              name: sheet.mappings.name || '',
-              phone: sheet.mappings.phone || '',
-              email: sheet.mappings.email || ''
-            };
+        if (provider === 'google-sheets' || provider === 'google-contacts') {
+          // Load existing config to merge
+          const { data: existing } = await supabase
+            .from('integration_credentials')
+            .select('config')
+            .eq('user_id', userId)
+            .eq('provider', 'google')
+            .maybeSingle();
+
+          const existingConfig = (existing?.config as Record<string, any>) || {};
+
+          let finalConfig = { ...existingConfig };
+
+          if (provider === 'google-sheets') {
+            // Construct mappings for each active sheet incorporating custom mappings
+            const finalActiveSheets: Record<string, any> = {};
             
-            customEntries.forEach(entry => {
-              const cleanKey = entry.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
-              if (cleanKey) {
-                mappingsObj[cleanKey] = entry.value;
-              }
+            Object.entries(sheetsConfig.active_sheets).forEach(([compKey, sheet]: [string, any]) => {
+              const customEntries = customMappingsState[compKey] || [];
+              const mappingsObj: Record<string, string> = {
+                name: sheet.mappings.name || '',
+                phone: sheet.mappings.phone || '',
+                email: sheet.mappings.email || ''
+              };
+              
+              customEntries.forEach(entry => {
+                const cleanKey = entry.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                if (cleanKey) {
+                  mappingsObj[cleanKey] = entry.value;
+                }
+              });
+
+              finalActiveSheets[compKey] = {
+                ...sheet,
+                mappings: mappingsObj
+              };
             });
 
-            finalActiveSheets[compKey] = {
-              ...sheet,
-              mappings: mappingsObj
+            finalConfig = {
+              ...finalConfig,
+              spreadsheet_id: sheetsConfig.spreadsheet_id,
+              sync_trigger: sheetsConfig.sync_trigger,
+              active_sheets: finalActiveSheets
             };
-          });
-
-          const finalConfig = {
-            spreadsheet_id: sheetsConfig.spreadsheet_id,
-            sync_trigger: sheetsConfig.sync_trigger,
-            active_sheets: finalActiveSheets
-          };
+          } else {
+            // google-contacts
+            finalConfig = {
+              ...finalConfig,
+              contacts_label_id: contactsLabelId,
+              contacts_label_name: contactsLabelName,
+              contacts_prefix: contactsPrefix,
+              contacts_suffix: contactsSuffix,
+              contacts_enabled: contactsEnabled
+            };
+          }
 
           const { error: saveErr } = await supabase
             .from('integration_credentials')
@@ -451,85 +572,88 @@ function ProviderConfigCore() {
               updated_at: new Date().toISOString()
             })
             .eq('user_id', userId)
-            .eq('provider', dbProvider);
+            .eq('provider', 'google');
 
           if (saveErr) {
             console.error('[Save Config] DB Update Error:', saveErr);
           }
 
-          // Trigger sync for enabled sheets immediately (Initial Data Pull)
-          Object.entries(finalActiveSheets).forEach(([_, sheet]: [string, any]) => {
-            if (sheet.enabled) {
-              triggerInitialSync(sheet.spreadsheet_id, sheet.sheet_name, sheet.mappings);
-            }
-          });
-
-          // Register Drive webhook watch channel
-          if (sheetsConfig.spreadsheet_id) {
-            registerDriveWatch(sheetsConfig.spreadsheet_id);
-          }
-
-          // Register custom columns in table_layouts or profiles
-          if (userId) {
-            const customKeys = new Set<string>();
-            Object.values(finalActiveSheets).forEach((sheet: any) => {
-              if (sheet.enabled && sheet.mappings) {
-                Object.keys(sheet.mappings).forEach(key => {
-                  if (!['name', 'phone', 'email'].includes(key)) {
-                    customKeys.add(key);
-                  }
-                });
+          if (provider === 'google-sheets') {
+            // Trigger sync for enabled sheets immediately (Initial Data Pull)
+            const finalActiveSheets = finalConfig.active_sheets || {};
+            Object.entries(finalActiveSheets).forEach(([_, sheet]: [string, any]) => {
+              if (sheet.enabled) {
+                triggerInitialSync(sheet.spreadsheet_id, sheet.sheet_name, sheet.mappings);
               }
             });
 
-            if (customKeys.size > 0) {
-              let currentPrefs: Record<string, any> = {};
-              
-              const { data: layout } = await supabase
-                .from('table_layouts')
-                .select('columns')
-                .eq('workspace_id', userId)
-                .eq('layout_name', 'default')
-                .maybeSingle();
+            // Register Drive webhook watch channel
+            if (sheetsConfig.spreadsheet_id) {
+              registerDriveWatch(sheetsConfig.spreadsheet_id);
+            }
 
-              if (layout?.columns) {
-                currentPrefs = layout.columns;
-              } else {
-                const { data: profile } = await supabase
-                  .from('profiles')
-                  .select('leads_table_preferences')
-                  .eq('id', userId)
-                  .maybeSingle();
-
-                if (profile?.leads_table_preferences) {
-                  currentPrefs = profile.leads_table_preferences;
-                }
-              }
-
-              const updatedPrefs = { ...currentPrefs };
-              let hasChanged = false;
-              customKeys.forEach(k => {
-                const colId = `meta_${k}`;
-                if (updatedPrefs[colId] === undefined) {
-                  updatedPrefs[colId] = true;
-                  hasChanged = true;
+            // Register custom columns in table_layouts or profiles
+            if (userId) {
+              const customKeys = new Set<string>();
+              Object.values(finalActiveSheets).forEach((sheet: any) => {
+                if (sheet.enabled && sheet.mappings) {
+                  Object.keys(sheet.mappings).forEach(key => {
+                    if (!['name', 'phone', 'email'].includes(key)) {
+                      customKeys.add(key);
+                    }
+                  });
                 }
               });
 
-              if (hasChanged) {
-                await supabase
+              if (customKeys.size > 0) {
+                let currentPrefs: Record<string, any> = {};
+                
+                const { data: layout } = await supabase
                   .from('table_layouts')
-                  .upsert({
-                    workspace_id: userId,
-                    layout_name: 'default',
-                    columns: updatedPrefs,
-                    updated_at: new Date().toISOString()
-                  }, { onConflict: 'workspace_id,layout_name' });
+                  .select('columns')
+                  .eq('workspace_id', userId)
+                  .eq('layout_name', 'default')
+                  .maybeSingle();
 
-                await supabase
-                  .from('profiles')
-                  .update({ leads_table_preferences: updatedPrefs })
-                  .eq('id', userId);
+                if (layout?.columns) {
+                  currentPrefs = layout.columns;
+                } else {
+                  const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('leads_table_preferences')
+                    .eq('id', userId)
+                    .maybeSingle();
+
+                  if (profile?.leads_table_preferences) {
+                    currentPrefs = profile.leads_table_preferences;
+                  }
+                }
+
+                const updatedPrefs = { ...currentPrefs };
+                let hasChanged = false;
+                customKeys.forEach(k => {
+                  const colId = `meta_${k}`;
+                  if (updatedPrefs[colId] === undefined) {
+                    updatedPrefs[colId] = true;
+                    hasChanged = true;
+                  }
+                });
+
+                if (hasChanged) {
+                  await supabase
+                    .from('table_layouts')
+                    .upsert({
+                      workspace_id: userId,
+                      layout_name: 'default',
+                      columns: updatedPrefs,
+                      updated_at: new Date().toISOString()
+                    }, { onConflict: 'workspace_id,layout_name' });
+
+                  await supabase
+                    .from('profiles')
+                    .update({ leads_table_preferences: updatedPrefs })
+                    .eq('id', userId);
+                }
               }
             }
           }
@@ -692,27 +816,321 @@ function ProviderConfigCore() {
                 <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
                   <UserPlus className="w-5 h-5 text-sky-500 shrink-0 mt-0.5" />
                   <p className="text-xs text-zinc-400 leading-normal">
-                    Auto-sync incoming lead contact details directly to Google Contacts.
+                    Auto-sync incoming lead contact details directly to Google Contacts with custom labels and prefix/suffix name formatting rules.
                   </p>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-850/60 flex justify-between items-center">
-                  <div>
-                    <h4 className="text-xs font-bold text-zinc-200">Synced Contacts Count</h4>
-                    <p className="text-[10px] text-zinc-500 mt-1">Last synced: Just now</p>
+                {sheetsError && (
+                  <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs leading-normal">
+                    <strong className="block font-bold">Error:</strong>
+                    <p className="opacity-90">{sheetsError}</p>
                   </div>
-                  <div className="text-lg font-mono font-bold text-zinc-100">{contactsCount}</div>
-                </div>
+                )}
 
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => { setContactsCount(c => c + 1); }}
-                    className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:text-white"
-                  >
-                    Trigger Manual Sync
-                  </button>
-                </div>
+                {status !== 'connected' ? (
+                  <div className="p-6 rounded-2xl border border-zinc-850 bg-zinc-900/10 text-center space-y-4">
+                    <UserPlus className="w-12 h-12 text-zinc-650 mx-auto" />
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-zinc-200">Google Account Not Connected</h3>
+                      <p className="text-xs text-zinc-555 max-w-sm mx-auto">
+                        Authorize your Google account to enable automatic sync to Google Contacts and create labels.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startGoogleOAuth}
+                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-black text-xs font-bold rounded-xl transition-all shadow-md"
+                    >
+                      Connect Google Account
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Standalone Tabbed Sub-navigation */}
+                    <div className="flex border-b border-zinc-800 mb-6">
+                      <button
+                        type="button"
+                        onClick={() => setContactsTab('configure')}
+                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider ${
+                          contactsTab === 'configure'
+                            ? 'border-sky-500 text-white'
+                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                        }`}
+                      >
+                        Configuration
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setContactsTab('status')}
+                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider flex items-center gap-2 ${
+                          contactsTab === 'status'
+                            ? 'border-sky-500 text-white'
+                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                        }`}
+                      >
+                        Status & History
+                      </button>
+                    </div>
+
+                    {contactsTab === 'configure' && (
+                      <div className="space-y-6">
+                        {/* 1. Global Enable Ingest Switch */}
+                        <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 flex justify-between items-center">
+                          <div>
+                            <h4 className="text-xs font-bold text-zinc-200">Enable Google Contacts Ingestion Sync</h4>
+                            <p className="text-[10px] text-zinc-500 mt-0.5">Automatically sync all newly captured leads into your phone contacts in real-time.</p>
+                          </div>
+                          
+                          {/* Premium Animated iOS Toggle switch */}
+                          <button
+                            type="button"
+                            onClick={() => setContactsEnabled(!contactsEnabled)}
+                            className={`w-10 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 focus:outline-none ${
+                              contactsEnabled ? 'bg-sky-500' : 'bg-zinc-700'
+                            }`}
+                          >
+                            <motion.div
+                              layout
+                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                              className="bg-white w-4 h-4 rounded-full shadow-md"
+                              animate={{ x: contactsEnabled ? 20 : 0 }}
+                            />
+                          </button>
+                        </div>
+
+                        {contactsEnabled && (
+                          <div className="space-y-6">
+                            
+                            {/* 2. Contact Label Selector (Combobox) */}
+                            <div className="space-y-2 relative">
+                              <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Contact Group / Label</label>
+                              <p className="text-[10px] text-zinc-500">Associate synced contacts with a specific group/label for easier phone filtering.</p>
+                              
+                              <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                  <input
+                                    type="text"
+                                    placeholder="Search and select contact group..."
+                                    value={contactsSearchQuery}
+                                    onChange={e => {
+                                      setContactsSearchQuery(e.target.value);
+                                      setShowLabelsDropdown(true);
+                                    }}
+                                    onFocus={() => setShowLabelsDropdown(true)}
+                                    className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
+                                  />
+                                  {contactsLabelName && !contactsSearchQuery && (
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                                      {contactsLabelName}
+                                    </span>
+                                  )}
+                                  {showLabelsDropdown && (
+                                    <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-zinc-950 border border-zinc-900 rounded-xl shadow-xl">
+                                      {isLoadingLabels ? (
+                                        <div className="px-4 py-3 text-xs text-zinc-500 italic flex items-center gap-2">
+                                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading labels...
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <button
+                                            key="no-label-default"
+                                            type="button"
+                                            onClick={() => {
+                                              setContactsLabelId('');
+                                              setContactsLabelName('');
+                                              setContactsSearchQuery('');
+                                              setShowLabelsDropdown(false);
+                                            }}
+                                            className="w-full text-left px-4 py-2.5 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-white transition-colors border-b border-zinc-900"
+                                          >
+                                            -- No Label / Default Group --
+                                          </button>
+                                          {labelsList
+                                            .filter(l => l.name.toLowerCase().includes(contactsSearchQuery.toLowerCase()))
+                                            .map(l => (
+                                              <button
+                                                key={l.id}
+                                                type="button"
+                                                onClick={() => {
+                                                  setContactsLabelId(l.id);
+                                                  setContactsLabelName(l.name);
+                                                  setContactsSearchQuery('');
+                                                  setShowLabelsDropdown(false);
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 text-xs text-zinc-350 hover:bg-zinc-900 hover:text-white transition-colors flex justify-between items-center"
+                                              >
+                                                <span>{l.name}</span>
+                                                <span className="text-[10px] text-zinc-500 font-mono">{l.memberCount} members</span>
+                                              </button>
+                                            ))}
+                                          {labelsList.filter(l => l.name.toLowerCase().includes(contactsSearchQuery.toLowerCase())).length === 0 && (
+                                            <div className="px-4 py-3 text-xs text-zinc-500 italic">No labels found. Create one below!</div>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={fetchContactsLabels}
+                                  title="Refresh label list"
+                                  className="p-3 bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 rounded-xl text-zinc-400 hover:text-white transition-all shrink-0"
+                                >
+                                  <RefreshCw className={`w-4 h-4 ${isLoadingLabels ? 'animate-spin' : ''}`} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 3. Inline Label Provisioning Portal */}
+                            <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 space-y-3">
+                              <h4 className="text-xs font-bold text-zinc-350">Create New Label</h4>
+                              <p className="text-[10px] text-zinc-500">Type a name to instantly create and select a new label group in your Google Account.</p>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="e.g., Filmify Leads 2026"
+                                  value={newLabelName}
+                                  onChange={e => setNewLabelName(e.target.value)}
+                                  className="flex-1 px-4 py-2.5 bg-zinc-950 border border-zinc-900 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-sky-500/40"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={createNewLabel}
+                                  disabled={isCreatingLabel || !newLabelName.trim()}
+                                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-xs text-zinc-200 border border-zinc-800 rounded-xl font-bold transition-all flex items-center gap-1.5"
+                                >
+                                  {isCreatingLabel ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Create Label'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 4. Name Template Configuration (Prefix/Suffix) */}
+                            <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 space-y-4">
+                              <h4 className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">Name Customization Template</h4>
+                              <p className="text-[10px] text-zinc-500">Configure naming prefix/postfix structures to tag contacts in your address book.</p>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-bold text-zinc-400 uppercase">Prefix Template</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g., FW "
+                                    value={contactsPrefix}
+                                    onChange={e => setContactsPrefix(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-900 rounded-xl text-xs text-zinc-350 focus:outline-none focus:border-sky-500/40"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-bold text-zinc-400 uppercase">Suffix Template</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g.,  Lead 2026"
+                                    value={contactsSuffix}
+                                    onChange={e => setContactsSuffix(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-zinc-955 border border-zinc-900 rounded-xl text-xs text-zinc-350 focus:outline-none focus:border-sky-500/40"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="p-3 bg-zinc-955 border border-zinc-900 rounded-xl">
+                                <span className="text-[9px] text-zinc-500 uppercase font-mono tracking-wider">Contact Preview</span>
+                                <div className="text-xs font-bold text-sky-400 mt-1">
+                                  {contactsPrefix || ''}Sushant Nawale{contactsSuffix || ''}
+                                </div>
+                              </div>
+                            </div>
+
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {contactsTab === 'status' && (
+                      <div className="space-y-6">
+                        {/* Status Check card */}
+                        <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-850/60 flex justify-between items-center">
+                          <div>
+                            <h4 className="text-xs font-bold text-zinc-200">OAuth Credentials State</h4>
+                            <p className="text-[10px] text-zinc-500 mt-1">
+                              {status === 'connected' 
+                                ? 'Authorized ✓. Real-time background People API sync active.'
+                                : 'No valid Google OAuth credentials connected.'
+                              }
+                            </p>
+                          </div>
+                          <div className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                            status === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          }`}>
+                            {status === 'connected' ? 'Authorized ✓' : 'Unauthorized'}
+                          </div>
+                        </div>
+
+                        {/* Total Synced Contacts Counter */}
+                        <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-850/60 flex justify-between items-center">
+                          <div>
+                            <h4 className="text-xs font-bold text-zinc-200">Synced Contacts Count</h4>
+                            <p className="text-[10px] text-zinc-500 mt-1">Total leads provisioned in Google Contacts.</p>
+                          </div>
+                          <div className="text-lg font-mono font-bold text-sky-450">{contactsCount}</div>
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                setLoading(true);
+                                const { data: latestLeads } = await supabase
+                                  .from('leads')
+                                  .select('id')
+                                  .eq('workspace_id', userId)
+                                  .limit(1);
+
+                                if (latestLeads && latestLeads.length > 0) {
+                                  const leadId = latestLeads[0].id;
+                                  const { data: { session } } = await supabase.auth.getSession();
+                                  if (!session) return;
+                                  
+                                  const res = await fetch('/api/workflows/google-contacts/sync-lead', {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      Authorization: `Bearer ${session.access_token}`
+                                    },
+                                    body: JSON.stringify({ leadId })
+                                  });
+
+                                  if (res.ok) {
+                                    alert('Manual test sync triggered successfully!');
+                                    const { count } = await supabase
+                                      .from('live_logs')
+                                      .select('*', { count: 'exact', head: true })
+                                      .eq('workspace_id', userId)
+                                      .eq('event_type', 'sync_google_contacts_success');
+                                    setContactsCount(count || 0);
+                                  } else {
+                                    const text = await res.text();
+                                    alert(`Test Sync failed: ${text}`);
+                                  }
+                                } else {
+                                  alert('No leads available in this workspace to sync.');
+                                }
+                              } catch (err: any) {
+                                alert(`Error: ${err.message}`);
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                            className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-xl text-xs font-bold text-zinc-300 hover:text-white transition-all"
+                          >
+                            Trigger Manual Test Sync
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

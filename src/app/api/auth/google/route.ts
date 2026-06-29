@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
     'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/contacts',
+    'https://www.googleapis.com/auth/contacts.labels',
   ].join(' ');
 
   // Build Google OAuth Authorize URL

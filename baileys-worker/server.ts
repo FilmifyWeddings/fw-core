@@ -1422,10 +1422,12 @@ async function triggerWorkflowsForLead(
           logger.error({ workflowId: wf.id, err: errMsg }, '❌ Workflow execution failed');
 
           // Bump failed stat
-          await supabase.rpc('rpc_bump_workflow_run_stats', {
-            p_workflow_id: wf.id,
-            p_status: 'failed',
-          }).catch(() => {});
+          try {
+            await supabase.rpc('rpc_bump_workflow_run_stats', {
+              p_workflow_id: wf.id,
+              p_status: 'failed',
+            });
+          } catch {}
         }
       })();
     }
@@ -1458,6 +1460,27 @@ function startLeadsRealtimeListener(): void {
           '🎯 Realtime: new lead inserted — triggering workflows'
         );
         await triggerWorkflowsForLead(lead, WORKSPACE_ID);
+
+        // Asynchronously trigger Google Contacts Ingest Sync
+        (async () => {
+          try {
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+            const syncRes = await fetch(`${appUrl}/api/workflows/google-contacts/sync-lead`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ leadId: lead.id, workspaceId: WORKSPACE_ID }),
+            });
+            if (syncRes.ok) {
+              const resData = await syncRes.json();
+              logger.info({ leadId: lead.id, resData }, 'Google Contacts sync triggered successfully.');
+            } else {
+              const errText = await syncRes.text();
+              logger.warn({ leadId: lead.id, error: errText }, 'Google Contacts sync trigger response error.');
+            }
+          } catch (e: any) {
+            logger.error({ leadId: lead.id, error: e.message }, 'Error triggering Google Contacts sync.');
+          }
+        })();
       }
     )
     .subscribe((status) => {
