@@ -18,6 +18,8 @@ const MotionDiv = motionImport.div;
 const MotionTr = motionImport.tr;
 const MotionTh = motionImport.th;
 const MotionTd = motionImport.td;
+const MotionButton = motionImport.button;
+const MotionA = motionImport.a;
 const AnimatePresenceComponent = AnimatePresenceImport;
 
 interface LeadTableProps {
@@ -111,6 +113,14 @@ export function LeadTable({
   const [timelineLead, setTimelineLead] = useState<Lead | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+
+  // Double-direction synced scrollbar refs & state
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const stickyScrollbarRef = useRef<HTMLDivElement>(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const [isScrollable, setIsScrollable] = useState(false);
+
+
   
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -393,6 +403,66 @@ export function LeadTable({
 
   // Comments state in details drawer
   const [newCommentText, setNewCommentText] = useState('');
+
+  // Synced bottom horizontal scrollbar side-effect
+  useEffect(() => {
+    if (viewMode !== 'table') return;
+
+    const tableContainer = tableContainerRef.current;
+    const stickyScrollbar = stickyScrollbarRef.current;
+    if (!tableContainer || !stickyScrollbar) return;
+
+    let isSyncingTable = false;
+    let isSyncingScrollbar = false;
+
+    const handleTableScroll = () => {
+      if (isSyncingTable) {
+        isSyncingTable = false;
+        return;
+      }
+      isSyncingScrollbar = true;
+      stickyScrollbar.scrollLeft = tableContainer.scrollLeft;
+    };
+
+    const handleScrollbarScroll = () => {
+      if (isSyncingScrollbar) {
+        isSyncingScrollbar = false;
+        return;
+      }
+      isSyncingTable = true;
+      tableContainer.scrollLeft = stickyScrollbar.scrollLeft;
+    };
+
+    tableContainer.addEventListener('scroll', handleTableScroll, { passive: true });
+    stickyScrollbar.addEventListener('scroll', handleScrollbarScroll, { passive: true });
+
+    const updateWidth = () => {
+      const table = tableContainer.querySelector('table');
+      const containerWidth = tableContainer.clientWidth;
+      let scrollW = tableContainer.scrollWidth;
+      if (table) {
+        scrollW = table.scrollWidth;
+      }
+      setTableScrollWidth(scrollW);
+      setIsScrollable(scrollW > containerWidth);
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateWidth();
+    });
+    
+    resizeObserver.observe(tableContainer);
+    updateWidth();
+
+    const timer = setTimeout(updateWidth, 500);
+
+    return () => {
+      tableContainer.removeEventListener('scroll', handleTableScroll);
+      stickyScrollbar.removeEventListener('scroll', handleScrollbarScroll);
+      resizeObserver.disconnect();
+      clearTimeout(timer);
+    };
+  }, [viewMode, columns, leads, currentPage]);
 
   // Close menus on click outside
   useEffect(() => {
@@ -1173,8 +1243,8 @@ export function LeadTable({
         /* ---------------------------------------------------- */
         /* GRID TABLE VIEW                                      */
         /* ---------------------------------------------------- */
-        <div className="w-full overflow-hidden border border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/30 rounded-2xl shadow-xl dark:shadow-2xl relative transition-all">
-          <div className="overflow-x-auto">
+        <div className="w-full overflow-visible border border-[#E8E5DF]/50 dark:border-[#2C2926]/50 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 backdrop-blur-md rounded-3xl shadow-xl dark:shadow-2xl relative transition-all">
+          <div className="overflow-x-auto" ref={tableContainerRef}>
             <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-300 table-fixed min-w-[1000px]">
               
               <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[260px]" /></colgroup>
@@ -1625,74 +1695,84 @@ export function LeadTable({
                           <div className="flex items-center justify-end gap-1">
                             
                             {/* WA Welcome Msg Quick Action */}
-                            <button
-                              onClick={() => handleWhatsappWelcomeDispatch(lead)}
-                              title={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent ✓" : "Click to Send WA Welcome Msg"}
-                              className={`p-1.5 rounded-lg border transition-all ${
-                                (lead as any).wa_welcome_sent 
-                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                                  : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-emerald-400'
-                              }`}
-                            >
-                              <Send className="w-3.5 h-3.5" />
-                            </button>
+                            <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
+                              <MotionButton
+                                whileHover={{ scale: 1.1 }}
+                                onClick={() => handleWhatsappWelcomeDispatch(lead)}
+                                className={`p-1.5 rounded-lg border transition-all ${
+                                  (lead as any).wa_welcome_sent 
+                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                                    : 'bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-emerald-500'
+                                }`}
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                              </MotionButton>
+                            </PremiumTooltip>
 
                             {/* Google Contact Sync Quick Action */}
-                            <button
-                              onClick={() => handleGoogleContactsSync(lead)}
-                              disabled={syncingLeadId === lead.id}
-                              title={(lead as any).google_synced ? "Google Contact Synced ✓" : syncingLeadId === lead.id ? "Syncing..." : "Click to Sync Google Contact"}
-                              className={`p-1.5 rounded-lg border transition-all ${
-                                (lead as any).google_synced 
-                                  ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 cursor-default' 
-                                  : syncingLeadId === lead.id 
-                                    ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
-                                    : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-blue-400'
-                              }`}
-                            >
-                              {syncingLeadId === lead.id ? (
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <UserCheck className="w-3.5 h-3.5" />
-                              )}
-                            </button>
+                            <PremiumTooltip content={(lead as any).google_synced ? "Google Contact Synced" : syncingLeadId === lead.id ? "Syncing..." : "Sync Google Contact"}>
+                              <MotionButton
+                                whileHover={{ scale: 1.1 }}
+                                onClick={() => handleGoogleContactsSync(lead)}
+                                disabled={syncingLeadId === lead.id}
+                                className={`p-1.5 rounded-lg border transition-all ${
+                                  (lead as any).google_synced 
+                                    ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 cursor-default' 
+                                    : syncingLeadId === lead.id 
+                                      ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
+                                      : 'bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-blue-500'
+                                }`}
+                              >
+                                {syncingLeadId === lead.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                )}
+                              </MotionButton>
+                            </PremiumTooltip>
 
                             {/* WGL Status / Dispatch Quick Action */}
-                            <button
-                              onClick={() => handleWglDispatch(lead)}
-                              title={(lead as any).wgl_dispatched ? "WGL Alert Active ✅" : "Click to Dispatch WGL Alert"}
-                              className={`p-1.5 rounded-lg border transition-all ${
-                                (lead as any).wgl_dispatched 
-                                  ? 'bg-green-600/15 border-green-500/20 text-green-400' 
-                                  : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-green-400'
-                              }`}
-                            >
-                              <AlertCircle className="w-3.5 h-3.5" />
-                            </button>
+                            <PremiumTooltip content={(lead as any).wgl_dispatched ? "WGL Alert Active" : "Dispatch WGL Alert"}>
+                              <MotionButton
+                                whileHover={{ scale: 1.1 }}
+                                onClick={() => handleWglDispatch(lead)}
+                                className={`p-1.5 rounded-lg border transition-all ${
+                                  (lead as any).wgl_dispatched 
+                                    ? 'bg-green-600/15 border-green-500/20 text-green-400' 
+                                    : 'bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-green-500'
+                                }`}
+                              >
+                                <AlertCircle className="w-3.5 h-3.5" />
+                              </MotionButton>
+                            </PremiumTooltip>
 
                             {/* Followups Timeline Quick Action */}
-                            <button
-                              onClick={() => setTimelineLead(lead)}
-                              title="Open Followup Timeline"
-                              className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-orange-400 transition-all"
-                            >
-                              <Clock className="w-3.5 h-3.5" />
-                            </button>
+                            <PremiumTooltip content="Open Followup Timeline">
+                              <MotionButton
+                                whileHover={{ scale: 1.1 }}
+                                onClick={() => setTimelineLead(lead)}
+                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-orange-500 transition-all"
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                              </MotionButton>
+                            </PremiumTooltip>
 
                             <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-900 mx-1 hidden md:block" />
 
                             {/* PhoneCall Selector */}
                             <div className="relative">
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
-                                }}
-                                title="Call / WhatsApp Options"
-                                className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
-                              >
-                                <PhoneCall className="w-3.5 h-3.5" />
-                              </button>
+                              <PremiumTooltip content="Call / WhatsApp Options">
+                                <MotionButton 
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
+                                  }}
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                >
+                                  <PhoneCall className="w-3.5 h-3.5" />
+                                </MotionButton>
+                              </PremiumTooltip>
                               {phoneActionMenuLeadId === lead.id && (
                                 <div className="absolute right-0 bottom-8 mt-2 w-52 bg-zinc-950 border border-zinc-850 rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
                                   <a 
@@ -1719,23 +1799,27 @@ export function LeadTable({
 
                             {/* Mail Lead */}
                             {lead.email && (
-                              <a 
-                                href={`mailto:${lead.email}`}
-                                title="Email Lead"
-                                className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
-                              >
-                                <Mail className="w-3.5 h-3.5" />
-                              </a>
+                              <PremiumTooltip content="Email Lead">
+                                <MotionA 
+                                  whileHover={{ scale: 1.1 }}
+                                  href={`mailto:${lead.email}`}
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                >
+                                  <Mail className="w-3.5 h-3.5" />
+                                </MotionA>
+                              </PremiumTooltip>
                             )}
 
                             {/* Details Kundali */}
-                            <button 
-                              onClick={() => setSelectedLead(lead)}
-                              title="Full Lead Details (Kundali)"
-                              className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white transition-all"
-                            >
-                              <MoreHorizontal className="w-3.5 h-3.5" />
-                            </button>
+                            <PremiumTooltip content="Full Lead Details (Kundali)">
+                              <MotionButton 
+                                whileHover={{ scale: 1.1 }}
+                                onClick={() => setSelectedLead(lead)}
+                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                              >
+                                <MoreHorizontal className="w-3.5 h-3.5" />
+                              </MotionButton>
+                            </PremiumTooltip>
                           </div>
                         </td>
 
@@ -1746,6 +1830,17 @@ export function LeadTable({
               </tbody>
 
             </table>
+          </div>
+
+          {/* Synced horizontal scrollbar at bottom of table */}
+          <div 
+            ref={stickyScrollbarRef} 
+            className={`w-full overflow-x-auto sticky bottom-0 z-35 bg-[#FAF8F5]/90 dark:bg-[#121110]/90 border-t border-[#E8E5DF]/60 dark:border-[#2C2926]/60 transition-all ${isScrollable ? 'block' : 'hidden'}`}
+            style={{
+              scrollbarWidth: 'thin',
+            }}
+          >
+            <div style={{ width: tableScrollWidth, height: '1px' }} />
           </div>
 
           {/* Pagination */}

@@ -437,7 +437,7 @@ export default function LeadsPage() {
             <RefreshCw className="w-8 h-8 animate-spin text-[var(--accent)]" />
           </div>
         ) : (
-          <div className="p-6 rounded-2xl border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FFFFFF] dark:bg-[#1C1A18] shadow-[0_4px_30px_rgba(0,0,0,0.03)] space-y-4">
+          <div className="p-6 rounded-3xl border border-[#E8E5DF]/50 dark:border-[#2C2926]/50 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 backdrop-blur-md shadow-lg space-y-4">
             <LeadTable 
               leads={leads} 
               stages={stages}
