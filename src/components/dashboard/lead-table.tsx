@@ -2197,13 +2197,13 @@ export function LeadTable({
             animate={{ y: 0, opacity: 1, x: '-50%' }}
             exit={{ y: 80, opacity: 0, x: '-50%' }}
             transition={{ type: 'spring', damping: 22, stiffness: 200 }}
-            className="fixed bottom-6 left-1/2 z-40 bg-zinc-950/95 border border-zinc-850 text-white shadow-[0_20px_50px_rgba(0,0,0,0.8)] px-5 py-3.5 rounded-2xl flex items-center gap-5 backdrop-blur-md w-[90%] max-w-xl justify-between"
+            className="fixed bottom-6 left-1/2 z-40 bg-white/95 dark:bg-[#121110]/95 border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] shadow-[0_20px_50px_rgba(0,0,0,0.12)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.8)] px-5 py-3.5 rounded-2xl flex items-center gap-5 backdrop-blur-md w-[90%] max-w-xl justify-between"
           >
             <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-full bg-orange-500 text-black flex items-center justify-center text-[10px] font-black">
+              <div className="w-5 h-5 rounded-full bg-[#D4AF37] dark:bg-[#C5A059] text-white flex items-center justify-center text-[10px] font-black">
                 {selectedLeadIds.length}
               </div>
-              <span className="text-xs font-bold text-zinc-350">Selected</span>
+              <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">Selected</span>
             </div>
 
             {/* Actions panel */}
@@ -2213,21 +2213,21 @@ export function LeadTable({
               <div className="relative">
                 <button
                   onClick={() => setShowBulkStatusMenu(!showBulkStatusMenu)}
-                  className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-850 rounded-lg text-xs font-semibold border border-zinc-800 transition-colors flex items-center gap-1.5 text-zinc-300"
+                  className="px-3 py-1.5 bg-[#FAF8F5]/80 hover:bg-[#FAF8F5]/95 dark:bg-[#1C1A18]/80 dark:hover:bg-[#23201D] border border-[#E8E5DF] dark:border-[#2C2926] rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 text-slate-700 dark:text-zinc-350"
                 >
-                  <Tag className="w-3.5 h-3.5" />
+                  <Tag className="w-3.5 h-3.5 text-[#D4AF37] dark:text-[#C5A059]" />
                   Stage
-                  <ChevronDown className="w-3 h-3 text-zinc-500" />
+                  <ChevronDown className="w-3 h-3 text-zinc-400 dark:text-zinc-500" />
                 </button>
                 
                 {showBulkStatusMenu && (
-                  <div className="absolute bottom-11 right-0 w-36 bg-zinc-950 border border-zinc-850 rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50">
+                  <div className="absolute bottom-11 right-0 w-36 bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50">
                     {['new', 'contacted', 'warm', 'hot', 'closed', 'lost'].map(st => (
                       <button
                         key={st}
                         disabled={isBulkProcessing}
                         onClick={() => handleBulkUpdateStatus(st as LeadStatus)}
-                        className="w-full text-left p-1.5 hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-zinc-400 hover:text-white capitalize transition-colors"
+                        className="w-full text-left p-1.5 hover:bg-[#FAF8F5] dark:hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-slate-600 dark:text-zinc-400 capitalize transition-colors"
                       >
                         {st === 'contacted' ? 'Open' : st === 'warm' ? 'In Progress' : st}
                       </button>
@@ -2240,24 +2240,24 @@ export function LeadTable({
               <div className="relative">
                 <button
                   onClick={() => setShowBulkGroupMenu(!showBulkGroupMenu)}
-                  className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-850 rounded-lg text-xs font-semibold border border-zinc-800 transition-colors flex items-center gap-1.5 text-zinc-300"
+                  className="px-3 py-1.5 bg-[#FAF8F5]/80 hover:bg-[#FAF8F5]/95 dark:bg-[#1C1A18]/80 dark:hover:bg-[#23201D] border border-[#E8E5DF] dark:border-[#2C2926] rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 text-slate-700 dark:text-zinc-350"
                 >
-                  <Users className="w-3.5 h-3.5 text-emerald-400" />
+                  <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   WA Group
-                  <ChevronDown className="w-3 h-3 text-zinc-500" />
+                  <ChevronDown className="w-3 h-3 text-zinc-400 dark:text-zinc-500" />
                 </button>
                 
                 {showBulkGroupMenu && (
-                  <div className="absolute bottom-11 right-0 w-48 bg-zinc-950 border border-zinc-850 rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 max-h-48 overflow-y-auto">
+                  <div className="absolute bottom-11 right-0 w-48 bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 max-h-48 overflow-y-auto">
                     <button
                       disabled={isBulkProcessing}
                       onClick={() => handleBulkAssignGroup(null)}
-                      className="w-full text-left p-1.5 hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-zinc-550 hover:text-white transition-colors"
+                      className="w-full text-left p-1.5 hover:bg-[#FAF8F5] dark:hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-slate-500 dark:text-zinc-450 transition-colors"
                     >
                       Unassigned / None
                     </button>
                     {contactGroups.length === 0 ? (
-                      <div className="p-2 text-[10px] text-zinc-650 italic text-center">
+                      <div className="p-2 text-[10px] text-zinc-400 dark:text-zinc-650 italic text-center">
                         No contact groups configured.
                       </div>
                     ) : (
@@ -2266,7 +2266,7 @@ export function LeadTable({
                           key={grp.id}
                           disabled={isBulkProcessing}
                           onClick={() => handleBulkAssignGroup(grp.id)}
-                          className="w-full text-left p-1.5 hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-zinc-400 hover:text-white transition-colors truncate"
+                          className="w-full text-left p-1.5 hover:bg-[#FAF8F5] dark:hover:bg-zinc-900 rounded-md text-[11px] font-semibold text-slate-600 dark:text-zinc-400 transition-colors truncate"
                         >
                           {grp.group_name}
                         </button>
@@ -2279,7 +2279,7 @@ export function LeadTable({
               {/* Bulk Export */}
               <button
                 onClick={handleBulkExport}
-                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-850 rounded-lg text-xs font-semibold border border-zinc-800 transition-colors flex items-center gap-1.5 text-zinc-300"
+                className="px-3 py-1.5 bg-[#FAF8F5]/80 hover:bg-[#FAF8F5]/95 dark:bg-[#1C1A18]/80 dark:hover:bg-[#23201D] border border-[#E8E5DF] dark:border-[#2C2926] rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 text-slate-700 dark:text-zinc-350"
               >
                 <Download className="w-3.5 h-3.5" />
                 Export
@@ -2289,17 +2289,17 @@ export function LeadTable({
               <button
                 onClick={handleBulkDelete}
                 disabled={isBulkProcessing}
-                className="p-1.5 bg-zinc-950 hover:bg-rose-950/20 border border-zinc-850 hover:border-rose-900/30 text-zinc-500 hover:text-rose-400 rounded-lg transition-colors"
+                className="p-1.5 bg-white hover:bg-rose-50 dark:bg-zinc-900 dark:hover:bg-rose-950/20 border border-[#E8E5DF] dark:border-[#2C2926] hover:border-rose-300 dark:hover:border-rose-900/30 text-rose-500 rounded-lg transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
 
-              <div className="h-5 w-[1px] bg-zinc-850 mx-1" />
+              <div className="h-5 w-[1px] bg-[#E8E5DF] dark:bg-[#2C2926] mx-1" />
 
               {/* Dismiss selection */}
               <button
                 onClick={() => setSelectedLeadIds([])}
-                className="p-1.5 hover:bg-zinc-900 rounded-lg text-zinc-450 hover:text-white transition-colors"
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-lg text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
