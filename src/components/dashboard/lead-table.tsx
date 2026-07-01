@@ -373,6 +373,13 @@ export function LeadTable({
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [showColumnFilters, setShowColumnFilters] = useState(false);
   
+  // Google Sheets-Style column header filters states
+  const [activeHeaderFilters, setActiveHeaderFilters] = useState<Record<string, string[]>>({});
+  const [openFilterColId, setOpenFilterColId] = useState<string | null>(null);
+  const [draftFilterValues, setDraftFilterValues] = useState<string[]>([]);
+  const [filterSearchQuery, setFilterSearchQuery] = useState('');
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+  
   // Ingested Meta Columns list (auto-discovered keys in lead.raw_payload)
   const [ingestedMetaKeys, setIngestedMetaKeys] = useState<string[]>([]);
 
@@ -469,6 +476,9 @@ export function LeadTable({
     function handleClickOutside(event: MouseEvent) {
       if (manageColsRef.current && !manageColsRef.current.contains(event.target as Node)) {
         setShowManageCols(false);
+      }
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
+        setOpenFilterColId(null);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -733,6 +743,151 @@ export function LeadTable({
     );
   };
 
+  // Dynamic column value resolver for header filtering
+  const getLeadColumnValue = (lead: Lead, colId: string): string => {
+    if (colId === 'name') return lead.name || 'Unspecified Lead';
+    if (colId === 'contact') return lead.phone || lead.email || 'No Contact';
+    if (colId === 'source') return lead.source || 'Manual';
+    if (colId === 'status') {
+      const stage = stages.find(s => s.id === (lead.stage_id || lead.status));
+      return stage ? stage.name : lead.status;
+    }
+    if (colId === 'owner') return lead.raw_payload?.lead_owner || 'Chad Thunderclock';
+    if (colId === 'company') return lead.raw_payload?.company || '-';
+    if (colId === 'date') {
+      return new Date(lead.created_at).toLocaleDateString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      });
+    }
+    if (colId === 'address') return lead.raw_payload?.venue || lead.raw_payload?.address || '-';
+    if (colId === 'attachments') return getMockAttachment(lead) || '-';
+    if (colId === 'wa_group') {
+      const group = contactGroups.find(g => g.id === lead.whatsapp_group_id);
+      return group ? group.group_name : 'Unassigned';
+    }
+    if (colId === 'wa_welcome') return lead.wa_welcome_sent ? 'Sent ✓' : 'Pending';
+    if (colId === 'google_sync') return lead.google_synced ? 'Synced ✓' : 'Not Synced';
+    if (colId === 'wgl_status') return lead.wgl_dispatched ? 'WGL Alert ✅' : 'No WGL Alert';
+    if (colId === 'followup_sched') return 'Timeline';
+    
+    // Custom columns & FB meta
+    if (colId.startsWith('custom_') || colId.startsWith('custom-') || colId.startsWith('meta_')) {
+      const actualKey = colId.startsWith('meta_') ? colId.replace('meta_', '') : colId;
+      return lead.raw_payload?.[actualKey] || '';
+    }
+    return '';
+  };
+
+  // Extract sorted unique values for a column
+  const getUniqueColumnValues = (colId: string): string[] => {
+    const vals = leads.map(lead => getLeadColumnValue(lead, colId));
+    return Array.from(new Set(vals.map(v => String(v).trim()))).filter(Boolean).sort();
+  };
+
+  // Google Sheets-Style filter dropdown inside headers
+  const renderFilterDropdown = (colId: string) => {
+    const allVals = getUniqueColumnValues(colId);
+    const filteredVals = allVals.filter(val => 
+      val.toLowerCase().includes(filterSearchQuery.toLowerCase())
+    );
+
+    return (
+      <div 
+        ref={filterDropdownRef}
+        className="absolute left-0 top-full mt-1 w-64 bg-white border border-[#E8E5DF] rounded-xl shadow-2xl p-3 z-50 text-[#1A1A1A] font-sans normal-case tracking-normal text-left font-normal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <Search className="w-3.5 h-3.5 text-[#706E6A] shrink-0" />
+          <input 
+            type="text"
+            placeholder="Filter values..."
+            value={filterSearchQuery}
+            onChange={(e) => setFilterSearchQuery(e.target.value)}
+            className="w-full bg-[#FAF8F5]/50 dark:bg-[#121110]/50 border border-[#E8E5DF] dark:border-[#2C2926] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1.5 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
+          />
+        </div>
+        
+        <div className="flex items-center justify-between text-[11px] font-bold text-[#D4AF37] dark:text-[#C5A059] mb-2 px-1">
+          <button 
+            type="button" 
+            onClick={() => {
+              setDraftFilterValues(allVals);
+            }}
+            className="hover:underline"
+          >
+            Select All
+          </button>
+          <button 
+            type="button" 
+            onClick={() => {
+              setDraftFilterValues([]);
+            }}
+            className="hover:underline"
+          >
+            Clear
+          </button>
+        </div>
+
+        {/* Unique Values checklist */}
+        <div className="max-h-40 overflow-y-auto space-y-1 mb-3 pr-1 border-t border-b border-[#E8E5DF] dark:border-[#2C2926] py-2">
+          {filteredVals.length === 0 ? (
+            <div className="text-[11px] text-[#706E6A] italic text-center py-2">No matching values</div>
+          ) : (
+            filteredVals.map(val => {
+              const isChecked = draftFilterValues.includes(val);
+              return (
+                <label key={val} className="flex items-center gap-2 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] p-1 rounded-md text-xs cursor-pointer select-none">
+                  <input 
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {
+                      if (isChecked) {
+                        setDraftFilterValues(prev => prev.filter(v => v !== val));
+                      } else {
+                        setDraftFilterValues(prev => [...prev, val]);
+                      }
+                    }}
+                    className="rounded border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] focus:ring-[#D4AF37] w-3.5 h-3.5"
+                  />
+                  <span className="truncate">{val}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 text-xs">
+          <button 
+            type="button" 
+            onClick={() => setOpenFilterColId(null)}
+            className="px-2.5 py-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A] hover:bg-[#FAF8F5] dark:hover:bg-[#121110] font-bold transition-all"
+          >
+            Cancel
+          </button>
+          <button 
+            type="button" 
+            onClick={() => {
+              setActiveHeaderFilters(prev => {
+                const next = { ...prev };
+                if (draftFilterValues.length === allVals.length) {
+                  delete next[colId];
+                } else {
+                  next[colId] = draftFilterValues;
+                }
+                return next;
+              });
+              setOpenFilterColId(null);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white dark:text-black font-extrabold transition-all hover:opacity-90 shadow-sm"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // Filter lists configuration
   const uniqueOwners = Array.from(new Set(leads.map(l => (l.raw_payload?.lead_owner || 'Chad Thunderclock') as string)));
 
@@ -750,31 +905,13 @@ export function LeadTable({
     const owner = lead.raw_payload?.lead_owner || 'Chad Thunderclock';
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
-    // Column-level filters check
+    // Column-level Google Sheets-style multi-select filters check
     let matchesColumnFilters = true;
-    for (const [colId, filterVal] of Object.entries(columnFilters)) {
-      if (!filterVal.trim()) continue;
-      const val = filterVal.toLowerCase();
-      if (colId === 'name') {
-        if (!(lead.name || '').toLowerCase().includes(val)) matchesColumnFilters = false;
-      } else if (colId === 'contact') {
-        const phone = lead.phone || '';
-        const email = lead.email || '';
-        if (!phone.includes(val) && !email.toLowerCase().includes(val)) matchesColumnFilters = false;
-      } else if (colId === 'source') {
-        if (!(lead.source || '').toLowerCase().includes(val)) matchesColumnFilters = false;
-      } else if (colId === 'status') {
-        const stageName = stages?.find(s => s.id === lead.status)?.name || lead.status;
-        if (!(stageName || '').toLowerCase().includes(val)) matchesColumnFilters = false;
-      } else if (colId === 'owner') {
-        if (!owner.toLowerCase().includes(val)) matchesColumnFilters = false;
-      } else if (colId === 'date') {
-        const dateStr = lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '';
-        if (!dateStr.toLowerCase().includes(val)) matchesColumnFilters = false;
-      } else {
-        // Fallback for metadata or custom columns
-        const customVal = lead.raw_payload?.[colId] || '';
-        if (!String(customVal).toLowerCase().includes(val)) matchesColumnFilters = false;
+    for (const [colId, selectedVals] of Object.entries(activeHeaderFilters)) {
+      const leadVal = getLeadColumnValue(lead, colId);
+      if (!selectedVals.includes(String(leadVal).trim())) {
+        matchesColumnFilters = false;
+        break;
       }
     }
 
@@ -1061,18 +1198,17 @@ export function LeadTable({
         {/* Filters Panel */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
           
-          {/* Master Filter Button */}
-          <button
-            onClick={() => setShowColumnFilters(!showColumnFilters)}
-            className={`flex items-center justify-center p-2 rounded-xl border transition-all ${
-              showColumnFilters 
-                ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white shadow-[0_4px_12px_rgba(212,175,55,0.25)]' 
-                : 'bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A] hover:bg-white dark:hover:bg-[#1C1A18] hover:text-[#1A1A1A] dark:hover:text-white'
-            }`}
-            title="Toggle column-level filters"
-          >
-            <Filter className="w-3.5 h-3.5" />
-          </button>
+          {/* Clear Column Filters Button */}
+          {Object.keys(activeHeaderFilters).length > 0 && (
+            <button
+              onClick={() => setActiveHeaderFilters({})}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-200/60 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/10 text-red-600 dark:text-red-400 hover:bg-red-100/50 dark:hover:bg-red-950/20 transition-all text-[11px] font-bold"
+              title="Clear all header column filters"
+            >
+              <X className="w-3.5 h-3.5 stroke-[2.5]" />
+              Clear Filters
+            </button>
+          )}
 
           {/* Status Filter */}
           <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5">
@@ -1262,7 +1398,31 @@ export function LeadTable({
                   </th>
                   
                   {/* Frozen Column Name (Sticky Left) */}
-                  <th className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#1C1A18] z-30 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5]">Lead Name</th>
+                  <th className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#1C1A18] z-30 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span>Lead Name</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const colId = 'name';
+                          if (openFilterColId === colId) {
+                            setOpenFilterColId(null);
+                          } else {
+                            setFilterSearchQuery('');
+                            setDraftFilterValues(activeHeaderFilters[colId] || getUniqueColumnValues(colId));
+                            setOpenFilterColId(colId);
+                          }
+                        }}
+                        className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors ml-auto ${
+                          activeHeaderFilters['name'] ? 'text-[#D97706]' : 'text-zinc-400 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
+                        }`}
+                        title="Filter Name"
+                      >
+                        <Filter className="w-3 h-3 fill-current" />
+                      </button>
+                    </div>
+                    {openFilterColId === 'name' && renderFilterDropdown('name')}
+                  </th>
                   
                   {/* Dynamic Columns headers */}
                   {columns.map((col, idx) => col.visible && (
@@ -1279,49 +1439,74 @@ export function LeadTable({
                       onDragEnd={handleDragEnd}
                       onDrop={(e) => handleDrop(e, idx)}
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-1.5 w-full">
                         
-                        {/* Header Inline Rename Input */}
-                        {editingHeaderId === col.id ? (
-                          <input 
-                            type="text"
-                            value={editingHeaderVal}
-                            onChange={(e) => setEditingHeaderVal(e.target.value)}
-                            onBlur={() => handleSaveRename(col.id)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
-                            className="bg-[#FAF8F5] dark:bg-[#121110] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-28 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          <span 
-                            onDoubleClick={() => handleStartRename(col.id, col.label)} 
-                            className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text"
-                            title="Double click to rename"
-                          >
-                            {col.label}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {/* Header Inline Rename Input */}
+                          {editingHeaderId === col.id ? (
+                            <input 
+                              type="text"
+                              value={editingHeaderVal}
+                              onChange={(e) => setEditingHeaderVal(e.target.value)}
+                              onBlur={() => handleSaveRename(col.id)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
+                              className="bg-[#FAF8F5] dark:bg-[#121110] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-24 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <span 
+                              onDoubleClick={() => handleStartRename(col.id, col.label)} 
+                              className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text truncate block max-w-[100px]"
+                              title="Double click to rename"
+                            >
+                              {col.label}
+                            </span>
+                          )}
 
-                        {/* Column Re-ordering shift buttons */}
-                        <div className="opacity-0 group-hover/header:opacity-100 flex items-center transition-opacity gap-0.5 ml-1">
-                          <button 
-                            onClick={() => moveColumn(idx, 'left')}
-                            className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
-                            title="Move column left"
-                          >
-                            <ArrowLeft className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={() => moveColumn(idx, 'right')}
-                            className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
-                            title="Move column right"
-                          >
-                            <ArrowRight className="w-3 h-3" />
-                          </button>
+                          {/* Column Re-ordering shift buttons */}
+                          <div className="opacity-0 group-hover/header:opacity-100 flex items-center transition-opacity gap-0.5 ml-0.5 shrink-0">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'left'); }}
+                              className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
+                              title="Move column left"
+                            >
+                              <ArrowLeft className="w-2.5 h-2.5" />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'right'); }}
+                              className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
+                              title="Move column right"
+                            >
+                              <ArrowRight className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
                         </div>
 
+                        {/* Google Sheets Column Filter Trigger */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (openFilterColId === col.id) {
+                              setOpenFilterColId(null);
+                            } else {
+                              setFilterSearchQuery('');
+                              setDraftFilterValues(activeHeaderFilters[col.id] || getUniqueColumnValues(col.id));
+                              setOpenFilterColId(col.id);
+                            }
+                          }}
+                          className={`p-1 rounded hover:bg-[#FAF8F5] dark:hover:bg-[#121110] transition-colors shrink-0 ${
+                            activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-450 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
+                          }`}
+                          title={`Filter ${col.label}`}
+                        >
+                          <Filter className="w-3 h-3 fill-current" />
+                        </button>
+
                       </div>
+
+                      {/* Dropdown alignment relative to header */}
+                      {openFilterColId === col.id && renderFilterDropdown(col.id)}
                     </th>
                   ))}
 
@@ -1329,33 +1514,6 @@ export function LeadTable({
                   <th className="py-4 px-4 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-30 text-[#1A1A1A] dark:text-[#F5F5F5]">Actions</th>
                 </tr>
 
-                {/* Column filters input row */}
-                {showColumnFilters && (
-                  <tr className="border-b border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/40 dark:bg-[#121110]/40">
-                    <th className="py-2 px-4"></th>
-                    <th className="py-2 px-4 sticky left-0 bg-white dark:bg-[#1C1A18] z-30 border-r border-[#E8E5DF] dark:border-[#2C2926]">
-                      <input
-                        type="text"
-                        placeholder="Filter name..."
-                        value={columnFilters['name'] || ''}
-                        onChange={(e) => setColumnFilters(prev => ({ ...prev, name: e.target.value }))}
-                        className="w-full bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-xs px-2 py-1 rounded border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A]/60 dark:placeholder-[#A09E9A]/60 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
-                      />
-                    </th>
-                    {columns.map(col => col.visible && (
-                      <th key={`filter-${col.id}`} className="py-2 px-4">
-                        <input
-                          type="text"
-                          placeholder={`Filter ${col.label.toLowerCase()}...`}
-                          value={columnFilters[col.id] || ''}
-                          onChange={(e) => setColumnFilters(prev => ({ ...prev, [col.id]: e.target.value }))}
-                          className="w-full bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-xs px-2 py-1 rounded border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A]/60 dark:placeholder-[#A09E9A]/60 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
-                        />
-                      </th>
-                    ))}
-                    <th className="py-2 px-4 sticky right-0 bg-white dark:bg-[#1C1A18] z-30 border-l border-[#E8E5DF] dark:border-[#2C2926]"></th>
-                  </tr>
-                )}
               </thead>
 
               <tbody className="divide-y divide-zinc-900 text-sm">
