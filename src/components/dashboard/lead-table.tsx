@@ -1386,11 +1386,11 @@ export function LeadTable({
               <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[260px]" /></colgroup>
 
               <thead>
-                <tr className="border-b border-slate-200 dark:border-zinc-900 text-[10px] font-bold uppercase tracking-wider text-slate-550 dark:text-zinc-550 bg-slate-50 dark:bg-zinc-950/40">
+                <tr className="border-b border-[#E8E5DF] dark:border-[#2C2926] text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A] bg-[#FAF8F5]/80 dark:bg-[#121110]/80">
                   <th className="py-4 px-4 text-center">
-                    <button onClick={handleSelectAll} className="text-zinc-550 hover:text-white transition-colors">
+                    <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
                       {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
-                        <CheckSquare className="w-4.5 h-4.5 text-orange-500" />
+                        <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
                       ) : (
                         <Square className="w-4.5 h-4.5" />
                       )}
