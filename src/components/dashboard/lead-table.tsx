@@ -98,6 +98,8 @@ export function LeadTable({
   renderHeader
 }: LeadTableProps) {
   const [mounted, setMounted] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(104);
+  const headerRef = useRef<HTMLDivElement>(null);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'tasks'>('table');
   const [phoneActionMenuLeadId, setPhoneActionMenuLeadId] = useState<string | null>(null);
@@ -619,19 +621,36 @@ export function LeadTable({
   // Load configuration preferences
   useEffect(() => {
     setMounted(true);
-    
-    // Load contact subtext layout preference
-    const subtextPref = localStorage.getItem('leads_table_contact_subtext');
-    if (subtextPref) {
-      setContactSubtext(subtextPref as any);
-    }
+  }, []);
 
-    // Load custom lead sources
+  // Measure header height dynamically for zero-gap sticky top offset
+  useEffect(() => {
+    if (mounted && headerRef.current) {
+      const handleResize = () => {
+        setHeaderHeight(headerRef.current?.offsetHeight || 104);
+      };
+      handleResize();
+      window.addEventListener('resize', handleResize);
+      const timer = setTimeout(handleResize, 100);
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        clearTimeout(timer);
+      };
+    }
+  }, [mounted]);
+
+  // Load configuration preferences
+  useEffect(() => {
     const localSources = localStorage.getItem('leads_custom_sources');
     if (localSources) {
       try {
         setCustomSources(JSON.parse(localSources));
       } catch (_) {}
+    }
+
+    const subtextPref = localStorage.getItem('leads_table_contact_subtext');
+    if (subtextPref) {
+      setContactSubtext(subtextPref as any);
     }
 
     if (initialPreferences && typeof initialPreferences === 'object') {
@@ -1250,7 +1269,7 @@ export function LeadTable({
       )}
 
       {/* Sticky Header Anchor Stack */}
-      <div className="sticky top-0 left-0 w-full z-50 bg-white dark:bg-[#0c0c0e] px-4 md:px-6 pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
+      <div ref={headerRef} className="sticky top-0 left-0 w-full z-50 bg-white dark:bg-[#0c0c0e] px-4 md:px-6 pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
         
         {/* Dynamic Views Switcher Panel */}
         <div className="flex items-center justify-between pb-4">
@@ -1698,7 +1717,10 @@ export function LeadTable({
 
         <thead>
           <tr className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-zinc-200 bg-[#EAE6DF] dark:bg-[#1C1A18] border-b border-[#E8E5DF] dark:border-[#2C2926]">
-            <th className="py-4 pl-6 pr-4 text-center sticky top-[108px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-30">
+            <th 
+              style={{ top: `${headerHeight}px` }}
+              className="py-4 pl-6 pr-4 text-center sticky bg-[#EAE6DF] dark:bg-[#1C1A18] z-30"
+            >
               <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
                 {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
                   <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
@@ -1709,7 +1731,10 @@ export function LeadTable({
             </th>
             
             {/* Frozen Column Name (Sticky Top & Left) */}
-            <th className="py-4 pl-6 pr-4 text-xs font-black sticky top-[108px] left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none">
+            <th 
+              style={{ top: `${headerHeight}px` }}
+              className="py-4 pl-6 pr-4 text-xs font-black sticky left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none"
+            >
               <div className="flex items-center justify-between gap-1.5">
                 <span>Lead Name</span>
                 {enableHeaderFilters && (
@@ -1730,7 +1755,8 @@ export function LeadTable({
             {columns.map((col, idx) => col.visible && (
               <th
                 key={col.id}
-                className={`py-4 px-4 text-xs font-black sticky top-[108px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-30 relative group/header cursor-grab active:cursor-grabbing transition-all select-none text-slate-800 dark:text-zinc-200 ${
+                style={{ top: `${headerHeight}px` }}
+                className={`py-4 px-4 text-xs font-black sticky bg-[#EAE6DF] dark:bg-[#1C1A18] z-30 relative group/header cursor-grab active:cursor-grabbing transition-all select-none text-slate-800 dark:text-zinc-200 ${
                   draggedColIdx === idx ? 'opacity-40 bg-[#EAE6DF]/80 dark:bg-[#1C1A18]/80 border-dashed border border-[#D4AF37]' : ''
                 } ${
                   dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
@@ -1800,7 +1826,12 @@ export function LeadTable({
             ))}
 
             {/* Frozen Column Actions (Sticky Top & Right) */}
-            <th className="py-4 pl-4 pr-6 text-right sticky top-[108px] right-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200">Actions</th>
+            <th 
+              style={{ top: `${headerHeight}px` }}
+              className="py-4 pl-4 pr-6 text-center sticky right-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200"
+            >
+              Actions
+            </th>
           </tr>
         </thead>
 
@@ -1844,7 +1875,7 @@ export function LeadTable({
                         <td className={`py-2 pl-6 pr-4 sticky left-0 z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300 transition-colors ${
                           isSelected 
                             ? 'bg-[#E8E4DA] dark:bg-[#1F1C1A]' 
-                            : 'bg-[#F4F1EA] dark:bg-[#141211] group-hover/row:bg-[#EAE6DF] dark:group-hover/row:bg-[#1C1A18]'
+                            : 'bg-[#F2F0EB] dark:bg-[#141211] group-hover/row:bg-[#EAE6DF] dark:group-hover/row:bg-[#1C1A18]'
                         }`}>
                           <div className="min-w-0">
                             <span 
@@ -1868,14 +1899,14 @@ export function LeadTable({
                               case 'contact':
                                 return (
                                   <MotionTd key={col.id} className="py-2 px-4">
-                                    <div className="space-y-1">
-                                      <span className="text-[11px] text-zinc-350 font-mono flex items-center gap-1.5">
-                                        <Phone className="w-3 h-3 text-zinc-650" />
+                                    <div className="space-y-1.5 my-0.5 min-w-[150px]">
+                                      <span className="text-xs text-slate-900 dark:text-zinc-100 font-semibold font-sans flex items-center gap-1.5 break-all select-all">
+                                        <Phone className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400 shrink-0" />
                                         {lead.phone}
                                       </span>
                                       {lead.email && (
-                                        <span className="text-[11px] text-zinc-500 font-mono flex items-center gap-1.5 truncate">
-                                          <Mail className="w-3 h-3 text-zinc-650" />
+                                        <span className="text-xs text-slate-900 dark:text-zinc-100 font-semibold font-sans flex items-center gap-1.5 break-all select-all">
+                                          <Mail className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400 shrink-0" />
                                           {lead.email}
                                         </span>
                                       )}
