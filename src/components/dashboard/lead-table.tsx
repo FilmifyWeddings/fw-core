@@ -1703,15 +1703,16 @@ export function LeadTable({
   /* GRID TABLE VIEW                                      */
   /* ---------------------------------------------------- */
   <div className="w-full relative transition-all">
-    <div className="overflow-x-auto overflow-y-visible">
-      <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-auto min-w-[1000px]">
+      <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
         
         <colgroup>
           <col className="w-[50px]" />
           <col className="w-[220px]" />
-          {columns.filter(col => col.visible).map(col => (
-            <col key={col.id} className="w-[170px]" />
-          ))}
+          {columns.filter(col => col.visible).map(col => {
+            if (col.id === 'contact') return <col key={col.id} className="w-[280px]" />;
+            if (col.id === 'date') return <col key={col.id} className="w-[190px]" />;
+            return <col key={col.id} className="w-[170px]" />;
+          })}
           <col className="w-[330px]" />
         </colgroup>
 
@@ -1976,11 +1977,19 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'date':
+                                const dateObj = new Date(lead.created_at);
+                                const formattedDate = dateObj.toLocaleDateString('en-IN', {
+                                  day: '2-digit', month: 'short', year: 'numeric'
+                                });
+                                const formattedTime = dateObj.toLocaleTimeString('en-IN', {
+                                  hour: '2-digit', minute: '2-digit', hour12: true
+                                });
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold">
-                                    {new Date(lead.created_at).toLocaleDateString('en-IN', {
-                                      day: '2-digit', month: 'short', year: 'numeric'
-                                    })}
+                                  <MotionTd key={col.id} className="py-2 px-4">
+                                    <div className="space-y-0.5 whitespace-nowrap leading-tight">
+                                      <span className="block text-xs text-slate-800 dark:text-zinc-200 font-bold">{formattedDate}</span>
+                                      <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">{formattedTime}</span>
+                                    </div>
                                   </MotionTd>
                                 );
                               case 'address':
@@ -2380,7 +2389,6 @@ export function LeadTable({
               </tbody>
 
             </table>
-          </div>
 
           {/* Synced scrollbar removed from here to escape backdrop-filter containing block context */}
 
