@@ -357,10 +357,10 @@ export default function LeadsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070708] text-slate-900 dark:text-white selection:bg-slate-100 dark:selection:bg-zinc-850 transition-colors duration-200">
-      <div className="w-full px-4 md:px-6 py-4 space-y-4">
+      <div className="w-full space-y-4">
         
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Header - kept with screen padding */}
+        <div className="px-4 md:px-6 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Lead Flow Database</h1>
             <p className="text-xs text-zinc-550 dark:text-zinc-400 mt-1">Manage deal statuses, scoring reasons, and metadata</p>
@@ -391,13 +391,13 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {/* Lead Table Container */}
+        {/* Lead Table Container - stretches fully left-to-right (no horizontal screen margins) */}
         {loading ? (
           <div className="py-20 flex items-center justify-center">
             <RefreshCw className="w-8 h-8 animate-spin text-zinc-500" />
           </div>
         ) : (
-          <div className="p-4 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 shadow-xl dark:shadow-2xl space-y-4">
+          <div className="bg-white dark:bg-[#0c0c0e] border-y border-slate-200 dark:border-zinc-900/60 shadow-xl dark:shadow-2xl">
             <LeadTable 
               leads={leads} 
               stages={stages}

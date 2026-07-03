@@ -7,7 +7,7 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Kanban, Clock, User, MessageSquare, RefreshCw, Users
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Kanban, Clock, User, MessageSquare, RefreshCw, Users, Database
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -125,6 +125,11 @@ export function LeadTable({
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [enableHeaderFilters, setEnableHeaderFilters] = useState(false);
   const [filterDropdownRect, setFilterDropdownRect] = useState<{ top: number; left: number } | null>(null);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
+  // Dynamic Sidebar width detection
+  const [sidebarWidth, setSidebarWidth] = useState(240);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -522,6 +527,21 @@ export function LeadTable({
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Dynamic sidebar collapse detection
+  useEffect(() => {
+    const updateWidth = () => {
+      const isCollapsed = localStorage.getItem('sidebar_collapsed') === 'true';
+      setSidebarWidth(isCollapsed ? 64 : 240);
+    };
+    updateWidth();
+    window.addEventListener('click', updateWidth);
+    window.addEventListener('resize', updateWidth);
+    return () => {
+      window.removeEventListener('click', updateWidth);
+      window.removeEventListener('resize', updateWidth);
+    };
   }, []);
 
   // Ingest Meta Columns & sync initial leads
@@ -981,7 +1001,24 @@ export function LeadTable({
       }
     }
 
-    return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner && matchesColumnFilters;
+    // Date Range Filter check (Start Date & End Date)
+    const matchesDateRange = (() => {
+      if (!startDate && !endDate) return true;
+      if (!lead.created_at) return false;
+      const leadTime = new Date(lead.created_at).getTime();
+      
+      if (startDate) {
+        const startMs = new Date(startDate + 'T00:00:00').getTime();
+        if (leadTime < startMs) return false;
+      }
+      if (endDate) {
+        const endMs = new Date(endDate + 'T23:59:59').getTime();
+        if (leadTime > endMs) return false;
+      }
+      return true;
+    })();
+
+    return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner && matchesColumnFilters && matchesDateRange;
   });
 
   // Pagination lists replaced with Infinite Scroll
@@ -1198,7 +1235,7 @@ export function LeadTable({
     <div className="w-full relative select-none">
       
       {/* Sticky Header Anchor Stack */}
-      <div className="sticky top-0 z-50 bg-[#FAF8F5] dark:bg-[#121110] pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
+      <div className="sticky top-0 z-50 bg-white dark:bg-[#0c0c0e] px-4 md:px-6 pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
         
         {/* Dynamic Views Switcher Panel */}
         <div className="flex items-center justify-between pb-4">
@@ -1249,18 +1286,56 @@ export function LeadTable({
         </div>
 
         {/* Advanced In-Header Filters Row */}
-        <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-[#FAF8F5] dark:bg-[#121110] py-1">
+        <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-white dark:bg-[#0c0c0e] py-1">
         
-        {/* Search */}
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3.5 top-3 w-4 h-4 text-[#706E6A] dark:text-[#A09E9A]" />
-          <input
-            type="text"
-            placeholder="Search leads, contact, number..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A] dark:placeholder-[#A09E9A] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition-all font-sans"
-          />
+        {/* Left Side: Search & Date Range & Count */}
+        <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+          {/* Search */}
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-3.5 top-3 w-4 h-4 text-[#706E6A] dark:text-[#A09E9A]" />
+            <input
+              type="text"
+              placeholder="Search leads, contact, number..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-[#0c0c0e] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A] dark:placeholder-[#A09E9A] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition-all font-sans"
+            />
+          </div>
+
+          {/* Date Range Selector */}
+          <div className="flex items-center gap-2 bg-white dark:bg-[#0c0c0e] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-3 py-1.5 w-full md:w-auto shrink-0 shadow-sm">
+            <Calendar className="w-3.5 h-3.5 text-[#706E6A] dark:text-[#A09E9A] shrink-0" />
+            <div className="flex items-center gap-1.5 text-[11px] text-[#1A1A1A] dark:text-[#F5F5F5] font-bold">
+              <input 
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-transparent focus:outline-none cursor-pointer border-none text-[11px] text-[#1A1A1A] dark:text-[#F5F5F5]"
+              />
+              <span className="text-zinc-400 font-normal">to</span>
+              <input 
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-transparent focus:outline-none cursor-pointer border-none text-[11px] text-[#1A1A1A] dark:text-[#F5F5F5]"
+              />
+              {(startDate || endDate) && (
+                <button 
+                  onClick={() => { setStartDate(''); setEndDate(''); }}
+                  className="ml-1 p-0.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded text-red-500 transition-colors"
+                  title="Clear date filter"
+                >
+                  <X className="w-3 h-3 stroke-[2.5]" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Count Badge */}
+          <div className="text-[11px] font-extrabold bg-[#D4AF37]/10 text-[#D4AF37] dark:text-[#C5A059] px-2.5 py-1.5 rounded-xl border border-[#D4AF37]/20 flex items-center gap-1.5 shadow-sm shrink-0">
+            <Database className="w-3.5 h-3.5" />
+            <span>{filteredLeads.length} Leads</span>
+          </div>
         </div>
 
         {/* Filters Panel */}
@@ -1285,15 +1360,14 @@ export function LeadTable({
               setOpenFilterColId(null);
               setFilterDropdownRect(null);
             }}
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-bold ${
+            className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
               enableHeaderFilters 
-                ? 'bg-[#D4AF37]/10 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]' 
-                : 'bg-[#FAF8F5]/60 hover:bg-[#FAF8F5]/90 dark:bg-[#121110]/60 dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A]'
+                ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]' 
+                : 'bg-white hover:bg-slate-50 dark:bg-[#121110] dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
             }`}
             title="Toggle Column Header Filters"
           >
-            <Filter className="w-3.5 h-3.5" />
-            {enableHeaderFilters ? 'Hide Filters' : 'Enable Filters'}
+            <Filter className="w-4 h-4" />
           </button>
 
           {/* Status Filter */}
@@ -1460,7 +1534,7 @@ export function LeadTable({
 {/* Sync-scrolled Table Header (thead only) */}
 {viewMode === 'table' && (
   <div className="w-full overflow-hidden" ref={headerContainerRef}>
-    <table className="w-full text-left border-collapse table-fixed min-w-[1000px] bg-[#FAF8F5] dark:bg-[#121110]">
+    <table className="w-full text-left border-collapse table-fixed min-w-[1000px] bg-[#EAE6DF] dark:bg-[#1C1A18]">
       <colgroup>
         <col className="w-[50px]" />
         <col className="w-[220px]" />
@@ -1470,8 +1544,8 @@ export function LeadTable({
         <col className="w-[260px]" />
       </colgroup>
       <thead>
-        <tr className="text-sm font-extrabold uppercase tracking-wider text-[#1A1A1A] dark:text-[#F5F5F5] bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]">
-          <th className="py-4 px-4 text-center bg-[#FAF8F5] dark:bg-[#121110]">
+        <tr className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-zinc-200 bg-[#EAE6DF] dark:bg-[#1C1A18] border-b border-[#E8E5DF] dark:border-[#2C2926]">
+          <th className="py-4 pl-6 pr-4 text-center bg-[#EAE6DF] dark:bg-[#1C1A18]">
             <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
               {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
                 <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
@@ -1482,7 +1556,7 @@ export function LeadTable({
           </th>
           
           {/* Frozen Column Name (Sticky Left) */}
-          <th className="py-4 px-4 text-sm font-extrabold sticky left-0 bg-[#FAF8F5] dark:bg-[#121110] z-10 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none">
+          <th className="py-4 pl-6 pr-4 text-xs font-black sticky left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-10 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none">
             <div className="flex items-center justify-between gap-1.5">
               <span>Lead Name</span>
               {enableHeaderFilters && (
@@ -1503,8 +1577,8 @@ export function LeadTable({
           {columns.map((col, idx) => col.visible && (
             <th
               key={col.id}
-              className={`py-4 px-4 text-sm font-extrabold relative group/header cursor-grab active:cursor-grabbing transition-all select-none bg-[#FAF8F5] dark:bg-[#121110] ${
-                draggedColIdx === idx ? 'opacity-40 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-dashed border border-[#D4AF37]' : ''
+              className={`py-4 px-4 text-xs font-black relative group/header cursor-grab active:cursor-grabbing transition-all select-none bg-[#EAE6DF] dark:bg-[#1C1A18] text-slate-800 dark:text-zinc-200 ${
+                draggedColIdx === idx ? 'opacity-40 bg-[#EAE6DF]/80 dark:bg-[#1C1A18]/80 border-dashed border border-[#D4AF37]' : ''
               } ${
                 dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
               }`}
@@ -1524,7 +1598,7 @@ export function LeadTable({
                       onChange={(e) => setEditingHeaderVal(e.target.value)}
                       onBlur={() => handleSaveRename(col.id)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
-                      className="bg-[#FAF8F5] dark:bg-[#121110] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-24 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
+                      className="bg-[#EAE6DF] dark:bg-[#1C1A18] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-24 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
                       autoFocus
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -1538,7 +1612,7 @@ export function LeadTable({
                     </span>
                   )}
 
-                  <div className="opacity-0 group-hover/header:opacity-100 flex items-center transition-opacity gap-0.5 ml-0.5 shrink-0">
+                  <div className="hidden group-hover/header:flex items-center gap-0.5 ml-0.5 shrink-0">
                     <button 
                       onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'left'); }}
                       className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
@@ -1560,7 +1634,7 @@ export function LeadTable({
                   <button
                     onClick={(e) => handleFilterClick(col.id, e)}
                     className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shrink-0 ${
-                      activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-450 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
+                      activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-400 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
                     }`}
                     title={`Filter ${col.label}`}
                   >
@@ -1573,7 +1647,7 @@ export function LeadTable({
           ))}
 
           {/* Frozen Column Actions (Sticky Right) */}
-          <th className="py-4 px-4 text-right sticky right-0 bg-[#FAF8F5] dark:bg-[#121110] z-10 border-l border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5]">Actions</th>
+          <th className="py-4 pl-4 pr-6 text-right sticky right-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-10 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200">Actions</th>
         </tr>
       </thead>
     </table>
@@ -1628,7 +1702,7 @@ export function LeadTable({
                         }`}
                       >
                         {/* Checkbox Selector */}
-                        <td className="py-3.5 px-4 text-center bg-[#070708]/10" onClick={(e) => handleSelectRow(lead.id, e)}>
+                        <td className="py-3.5 pl-6 pr-4 text-center" onClick={(e) => handleSelectRow(lead.id, e)}>
                           {isSelected ? (
                             <CheckSquare className="w-4.5 h-4.5 text-orange-500 mx-auto" />
                           ) : (
@@ -1637,7 +1711,7 @@ export function LeadTable({
                         </td>
 
                         {/* Sticky Left: Lead Name Column (Initials Circle Removed) */}
-                        <td className="py-3.5 px-4 sticky left-0 bg-white dark:bg-[#0c0c0e] z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300">
+                        <td className="py-3.5 pl-6 pr-4 sticky left-0 bg-white dark:bg-[#0c0c0e] z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300">
                           <div className="min-w-0">
                             <span 
                               style={{ color: activeColor || 'inherit' }}
@@ -1727,18 +1801,18 @@ export function LeadTable({
                               case 'owner':
                                 return (
                                   <MotionTd key={col.id} className="py-3.5 px-4">
-                                    <span className="text-xs text-zinc-300 font-medium truncate block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
+                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
                                   </MotionTd>
                                 );
                               case 'company':
                                 return (
                                   <MotionTd key={col.id} className="py-3.5 px-4">
-                                    <span className="text-xs text-zinc-400 truncate block">{lead.raw_payload?.company || mockCompany}</span>
+                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate block">{lead.raw_payload?.company || mockCompany}</span>
                                   </MotionTd>
                                 );
                               case 'date':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4 text-xs text-zinc-500 font-mono">
+                                  <MotionTd key={col.id} className="py-3.5 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold">
                                     {new Date(lead.created_at).toLocaleDateString('en-IN', {
                                       day: '2-digit', month: 'short', year: 'numeric'
                                     })}
@@ -1746,7 +1820,7 @@ export function LeadTable({
                                 );
                               case 'address':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4 text-xs text-zinc-500 truncate">
+                                  <MotionTd key={col.id} className="py-3.5 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate">
                                     {lead.raw_payload?.venue || lead.raw_payload?.address || '-'}
                                   </MotionTd>
                                 );
@@ -1771,7 +1845,7 @@ export function LeadTable({
                                         <span className="truncate max-w-[120px]">{mockAttachment}</span>
                                       </div>
                                     ) : (
-                                      <span className="text-zinc-700 text-xs italic">-</span>
+                                      <span className="text-slate-800 dark:text-zinc-200 text-sm font-semibold">-</span>
                                     )}
                                   </MotionTd>
                                 );
@@ -1864,7 +1938,7 @@ export function LeadTable({
                             const metaKey = col.id.replace('meta_', '');
                             const metaVal = lead.raw_payload?.[metaKey] ?? '-';
                             return (
-                              <MotionTd key={col.id} className="py-3.5 px-4 text-xs font-medium text-zinc-450 truncate">
+                              <MotionTd key={col.id} className="py-3.5 px-4 text-sm font-semibold text-slate-800 dark:text-zinc-200 truncate">
                                 {String(metaVal)}
                               </MotionTd>
                             );
@@ -1923,7 +1997,7 @@ export function LeadTable({
                                   placeholder="..."
                                   value={customVal}
                                   onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value, lead.id)}
-                                  className="bg-slate-50 dark:bg-zinc-950/50 border border-transparent hover:border-slate-300 dark:hover:border-zinc-800 focus:border-slate-400 dark:focus:border-zinc-700 text-xs text-slate-900 dark:text-white p-1 rounded w-28 focus:outline-none"
+                                  className="bg-slate-50 dark:bg-zinc-950/50 border border-[#E8E5DF] dark:border-[#2C2926] hover:border-slate-450 dark:hover:border-zinc-700 focus:border-slate-400 dark:focus:border-zinc-700 text-sm font-semibold text-slate-900 dark:text-white p-1 rounded w-28 focus:outline-none"
                                 />
                               </MotionTd>
                             );
@@ -1933,7 +2007,7 @@ export function LeadTable({
                         })}
 
                         {/* Sticky Right: Column Actions */}
-                        <td className="py-3.5 px-4 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.01)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.25)]" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3.5 pl-4 pr-6 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.01)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.25)]" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             
                             {/* WA Welcome Msg Quick Action */}
@@ -2738,8 +2812,8 @@ export function LeadTable({
       {viewMode === 'table' && (
         <div 
           ref={stickyScrollbarRef} 
-          className="fixed bottom-0 right-0 h-4 bg-[#FAF8F5] dark:bg-[#121110] border-t border-[#E8E5DF] overflow-x-auto" 
-          style={{ left: '16rem', zIndex: 99999 }}
+          className="fixed bottom-0 right-0 h-4 bg-white dark:bg-[#0c0c0e] border-t border-[#E8E5DF] dark:border-[#2C2926] overflow-x-auto" 
+          style={{ left: `${sidebarWidth}px`, zIndex: 99999 }}
         >
           <div style={{ width: tableScrollWidth || '150vw', height: '1px' }} />
         </div>
