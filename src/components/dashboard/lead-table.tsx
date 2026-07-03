@@ -1675,7 +1675,7 @@ export function LeadTable({
   /* GRID TABLE VIEW                                      */
   /* ---------------------------------------------------- */
   <div className="w-full relative transition-all">
-    <div className="overflow-x-auto" ref={tableContainerRef}>
+    <div className="overflow-auto max-h-[calc(100vh-230px)]" ref={tableContainerRef}>
       <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
         
         <colgroup>
@@ -1684,7 +1684,7 @@ export function LeadTable({
           {columns.filter(col => col.visible).map(col => (
             <col key={col.id} className="w-[170px]" />
           ))}
-          <col className="w-[260px]" />
+          <col className="w-[380px]" />
         </colgroup>
 
         <thead>
@@ -1823,7 +1823,7 @@ export function LeadTable({
                         }`}
                       >
                         {/* Checkbox Selector */}
-                        <td className="py-3.5 pl-6 pr-4 text-center" onClick={(e) => handleSelectRow(lead.id, e)}>
+                        <td className="py-2 pl-6 pr-4 text-center" onClick={(e) => handleSelectRow(lead.id, e)}>
                           {isSelected ? (
                             <CheckSquare className="w-4.5 h-4.5 text-orange-500 mx-auto" />
                           ) : (
@@ -1832,7 +1832,7 @@ export function LeadTable({
                         </td>
 
                         {/* Sticky Left: Lead Name Column (Initials Circle Removed) */}
-                        <td className="py-3.5 pl-6 pr-4 sticky left-0 bg-white dark:bg-[#0c0c0e] z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300">
+                        <td className="py-2 pl-6 pr-4 sticky left-0 bg-white dark:bg-[#0c0c0e] z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300">
                           <div className="min-w-0">
                             <span 
                               style={{ color: activeColor || 'inherit' }}
@@ -1854,7 +1854,7 @@ export function LeadTable({
                             switch (col.id) {
                               case 'contact':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4">
+                                  <MotionTd key={col.id} className="py-2 px-4">
                                     <div className="space-y-1">
                                       <span className="text-[11px] text-zinc-350 font-mono flex items-center gap-1.5">
                                         <Phone className="w-3 h-3 text-zinc-650" />
@@ -1871,7 +1871,7 @@ export function LeadTable({
                                 );
                               case 'source':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                     <select
                                       value={lead.source}
                                       onChange={(e) => {
@@ -1892,7 +1892,7 @@ export function LeadTable({
                                 );
                               case 'status':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                     <select
                                       value={lead.stage_id || lead.status}
                                       onChange={(e) => {
@@ -1921,19 +1921,19 @@ export function LeadTable({
                                 );
                               case 'owner':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4">
+                                  <MotionTd key={col.id} className="py-2 px-4">
                                     <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
                                   </MotionTd>
                                 );
                               case 'company':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4">
+                                  <MotionTd key={col.id} className="py-2 px-4">
                                     <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate block">{lead.raw_payload?.company || mockCompany}</span>
                                   </MotionTd>
                                 );
                               case 'date':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold">
+                                  <MotionTd key={col.id} className="py-2 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold">
                                     {new Date(lead.created_at).toLocaleDateString('en-IN', {
                                       day: '2-digit', month: 'short', year: 'numeric'
                                     })}
@@ -1941,13 +1941,13 @@ export function LeadTable({
                                 );
                               case 'address':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate">
+                                  <MotionTd key={col.id} className="py-2 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate">
                                     {lead.raw_payload?.venue || lead.raw_payload?.address || '-'}
                                   </MotionTd>
                                 );
                               case 'attachments':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                     {mockAttachment ? (
                                       <div 
                                         className="relative inline-flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-350 underline transition-all font-mono"
@@ -1974,7 +1974,7 @@ export function LeadTable({
                               // SaaS Automation workflow trackers
                               case 'wa_group':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                     <select
                                       value={lead.whatsapp_group_id || ''}
                                       onChange={(e) => {
@@ -1993,7 +1993,7 @@ export function LeadTable({
                               case 'wa_welcome':
                                 const ws = (lead as any).wa_welcome_sent ?? false;
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4">
+                                  <MotionTd key={col.id} className="py-2 px-4">
                                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold tracking-wide border uppercase ${
                                       ws ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-[#FAF8F5] dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
                                     }`}>
@@ -2005,7 +2005,7 @@ export function LeadTable({
                                 const gs = (lead as any).google_synced ?? false;
                                 const isSyncing = syncingLeadId === lead.id;
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                                     <button
                                       onClick={() => handleGoogleContactsSync(lead)}
                                       disabled={gs || isSyncing}
@@ -2029,7 +2029,7 @@ export function LeadTable({
                               case 'wgl_status':
                                 const wg = (lead as any).wgl_dispatched ?? false;
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4">
+                                  <MotionTd key={col.id} className="py-2 px-4">
                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-extrabold tracking-wide uppercase border ${
                                       wg ? 'bg-green-600/15 border-green-500/20 text-green-600 dark:text-green-400' : 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-400 dark:text-zinc-500'
                                     }`}>
@@ -2039,7 +2039,7 @@ export function LeadTable({
                                 );
                               case 'followup_sched':
                                 return (
-                                  <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                     <button
                                       onClick={() => setTimelineLead(lead)}
                                       className="p-1 px-2 text-[10px] font-extrabold tracking-wide uppercase bg-white dark:bg-[#1C1A18] hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] hover:text-[#1A1A1A] dark:hover:text-white border border-[#E8E5DF] dark:border-[#2C2926] rounded-lg text-zinc-500 dark:text-zinc-400 flex items-center gap-1 shadow-sm transition-all"
@@ -2050,7 +2050,7 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               default:
-                                return <td key={col.id} className="py-3.5 px-4">-</td>;
+                                return <td key={col.id} className="py-2 px-4">-</td>;
                             }
                           }
 
@@ -2059,7 +2059,7 @@ export function LeadTable({
                             const metaKey = col.id.replace('meta_', '');
                             const metaVal = lead.raw_payload?.[metaKey] ?? '-';
                             return (
-                              <MotionTd key={col.id} className="py-3.5 px-4 text-sm font-semibold text-slate-800 dark:text-zinc-200 truncate">
+                              <MotionTd key={col.id} className="py-2 px-4 text-sm font-semibold text-slate-800 dark:text-zinc-200 truncate">
                                 {String(metaVal)}
                               </MotionTd>
                             );
@@ -2072,7 +2072,7 @@ export function LeadTable({
                             // Color Picker highlight type
                             if (col.type === 'custom-color') {
                               return (
-                                <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                   <div className="flex items-center gap-2">
                                     <input 
                                       type="color"
@@ -2095,7 +2095,7 @@ export function LeadTable({
                             // Dynamic Dropdown options list type
                             if (col.type === 'custom-dropdown') {
                               return (
-                                <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                                <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                   <select
                                     value={customVal}
                                     onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value, lead.id)}
@@ -2112,7 +2112,7 @@ export function LeadTable({
 
                             // Custom Text field type
                             return (
-                              <MotionTd key={col.id} className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                              <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
                                 <input 
                                   type="text"
                                   placeholder="..."
@@ -2128,8 +2128,8 @@ export function LeadTable({
                         })}
 
                         {/* Sticky Right: Column Actions */}
-                        <td className="py-3.5 pl-4 pr-6 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.01)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.25)]" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1">
+                        <td className="py-2 pl-4 pr-6 text-right sticky right-0 bg-white dark:bg-[#0c0c0e] border-l border-[#E8E5DF] dark:border-[#2C2926] z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.25)]" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
                             
                             {/* WA Welcome Msg Quick Action */}
                             <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
@@ -2138,8 +2138,8 @@ export function LeadTable({
                                 onClick={() => handleWhatsappWelcomeDispatch(lead)}
                                 className={`p-1.5 rounded-lg border transition-all ${
                                   (lead as any).wa_welcome_sent 
-                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' 
-                                    : 'bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-emerald-600'
+                                    ? 'bg-emerald-100 dark:bg-emerald-950 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-450' 
+                                    : 'bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-zinc-200 hover:text-emerald-600'
                                 }`}
                               >
                                 <Send className="w-3.5 h-3.5" />
@@ -2154,10 +2154,10 @@ export function LeadTable({
                                 disabled={syncingLeadId === lead.id}
                                 className={`p-1.5 rounded-lg border transition-all ${
                                   (lead as any).google_synced 
-                                    ? 'bg-blue-600/10 border-blue-500/20 text-blue-600 dark:text-blue-400 cursor-default' 
+                                    ? 'bg-blue-100 dark:bg-blue-950 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-405' 
                                     : syncingLeadId === lead.id 
-                                      ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
-                                      : 'bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-blue-500'
+                                      ? 'bg-zinc-850 border-zinc-700 text-zinc-400 animate-pulse'
+                                      : 'bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-zinc-200 hover:text-blue-500'
                                 }`}
                               >
                                 {syncingLeadId === lead.id ? (
@@ -2175,8 +2175,8 @@ export function LeadTable({
                                 onClick={() => handleWglDispatch(lead)}
                                 className={`p-1.5 rounded-lg border transition-all ${
                                   (lead as any).wgl_dispatched 
-                                    ? 'bg-green-600/15 border-green-500/20 text-green-600 dark:text-green-400' 
-                                    : 'bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-green-600'
+                                    ? 'bg-green-100 dark:bg-green-950 border-green-300 dark:border-green-800 text-green-700 dark:text-green-405' 
+                                    : 'bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-zinc-200 hover:text-green-600'
                                 }`}
                               >
                                 <AlertCircle className="w-3.5 h-3.5" />
@@ -2188,13 +2188,13 @@ export function LeadTable({
                               <MotionButton
                                 whileHover={{ scale: 1.1 }}
                                 onClick={() => setTimelineLead(lead)}
-                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
                               >
                                 <Clock className="w-3.5 h-3.5" />
                               </MotionButton>
                             </PremiumTooltip>
 
-                            <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-900 mx-1 hidden md:block" />
+                            <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-850 mx-1.5 shrink-0" />
 
                             {/* PhoneCall Selector */}
                             <div className="relative">
@@ -2205,7 +2205,7 @@ export function LeadTable({
                                     e.stopPropagation();
                                     setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
                                   }}
-                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
                                 >
                                   <PhoneCall className="w-3.5 h-3.5" />
                                 </MotionButton>
@@ -2235,17 +2235,24 @@ export function LeadTable({
                             </div>
 
                             {/* Mail Lead */}
-                            {lead.email && (
-                              <PremiumTooltip content="Email Lead">
+                            <PremiumTooltip content={lead.email ? "Email Lead" : "No Email Address"}>
+                              {lead.email ? (
                                 <MotionA 
                                   whileHover={{ scale: 1.1 }}
                                   href={`mailto:${lead.email}`}
-                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
                                 >
                                   <Mail className="w-3.5 h-3.5" />
                                 </MotionA>
-                              </PremiumTooltip>
-                            )}
+                              ) : (
+                                <button 
+                                  disabled
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF]/50 dark:border-[#2C2926]/50 bg-slate-100/50 dark:bg-zinc-950 text-zinc-400 dark:text-zinc-650 cursor-not-allowed"
+                                >
+                                  <Mail className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </PremiumTooltip>
 
                             {/* Comments Logger Quick Action */}
                             <PremiumTooltip content="Comments & Reminders Timeline">
@@ -2254,7 +2261,7 @@ export function LeadTable({
                                 onClick={() => {
                                   setSelectedLead(lead);
                                 }}
-                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
                               >
                                 <MessageSquare className="w-3.5 h-3.5" />
                               </MotionButton>
@@ -2269,7 +2276,7 @@ export function LeadTable({
                                     e.stopPropagation();
                                     setRowActionMenuLeadId(rowActionMenuLeadId === lead.id ? null : lead.id);
                                   }}
-                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
                                 >
                                   <MoreHorizontal className="w-3.5 h-3.5" />
                                 </MotionButton>
