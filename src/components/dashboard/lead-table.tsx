@@ -123,6 +123,9 @@ export function LeadTable({
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabsHeight, setTabsHeight] = useState(0);
 
+  const filtersRef = useRef<HTMLDivElement>(null);
+  const [filtersHeight, setFiltersHeight] = useState(0);
+
   useEffect(() => {
     if (!tabsRef.current) return;
     const resizeObserver = new ResizeObserver((entries) => {
@@ -131,6 +134,17 @@ export function LeadTable({
       }
     });
     resizeObserver.observe(tabsRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!filtersRef.current) return;
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setFiltersHeight(entry.target.clientHeight);
+      }
+    });
+    resizeObserver.observe(filtersRef.current);
     return () => resizeObserver.disconnect();
   }, []);
   
@@ -1147,7 +1161,7 @@ export function LeadTable({
       {/* Dynamic Views Switcher Panel */}
       <div 
         ref={tabsRef}
-        className="sticky top-0 z-[45] flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-4 mb-6 bg-slate-50/95 dark:bg-[#070708]/95 backdrop-blur-sm pt-2"
+        className="sticky top-0 z-50 flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-4 mb-6 bg-[#FAF8F5] dark:bg-[#121110] pt-2"
       >
         <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl shadow-inner">
           <button 
@@ -1196,7 +1210,11 @@ export function LeadTable({
       </div>
 
       {/* Advanced In-Header Filters Row */}
-      <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-4">
+      <div 
+        ref={filtersRef}
+        className="sticky z-50 flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-[#FAF8F5] dark:bg-[#121110] py-2"
+        style={{ top: `${tabsHeight}px` }}
+      >
         
         {/* Search */}
         <div className="relative w-full md:w-80">
@@ -1402,7 +1420,7 @@ export function LeadTable({
 
               <thead 
                 className="sticky z-40 bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]"
-                style={{ top: `${tabsHeight}px` }}
+                style={{ top: `${tabsHeight + filtersHeight}px` }}
               >
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A]">
                   <th className="py-4 px-4 text-center">
@@ -2011,15 +2029,10 @@ export function LeadTable({
           {/* Synced horizontal scrollbar at bottom of table */}
           <div 
             ref={stickyScrollbarRef} 
-            className={`fixed bottom-0 right-0 overflow-x-auto bg-[#FAF8F5]/95 dark:bg-[#121110]/95 border-t border-[#E8E5DF]/60 dark:border-[#2C2926]/60 transition-all ${isScrollable ? 'block' : 'hidden'}`}
-            style={{
-              left: '16rem',
-              zIndex: 9999,
-              height: '16px',
-              scrollbarWidth: 'thin',
-            }}
+            className="fixed bottom-0 right-0 h-4 bg-[#FAF8F5] dark:bg-[#121110] border-t border-[#E8E5DF] overflow-x-auto" 
+            style={{ left: '16rem', zIndex: 99999 }}
           >
-            <div style={{ width: tableScrollWidth, height: '1px' }} />
+            <div style={{ width: tableScrollWidth || '150vw', height: '1px' }} />
           </div>
 
           {/* Pagination */}
