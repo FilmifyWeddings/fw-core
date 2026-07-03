@@ -1259,7 +1259,7 @@ export function LeadTable({
   };
 
   return (
-    <div className="overflow-auto max-h-[calc(100vh-80px)] w-full relative select-none" ref={tableContainerRef}>
+    <div className="flex-1 overflow-auto w-full relative select-none" ref={tableContainerRef}>
       
       {/* Pinned/Sticky Left Header block */}
       {renderHeader && (
@@ -1704,7 +1704,7 @@ export function LeadTable({
   /* ---------------------------------------------------- */
   <div className="w-full relative transition-all">
     <div className="overflow-x-auto overflow-y-visible">
-      <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
+      <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-auto min-w-[1000px]">
         
         <colgroup>
           <col className="w-[50px]" />
@@ -1880,7 +1880,7 @@ export function LeadTable({
                           <div className="min-w-0">
                             <span 
                               style={{ color: activeColor || 'inherit' }}
-                              className="font-black text-slate-900 dark:text-white group-hover/row:text-orange-500 transition-colors truncate block text-sm"
+                              className="font-black text-slate-900 dark:text-white group-hover/row:text-orange-500 transition-colors whitespace-nowrap block text-sm"
                             >
                               {lead.name || 'Unspecified Lead'}
                             </span>
@@ -1899,13 +1899,13 @@ export function LeadTable({
                               case 'contact':
                                 return (
                                   <MotionTd key={col.id} className="py-2 px-4">
-                                    <div className="space-y-1.5 my-0.5 min-w-[150px]">
-                                      <span className="text-xs text-slate-900 dark:text-zinc-100 font-semibold font-sans flex items-center gap-1.5 break-all select-all">
+                                    <div className="space-y-1.5 my-0.5">
+                                      <span className="text-xs text-slate-900 dark:text-zinc-100 font-semibold font-sans flex items-center gap-1.5 whitespace-nowrap select-all">
                                         <Phone className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400 shrink-0" />
                                         {lead.phone}
                                       </span>
                                       {lead.email && (
-                                        <span className="text-xs text-slate-900 dark:text-zinc-100 font-semibold font-sans flex items-center gap-1.5 break-all select-all">
+                                        <span className="text-xs text-slate-900 dark:text-zinc-100 font-semibold font-sans flex items-center gap-1.5 whitespace-nowrap select-all">
                                           <Mail className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400 shrink-0" />
                                           {lead.email}
                                         </span>
@@ -1966,13 +1966,13 @@ export function LeadTable({
                               case 'owner':
                                 return (
                                   <MotionTd key={col.id} className="py-2 px-4">
-                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
+                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
                                   </MotionTd>
                                 );
                               case 'company':
                                 return (
                                   <MotionTd key={col.id} className="py-2 px-4">
-                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate block">{lead.raw_payload?.company || mockCompany}</span>
+                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap block">{lead.raw_payload?.company || mockCompany}</span>
                                   </MotionTd>
                                 );
                               case 'date':
@@ -1985,7 +1985,7 @@ export function LeadTable({
                                 );
                               case 'address':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold truncate">
+                                  <MotionTd key={col.id} className="py-2 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
                                     {lead.raw_payload?.venue || lead.raw_payload?.address || '-'}
                                   </MotionTd>
                                 );
@@ -2007,7 +2007,7 @@ export function LeadTable({
                                         onMouseLeave={() => setHoveredAttachment(null)}
                                       >
                                         <FileText className="w-3.5 h-3.5 text-zinc-650 shrink-0" />
-                                        <span className="truncate max-w-[120px]">{mockAttachment}</span>
+                                        <span className="whitespace-nowrap">{mockAttachment}</span>
                                       </div>
                                     ) : (
                                       <span className="text-slate-800 dark:text-zinc-200 text-sm font-semibold">-</span>
@@ -2025,7 +2025,7 @@ export function LeadTable({
                                         const nextGroupId = e.target.value || null;
                                         handleInlineLeadEdit({ whatsapp_group_id: nextGroupId }, lead.id);
                                       }}
-                                      className="bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] text-[11px] font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#D4AF37] cursor-pointer w-32 truncate shadow-sm transition-all"
+                                      className="bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] text-[11px] font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#D4AF37] cursor-pointer w-auto min-w-[120px] whitespace-nowrap shadow-sm transition-all"
                                     >
                                       <option value="" className="bg-white dark:bg-[#1C1A18] text-[#1A1A1A] dark:text-[#F5F5F5]">Unassigned</option>
                                       {contactGroups.map(g => (
@@ -2103,7 +2103,7 @@ export function LeadTable({
                             const metaKey = col.id.replace('meta_', '');
                             const metaVal = lead.raw_payload?.[metaKey] ?? '-';
                             return (
-                              <MotionTd key={col.id} className="py-2 px-4 text-sm font-semibold text-slate-800 dark:text-zinc-200 truncate">
+                              <MotionTd key={col.id} className="py-2 px-4 text-sm font-semibold text-slate-800 dark:text-zinc-200 whitespace-nowrap">
                                 {String(metaVal)}
                               </MotionTd>
                             );
@@ -2143,7 +2143,7 @@ export function LeadTable({
                                   <select
                                     value={customVal}
                                     onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value, lead.id)}
-                                    className="bg-slate-50 dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-900 text-slate-700 dark:text-zinc-350 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-slate-300 dark:focus:border-zinc-800 cursor-pointer w-32 truncate"
+                                    className="bg-slate-50 dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-900 text-slate-700 dark:text-zinc-350 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-slate-300 dark:focus:border-zinc-800 cursor-pointer w-auto min-w-[120px] whitespace-nowrap"
                                   >
                                     <option value="">Select option</option>
                                     {col.options?.map(opt => (
@@ -2162,7 +2162,7 @@ export function LeadTable({
                                   placeholder="..."
                                   value={customVal}
                                   onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value, lead.id)}
-                                  className="bg-slate-50 dark:bg-zinc-950/50 border border-[#E8E5DF] dark:border-[#2C2926] hover:border-slate-450 dark:hover:border-zinc-700 focus:border-slate-400 dark:focus:border-zinc-700 text-sm font-semibold text-slate-900 dark:text-white p-1 rounded w-28 focus:outline-none"
+                                  className="bg-slate-50 dark:bg-zinc-950/50 border border-[#E8E5DF] dark:border-[#2C2926] hover:border-slate-450 dark:hover:border-zinc-700 focus:border-slate-400 dark:focus:border-zinc-700 text-sm font-semibold text-slate-900 dark:text-white p-1 rounded w-auto min-w-[120px] focus:outline-none"
                                 />
                               </MotionTd>
                             );
