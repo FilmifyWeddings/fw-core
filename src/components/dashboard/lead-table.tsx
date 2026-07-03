@@ -691,7 +691,31 @@ export function LeadTable({
         })
         .filter(Boolean) as ColumnConfig[];
 
-      return [...updated, ...savedCustoms];
+      const combined = [...updated, ...savedCustoms];
+
+      // Reorder based on saved column order preference if it exists
+      const savedOrderStr = localStorage.getItem('leads_table_column_order');
+      if (savedOrderStr) {
+        try {
+          const savedOrder: string[] = JSON.parse(savedOrderStr);
+          const ordered: ColumnConfig[] = [];
+          savedOrder.forEach(id => {
+            const found = combined.find(c => c.id === id);
+            if (found) {
+              ordered.push(found);
+            }
+          });
+          // Append any columns that exist in combined but not in savedOrder (e.g. newly added columns)
+          combined.forEach(c => {
+            if (!ordered.find(o => o.id === c.id)) {
+              ordered.push(c);
+            }
+          });
+          return ordered;
+        } catch (_) {}
+      }
+
+      return combined;
     });
   };
 
@@ -711,6 +735,7 @@ export function LeadTable({
     }, {} as Record<string, any>);
 
     localStorage.setItem('leads_table_column_preferences', JSON.stringify(prefObj));
+    localStorage.setItem('leads_table_column_order', JSON.stringify(updatedCols.map(c => c.id)));
     if (onPreferencesChange) {
       onPreferencesChange(prefObj);
     }
@@ -1710,8 +1735,8 @@ export function LeadTable({
           <col className="w-[220px]" />
           {columns.filter(col => col.visible).map(col => {
             if (col.id === 'contact') return <col key={col.id} className="w-[280px]" />;
-            if (col.id === 'date') return <col key={col.id} className="w-[190px]" />;
-            return <col key={col.id} className="w-[170px]" />;
+            if (col.id === 'date') return <col key={col.id} className="w-[200px]" />;
+            return <col key={col.id} className="w-[220px]" />;
           })}
           <col className="w-[330px]" />
         </colgroup>
@@ -1720,7 +1745,7 @@ export function LeadTable({
           <tr className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-zinc-200 bg-[#EAE6DF] dark:bg-[#1C1A18] border-b border-[#E8E5DF] dark:border-[#2C2926]">
             <th 
               style={{ top: `${headerHeight}px` }}
-              className="py-4 pl-6 pr-4 text-center sticky bg-[#EAE6DF] dark:bg-[#1C1A18] z-30"
+              className="py-4 pl-6 pr-4 text-center sticky left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40"
             >
               <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
                 {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
@@ -1734,7 +1759,7 @@ export function LeadTable({
             {/* Frozen Column Name (Sticky Top & Left) */}
             <th 
               style={{ top: `${headerHeight}px` }}
-              className="py-4 pl-6 pr-4 text-xs font-black sticky left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none"
+              className="py-4 pl-6 pr-4 text-xs font-black sticky left-[50px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none"
             >
               <div className="flex items-center justify-between gap-1.5">
                 <span>Lead Name</span>
@@ -1864,7 +1889,14 @@ export function LeadTable({
                         }`}
                       >
                         {/* Checkbox Selector */}
-                        <td className="py-2 pl-6 pr-4 text-center" onClick={(e) => handleSelectRow(lead.id, e)}>
+                        <td 
+                          className={`py-2 pl-6 pr-4 text-center sticky left-0 z-20 transition-colors ${
+                            isSelected 
+                              ? 'bg-[#E8E4DA] dark:bg-[#1F1C1A]' 
+                              : 'bg-white dark:bg-[#0c0c0e] group-hover/row:bg-slate-50 dark:group-hover/row:bg-zinc-900/20'
+                          }`}
+                          onClick={(e) => handleSelectRow(lead.id, e)}
+                        >
                           {isSelected ? (
                             <CheckSquare className="w-4.5 h-4.5 text-orange-500 mx-auto" />
                           ) : (
@@ -1872,16 +1904,16 @@ export function LeadTable({
                           )}
                         </td>
 
-                        {/* Sticky Left: Lead Name Column (Initials Circle Removed) */}
-                        <td className={`py-2 pl-6 pr-4 sticky left-0 z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300 transition-colors ${
+                        {/* Sticky Left: Lead Name Column */}
+                        <td className={`py-2 pl-6 pr-4 sticky left-[50px] z-20 border-r border-slate-200 dark:border-zinc-900/60 shadow-[5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[5px_0_10px_rgba(0,0,0,0.3)] text-slate-800 dark:text-zinc-300 transition-colors overflow-hidden ${
                           isSelected 
-                            ? 'bg-[#E8E4DA] dark:bg-[#1F1C1A]' 
-                            : 'bg-[#F2F0EB] dark:bg-[#141211] group-hover/row:bg-[#EAE6DF] dark:group-hover/row:bg-[#1C1A18]'
+                            ? 'bg-[#EAE8E3] dark:bg-[#1F1C1A]' 
+                            : 'bg-[#F6F5F2] dark:bg-[#141211] group-hover/row:bg-[#EDEBE7] dark:group-hover/row:bg-[#1C1A18]'
                         }`}>
-                          <div className="min-w-0">
+                          <div className="min-w-0 overflow-hidden">
                             <span 
                               style={{ color: activeColor || 'inherit' }}
-                              className="font-black text-slate-900 dark:text-white group-hover/row:text-orange-500 transition-colors whitespace-nowrap block text-sm"
+                              className="font-black text-slate-900 dark:text-white group-hover/row:text-orange-500 transition-colors truncate block text-sm max-w-[200px]"
                             >
                               {lead.name || 'Unspecified Lead'}
                             </span>
@@ -1966,14 +1998,14 @@ export function LeadTable({
                                 );
                               case 'owner':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4">
-                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
+                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
+                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
                                   </MotionTd>
                                 );
                               case 'company':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4">
-                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap block">{lead.raw_payload?.company || mockCompany}</span>
+                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
+                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold block">{lead.raw_payload?.company || mockCompany}</span>
                                   </MotionTd>
                                 );
                               case 'date':
@@ -2110,10 +2142,26 @@ export function LeadTable({
                           // 2. Facebook Form Field Ingested Auto-Columns
                           if (col.type === 'meta') {
                             const metaKey = col.id.replace('meta_', '');
-                            const metaVal = lead.raw_payload?.[metaKey] ?? '-';
+                            const rawMetaVal = lead.raw_payload?.[metaKey] ?? '-';
+                            // Auto-format ISO timestamps for readability
+                            let metaVal: string;
+                            if (typeof rawMetaVal === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(rawMetaVal)) {
+                              const parsedDate = new Date(rawMetaVal);
+                              const fDate = parsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                              const fTime = parsedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                              return (
+                                <MotionTd key={col.id} className="py-2 px-4">
+                                  <div className="space-y-0.5 whitespace-nowrap leading-tight">
+                                    <span className="block text-xs text-slate-800 dark:text-zinc-200 font-bold">{fDate}</span>
+                                    <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">{fTime}</span>
+                                  </div>
+                                </MotionTd>
+                              );
+                            }
+                            metaVal = String(rawMetaVal);
                             return (
-                              <MotionTd key={col.id} className="py-2 px-4 text-sm font-semibold text-slate-800 dark:text-zinc-200 whitespace-nowrap">
-                                {String(metaVal)}
+                              <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
+                                <span className="text-sm font-semibold text-slate-800 dark:text-zinc-200">{metaVal}</span>
                               </MotionTd>
                             );
                           }
