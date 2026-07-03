@@ -125,11 +125,17 @@ export function LeadTable({
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const [enableHeaderFilters, setEnableHeaderFilters] = useState(false);
   const [filterDropdownRect, setFilterDropdownRect] = useState<{ top: number; left: number } | null>(null);
+  const [tempStartDate, setTempStartDate] = useState<string>('');
+  const [tempEndDate, setTempEndDate] = useState<string>('');
+  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
+  const [calMonth, setCalMonth] = useState(new Date().getMonth());
+  const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
   // Dynamic Sidebar width detection
   const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [rowActionMenuLeadId, setRowActionMenuLeadId] = useState<string | null>(null);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -1302,39 +1308,168 @@ export function LeadTable({
             />
           </div>
 
-          {/* Date Range Selector */}
-          <div className="flex items-center gap-2 bg-white dark:bg-[#0c0c0e] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-3 py-1.5 w-full md:w-auto shrink-0 shadow-sm">
-            <Calendar className="w-3.5 h-3.5 text-[#706E6A] dark:text-[#A09E9A] shrink-0" />
-            <div className="flex items-center gap-1.5 text-[11px] text-[#1A1A1A] dark:text-[#F5F5F5] font-bold">
-              <input 
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="bg-transparent focus:outline-none cursor-pointer border-none text-[11px] text-[#1A1A1A] dark:text-[#F5F5F5]"
-              />
-              <span className="text-zinc-400 font-normal">to</span>
-              <input 
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="bg-transparent focus:outline-none cursor-pointer border-none text-[11px] text-[#1A1A1A] dark:text-[#F5F5F5]"
-              />
+          {/* Calendar Range Picker Trigger Button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowDatePickerModal(!showDatePickerModal);
+                // Pre-populate temp selection states when opening
+                setTempStartDate(startDate);
+                setTempEndDate(endDate);
+              }}
+              className={`p-2.5 rounded-xl border transition-all flex items-center justify-center relative shadow-sm hover:scale-105 ${
+                startDate || endDate
+                  ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]'
+                  : 'bg-white hover:bg-slate-50 dark:bg-[#121110] dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
+              }`}
+              title="Filter by Date Range"
+            >
+              <Calendar className="w-4 h-4" />
               {(startDate || endDate) && (
-                <button 
-                  onClick={() => { setStartDate(''); setEndDate(''); }}
-                  className="ml-1 p-0.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded text-red-500 transition-colors"
-                  title="Clear date filter"
-                >
-                  <X className="w-3 h-3 stroke-[2.5]" />
-                </button>
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#D4AF37] rounded-full border border-white" />
               )}
-            </div>
-          </div>
+            </button>
 
-          {/* Count Badge */}
-          <div className="text-[11px] font-extrabold bg-[#D4AF37]/10 text-[#D4AF37] dark:text-[#C5A059] px-2.5 py-1.5 rounded-xl border border-[#D4AF37]/20 flex items-center gap-1.5 shadow-sm shrink-0">
-            <Database className="w-3.5 h-3.5" />
-            <span>{filteredLeads.length} Leads</span>
+            {/* Custom 3D Advanced Date Range Picker Modal */}
+            {showDatePickerModal && (
+              <div className="absolute left-0 mt-2 z-50 w-[300px] bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.15)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)] flex flex-col gap-3 transition-all select-none">
+                
+                {/* Calendar Header: Month Selector */}
+                <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2.5">
+                  <button 
+                    onClick={() => {
+                      if (calMonth === 0) {
+                        setCalMonth(11);
+                        setCalYear(calYear - 1);
+                      } else {
+                        setCalMonth(calMonth - 1);
+                      }
+                    }}
+                    className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
+                    {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][calMonth]} {calYear}
+                  </span>
+                  <button 
+                    onClick={() => {
+                      if (calMonth === 11) {
+                        setCalMonth(0);
+                        setCalYear(calYear + 1);
+                      } else {
+                        setCalMonth(calMonth + 1);
+                      }
+                    }}
+                    className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Days of Week Row */}
+                <div className="grid grid-cols-7 gap-1 text-center">
+                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                    <span key={d} className="text-[10px] font-bold text-zinc-400 dark:text-zinc-555 uppercase">
+                      {d}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Days Grid */}
+                <div className="grid grid-cols-7 gap-1 text-center">
+                  {(() => {
+                    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+                    const firstDayIdx = new Date(calYear, calMonth, 1).getDay();
+                    const cells = [];
+                    
+                    // Empty slots for preceding days
+                    for (let i = 0; i < firstDayIdx; i++) {
+                      cells.push(<div key={`empty-${i}`} className="w-8 h-8" />);
+                    }
+                    
+                    // Days grid
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const curDateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                      const isSelectedStart = tempStartDate === curDateStr;
+                      const isSelectedEnd = tempEndDate === curDateStr;
+                      const isInRange = tempStartDate && tempEndDate && curDateStr > tempStartDate && curDateStr < tempEndDate;
+                      
+                      cells.push(
+                        <button
+                          key={d}
+                          onClick={() => {
+                            if (!tempStartDate || (tempStartDate && tempEndDate)) {
+                              setTempStartDate(curDateStr);
+                              setTempEndDate('');
+                            } else {
+                              if (curDateStr < tempStartDate) {
+                                setTempStartDate(curDateStr);
+                              } else {
+                                setTempEndDate(curDateStr);
+                              }
+                            }
+                          }}
+                          className={`w-8 h-8 text-[11px] font-bold rounded-lg flex items-center justify-center transition-all ${
+                            isSelectedStart || isSelectedEnd
+                              ? 'bg-[#D4AF37] text-white rounded-full font-black shadow-md'
+                              : isInRange
+                                ? 'bg-[#D4AF37]/15 text-[#D4AF37]'
+                                : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          {d}
+                        </button>
+                      );
+                    }
+                    return cells;
+                  })()}
+                </div>
+
+                {/* Date Boxes Preview */}
+                <div className="grid grid-cols-2 gap-2 text-left pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                  <div>
+                    <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">Start Date</span>
+                    <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
+                      {tempStartDate ? new Date(tempStartDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">End Date</span>
+                    <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
+                      {tempEndDate ? new Date(tempEndDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 justify-end pt-2 text-[10px] font-bold">
+                  <button
+                    onClick={() => {
+                      setStartDate('');
+                      setEndDate('');
+                      setTempStartDate('');
+                      setTempEndDate('');
+                      setShowDatePickerModal(false);
+                    }}
+                    className="px-3 py-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                  >
+                    Clear Filter
+                  </button>
+                  <button
+                    onClick={() => {
+                      setStartDate(tempStartDate);
+                      setEndDate(tempEndDate);
+                      setShowDatePickerModal(false);
+                    }}
+                    className="px-3 py-1.5 bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-white rounded-lg transition-colors shadow-sm"
+                  >
+                    Apply Filter
+                  </button>
+                </div>
+
+              </div>
+            )}
           </div>
         </div>
 
@@ -1531,128 +1666,6 @@ export function LeadTable({
   </div>
 </div>
 
-{/* Sync-scrolled Table Header (thead only) */}
-{viewMode === 'table' && (
-  <div className="w-full overflow-hidden" ref={headerContainerRef}>
-    <table className="w-full text-left border-collapse table-fixed min-w-[1000px] bg-[#EAE6DF] dark:bg-[#1C1A18]">
-      <colgroup>
-        <col className="w-[50px]" />
-        <col className="w-[220px]" />
-        {columns.filter(col => col.visible).map(col => (
-          <col key={col.id} className="w-[170px]" />
-        ))}
-        <col className="w-[260px]" />
-      </colgroup>
-      <thead>
-        <tr className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-zinc-200 bg-[#EAE6DF] dark:bg-[#1C1A18] border-b border-[#E8E5DF] dark:border-[#2C2926]">
-          <th className="py-4 pl-6 pr-4 text-center bg-[#EAE6DF] dark:bg-[#1C1A18]">
-            <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
-              {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
-                <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
-              ) : (
-                <Square className="w-4.5 h-4.5" />
-              )}
-            </button>
-          </th>
-          
-          {/* Frozen Column Name (Sticky Left) */}
-          <th className="py-4 pl-6 pr-4 text-xs font-black sticky left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-10 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none">
-            <div className="flex items-center justify-between gap-1.5">
-              <span>Lead Name</span>
-              {enableHeaderFilters && (
-                <button
-                  onClick={(e) => handleFilterClick('name', e)}
-                  className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors ml-auto shrink-0 ${
-                    activeHeaderFilters['name'] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-400 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
-                  }`}
-                  title="Filter Name"
-                >
-                  <Filter className="w-3 h-3 fill-current" />
-                </button>
-              )}
-            </div>
-          </th>
-          
-          {/* Dynamic Columns headers */}
-          {columns.map((col, idx) => col.visible && (
-            <th
-              key={col.id}
-              className={`py-4 px-4 text-xs font-black relative group/header cursor-grab active:cursor-grabbing transition-all select-none bg-[#EAE6DF] dark:bg-[#1C1A18] text-slate-800 dark:text-zinc-200 ${
-                draggedColIdx === idx ? 'opacity-40 bg-[#EAE6DF]/80 dark:bg-[#1C1A18]/80 border-dashed border border-[#D4AF37]' : ''
-              } ${
-                dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
-              }`}
-              draggable
-              onDragStart={(e) => handleDragStart(e, idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDragEnd={handleDragEnd}
-              onDrop={(e) => handleDrop(e, idx)}
-            >
-              <div className="flex items-center justify-between gap-1.5 w-full">
-                
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  {editingHeaderId === col.id ? (
-                    <input 
-                      type="text"
-                      value={editingHeaderVal}
-                      onChange={(e) => setEditingHeaderVal(e.target.value)}
-                      onBlur={() => handleSaveRename(col.id)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
-                      className="bg-[#EAE6DF] dark:bg-[#1C1A18] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-24 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
-                      autoFocus
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span 
-                      onDoubleClick={() => handleStartRename(col.id, col.label)} 
-                      className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text truncate flex-1 block"
-                      title="Double click to rename"
-                    >
-                      {col.label}
-                    </span>
-                  )}
-
-                  <div className="hidden group-hover/header:flex items-center gap-0.5 ml-0.5 shrink-0">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'left'); }}
-                      className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
-                      title="Move column left"
-                    >
-                      <ArrowLeft className="w-2.5 h-2.5" />
-                    </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'right'); }}
-                      className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
-                      title="Move column right"
-                    >
-                      <ArrowRight className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {enableHeaderFilters && (
-                  <button
-                    onClick={(e) => handleFilterClick(col.id, e)}
-                    className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shrink-0 ${
-                      activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-400 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
-                    }`}
-                    title={`Filter ${col.label}`}
-                  >
-                    <Filter className="w-3 h-3 fill-current" />
-                  </button>
-                )}
-
-              </div>
-            </th>
-          ))}
-
-          {/* Frozen Column Actions (Sticky Right) */}
-          <th className="py-4 pl-4 pr-6 text-right sticky right-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-10 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200">Actions</th>
-        </tr>
-      </thead>
-    </table>
-  </div>
-)}
 </div>
 
 {/* Main View Mode rendering */}
@@ -1661,7 +1674,7 @@ export function LeadTable({
   /* ---------------------------------------------------- */
   /* GRID TABLE VIEW                                      */
   /* ---------------------------------------------------- */
-  <div className="w-full overflow-visible border border-[#E8E5DF]/50 dark:border-[#2C2926]/50 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 backdrop-blur-md rounded-b-3xl shadow-xl dark:shadow-2xl relative transition-all">
+  <div className="w-full relative transition-all">
     <div className="overflow-x-auto" ref={tableContainerRef}>
       <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
         
@@ -1673,6 +1686,114 @@ export function LeadTable({
           ))}
           <col className="w-[260px]" />
         </colgroup>
+
+        <thead>
+          <tr className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-zinc-200 bg-[#EAE6DF] dark:bg-[#1C1A18] border-b border-[#E8E5DF] dark:border-[#2C2926]">
+            <th className="py-4 pl-6 pr-4 text-center sticky top-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-30">
+              <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
+                {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
+                  <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
+                ) : (
+                  <Square className="w-4.5 h-4.5" />
+                )}
+              </button>
+            </th>
+            
+            {/* Frozen Column Name (Sticky Top & Left) */}
+            <th className="py-4 pl-6 pr-4 text-xs font-black sticky top-0 left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none">
+              <div className="flex items-center justify-between gap-1.5">
+                <span>Lead Name</span>
+                {enableHeaderFilters && (
+                  <button
+                    onClick={(e) => handleFilterClick('name', e)}
+                    className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors ml-auto shrink-0 ${
+                      activeHeaderFilters['name'] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-400 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
+                    }`}
+                    title="Filter Name"
+                  >
+                    <Filter className="w-3 h-3 fill-current" />
+                  </button>
+                )}
+              </div>
+            </th>
+            
+            {/* Dynamic Columns headers (Sticky Top) */}
+            {columns.map((col, idx) => col.visible && (
+              <th
+                key={col.id}
+                className={`py-4 px-4 text-xs font-black sticky top-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-30 relative group/header cursor-grab active:cursor-grabbing transition-all select-none text-slate-800 dark:text-zinc-200 ${
+                  draggedColIdx === idx ? 'opacity-40 bg-[#EAE6DF]/80 dark:bg-[#1C1A18]/80 border-dashed border border-[#D4AF37]' : ''
+                } ${
+                  dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
+                }`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDragEnd={handleDragEnd}
+                onDrop={(e) => handleDrop(e, idx)}
+              >
+                <div className="flex items-center justify-between gap-1.5 w-full">
+                  
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    {editingHeaderId === col.id ? (
+                      <input 
+                        type="text"
+                        value={editingHeaderVal}
+                        onChange={(e) => setEditingHeaderVal(e.target.value)}
+                        onBlur={() => handleSaveRename(col.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
+                        className="bg-[#EAE6DF] dark:bg-[#1C1A18] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-24 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span 
+                        onDoubleClick={() => handleStartRename(col.id, col.label)} 
+                        className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text truncate flex-1 block"
+                        title="Double click to rename"
+                      >
+                        {col.label}
+                      </span>
+                    )}
+
+                    <div className="hidden group-hover/header:flex items-center gap-0.5 ml-0.5 shrink-0">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'left'); }}
+                        className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
+                        title="Move column left"
+                      >
+                        <ArrowLeft className="w-2.5 h-2.5" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'right'); }}
+                        className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
+                        title="Move column right"
+                      >
+                        <ArrowRight className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {enableHeaderFilters && (
+                    <button
+                      onClick={(e) => handleFilterClick(col.id, e)}
+                      className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shrink-0 ${
+                        activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-400 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
+                      }`}
+                      title={`Filter ${col.label}`}
+                    >
+                      <Filter className="w-3 h-3 fill-current" />
+                    </button>
+                  )}
+
+                </div>
+              </th>
+            ))}
+
+            {/* Frozen Column Actions (Sticky Top & Right) */}
+            <th className="py-4 pl-4 pr-6 text-right sticky top-0 right-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200">Actions</th>
+          </tr>
+        </thead>
 
         <tbody className="divide-y divide-zinc-900 text-sm">
                 {paginatedLeads.length === 0 ? (
@@ -2126,16 +2247,78 @@ export function LeadTable({
                               </PremiumTooltip>
                             )}
 
-                            {/* Details Kundali */}
-                            <PremiumTooltip content="Full Lead Details (Kundali)">
+                            {/* Comments Logger Quick Action */}
+                            <PremiumTooltip content="Comments & Reminders Timeline">
                               <MotionButton 
                                 whileHover={{ scale: 1.1 }}
-                                onClick={() => setSelectedLead(lead)}
+                                onClick={() => {
+                                  setSelectedLead(lead);
+                                }}
                                 className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
                               >
-                                <MoreHorizontal className="w-3.5 h-3.5" />
+                                <MessageSquare className="w-3.5 h-3.5" />
                               </MotionButton>
                             </PremiumTooltip>
+
+                            {/* Proper 3-Dots Dropdown Context Menu */}
+                            <div className="relative">
+                              <PremiumTooltip content="More Actions">
+                                <MotionButton 
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRowActionMenuLeadId(rowActionMenuLeadId === lead.id ? null : lead.id);
+                                  }}
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5]/80 dark:bg-[#121110]/80 text-[#1A1A1A] dark:text-[#F5F5F5] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                >
+                                  <MoreHorizontal className="w-3.5 h-3.5" />
+                                </MotionButton>
+                              </PremiumTooltip>
+                              {rowActionMenuLeadId === lead.id && (
+                                <div className="absolute right-0 bottom-8 mt-2 w-48 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
+                                  <button 
+                                    onClick={() => {
+                                      setRowActionMenuLeadId(null);
+                                      setSelectedLead(lead);
+                                    }}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+                                  >
+                                    <Info className="w-3.5 h-3.5 text-blue-500" />
+                                    Full Kundali Details
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      setRowActionMenuLeadId(null);
+                                      setTimelineLead(lead);
+                                    }}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+                                  >
+                                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                                    Followups Timeline
+                                  </button>
+                                  <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
+                                  <button 
+                                    onClick={async () => {
+                                      setRowActionMenuLeadId(null);
+                                      if (confirm('Are you sure you want to delete this lead?')) {
+                                        try {
+                                          const { error } = await supabase.from('client_leads').delete().eq('id', lead.id);
+                                          if (error) throw error;
+                                          alert('Lead deleted successfully.');
+                                          window.location.reload();
+                                        } catch (err: any) {
+                                          alert('Error deleting lead: ' + err.message);
+                                        }
+                                      }
+                                    }}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-md text-xs font-semibold text-red-600 dark:text-red-400 transition-colors"
+                                  >
+                                    <Trash className="w-3.5 h-3.5 text-red-500" />
+                                    Delete Lead
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
 
@@ -2816,6 +2999,19 @@ export function LeadTable({
           style={{ left: `${sidebarWidth}px`, zIndex: 99999 }}
         >
           <div style={{ width: tableScrollWidth || '150vw', height: '1px' }} />
+        </div>
+      )}
+
+      {/* Google Sheets-style filtered count in bottom right */}
+      {viewMode === 'table' && (
+        <div 
+          className="fixed bottom-6 right-6 z-[99999] bg-white/90 dark:bg-[#121110]/90 border border-[#E8E5DF] dark:border-[#2C2926] text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-lg text-slate-700 dark:text-zinc-300 flex items-center gap-1.5 backdrop-blur-md select-none hover:scale-105 transition-all"
+        >
+          <Database className="w-3.5 h-3.5 text-[#D4AF37] dark:text-[#C5A059]" />
+          <span>Showing {filteredLeads.length} of {leads.length} leads</span>
+          {(search || statusFilter !== 'all' || sourceFilter !== 'all' || scoreFilter !== 'all' || ownerFilter !== 'all' || Object.keys(activeHeaderFilters).length > 0 || startDate || endDate) && (
+            <span className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full animate-pulse" title="Filters active" />
+          )}
         </div>
       )}
 
