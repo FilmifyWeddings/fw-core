@@ -359,56 +359,54 @@ export default function LeadsPage() {
     <div className="min-h-screen bg-slate-50 dark:bg-[#070708] text-slate-900 dark:text-white selection:bg-slate-100 dark:selection:bg-zinc-850 transition-colors duration-200">
       <div className="w-full space-y-4">
         
-        {/* Header - kept with screen padding */}
-        <div className="px-4 md:px-6 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Lead Flow Database</h1>
-            <p className="text-xs text-zinc-550 dark:text-zinc-400 mt-1">Manage deal statuses, scoring reasons, and metadata</p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {isDemoMode && (
-              <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-md text-[10px] font-bold tracking-wide flex items-center gap-1.5">
-                <Database className="w-3 h-3" />
-                SIMULATION MODE
-              </span>
-            )}
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center"
-              title="Workspace Config Settings"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => loadLeadsAndPreferences(userId)}
-              disabled={loading}
-              className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center"
-              title="Refresh leads data"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-
-        {/* Lead Table Container - stretches fully left-to-right (no horizontal screen margins) */}
+        {/* Lead Table Container */}
         {loading ? (
           <div className="py-20 flex items-center justify-center">
             <RefreshCw className="w-8 h-8 animate-spin text-zinc-500" />
           </div>
         ) : (
-          <div className="bg-white dark:bg-[#0c0c0e] border-y border-slate-200 dark:border-zinc-900/60 shadow-xl dark:shadow-2xl">
-            <LeadTable 
-              leads={leads} 
-              stages={stages}
-              onStatusChange={handleStatusChange} 
-              onLeadUpdate={handleLeadUpdate}
-              onCreateLead={handleCreateLead}
-              initialPreferences={preferences}
-              onPreferencesChange={handlePreferencesChange}
-              userEmail={userEmail}
-            />
-          </div>
+          <LeadTable 
+            leads={leads} 
+            stages={stages}
+            onStatusChange={handleStatusChange} 
+            onLeadUpdate={handleLeadUpdate}
+            onCreateLead={handleCreateLead}
+            initialPreferences={preferences}
+            onPreferencesChange={handlePreferencesChange}
+            userEmail={userEmail}
+            renderHeader={() => (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Lead Flow Database</h1>
+                  <p className="text-xs text-[#706E6A] dark:text-zinc-400 mt-1 font-semibold">Manage deal statuses, scoring reasons, and metadata</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {isDemoMode && (
+                    <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-md text-[10px] font-bold tracking-wide flex items-center gap-1.5 select-none">
+                      <Database className="w-3 h-3" />
+                      SIMULATION MODE
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setSettingsOpen(true)}
+                    className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs"
+                    title="Workspace Config Settings"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => loadLeadsAndPreferences(userId)}
+                    disabled={loading}
+                    className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs"
+                    title="Refresh leads data"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
+            )}
+          />
         )}
 
         <MasterSettingsHub
