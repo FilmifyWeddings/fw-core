@@ -122,7 +122,6 @@ export function LeadTable({
 
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabsHeight, setTabsHeight] = useState(0);
-  const [sidebarWidth, setSidebarWidth] = useState(240);
 
   useEffect(() => {
     if (!tabsRef.current) return;
@@ -133,25 +132,6 @@ export function LeadTable({
     });
     resizeObserver.observe(tabsRef.current);
     return () => resizeObserver.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const updateWidth = () => {
-      const asideEl = document.querySelector('aside');
-      if (asideEl) {
-        setSidebarWidth(asideEl.offsetWidth);
-      }
-    };
-    updateWidth();
-    const asideEl = document.querySelector('aside');
-    if (!asideEl) return;
-    const observer = new MutationObserver(updateWidth);
-    observer.observe(asideEl, { attributes: true, attributeFilter: ['class'] });
-    window.addEventListener('resize', updateWidth);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateWidth);
-    };
   }, []);
   
   // Columns & Configurations state
@@ -1422,7 +1402,7 @@ export function LeadTable({
 
               <thead 
                 className="sticky z-40 bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]"
-                style={{ top: tabsHeight }}
+                style={{ top: `${tabsHeight}px` }}
               >
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A]">
                   <th className="py-4 px-4 text-center">
@@ -2031,9 +2011,11 @@ export function LeadTable({
           {/* Synced horizontal scrollbar at bottom of table */}
           <div 
             ref={stickyScrollbarRef} 
-            className={`overflow-x-auto fixed bottom-0 right-0 z-50 bg-[#FAF8F5]/90 dark:bg-[#121110]/90 border-t border-[#E8E5DF]/60 dark:border-[#2C2926]/60 transition-all ${isScrollable ? 'block' : 'hidden'}`}
+            className={`fixed bottom-0 right-0 overflow-x-auto bg-[#FAF8F5]/95 dark:bg-[#121110]/95 border-t border-[#E8E5DF]/60 dark:border-[#2C2926]/60 transition-all ${isScrollable ? 'block' : 'hidden'}`}
             style={{
-              left: `${sidebarWidth}px`,
+              left: '16rem',
+              zIndex: 9999,
+              height: '16px',
               scrollbarWidth: 'thin',
             }}
           >
