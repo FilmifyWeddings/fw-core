@@ -531,7 +531,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
       {/* Main viewport margin offset area */}
       <main 
-        className={`flex-1 min-h-screen flex flex-col transition-all duration-300 bg-zinc-50 dark:bg-[#070708] ${
+        className={`flex-1 min-h-screen flex flex-col min-w-0 transition-all duration-300 bg-zinc-50 dark:bg-[#070708] ${
           collapsed ? 'pl-16' : 'pl-60'
         }`}
       >
