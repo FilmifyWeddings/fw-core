@@ -120,34 +120,10 @@ export function LeadTable({
   const [tableScrollWidth, setTableScrollWidth] = useState(0);
   const [isScrollable, setIsScrollable] = useState(false);
 
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const [tabsHeight, setTabsHeight] = useState(0);
+  // Infinite Scroll & Pagination replacements
+  const [visibleCount, setVisibleCount] = useState(100);
+  const headerContainerRef = useRef<HTMLDivElement>(null);
 
-  const filtersRef = useRef<HTMLDivElement>(null);
-  const [filtersHeight, setFiltersHeight] = useState(0);
-
-  useEffect(() => {
-    if (!tabsRef.current) return;
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        setTabsHeight(entry.target.clientHeight);
-      }
-    });
-    resizeObserver.observe(tabsRef.current);
-    return () => resizeObserver.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!filtersRef.current) return;
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        setFiltersHeight(entry.target.clientHeight);
-      }
-    });
-    resizeObserver.observe(filtersRef.current);
-    return () => resizeObserver.disconnect();
-  }, []);
-  
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
   const [showManageCols, setShowManageCols] = useState(false);
@@ -435,39 +411,50 @@ export function LeadTable({
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   // Comments state in details drawer
-  const [newCommentText, setNewCommentText] = useState('');
-
-  // Synced bottom horizontal scrollbar side-effect
+  const [newCommentText, setNewCommentText] = useState('');  // Synced bottom horizontal scrollbar & header side-effect
   useEffect(() => {
     if (viewMode !== 'table') return;
 
     const tableContainer = tableContainerRef.current;
     const stickyScrollbar = stickyScrollbarRef.current;
+    const headerContainer = headerContainerRef.current;
     if (!tableContainer || !stickyScrollbar) return;
 
-    let isSyncingTable = false;
-    let isSyncingScrollbar = false;
+    let isSyncing = false;
 
     const handleTableScroll = () => {
-      if (isSyncingTable) {
-        isSyncingTable = false;
-        return;
-      }
-      isSyncingScrollbar = true;
+      if (isSyncing) return;
+      isSyncing = true;
       stickyScrollbar.scrollLeft = tableContainer.scrollLeft;
+      if (headerContainer) {
+        headerContainer.scrollLeft = tableContainer.scrollLeft;
+      }
+      isSyncing = false;
     };
 
     const handleScrollbarScroll = () => {
-      if (isSyncingScrollbar) {
-        isSyncingScrollbar = false;
-        return;
-      }
-      isSyncingTable = true;
+      if (isSyncing) return;
+      isSyncing = true;
       tableContainer.scrollLeft = stickyScrollbar.scrollLeft;
+      if (headerContainer) {
+        headerContainer.scrollLeft = stickyScrollbar.scrollLeft;
+      }
+      isSyncing = false;
+    };
+
+    const handleHeaderScroll = () => {
+      if (isSyncing || !headerContainer) return;
+      isSyncing = true;
+      tableContainer.scrollLeft = headerContainer.scrollLeft;
+      stickyScrollbar.scrollLeft = headerContainer.scrollLeft;
+      isSyncing = false;
     };
 
     tableContainer.addEventListener('scroll', handleTableScroll, { passive: true });
     stickyScrollbar.addEventListener('scroll', handleScrollbarScroll, { passive: true });
+    if (headerContainer) {
+      headerContainer.addEventListener('scroll', handleHeaderScroll, { passive: true });
+    }
 
     const updateWidth = () => {
       const table = tableContainer.querySelector('table');
@@ -492,10 +479,34 @@ export function LeadTable({
     return () => {
       tableContainer.removeEventListener('scroll', handleTableScroll);
       stickyScrollbar.removeEventListener('scroll', handleScrollbarScroll);
+      if (headerContainer) {
+        headerContainer.removeEventListener('scroll', handleHeaderScroll);
+      }
       resizeObserver.disconnect();
       clearTimeout(timer);
     };
-  }, [viewMode, columns, leads, currentPage]);
+  }, [viewMode, columns, leads]);
+
+  // Infinite Scroll scroll listener
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollHeight = document.documentElement.scrollHeight;
+      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const clientHeight = window.innerHeight;
+
+      if (scrollHeight - scrollTop - clientHeight < 300) {
+        setVisibleCount(prev => prev + 100);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Reset infinite scroll count when any filter changes
+  useEffect(() => {
+    setVisibleCount(100);
+  }, [search, statusFilter, sourceFilter, scoreFilter, ownerFilter, activeHeaderFilters]);
 
   // Close menus on click outside
   useEffect(() => {
@@ -944,10 +955,9 @@ export function LeadTable({
     return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner && matchesColumnFilters;
   });
 
-  // Pagination lists
+  // Pagination lists replaced with Infinite Scroll
   const totalLeads = filteredLeads.length;
-  const totalPages = Math.ceil(totalLeads / pageSize);
-  const paginatedLeads = filteredLeads.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedLeads = filteredLeads.slice(0, visibleCount);
 
   // Manual Lead Creation Trigger
   const handleSaveManualLead = () => {
@@ -1158,63 +1168,59 @@ export function LeadTable({
   return (
     <div className="w-full relative select-none">
       
-      {/* Dynamic Views Switcher Panel */}
-      <div 
-        ref={tabsRef}
-        className="sticky top-0 z-50 flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-4 mb-6 bg-[#FAF8F5] dark:bg-[#121110] pt-2"
-      >
-        <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl shadow-inner">
-          <button 
-            onClick={() => setViewMode('table')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
-              viewMode === 'table' 
-                ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
-                : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
-            }`}
+      {/* Sticky Header Anchor Stack */}
+      <div className="sticky top-0 z-50 bg-[#FAF8F5] dark:bg-[#121110] pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
+        
+        {/* Dynamic Views Switcher Panel */}
+        <div className="flex items-center justify-between pb-4">
+          <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl shadow-inner">
+            <button 
+              onClick={() => setViewMode('table')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
+                viewMode === 'table' 
+                  ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
+                  : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Grid Table
+            </button>
+            <button 
+              onClick={() => setViewMode('kanban')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
+                viewMode === 'kanban' 
+                  ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
+                  : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
+              }`}
+            >
+              <Kanban className="w-3.5 h-3.5" />
+              Kanban Board
+            </button>
+            <button 
+              onClick={() => setViewMode('tasks')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
+                viewMode === 'tasks' 
+                  ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
+                  : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
+              }`}
+            >
+              <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] dark:text-[#C5A059]" />
+              Team Tasks
+            </button>
+          </div>
+
+          {/* Primary Manual lead creation */}
+          <button
+            onClick={() => setCreateModalOpen(true)}
+            className="px-4 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] flex items-center gap-1.5 hover:scale-105"
           >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            Grid Table
-          </button>
-          <button 
-            onClick={() => setViewMode('kanban')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
-              viewMode === 'kanban' 
-                ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
-                : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
-            }`}
-          >
-            <Kanban className="w-3.5 h-3.5" />
-            Kanban Board
-          </button>
-          <button 
-            onClick={() => setViewMode('tasks')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
-              viewMode === 'tasks' 
-                ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
-                : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
-            }`}
-          >
-            <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] dark:text-[#C5A059]" />
-            Team Tasks
+            <Plus className="w-4 h-4 stroke-[3]" />
+            Add New Lead
           </button>
         </div>
 
-        {/* Primary Manual lead creation */}
-        <button
-          onClick={() => setCreateModalOpen(true)}
-          className="px-4 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] flex items-center gap-1.5 hover:scale-105"
-        >
-          <Plus className="w-4 h-4 stroke-[3]" />
-          Add New Lead
-        </button>
-      </div>
-
-      {/* Advanced In-Header Filters Row */}
-      <div 
-        ref={filtersRef}
-        className="sticky z-50 flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-[#FAF8F5] dark:bg-[#121110] py-2"
-        style={{ top: `${tabsHeight}px` }}
-      >
+        {/* Advanced In-Header Filters Row */}
+        <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-[#FAF8F5] dark:bg-[#121110] py-1">
         
         {/* Search */}
         <div className="relative w-full md:w-80">
@@ -1347,212 +1353,225 @@ export function LeadTable({
                           </div>
                           <span className="truncate max-w-[130px]">{col.label}</span>
                         </button>
-
-                        {/* Custom column remove button */}
-                        {col.type && col.type.startsWith('custom_') && (
-                          <button 
-                            onClick={() => handleDeleteCustomColumn(col.id)}
-                            className="p-1 text-[#706E6A] hover:text-red-400 rounded transition-colors"
-                          >
-                            <Trash className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Custom columns adding form */}
-                  <div className="pt-3 border-t border-[#E8E5DF] dark:border-[#2C2926] space-y-2">
-                    <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block">Add Custom Column</span>
-                    <input 
-                      type="text" 
-                      placeholder="Column Name (e.g. Shoot Type)"
-                      value={newColLabel}
-                      onChange={(e) => setNewColLabel(e.target.value)}
-                      className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
-                    />
-                    <select
-                      value={newColType}
-                      onChange={(e) => setNewColType(e.target.value as any)}
-                      className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926]"
+                  {/* Custom column remove button */}
+                  {col.type && col.type.startsWith('custom_') && (
+                    <button 
+                      onClick={() => handleDeleteCustomColumn(col.id)}
+                      className="p-1 text-[#706E6A] hover:text-red-400 rounded transition-colors"
                     >
-                      <option value="dropdown" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Dropdown List</option>
-                      <option value="color" className="bg-[#FAF8F5] dark:bg-[#121110]">Color Highlight Label</option>
-                      <option value="text" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Text Field</option>
-                    </select>
-
-                    {newColType === 'dropdown' && (
-                      <input 
-                        type="text" 
-                        placeholder="Options: Pre-Wedding, Portrait"
-                        value={newColOptionsText}
-                        onChange={(e) => setNewColOptionsText(e.target.value)}
-                        className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
-                      />
-                    )}
-
-                    <button
-                      onClick={handleAddCustomColumn}
-                      className="w-full py-1.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-lg text-xs hover:opacity-95 transition-opacity"
-                    >
-                      Add Column
+                      <Trash className="w-3 h-3" />
                     </button>
-                  </div>
-                </MotionDiv>
-              )}
-            </AnimatePresenceComponent>
-          </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
-        </div>
-      </div>
-
-      {/* Main View Mode rendering */}
-      {viewMode === 'table' ? (
-        
-        /* ---------------------------------------------------- */
-        /* GRID TABLE VIEW                                      */
-        /* ---------------------------------------------------- */
-        <div className="w-full overflow-visible border border-[#E8E5DF]/50 dark:border-[#2C2926]/50 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 backdrop-blur-md rounded-3xl shadow-xl dark:shadow-2xl relative transition-all">
-          <div className="overflow-x-auto" ref={tableContainerRef}>
-            <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-300 table-fixed min-w-[1000px]">
-              
-              <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[260px]" /></colgroup>
-
-              <thead 
-                className="sticky z-40 bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]"
-                style={{ top: `${tabsHeight + filtersHeight}px` }}
+            {/* Custom columns adding form */}
+            <div className="pt-3 border-t border-[#E8E5DF] dark:border-[#2C2926] space-y-2">
+              <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block">Add Custom Column</span>
+              <input 
+                type="text" 
+                placeholder="Column Name (e.g. Shoot Type)"
+                value={newColLabel}
+                onChange={(e) => setNewColLabel(e.target.value)}
+                className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
+              />
+              <select
+                value={newColType}
+                onChange={(e) => setNewColType(e.target.value as any)}
+                className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926]"
               >
-                <tr className="text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A]">
-                  <th className="py-4 px-4 text-center">
-                    <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
-                      {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
-                        <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
-                      ) : (
-                        <Square className="w-4.5 h-4.5" />
-                      )}
-                    </button>
-                  </th>
-                  
-                  {/* Frozen Column Name (Sticky Left) */}
-                  <th className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#1C1A18] z-45 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span>Lead Name</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const colId = 'name';
-                          if (openFilterColId === colId) {
-                            setOpenFilterColId(null);
-                          } else {
-                            setFilterSearchQuery('');
-                            setDraftFilterValues(activeHeaderFilters[colId] || getUniqueColumnValues(colId));
-                            setOpenFilterColId(colId);
-                          }
-                        }}
-                        className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors ml-auto ${
-                          activeHeaderFilters['name'] ? 'text-[#D97706]' : 'text-zinc-400 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
-                        }`}
-                        title="Filter Name"
-                      >
-                        <Filter className="w-3 h-3 fill-current" />
-                      </button>
-                    </div>
-                    {openFilterColId === 'name' && renderFilterDropdown('name')}
-                  </th>
-                  
-                  {/* Dynamic Columns headers */}
-                  {columns.map((col, idx) => col.visible && (
-                    <th
-                      key={col.id}
-                      className={`py-4 px-4 font-bold relative group/header cursor-grab active:cursor-grabbing transition-all select-none ${
-                        draggedColIdx === idx ? 'opacity-40 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-dashed border border-[#D4AF37]' : ''
-                      } ${
-                        dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
-                      }`}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, idx)}
-                      onDragOver={(e) => handleDragOver(e, idx)}
-                      onDragEnd={handleDragEnd}
-                      onDrop={(e) => handleDrop(e, idx)}
+                <option value="dropdown" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Dropdown List</option>
+                <option value="color" className="bg-[#FAF8F5] dark:bg-[#121110]">Color Highlight Label</option>
+                <option value="text" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Text Field</option>
+              </select>
+
+              {newColType === 'dropdown' && (
+                <input 
+                  type="text" 
+                  placeholder="Options: Pre-Wedding, Portrait"
+                  value={newColOptionsText}
+                  onChange={(e) => setNewColOptionsText(e.target.value)}
+                  className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
+                />
+              )}
+
+              <button
+                onClick={handleAddCustomColumn}
+                className="w-full py-1.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-lg text-xs hover:opacity-95 transition-opacity"
+              >
+                Add Column
+              </button>
+            </div>
+          </MotionDiv>
+        )}
+      </AnimatePresenceComponent>
+    </div>
+  </div>
+</div>
+
+{/* Sync-scrolled Table Header (thead only) */}
+{viewMode === 'table' && (
+  <div className="w-full overflow-hidden" ref={headerContainerRef}>
+    <table className="w-full text-left border-collapse table-fixed min-w-[1000px] bg-[#FAF8F5] dark:bg-[#121110]">
+      <colgroup>
+        <col className="w-[50px]" />
+        <col className="w-[220px]" />
+        {columns.filter(col => col.visible).map(col => (
+          <col key={col.id} className="w-[170px]" />
+        ))}
+        <col className="w-[260px]" />
+      </colgroup>
+      <thead>
+        <tr className="text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A] bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]">
+          <th className="py-4 px-4 text-center bg-[#FAF8F5] dark:bg-[#121110]">
+            <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
+              {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
+                <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
+              ) : (
+                <Square className="w-4.5 h-4.5" />
+              )}
+            </button>
+          </th>
+          
+          {/* Frozen Column Name (Sticky Left) */}
+          <th className="py-4 px-4 font-bold sticky left-0 bg-[#FAF8F5] dark:bg-[#121110] z-10 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none">
+            <div className="flex items-center justify-between gap-1.5">
+              <span>Lead Name</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const colId = 'name';
+                  if (openFilterColId === colId) {
+                    setOpenFilterColId(null);
+                  } else {
+                    setFilterSearchQuery('');
+                    setDraftFilterValues(activeHeaderFilters[colId] || getUniqueColumnValues(colId));
+                    setOpenFilterColId(colId);
+                  }
+                }}
+                className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors ml-auto ${
+                  activeHeaderFilters['name'] ? 'text-[#D97706]' : 'text-zinc-400 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
+                }`}
+                title="Filter Name"
+              >
+                <Filter className="w-3 h-3 fill-current" />
+              </button>
+            </div>
+            {openFilterColId === 'name' && renderFilterDropdown('name')}
+          </th>
+          
+          {/* Dynamic Columns headers */}
+          {columns.map((col, idx) => col.visible && (
+            <th
+              key={col.id}
+              className={`py-4 px-4 font-bold relative group/header cursor-grab active:cursor-grabbing transition-all select-none bg-[#FAF8F5] dark:bg-[#121110] ${
+                draggedColIdx === idx ? 'opacity-40 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-dashed border border-[#D4AF37]' : ''
+              } ${
+                dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
+              }`}
+              draggable
+              onDragStart={(e) => handleDragStart(e, idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDragEnd={handleDragEnd}
+              onDrop={(e) => handleDrop(e, idx)}
+            >
+              <div className="flex items-center justify-between gap-1.5 w-full">
+                
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {editingHeaderId === col.id ? (
+                    <input 
+                      type="text"
+                      value={editingHeaderVal}
+                      onChange={(e) => setEditingHeaderVal(e.target.value)}
+                      onBlur={() => handleSaveRename(col.id)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
+                      className="bg-[#FAF8F5] dark:bg-[#121110] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-24 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span 
+                      onDoubleClick={() => handleStartRename(col.id, col.label)} 
+                      className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text truncate block max-w-[100px]"
+                      title="Double click to rename"
                     >
-                      <div className="flex items-center justify-between gap-1.5 w-full">
-                        
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {/* Header Inline Rename Input */}
-                          {editingHeaderId === col.id ? (
-                            <input 
-                              type="text"
-                              value={editingHeaderVal}
-                              onChange={(e) => setEditingHeaderVal(e.target.value)}
-                              onBlur={() => handleSaveRename(col.id)}
-                              onKeyDown={(e) => e.key === 'Enter' && handleSaveRename(col.id)}
-                              className="bg-[#FAF8F5] dark:bg-[#121110] text-xs text-[#1A1A1A] dark:text-[#F5F5F5] p-1 rounded w-24 focus:outline-none border border-[#E8E5DF] dark:border-[#2C2926]"
-                              autoFocus
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span 
-                              onDoubleClick={() => handleStartRename(col.id, col.label)} 
-                              className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text truncate block max-w-[100px]"
-                              title="Double click to rename"
-                            >
-                              {col.label}
-                            </span>
-                          )}
+                      {col.label}
+                    </span>
+                  )}
 
-                          {/* Column Re-ordering shift buttons */}
-                          <div className="opacity-0 group-hover/header:opacity-100 flex items-center transition-opacity gap-0.5 ml-0.5 shrink-0">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'left'); }}
-                              className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
-                              title="Move column left"
-                            >
-                              <ArrowLeft className="w-2.5 h-2.5" />
-                            </button>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'right'); }}
-                              className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
-                              title="Move column right"
-                            >
-                              <ArrowRight className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        </div>
+                  <div className="opacity-0 group-hover/header:opacity-100 flex items-center transition-opacity gap-0.5 ml-0.5 shrink-0">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'left'); }}
+                      className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
+                      title="Move column left"
+                    >
+                      <ArrowLeft className="w-2.5 h-2.5" />
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); moveColumn(idx, 'right'); }}
+                      className="p-0.5 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] rounded"
+                      title="Move column right"
+                    >
+                      <ArrowRight className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
 
-                        {/* Google Sheets Column Filter Trigger */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (openFilterColId === col.id) {
-                              setOpenFilterColId(null);
-                            } else {
-                              setFilterSearchQuery('');
-                              setDraftFilterValues(activeHeaderFilters[col.id] || getUniqueColumnValues(col.id));
-                              setOpenFilterColId(col.id);
-                            }
-                          }}
-                          className={`p-1 rounded hover:bg-[#FAF8F5] dark:hover:bg-[#121110] transition-colors shrink-0 ${
-                            activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-450 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
-                          }`}
-                          title={`Filter ${col.label}`}
-                        >
-                          <Filter className="w-3 h-3 fill-current" />
-                        </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (openFilterColId === col.id) {
+                      setOpenFilterColId(null);
+                    } else {
+                      setFilterSearchQuery('');
+                      setDraftFilterValues(activeHeaderFilters[col.id] || getUniqueColumnValues(col.id));
+                      setOpenFilterColId(col.id);
+                    }
+                  }}
+                  className={`p-1 rounded hover:bg-[#FAF8F5] dark:hover:bg-[#121110] transition-colors shrink-0 ${
+                    activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-450 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
+                  }`}
+                  title={`Filter ${col.label}`}
+                >
+                  <Filter className="w-3 h-3 fill-current" />
+                </button>
 
-                      </div>
+              </div>
 
-                      {/* Dropdown alignment relative to header */}
-                      {openFilterColId === col.id && renderFilterDropdown(col.id)}
-                    </th>
-                  ))}
+              {openFilterColId === col.id && renderFilterDropdown(col.id)}
+            </th>
+          ))}
 
-                  {/* Frozen Column Actions (Sticky Right) */}
-                  <th className="py-4 px-4 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-45 text-[#1A1A1A] dark:text-[#F5F5F5]">Actions</th>
-                </tr>
+          {/* Frozen Column Actions (Sticky Right) */}
+          <th className="py-4 px-4 text-right sticky right-0 bg-[#FAF8F5] dark:bg-[#121110] z-10 border-l border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5]">Actions</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+)}
+</div>
 
-              </thead>
+{/* Main View Mode rendering */}
+{viewMode === 'table' ? (
+  
+  /* ---------------------------------------------------- */
+  /* GRID TABLE VIEW                                      */
+  /* ---------------------------------------------------- */
+  <div className="w-full overflow-visible border border-[#E8E5DF]/50 dark:border-[#2C2926]/50 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 backdrop-blur-md rounded-b-3xl shadow-xl dark:shadow-2xl relative transition-all">
+    <div className="overflow-x-auto" ref={tableContainerRef}>
+      <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
+        
+        <colgroup>
+          <col className="w-[50px]" />
+          <col className="w-[220px]" />
+          {columns.filter(col => col.visible).map(col => (
+            <col key={col.id} className="w-[170px]" />
+          ))}
+          <col className="w-[260px]" />
+        </colgroup>
 
-              <tbody className="divide-y divide-zinc-900 text-sm">
+        <tbody className="divide-y divide-zinc-900 text-sm">
                 {paginatedLeads.length === 0 ? (
                   <tr>
                     <td colSpan={columns.filter(c => c.visible).length + 3} className="py-16 text-center text-zinc-500 bg-[#0c0c0e]/30">
@@ -2035,31 +2054,17 @@ export function LeadTable({
             <div style={{ width: tableScrollWidth || '150vw', height: '1px' }} />
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
-              <div>
-                Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalLeads)} of {totalLeads} leads
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-zinc-900 hover:text-slate-800 dark:hover:text-white transition-all"
-                >
-                  Previous
-                </button>
-                <span className="text-zinc-350 px-2 font-mono">Page {currentPage} of {totalPages}</span>
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-zinc-900 hover:text-white transition-all"
-                >
-                  Next
-                </button>
-              </div>
+          {/* Pagination replaced by Load Info for Infinite Scroll */}
+          <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
+            <div>
+              Showing {Math.min(visibleCount, totalLeads)} of {totalLeads} leads
             </div>
-          )}
+            {visibleCount < totalLeads && (
+              <div className="text-zinc-400 dark:text-zinc-500 animate-pulse font-medium">
+                Scroll down to load more leads...
+              </div>
+            )}
+          </div>
         </div>
       ) : viewMode === 'kanban' ? (
         
