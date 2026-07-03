@@ -161,7 +161,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   }
 
   return (
-    <div className="flex min-h-screen w-full overflow-x-hidden bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
+    <div className="flex min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
       
       {/* Sidebar navigation */}
       <aside 

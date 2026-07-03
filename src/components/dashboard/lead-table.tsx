@@ -2045,14 +2045,7 @@ export function LeadTable({
             </table>
           </div>
 
-          {/* Synced horizontal scrollbar at bottom of table */}
-          <div 
-            ref={stickyScrollbarRef} 
-            className="fixed bottom-0 right-0 h-4 bg-[#FAF8F5] dark:bg-[#121110] border-t border-[#E8E5DF] overflow-x-auto" 
-            style={{ left: '16rem', zIndex: 99999 }}
-          >
-            <div style={{ width: tableScrollWidth || '150vw', height: '1px' }} />
-          </div>
+          {/* Synced scrollbar removed from here to escape backdrop-filter containing block context */}
 
           {/* Pagination replaced by Load Info for Infinite Scroll */}
           <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
@@ -2708,6 +2701,17 @@ export function LeadTable({
           </>
         )}
       </AnimatePresenceComponent>
+
+      {/* Synced horizontal scrollbar directly at root level of LeadTable JSX */}
+      {viewMode === 'table' && (
+        <div 
+          ref={stickyScrollbarRef} 
+          className="fixed bottom-0 right-0 h-4 bg-[#FAF8F5] dark:bg-[#121110] border-t border-[#E8E5DF] overflow-x-auto" 
+          style={{ left: '16rem', zIndex: 99999 }}
+        >
+          <div style={{ width: tableScrollWidth || '150vw', height: '1px' }} />
+        </div>
+      )}
 
     </div>
   );
