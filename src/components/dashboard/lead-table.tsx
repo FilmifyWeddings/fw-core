@@ -122,6 +122,7 @@ export function LeadTable({
 
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabsHeight, setTabsHeight] = useState(0);
+  const [sidebarWidth, setSidebarWidth] = useState(240);
 
   useEffect(() => {
     if (!tabsRef.current) return;
@@ -132,6 +133,25 @@ export function LeadTable({
     });
     resizeObserver.observe(tabsRef.current);
     return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      const asideEl = document.querySelector('aside');
+      if (asideEl) {
+        setSidebarWidth(asideEl.offsetWidth);
+      }
+    };
+    updateWidth();
+    const asideEl = document.querySelector('aside');
+    if (!asideEl) return;
+    const observer = new MutationObserver(updateWidth);
+    observer.observe(asideEl, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('resize', updateWidth);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateWidth);
+    };
   }, []);
   
   // Columns & Configurations state
@@ -1400,12 +1420,12 @@ export function LeadTable({
               
               <colgroup><col className="w-[50px]" /><col className="w-[220px]" />{columns.filter(col => col.visible).map(col => (<col key={col.id} className="w-[170px]" />))}<col className="w-[260px]" /></colgroup>
 
-              <thead>
-                <tr className="border-b border-[#E8E5DF] dark:border-[#2C2926] text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A] bg-[#FAF8F5]/80 dark:bg-[#121110]/80">
-                  <th 
-                    className="py-4 px-4 text-center sticky z-30 bg-[#FAF8F5] dark:bg-[#121110]" 
-                    style={{ top: tabsHeight }}
-                  >
+              <thead 
+                className="sticky z-40 bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]"
+                style={{ top: tabsHeight }}
+              >
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A]">
+                  <th className="py-4 px-4 text-center">
                     <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
                       {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
                         <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
@@ -1416,10 +1436,7 @@ export function LeadTable({
                   </th>
                   
                   {/* Frozen Column Name (Sticky Left) */}
-                  <th 
-                    className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none"
-                    style={{ top: tabsHeight }}
-                  >
+                  <th className="py-4 px-4 font-bold sticky left-0 bg-white dark:bg-[#1C1A18] z-45 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none">
                     <div className="flex items-center justify-between gap-1.5">
                       <span>Lead Name</span>
                       <button
@@ -1449,8 +1466,7 @@ export function LeadTable({
                   {columns.map((col, idx) => col.visible && (
                     <th
                       key={col.id}
-                      style={{ top: tabsHeight }}
-                      className={`py-4 px-4 font-bold sticky z-30 bg-[#FAF8F5] dark:bg-[#121110] relative group/header cursor-grab active:cursor-grabbing transition-all select-none ${
+                      className={`py-4 px-4 font-bold relative group/header cursor-grab active:cursor-grabbing transition-all select-none ${
                         draggedColIdx === idx ? 'opacity-40 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-dashed border border-[#D4AF37]' : ''
                       } ${
                         dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
@@ -1533,12 +1549,7 @@ export function LeadTable({
                   ))}
 
                   {/* Frozen Column Actions (Sticky Right) */}
-                  <th 
-                    className="py-4 px-4 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-40 text-[#1A1A1A] dark:text-[#F5F5F5]"
-                    style={{ top: tabsHeight }}
-                  >
-                    Actions
-                  </th>
+                  <th className="py-4 px-4 text-right sticky right-0 bg-white dark:bg-[#1C1A18] border-l border-[#E8E5DF] dark:border-[#2C2926] z-45 text-[#1A1A1A] dark:text-[#F5F5F5]">Actions</th>
                 </tr>
 
               </thead>
@@ -2020,8 +2031,9 @@ export function LeadTable({
           {/* Synced horizontal scrollbar at bottom of table */}
           <div 
             ref={stickyScrollbarRef} 
-            className={`w-full overflow-x-auto sticky bottom-0 z-50 bg-[#FAF8F5]/90 dark:bg-[#121110]/90 border-t border-[#E8E5DF]/60 dark:border-[#2C2926]/60 transition-all ${isScrollable ? 'block' : 'hidden'}`}
+            className={`overflow-x-auto fixed bottom-0 right-0 z-50 bg-[#FAF8F5]/90 dark:bg-[#121110]/90 border-t border-[#E8E5DF]/60 dark:border-[#2C2926]/60 transition-all ${isScrollable ? 'block' : 'hidden'}`}
             style={{
+              left: `${sidebarWidth}px`,
               scrollbarWidth: 'thin',
             }}
           >
