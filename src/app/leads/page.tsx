@@ -357,7 +357,7 @@ export default function LeadsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070708] text-slate-900 dark:text-white selection:bg-slate-100 dark:selection:bg-zinc-850 transition-colors duration-200">
-      <div className="w-full px-4 md:px-8 py-8 space-y-6">
+      <div className="w-full px-4 md:px-6 py-4 space-y-4">
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -397,7 +397,7 @@ export default function LeadsPage() {
             <RefreshCw className="w-8 h-8 animate-spin text-zinc-500" />
           </div>
         ) : (
-          <div className="p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 shadow-xl dark:shadow-2xl space-y-4">
+          <div className="p-4 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 shadow-xl dark:shadow-2xl space-y-4">
             <LeadTable 
               leads={leads} 
               stages={stages}

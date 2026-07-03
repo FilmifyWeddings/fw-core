@@ -123,6 +123,8 @@ export function LeadTable({
   // Infinite Scroll & Pagination replacements
   const [visibleCount, setVisibleCount] = useState(100);
   const headerContainerRef = useRef<HTMLDivElement>(null);
+  const [enableHeaderFilters, setEnableHeaderFilters] = useState(false);
+  const [filterDropdownRect, setFilterDropdownRect] = useState<{ top: number; left: number } | null>(null);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -821,8 +823,31 @@ export function LeadTable({
     return Array.from(new Set(vals.map(v => String(v).trim()))).filter(Boolean).sort();
   };
 
+  const handleFilterClick = (colId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (openFilterColId === colId) {
+      setOpenFilterColId(null);
+      setFilterDropdownRect(null);
+    } else {
+      const buttonRect = e.currentTarget.getBoundingClientRect();
+      const parentEl = tableContainerRef.current?.closest('.select-none');
+      const parentRect = parentEl?.getBoundingClientRect() || { top: 0, left: 0 };
+      
+      const leftVal = buttonRect.left - parentRect.left + (parentEl?.scrollLeft || 0);
+      const isRightAligned = window.innerWidth - buttonRect.left < 300;
+      setFilterDropdownRect({
+        top: buttonRect.bottom - parentRect.top + (parentEl?.scrollTop || 0),
+        left: isRightAligned ? Math.max(10, leftVal - 220) : leftVal
+      });
+      setFilterSearchQuery('');
+      setDraftFilterValues(activeHeaderFilters[colId] || getUniqueColumnValues(colId));
+      setOpenFilterColId(colId);
+    }
+  };
+
   // Google Sheets-Style filter dropdown inside headers
   const renderFilterDropdown = (colId: string) => {
+    if (!filterDropdownRect) return null;
     const allVals = getUniqueColumnValues(colId);
     const filteredVals = allVals.filter(val => 
       val.toLowerCase().includes(filterSearchQuery.toLowerCase())
@@ -831,7 +856,11 @@ export function LeadTable({
     return (
       <div 
         ref={filterDropdownRef}
-        className="absolute left-0 top-full mt-1 w-64 bg-white border border-[#E8E5DF] rounded-xl shadow-2xl p-3 z-50 text-[#1A1A1A] font-sans normal-case tracking-normal text-left font-normal"
+        className="absolute w-64 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl shadow-2xl p-3 z-[99999] text-[#1A1A1A] dark:text-[#F5F5F5] font-sans normal-case tracking-normal text-left font-normal"
+        style={{ 
+          top: `${filterDropdownRect.top}px`, 
+          left: `${filterDropdownRect.left}px` 
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-2">
@@ -1249,6 +1278,24 @@ export function LeadTable({
             </button>
           )}
 
+          {/* Main Google Sheets Filter Toggle Button */}
+          <button
+            onClick={() => {
+              setEnableHeaderFilters(!enableHeaderFilters);
+              setOpenFilterColId(null);
+              setFilterDropdownRect(null);
+            }}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-bold ${
+              enableHeaderFilters 
+                ? 'bg-[#D4AF37]/10 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]' 
+                : 'bg-[#FAF8F5]/60 hover:bg-[#FAF8F5]/90 dark:bg-[#121110]/60 dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A]'
+            }`}
+            title="Toggle Column Header Filters"
+          >
+            <Filter className="w-3.5 h-3.5" />
+            {enableHeaderFilters ? 'Hide Filters' : 'Enable Filters'}
+          </button>
+
           {/* Status Filter */}
           <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5">
             <Tag className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
@@ -1423,7 +1470,7 @@ export function LeadTable({
         <col className="w-[260px]" />
       </colgroup>
       <thead>
-        <tr className="text-[10px] font-bold uppercase tracking-wider text-[#706E6A] dark:text-[#A09E9A] bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]">
+        <tr className="text-sm font-extrabold uppercase tracking-wider text-[#1A1A1A] dark:text-[#F5F5F5] bg-[#FAF8F5] dark:bg-[#121110] border-b border-[#E8E5DF] dark:border-[#2C2926]">
           <th className="py-4 px-4 text-center bg-[#FAF8F5] dark:bg-[#121110]">
             <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
               {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
@@ -1435,37 +1482,28 @@ export function LeadTable({
           </th>
           
           {/* Frozen Column Name (Sticky Left) */}
-          <th className="py-4 px-4 font-bold sticky left-0 bg-[#FAF8F5] dark:bg-[#121110] z-10 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none">
+          <th className="py-4 px-4 text-sm font-extrabold sticky left-0 bg-[#FAF8F5] dark:bg-[#121110] z-10 border-r border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] relative group/header select-none">
             <div className="flex items-center justify-between gap-1.5">
               <span>Lead Name</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const colId = 'name';
-                  if (openFilterColId === colId) {
-                    setOpenFilterColId(null);
-                  } else {
-                    setFilterSearchQuery('');
-                    setDraftFilterValues(activeHeaderFilters[colId] || getUniqueColumnValues(colId));
-                    setOpenFilterColId(colId);
-                  }
-                }}
-                className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors ml-auto ${
-                  activeHeaderFilters['name'] ? 'text-[#D97706]' : 'text-zinc-400 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
-                }`}
-                title="Filter Name"
-              >
-                <Filter className="w-3 h-3 fill-current" />
-              </button>
+              {enableHeaderFilters && (
+                <button
+                  onClick={(e) => handleFilterClick('name', e)}
+                  className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors ml-auto shrink-0 ${
+                    activeHeaderFilters['name'] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-400 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
+                  }`}
+                  title="Filter Name"
+                >
+                  <Filter className="w-3 h-3 fill-current" />
+                </button>
+              )}
             </div>
-            {openFilterColId === 'name' && renderFilterDropdown('name')}
           </th>
           
           {/* Dynamic Columns headers */}
           {columns.map((col, idx) => col.visible && (
             <th
               key={col.id}
-              className={`py-4 px-4 font-bold relative group/header cursor-grab active:cursor-grabbing transition-all select-none bg-[#FAF8F5] dark:bg-[#121110] ${
+              className={`py-4 px-4 text-sm font-extrabold relative group/header cursor-grab active:cursor-grabbing transition-all select-none bg-[#FAF8F5] dark:bg-[#121110] ${
                 draggedColIdx === idx ? 'opacity-40 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border-dashed border border-[#D4AF37]' : ''
               } ${
                 dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
@@ -1478,7 +1516,7 @@ export function LeadTable({
             >
               <div className="flex items-center justify-between gap-1.5 w-full">
                 
-                <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   {editingHeaderId === col.id ? (
                     <input 
                       type="text"
@@ -1493,7 +1531,7 @@ export function LeadTable({
                   ) : (
                     <span 
                       onDoubleClick={() => handleStartRename(col.id, col.label)} 
-                      className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text truncate block max-w-[100px]"
+                      className="cursor-pointer hover:text-[#D4AF37] dark:hover:text-[#D4AF37] border-b border-dashed border-transparent hover:border-[#D4AF37] select-text truncate flex-1 block"
                       title="Double click to rename"
                     >
                       {col.label}
@@ -1518,28 +1556,19 @@ export function LeadTable({
                   </div>
                 </div>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (openFilterColId === col.id) {
-                      setOpenFilterColId(null);
-                    } else {
-                      setFilterSearchQuery('');
-                      setDraftFilterValues(activeHeaderFilters[col.id] || getUniqueColumnValues(col.id));
-                      setOpenFilterColId(col.id);
-                    }
-                  }}
-                  className={`p-1 rounded hover:bg-[#FAF8F5] dark:hover:bg-[#121110] transition-colors shrink-0 ${
-                    activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-450 opacity-30 group-hover/header:opacity-100 hover:opacity-100'
-                  }`}
-                  title={`Filter ${col.label}`}
-                >
-                  <Filter className="w-3 h-3 fill-current" />
-                </button>
+                {enableHeaderFilters && (
+                  <button
+                    onClick={(e) => handleFilterClick(col.id, e)}
+                    className={`p-1 rounded hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shrink-0 ${
+                      activeHeaderFilters[col.id] ? 'text-[#D4AF37] dark:text-[#C5A059]' : 'text-zinc-450 opacity-40 group-hover/header:opacity-100 hover:opacity-100'
+                    }`}
+                    title={`Filter ${col.label}`}
+                  >
+                    <Filter className="w-3 h-3 fill-current" />
+                  </button>
+                )}
 
               </div>
-
-              {openFilterColId === col.id && renderFilterDropdown(col.id)}
             </th>
           ))}
 
@@ -2701,6 +2730,9 @@ export function LeadTable({
           </>
         )}
       </AnimatePresenceComponent>
+
+      {/* Dynamic Column Filter Dropdown at root level to prevent clipping */}
+      {viewMode === 'table' && openFilterColId && renderFilterDropdown(openFilterColId)}
 
       {/* Synced horizontal scrollbar directly at root level of LeadTable JSX */}
       {viewMode === 'table' && (
