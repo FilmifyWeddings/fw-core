@@ -947,7 +947,7 @@ export function LeadInsiderDrawer({
         animate={{ opacity: 0.5 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
+        className="fixed inset-0 z-[999998] bg-black/60 backdrop-blur-xs"
       />
 
       {/* Drawer Panel */}
@@ -956,7 +956,7 @@ export function LeadInsiderDrawer({
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-        className={`fixed top-0 right-0 bottom-0 z-50 w-full ${commentsOnlyMode ? 'max-w-lg' : 'max-w-md'} bg-white dark:bg-zinc-950 border-l border-slate-200 dark:border-zinc-900 shadow-2xl flex flex-col text-slate-800 dark:text-white`}
+        className={`fixed top-0 right-0 bottom-0 z-[999999] w-full ${commentsOnlyMode ? 'max-w-lg' : 'max-w-md'} bg-white dark:bg-zinc-950 border-l border-slate-200 dark:border-zinc-900 shadow-2xl flex flex-col text-slate-800 dark:text-white`}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-zinc-900 shrink-0 bg-slate-50 dark:bg-zinc-950/60">

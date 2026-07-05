@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Database, RefreshCw, Settings, Bell, Check } from 'lucide-react';
 import { Lead } from '@/types';
@@ -126,6 +126,24 @@ export default function LeadsPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifiedCommentIds, setNotifiedCommentIds] = useState<string[]>([]);
+  const notifContainerRef = useRef<HTMLDivElement>(null);
+
+  // Close notifications popover on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showNotifications &&
+        notifContainerRef.current &&
+        !notifContainerRef.current.contains(event.target as Node)
+      ) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications]);
 
   // Authenticate user & load leads
   useEffect(() => {
@@ -509,10 +527,10 @@ export default function LeadsPage() {
                   )}
 
                   {/* Bell Notification center */}
-                  <div className="relative">
+                  <div className="relative" ref={notifContainerRef}>
                     <button
                       onClick={() => setShowNotifications(!showNotifications)}
-                      className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs relative"
+                      className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs relative"
                       title="Workspace Reminders"
                     >
                       <Bell className="w-4 h-4" />
@@ -569,7 +587,9 @@ export default function LeadsPage() {
                                     <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${n.read ? 'bg-zinc-300 dark:bg-zinc-700' : 'bg-rose-500 animate-ping'}`} />
                                     <div className="min-w-0 flex-1">
                                       <div className="flex items-center justify-between gap-1">
-                                        <span className="text-xs font-black text-slate-800 dark:text-zinc-200 truncate">For: {n.leadName}</span>
+                                        <span className="text-xs truncate font-bold text-slate-500 dark:text-zinc-400">
+                                          For: <span className="font-extrabold text-[#D4AF37] dark:text-[#C5A059] ml-0.5">{n.leadName}</span>
+                                        </span>
                                         <span className="text-[9px] font-bold text-slate-500 dark:text-zinc-400 shrink-0">
                                           {new Date(n.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                                         </span>
