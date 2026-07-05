@@ -2463,10 +2463,7 @@ export function LeadTable({
           {/* Synced scrollbar removed from here to escape backdrop-filter containing block context */}
 
           {/* Pagination replaced by Load Info for Infinite Scroll */}
-          <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
-            <div>
-              Showing {Math.min(visibleCount, totalLeads)} of {totalLeads} leads
-            </div>
+          <div className="flex items-center justify-end mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
             {visibleCount < totalLeads && (
               <div className="text-zinc-400 dark:text-zinc-500 animate-pulse font-medium">
                 Scroll down to load more leads...
@@ -3135,18 +3132,6 @@ export function LeadTable({
         </div>
       )}
 
-      {/* Google Sheets-style filtered count in bottom right */}
-      {viewMode === 'table' && (
-        <div 
-          className="fixed bottom-6 right-6 z-[99999] bg-white/90 dark:bg-[#121110]/90 border border-[#E8E5DF] dark:border-[#2C2926] text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-lg text-slate-700 dark:text-zinc-300 flex items-center gap-1.5 backdrop-blur-md select-none hover:scale-105 transition-all"
-        >
-          <Database className="w-3.5 h-3.5 text-[#D4AF37] dark:text-[#C5A059]" />
-          <span>Showing {filteredLeads.length} of {leads.length} leads</span>
-          {(search || statusFilter !== 'all' || sourceFilter !== 'all' || scoreFilter !== 'all' || ownerFilter !== 'all' || Object.keys(activeHeaderFilters).length > 0 || startDate || endDate) && (
-            <span className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full animate-pulse" title="Filters active" />
-          )}
-        </div>
-      )}
 
     </div>
   );

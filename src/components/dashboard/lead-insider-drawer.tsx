@@ -29,12 +29,15 @@ const MOCK_TEAM_MEMBERS = [
   { id: 't4', name: 'Amit Patel', role: 'Drone Operator' }
 ];
 
-interface CommentThread {
+interface LeadComment {
+  id: string;
   text: string;
   authorName: string;
   authorRole: string;
-  resolved: boolean;
-  replies: Array<{
+  createdAt: string;
+  alert_flag?: boolean;
+  followup_at?: string | null;
+  replies?: Array<{
     id: string;
     text: string;
     authorName: string;
@@ -43,27 +46,36 @@ interface CommentThread {
   }>;
 }
 
-const parseCommentText = (rawText: string, createdByEmail?: string | null): CommentThread => {
+const parseLeadComment = (comm: any, createdByEmail?: string | null): LeadComment => {
+  if (comm && typeof comm === 'object') {
+    return {
+      id: comm.id || 'comm_' + Math.random().toString(36).substring(7),
+      text: comm.text || comm.comment_text || '',
+      authorName: comm.authorName || (createdByEmail === 'sushantnawale700@gmail.com' ? 'Sushant Nawale' : 'Rahul Sharma'),
+      authorRole: comm.authorRole || (createdByEmail === 'sushantnawale700@gmail.com' ? 'Super Admin' : 'Lead Photographer'),
+      createdAt: comm.createdAt || comm.created_at || new Date().toISOString(),
+      alert_flag: comm.alert_flag !== undefined ? !!comm.alert_flag : false,
+      followup_at: comm.followup_at || null,
+      replies: Array.isArray(comm.replies) ? comm.replies : []
+    };
+  }
+
   try {
+    const rawText = String(comm);
     if (rawText.startsWith('{') && rawText.endsWith('}')) {
       const parsed = JSON.parse(rawText);
-      if (parsed && typeof parsed === 'object' && 'text' in parsed) {
-        return {
-          text: parsed.text || '',
-          authorName: parsed.authorName || 'Rahul Sharma',
-          authorRole: parsed.authorRole || 'Lead Photographer',
-          resolved: !!parsed.resolved,
-          replies: Array.isArray(parsed.replies) ? parsed.replies : []
-        };
-      }
+      return parseLeadComment(parsed, createdByEmail);
     }
   } catch (_) {}
 
   return {
-    text: rawText,
+    id: 'comm_' + Math.random().toString(36).substring(7),
+    text: String(comm),
     authorName: createdByEmail === 'sushantnawale700@gmail.com' ? 'Sushant Nawale' : 'Rahul Sharma',
     authorRole: createdByEmail === 'sushantnawale700@gmail.com' ? 'Super Admin' : 'Lead Photographer',
-    resolved: false,
+    createdAt: new Date().toISOString(),
+    alert_flag: false,
+    followup_at: null,
     replies: []
   };
 };
@@ -137,13 +149,16 @@ export function LeadInsiderDrawer({
   const [commentText, setCommentText] = useState('');
   
   // Audited Comments State
-  const [commentsList, setCommentsList] = useState<any[]>([]);
-  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentsList, setCommentsList] = useState<LeadComment[]>([]);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState('');
   const [enableFollowup, setEnableFollowup] = useState(false);
   const [followupDate, setFollowupDate] = useState('');
   const [followupTime, setFollowupTime] = useState('');
+
+  // Date and Time typing values
+  const [followupDateInput, setFollowupDateInput] = useState('');
+  const [followupTimeInput, setFollowupTimeInput] = useState('');
 
   // Custom 3D Reminder Date & Time selection states
   const [showRemDatePicker, setShowRemDatePicker] = useState(false);
@@ -168,34 +183,36 @@ export function LeadInsiderDrawer({
     setIsMounted(true);
   }, []);
 
-  // Fetch comments when lead changes or mounts
+  // Sync comments directly from the lead prop
   useEffect(() => {
     if (lead) {
-      fetchComments();
+      const parsed = (lead.comments || []).map((c: any) => parseLeadComment(c, userEmail));
+      parsed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setCommentsList(parsed);
+
+      // Pre-fill today's date & time
+      const today = new Date();
+      const dd = String(today.getDate()).padStart(2, '0');
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const yyyy = today.getFullYear();
+      setFollowupDateInput(`${dd}/${mm}/${yyyy}`);
+      setFollowupDate(`${yyyy}-${mm}-${dd}`);
+
+      setFollowupTimeInput('12:00 PM');
+      setSelectedHour('12');
+      setSelectedMinute('00');
+      setSelectedPeriod('PM');
+      setFollowupTime('12:00');
     }
-  }, [lead?.id]);
+  }, [lead?.comments, lead?.id]);
 
   if (!lead) return null;
 
-  const fetchComments = async () => {
-    setLoadingComments(true);
-    try {
-      const clientId = lead.client_id || lead.id;
-      const tenantId = lead.tenant_id || lead.workspace_id;
-      const { data, error } = await supabase
-        .from('client_comments')
-        .select('*')
-        .eq('client_id', clientId)
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setCommentsList(data);
-      }
-    } catch (err) {
-      console.error('Error fetching comments:', err);
-    } finally {
-      setLoadingComments(false);
+  const fetchComments = () => {
+    if (lead) {
+      const parsed = (lead.comments || []).map((c: any) => parseLeadComment(c, userEmail));
+      parsed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setCommentsList(parsed);
     }
   };
 
@@ -224,158 +241,198 @@ export function LeadInsiderDrawer({
     setSelectedPeriod(p);
     const time24 = get24HourTime(h, m, p);
     setFollowupTime(time24);
+    setFollowupTimeInput(`${h}:${m} ${p}`);
   };
 
-  // Add structured Comment Thread
+  // Manual date typing parse
+  const handleDateTyping = (val: string) => {
+    setFollowupDateInput(val);
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      if (!isNaN(d) && !isNaN(m) && !isNaN(y) && d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2000) {
+        const formatted = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        setFollowupDate(formatted);
+      }
+    }
+  };
+
+  // Manual time typing parse
+  const handleTimeTyping = (val: string) => {
+    setFollowupTimeInput(val);
+    const match = val.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if (match) {
+      const hStr = match[1];
+      const mStr = match[2];
+      const period = match[3]?.toUpperCase();
+
+      const h = parseInt(hStr, 10);
+      const min = parseInt(mStr, 10);
+      if (h >= 1 && h <= 12 && min >= 0 && min <= 59 && (period === 'AM' || period === 'PM')) {
+        setSelectedHour(hStr.padStart(2, '0'));
+        setSelectedMinute(mStr);
+        setSelectedPeriod(period);
+        const time24 = get24HourTime(hStr.padStart(2, '0'), mStr, period);
+        setFollowupTime(time24);
+      } else if (h >= 0 && h <= 23 && min >= 0 && min <= 59 && !period) {
+        let displayHour = h;
+        let p = 'AM';
+        if (h >= 12) {
+          p = 'PM';
+          if (h > 12) displayHour = h - 12;
+        }
+        if (h === 0) displayHour = 12;
+        setSelectedHour(String(displayHour).padStart(2, '0'));
+        setSelectedMinute(mStr);
+        setSelectedPeriod(p);
+        setFollowupTime(`${hStr.padStart(2, '0')}:${mStr}`);
+      }
+    }
+  };
+
+  // Add structured Comment
   const handleAddComment = async () => {
     if (!commentText.trim()) return;
-    const clientId = lead.client_id || lead.id;
-    const tenantId = lead.tenant_id || lead.workspace_id;
 
-    const threadObj: CommentThread = {
+    const newComment: LeadComment = {
+      id: 'comm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       text: commentText.trim(),
       authorName: authorProfile.name,
       authorRole: authorProfile.role,
-      resolved: false,
+      createdAt: new Date().toISOString(),
+      alert_flag: enableFollowup && followupDate && followupTime ? true : false,
+      followup_at: enableFollowup && followupDate && followupTime ? new Date(`${followupDate}T${followupTime}`).toISOString() : null,
       replies: []
     };
 
-    let alertFlag = false;
-    let followupAt = null;
-    if (enableFollowup && followupDate && followupTime) {
-      alertFlag = true;
-      followupAt = new Date(`${followupDate}T${followupTime}`).toISOString();
-    }
+    const updatedComments = [...commentsList, newComment];
+    handleFieldChange({ comments: updatedComments as any });
+    setCommentsList(updatedComments);
+
+    setCommentText('');
+    setEnableFollowup(false);
 
     try {
-      const { error } = await supabase
-        .from('client_comments')
-        .insert({
-          tenant_id: tenantId,
-          client_id: clientId,
-          comment_text: JSON.stringify(threadObj),
-          alert_flag: alertFlag,
-          followup_at: followupAt
-        });
-
-      if (!error) {
-        setCommentText('');
-        setEnableFollowup(false);
-        setFollowupDate('');
-        setFollowupTime('');
-        await fetchComments();
-
-        // Push notification queue simulation
-        if (alertFlag && followupAt) {
-          await supabase.from('live_logs').insert({
-            workspace_id: tenantId,
-            lead_id: lead.id,
-            event_type: 'comment_followup_reminder',
-            message: `Automated voice reminder scheduled for client '${lead.name || lead.phone}' on ${new Date(followupAt).toLocaleString('en-IN')}.`,
-            metadata: { followup_at: followupAt }
-          });
-        }
-      }
+      const tenantId = lead.tenant_id || lead.workspace_id;
+      // Log comment event inside live_logs table
+      await supabase.from('live_logs').insert({
+        workspace_id: tenantId,
+        lead_id: lead.id,
+        event_type: 'comment_added',
+        message: `${authorProfile.name} added comment for client '${lead.name || lead.phone}'`,
+        metadata: { text: newComment.text, alert_flag: newComment.alert_flag, followup_at: newComment.followup_at }
+      });
     } catch (err) {
-      console.error('Add comment exception:', err);
+      console.error('Error logging comment:', err);
     }
   };
 
   // Edit Comment Text
-  const handleUpdateComment = async (commentId: string, currentThread: CommentThread) => {
+  const handleUpdateComment = async (commentId: string, currentThread: LeadComment) => {
     if (!editingCommentText.trim()) return;
-    const updatedThread: CommentThread = {
-      ...currentThread,
-      text: editingCommentText.trim()
-    };
+    
+    const updatedComments = commentsList.map(c => {
+      if (c.id === commentId) {
+        return { ...c, text: editingCommentText.trim() };
+      }
+      return c;
+    });
+
+    handleFieldChange({ comments: updatedComments as any });
+    setCommentsList(updatedComments);
+    setEditingCommentId(null);
+    setEditingCommentText('');
 
     try {
-      const { error } = await supabase
-        .from('client_comments')
-        .update({ comment_text: JSON.stringify(updatedThread) })
-        .eq('id', commentId);
-
-      if (!error) {
-        setEditingCommentId(null);
-        setEditingCommentText('');
-        await fetchComments();
-      }
-    } catch (err) {
-      console.error('Update comment error:', err);
-    }
+      const tenantId = lead.tenant_id || lead.workspace_id;
+      await supabase.from('live_logs').insert({
+        workspace_id: tenantId,
+        lead_id: lead.id,
+        event_type: 'comment_edited',
+        message: `${authorProfile.name} edited comment for client '${lead.name || lead.phone}'`,
+        metadata: { comment_id: commentId }
+      });
+    } catch (_) {}
   };
 
   // Delete Comment Thread
   const handleDeleteComment = async (commentId: string) => {
     if (!confirm('Are you sure you want to delete this comment?')) return;
-    try {
-      const { error } = await supabase
-        .from('client_comments')
-        .delete()
-        .eq('id', commentId);
+    
+    const updatedComments = commentsList.filter(c => c.id !== commentId);
+    handleFieldChange({ comments: updatedComments as any });
+    setCommentsList(updatedComments);
 
-      if (!error) {
-        await fetchComments();
-      }
-    } catch (err) {
-      console.error('Delete comment error:', err);
-    }
+    try {
+      const tenantId = lead.tenant_id || lead.workspace_id;
+      await supabase.from('live_logs').insert({
+        workspace_id: tenantId,
+        lead_id: lead.id,
+        event_type: 'comment_deleted',
+        message: `${authorProfile.name} deleted comment for client '${lead.name || lead.phone}'`,
+        metadata: { comment_id: commentId }
+      });
+    } catch (_) {}
   };
 
   // Add Reply to Thread
-  const handleAddReply = async (commentId: string, currentThread: CommentThread) => {
+  const handleAddReply = async (commentId: string, currentThread: LeadComment) => {
     const replyText = replyTexts[commentId]?.trim();
     if (!replyText) return;
 
-    const updatedThread: CommentThread = {
-      ...currentThread,
-      replies: [
-        ...currentThread.replies,
-        {
-          id: 'rep_' + Date.now(),
-          text: replyText,
-          authorName: authorProfile.name,
-          authorRole: authorProfile.role,
-          createdAt: new Date().toISOString()
-        }
-      ]
+    const newReply = {
+      id: 'rep_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      text: replyText,
+      authorName: authorProfile.name,
+      authorRole: authorProfile.role,
+      authorEmail: userEmail,
+      createdAt: new Date().toISOString()
     };
 
-    try {
-      const { error } = await supabase
-        .from('client_comments')
-        .update({ comment_text: JSON.stringify(updatedThread) })
-        .eq('id', commentId);
-
-      if (!error) {
-        setReplyTexts(prev => ({ ...prev, [commentId]: '' }));
-        await fetchComments();
+    const updatedComments = commentsList.map(c => {
+      if (c.id === commentId) {
+        return {
+          ...c,
+          replies: [...(c.replies || []), newReply]
+        };
       }
-    } catch (err) {
-      console.error('Reply thread error:', err);
-    }
+      return c;
+    });
+
+    handleFieldChange({ comments: updatedComments as any });
+    setCommentsList(updatedComments);
+    setReplyTexts(prev => ({ ...prev, [commentId]: '' }));
+
+    try {
+      const tenantId = lead.tenant_id || lead.workspace_id;
+      await supabase.from('live_logs').insert({
+        workspace_id: tenantId,
+        lead_id: lead.id,
+        event_type: 'comment_reply_added',
+        message: `${authorProfile.name} replied to comment for client '${lead.name || lead.phone}'`,
+        metadata: { comment_id: commentId }
+      });
+    } catch (_) {}
   };
 
   // Delete Reply from Thread
-  const handleDeleteReply = async (commentId: string, currentThread: CommentThread, replyId: string) => {
+  const handleDeleteReply = async (commentId: string, currentThread: LeadComment, replyId: string) => {
     if (!confirm('Are you sure you want to delete this reply?')) return;
-    const updatedThread: CommentThread = {
-      ...currentThread,
-      replies: currentThread.replies.filter(r => r.id !== replyId)
-    };
-
-    try {
-      const { error } = await supabase
-        .from('client_comments')
-        .update({ comment_text: JSON.stringify(updatedThread) })
-        .eq('id', commentId);
-
-      if (!error) {
-        await fetchComments();
+    
+    const updatedComments = commentsList.map(c => {
+      if (c.id === commentId) {
+        return {
+          ...c,
+          replies: (c.replies || []).filter((r: any) => r.id !== replyId)
+        };
       }
-    } catch (err) {
-      console.error('Delete reply error:', err);
-    }
+      return c;
+    });
+
+    handleFieldChange({ comments: updatedComments as any });
+    setCommentsList(updatedComments);
   };
 
   const toggleAssignee = (memberId: string) => {
@@ -403,13 +460,8 @@ export function LeadInsiderDrawer({
     });
   };
 
-  // Upgraded Comments View (Simple Google Sheets style feed, no active/resolve tabs)
+  // Upgraded Comments View (Simple Google Sheets style feed)
   const renderCommentsTimeline = () => {
-    const parsedComments = commentsList.map(c => ({
-      ...c,
-      thread: parseCommentText(c.comment_text, c.created_by_user_email)
-    }));
-
     return (
       <div className="space-y-5">
         {/* Commenting Credentials Badge */}
@@ -430,20 +482,16 @@ export function LeadInsiderDrawer({
 
         {/* Comments Feed list */}
         <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
-          {loadingComments ? (
-            <div className="text-center py-6">
-              <span className="text-xs text-slate-400 italic">Syncing comments...</span>
-            </div>
-          ) : parsedComments.length === 0 ? (
+          {commentsList.length === 0 ? (
             <div className="text-center py-12 border border-dashed border-slate-200 dark:border-zinc-900 rounded-2xl bg-slate-50/20 dark:bg-zinc-950/20">
               <MessageSquare className="w-6 h-6 text-slate-400 dark:text-zinc-650 mx-auto mb-2 opacity-50" />
               <p className="text-xs text-slate-400 font-medium">No comments posted yet.</p>
             </div>
           ) : (
-            parsedComments.map((comm) => {
-              const thread = comm.thread;
-              const parentAvatar = getAuthorFromEmail(comm.created_by_user_email).avatar;
-              const parentColor = getAuthorFromEmail(comm.created_by_user_email).color;
+            commentsList.map((comm) => {
+              const replies = comm.replies || [];
+              const parentAvatar = getAuthorFromEmail(comm.authorName === 'Sushant Nawale' ? 'sushantnawale700@gmail.com' : 'rahul@gmail.com').avatar;
+              const parentColor = getAuthorFromEmail(comm.authorName === 'Sushant Nawale' ? 'sushantnawale700@gmail.com' : 'rahul@gmail.com').color;
 
               return (
                 <div 
@@ -457,15 +505,15 @@ export function LeadInsiderDrawer({
                         {parentAvatar}
                       </div>
                       <div className="text-left">
-                        <span className="block text-xs font-black text-slate-800 dark:text-zinc-200">{thread.authorName}</span>
-                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">{thread.authorRole}</span>
+                        <span className="block text-xs font-black text-slate-800 dark:text-zinc-200">{comm.authorName}</span>
+                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">{comm.authorRole}</span>
                       </div>
                     </div>
                     
                     {/* Timestamp & Actions */}
                     <div className="flex items-center gap-1.5 text-right">
                       <span className="text-[10px] text-slate-400 font-semibold font-mono">
-                        {formatDateTime(comm.created_at)}
+                        {formatDateTime(comm.createdAt)}
                       </span>
                       
                       <div className="flex items-center gap-0.5">
@@ -473,7 +521,7 @@ export function LeadInsiderDrawer({
                         <button
                           onClick={() => {
                             setEditingCommentId(comm.id);
-                            setEditingCommentText(thread.text);
+                            setEditingCommentText(comm.text);
                           }}
                           className="p-1 text-zinc-400 hover:text-orange-400 hover:bg-orange-500/5 rounded-md transition-colors"
                           title="Edit Comment"
@@ -505,7 +553,7 @@ export function LeadInsiderDrawer({
                           autoFocus
                         />
                         <button 
-                          onClick={() => handleUpdateComment(comm.id, thread)}
+                          onClick={() => handleUpdateComment(comm.id, comm)}
                           className="p-1.5 text-emerald-500 hover:bg-emerald-500/10 rounded-lg"
                         >
                           <Check className="w-4 h-4" />
@@ -518,8 +566,8 @@ export function LeadInsiderDrawer({
                         </button>
                       </div>
                     ) : (
-                      <p className="text-slate-800 dark:text-zinc-200 text-xs font-bold leading-relaxed">
-                        {thread.text}
+                      <p className="text-slate-800 dark:text-zinc-200 text-xs font-bold leading-relaxed text-left font-sans">
+                        {comm.text}
                       </p>
                     )}
 
@@ -536,15 +584,15 @@ export function LeadInsiderDrawer({
                   </div>
 
                   {/* Replies (Google Sheets Thread Style) */}
-                  {thread.replies && thread.replies.length > 0 && (
+                  {replies.length > 0 && (
                     <div className="pl-11 space-y-3 pt-2.5 border-t border-slate-100 dark:border-zinc-900/60">
-                      {thread.replies.map((reply: any) => {
+                      {replies.map((reply: any) => {
                         const replyAvatar = getAuthorFromEmail(reply.authorEmail).avatar;
                         const replyColor = getAuthorFromEmail(reply.authorEmail).color;
                         return (
                           <div key={reply.id} className="flex items-start justify-between gap-2.5 group/reply">
                             <div className="flex items-start gap-2.5 min-w-0">
-                              <CornerDownRight className="w-4 h-4 text-slate-300 dark:text-zinc-750 shrink-0 mt-2" />
+                              <CornerDownRight className="w-4 h-4 text-slate-300 dark:text-zinc-755 shrink-0 mt-2" />
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 bg-gradient-to-tr ${replyColor} shadow-xs mt-0.5`}>
                                 {replyAvatar}
                               </div>
@@ -553,18 +601,18 @@ export function LeadInsiderDrawer({
                                   <span className="text-xs font-extrabold text-slate-800 dark:text-zinc-350">{reply.authorName}</span>
                                   <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider bg-slate-100 dark:bg-zinc-900 px-1 rounded">{reply.authorRole}</span>
                                 </div>
-                                <p className="text-slate-800 dark:text-zinc-200 text-xs font-semibold leading-relaxed mt-1">{reply.text}</p>
+                                <p className="text-slate-800 dark:text-zinc-200 text-xs font-semibold leading-relaxed mt-1 text-left">{reply.text}</p>
                               </div>
                             </div>
                             
                             <div className="flex items-center gap-1 text-right shrink-0">
                               <span className="text-[9px] text-slate-400 font-medium font-mono">{formatDateTime(reply.createdAt)}</span>
                               <button
-                                onClick={() => handleDeleteReply(comm.id, thread, reply.id)}
+                                onClick={() => handleDeleteReply(comm.id, comm, reply.id)}
                                 className="p-1 text-zinc-400 hover:text-rose-500 rounded opacity-0 group-hover/reply:opacity-100 transition-opacity"
                                 title="Delete Reply"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
@@ -581,11 +629,11 @@ export function LeadInsiderDrawer({
                         placeholder="Reply to this thread..."
                         value={replyTexts[comm.id] || ''}
                         onChange={(e) => setReplyTexts(prev => ({ ...prev, [comm.id]: e.target.value }))}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddReply(comm.id, thread)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddReply(comm.id, comm)}
                         className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
                       />
                       <button
-                        onClick={() => handleAddReply(comm.id, thread)}
+                        onClick={() => handleAddReply(comm.id, comm)}
                         className="p-2 bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 hover:text-orange-500 rounded-xl transition-all"
                       >
                         <Reply className="w-3.5 h-3.5" />
@@ -644,27 +692,32 @@ export function LeadInsiderDrawer({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3.5">
-                  {/* Custom 3D Date Button Trigger */}
+                  {/* Custom 3D Date Input Trigger */}
                   <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowRemDatePicker(!showRemDatePicker);
-                        setShowRemTimePicker(false);
-                      }}
-                      className="w-full flex items-center gap-2 p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl hover:border-[#D4AF37] dark:hover:border-[#C5A059] transition-all text-xs font-bold shadow-xs justify-center"
-                    >
-                      <Calendar className="w-4 h-4 text-[#D4AF37]" />
-                      <span>
-                        {followupDate 
-                          ? new Date(followupDate).toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'}) 
-                          : 'Select Date'}
-                      </span>
-                    </button>
+                    <label className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500 block text-left mb-1">Date (DD/MM/YYYY)</label>
+                    <div className="flex bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs hover:border-[#D4AF37] transition-all">
+                      <input
+                        type="text"
+                        placeholder="e.g. 05/07/2026"
+                        value={followupDateInput}
+                        onChange={(e) => handleDateTyping(e.target.value)}
+                        className="flex-1 bg-transparent px-3 py-2 text-xs font-mono font-bold focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRemDatePicker(!showRemDatePicker);
+                          setShowRemTimePicker(false);
+                        }}
+                        className="px-2.5 hover:bg-slate-50 dark:hover:bg-zinc-850 text-[#D4AF37] border-l border-slate-200 dark:border-zinc-800"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
                     {/* Custom 3D Date Picker Calendar Dropdown */}
                     {showRemDatePicker && (
-                      <div className="absolute left-0 right-0 mt-2 z-50 p-3.5 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-2xl shadow-xl space-y-3 w-[260px]">
+                      <div className="absolute left-0 mt-2 z-50 p-3.5 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-2xl shadow-xl space-y-3 w-[260px]">
                         {/* Month Select Headers */}
                         <div className="flex items-center justify-between pb-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
                           <button
@@ -725,6 +778,9 @@ export function LeadInsiderDrawer({
                                   type="button"
                                   onClick={() => {
                                     setFollowupDate(curDateS);
+                                    const dd = String(d).padStart(2, '0');
+                                    const mm = String(remMonth + 1).padStart(2, '0');
+                                    setFollowupDateInput(`${dd}/${mm}/${remYear}`);
                                     setShowRemDatePicker(false);
                                   }}
                                   className={`w-7 h-7 text-[11px] font-bold rounded-lg flex items-center justify-center transition-all ${
@@ -744,19 +800,28 @@ export function LeadInsiderDrawer({
                     )}
                   </div>
 
-                  {/* Custom 3D Time Button Trigger */}
+                  {/* Custom 3D Time Input Trigger */}
                   <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowRemTimePicker(!showRemTimePicker);
-                        setShowRemDatePicker(false);
-                      }}
-                      className="w-full flex items-center gap-2 p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl hover:border-[#D4AF37] dark:hover:border-[#C5A059] transition-all text-xs font-bold shadow-xs justify-center"
-                    >
-                      <Clock className="w-4 h-4 text-[#D4AF37]" />
-                      <span>{selectedHour}:{selectedMinute} {selectedPeriod}</span>
-                    </button>
+                    <label className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-555 block text-left mb-1">Time (HH:MM AM/PM)</label>
+                    <div className="flex bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs hover:border-[#D4AF37] transition-all">
+                      <input
+                        type="text"
+                        placeholder="e.g. 02:59 PM"
+                        value={followupTimeInput}
+                        onChange={(e) => handleTimeTyping(e.target.value)}
+                        className="flex-1 bg-transparent px-3 py-2 text-xs font-mono font-bold focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRemTimePicker(!showRemTimePicker);
+                          setShowRemDatePicker(false);
+                        }}
+                        className="px-2.5 hover:bg-slate-50 dark:hover:bg-zinc-850 text-[#D4AF37] border-l border-slate-200 dark:border-zinc-800"
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
                     {/* Custom 3D Time Picker Dropdown Card */}
                     {showRemTimePicker && (
@@ -987,7 +1052,7 @@ export function LeadInsiderDrawer({
                               className={`w-full flex items-center justify-between p-2.5 border rounded-xl transition-all ${
                                 isAssigned 
                                   ? 'bg-orange-500/10 border-orange-500/20 text-orange-600 dark:text-orange-400 font-bold' 
-                                  : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900/40 border-slate-200 dark:border-zinc-850 text-slate-600 dark:text-zinc-400'
+                                  : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900/40 border-slate-200 dark:border-zinc-855 text-slate-600 dark:text-zinc-400'
                               }`}
                             >
                               <div className="flex items-center gap-2.5">
@@ -1093,7 +1158,7 @@ export function LeadInsiderDrawer({
                             type="number" 
                             value={lead.raw_payload?.retainer_payment || ''} 
                             onChange={(e) => handleRawPayloadChange('retainer_payment', Number(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none"
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none"
                             placeholder="e.g. 50000"
                           />
                         </div>
@@ -1111,7 +1176,7 @@ export function LeadInsiderDrawer({
                             type="text" 
                             value={lead.raw_payload?.tracking_token || ''} 
                             onChange={(e) => handleRawPayloadChange('tracking_token', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none"
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none"
                             placeholder="e.g. FT-998822-LOCK"
                           />
                         </div>

@@ -78,6 +78,40 @@ const DEFAULT_STAGES = [
   { id: 'lost', name: 'Closed/Lost', color: '#6b7280', position: 5 }
 ];
 
+const parseLeadComment = (comm: any): any => {
+  if (comm && typeof comm === 'object') {
+    return {
+      id: comm.id || 'comm_' + Math.random().toString(36).substring(7),
+      text: comm.text || comm.comment_text || '',
+      authorName: comm.authorName || 'Rahul Sharma',
+      authorRole: comm.authorRole || 'Lead Photographer',
+      createdAt: comm.createdAt || comm.created_at || new Date().toISOString(),
+      alert_flag: comm.alert_flag !== undefined ? !!comm.alert_flag : false,
+      followup_at: comm.followup_at || null,
+      replies: Array.isArray(comm.replies) ? comm.replies : []
+    };
+  }
+
+  try {
+    const rawText = String(comm);
+    if (rawText.startsWith('{') && rawText.endsWith('}')) {
+      const parsed = JSON.parse(rawText);
+      return parseLeadComment(parsed);
+    }
+  } catch (_) {}
+
+  return {
+    id: 'comm_' + Math.random().toString(36).substring(7),
+    text: String(comm),
+    authorName: 'Rahul Sharma',
+    authorRole: 'Lead Photographer',
+    createdAt: new Date().toISOString(),
+    alert_flag: false,
+    followup_at: null,
+    replies: []
+  };
+};
+
 export default function LeadsPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string>(MOCK_WORKSPACE_ID);
@@ -133,71 +167,65 @@ export default function LeadsPage() {
     }
   }, []);
 
-  // Periodic Reminder Alert scanner (checks database every 10 seconds)
+  // Periodic Reminder Alert scanner (checks local leads state comments every 10 seconds)
   useEffect(() => {
-    if (isDemoMode) return;
-
     const scanReminders = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('client_comments')
-          .select('*')
-          .eq('alert_flag', true)
-          .not('followup_at', 'is', null);
+      const now = new Date().getTime();
+      const triggeredList: any[] = [];
+      const newNotified = [...notifiedCommentIds];
 
-        if (!error && data) {
-          const now = new Date().getTime();
-          const triggered = data.filter(c => {
-            const fTime = new Date(c.followup_at).getTime();
-            return fTime <= now && !notifiedCommentIds.includes(c.id);
-          });
-
-          if (triggered.length > 0) {
-            const newNotified = [...notifiedCommentIds, ...triggered.map(t => t.id)];
-            localStorage.setItem('leads_notified_comment_ids', JSON.stringify(newNotified));
-            setNotifiedCommentIds(newNotified);
-
-            const newNotifications: any[] = [];
-            for (const item of triggered) {
-              const targetLead = leads.find(l => l.id === item.client_id || l.client_id === item.client_id);
-              const leadName = targetLead?.name || 'Unspecified Lead';
-
-              let commentTextParsed = item.comment_text;
-              try {
-                if (item.comment_text.startsWith('{')) {
-                  const parsed = JSON.parse(item.comment_text);
-                  commentTextParsed = parsed.text;
-                }
-              } catch (_) {}
-
-              newNotifications.push({
-                id: item.id,
-                leadId: targetLead?.id || item.client_id,
-                leadName,
-                text: commentTextParsed,
-                time: item.followup_at,
-                read: false
-              });
-
-              // Push browser notification card
-              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                new Notification(`Lead Reminder: ${leadName}`, {
-                  body: commentTextParsed,
-                  icon: '/favicon.ico'
+      leads.forEach(lead => {
+        if (Array.isArray(lead.comments)) {
+          lead.comments.forEach((c: any) => {
+            const comment = parseLeadComment(c);
+            if (comment.alert_flag && comment.followup_at) {
+              const fTime = new Date(comment.followup_at).getTime();
+              if (fTime <= now && !notifiedCommentIds.includes(comment.id)) {
+                newNotified.push(comment.id);
+                triggeredList.push({
+                  id: comment.id,
+                  leadId: lead.id,
+                  leadName: lead.name || 'Unspecified Lead',
+                  text: comment.text,
+                  time: comment.followup_at,
+                  read: false
                 });
+
+                // Trigger browser push notification card
+                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                  new Notification(`Lead Reminder: ${lead.name || 'Unspecified'}`, {
+                    body: comment.text,
+                    icon: '/favicon.ico'
+                  });
+                }
+
+                if (!isDemoMode) {
+                  // Run logging query asynchronously
+                  (async () => {
+                    const { error } = await supabase.from('live_logs').insert({
+                      workspace_id: lead.workspace_id,
+                      lead_id: lead.id,
+                      event_type: 'reminder_triggered',
+                      message: `Reminder triggered for client '${lead.name || lead.phone}': ${comment.text}`,
+                      metadata: { comment_id: comment.id }
+                    });
+                    if (error) console.error('Error logging reminder trigger:', error);
+                  })();
+                }
               }
             }
-
-            setNotifications(prev => [...newNotifications, ...prev]);
-          }
+          });
         }
-      } catch (err) {
-        console.error('Reminder scan error:', err);
+      });
+
+      if (triggeredList.length > 0) {
+        localStorage.setItem('leads_notified_comment_ids', JSON.stringify(newNotified));
+        setNotifiedCommentIds(newNotified);
+        setNotifications(prev => [...triggeredList, ...prev]);
       }
     };
 
     const interval = setInterval(scanReminders, 10000);
-    // Trigger scanning immediately on load
     scanReminders();
 
     return () => clearInterval(interval);
