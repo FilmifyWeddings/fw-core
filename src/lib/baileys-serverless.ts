@@ -374,7 +374,7 @@ export async function sendMessageServerless(
     // ── Call Standalone Worker Bridge ──────────────────────────────────────────
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
     try {
-      const res = await fetch(`http://localhost:${WORKER_PORT}/send`, {
+      const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -442,7 +442,7 @@ export async function generateQrServerless(
   
   // 1. Tell worker to start the pairing flow
   try {
-    const res = await fetch(`http://localhost:${WORKER_PORT}/init-qr`, {
+    const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr`, {
       method: 'POST',
     });
     if (!res.ok) {
@@ -985,7 +985,7 @@ export async function forceWakeQueue(supabaseAdmin: SupabaseClient, workspaceId:
     console.log('[poller] Next.js forwarding forceWakeQueue to worker /trigger endpoint');
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
     try {
-      await fetch(`http://localhost:${WORKER_PORT}/trigger`, {
+      await fetch(`http://127.0.0.1:${WORKER_PORT}/trigger`, {
         method: 'POST',
       });
     } catch (err: any) {

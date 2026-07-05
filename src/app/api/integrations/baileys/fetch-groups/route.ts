@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
 
-    const res = await fetch(`http://localhost:${WORKER_PORT}/fetch-groups`, {
+    const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/fetch-groups`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(15_000),
