@@ -114,6 +114,7 @@ export function LeadTable({
 
   // Lead Details & Modals State
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [drawerMode, setDrawerMode] = useState<'full' | 'comments'>('full');
   const [timelineLead, setTimelineLead] = useState<Lead | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
@@ -1883,7 +1884,10 @@ export function LeadTable({
                       <MotionTr 
                         key={lead.id}
                         layout
-                        onClick={() => setSelectedLead(lead)}
+                        onClick={() => {
+                          setSelectedLead(lead);
+                          setDrawerMode('full');
+                        }}
                         className={`hover:bg-slate-50 dark:hover:bg-zinc-900/20 transition-all cursor-pointer group/row border-b border-slate-200 dark:border-zinc-900 ${
                           isSelected ? 'bg-slate-100 dark:bg-zinc-900/30' : ''
                         }`}
@@ -2359,8 +2363,10 @@ export function LeadTable({
                             <PremiumTooltip content="Comments & Reminders Timeline">
                               <MotionButton 
                                 whileHover={{ scale: 1.1 }}
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSelectedLead(lead);
+                                  setDrawerMode('comments');
                                 }}
                                 className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
                               >
@@ -2388,6 +2394,7 @@ export function LeadTable({
                                     onClick={() => {
                                       setRowActionMenuLeadId(null);
                                       setSelectedLead(lead);
+                                      setDrawerMode('full');
                                     }}
                                     className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
                                   >
@@ -2992,6 +2999,7 @@ export function LeadTable({
             stages={stages}
             customSources={customSources}
             userEmail={userEmail}
+            commentsOnlyMode={drawerMode === 'comments'}
           />
         )}
       </AnimatePresenceComponent>
