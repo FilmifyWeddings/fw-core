@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, RefreshCw, Settings } from 'lucide-react';
+import { Database, RefreshCw, Settings, Bell } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadTable } from '@/components/dashboard/lead-table';
@@ -88,6 +88,10 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [isDemoMode, setIsDemoMode] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifiedCommentIds, setNotifiedCommentIds] = useState<string[]>([]);
 
   // Authenticate user & load leads
   useEffect(() => {
@@ -113,6 +117,91 @@ export default function LeadsPage() {
 
     checkAuth();
   }, [router]);
+
+  // Request browser Notification permissions and load already notified IDs from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+      try {
+        const stored = localStorage.getItem('leads_notified_comment_ids');
+        if (stored) {
+          setNotifiedCommentIds(JSON.parse(stored));
+        }
+      } catch (_) {}
+    }
+  }, []);
+
+  // Periodic Reminder Alert scanner (checks database every 10 seconds)
+  useEffect(() => {
+    if (isDemoMode) return;
+
+    const scanReminders = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('client_comments')
+          .select('*')
+          .eq('alert_flag', true)
+          .not('followup_at', 'is', null);
+
+        if (!error && data) {
+          const now = new Date().getTime();
+          const triggered = data.filter(c => {
+            const fTime = new Date(c.followup_at).getTime();
+            return fTime <= now && !notifiedCommentIds.includes(c.id);
+          });
+
+          if (triggered.length > 0) {
+            const newNotified = [...notifiedCommentIds, ...triggered.map(t => t.id)];
+            localStorage.setItem('leads_notified_comment_ids', JSON.stringify(newNotified));
+            setNotifiedCommentIds(newNotified);
+
+            const newNotifications: any[] = [];
+            for (const item of triggered) {
+              const targetLead = leads.find(l => l.id === item.client_id || l.client_id === item.client_id);
+              const leadName = targetLead?.name || 'Unspecified Lead';
+
+              let commentTextParsed = item.comment_text;
+              try {
+                if (item.comment_text.startsWith('{')) {
+                  const parsed = JSON.parse(item.comment_text);
+                  commentTextParsed = parsed.text;
+                }
+              } catch (_) {}
+
+              newNotifications.push({
+                id: item.id,
+                leadId: targetLead?.id || item.client_id,
+                leadName,
+                text: commentTextParsed,
+                time: item.followup_at,
+                read: false
+              });
+
+              // Push browser notification card
+              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                new Notification(`Lead Reminder: ${leadName}`, {
+                  body: commentTextParsed,
+                  icon: '/favicon.ico'
+                });
+              }
+            }
+
+            setNotifications(prev => [...newNotifications, ...prev]);
+          }
+        }
+      } catch (err) {
+        console.error('Reminder scan error:', err);
+      }
+    };
+
+    const interval = setInterval(scanReminders, 10000);
+    // Trigger scanning immediately on load
+    scanReminders();
+
+    return () => clearInterval(interval);
+  }, [leads, notifiedCommentIds, isDemoMode]);
 
   const loadLeadsAndPreferences = async (targetUserId: string) => {
     setLoading(true);
@@ -374,6 +463,8 @@ export default function LeadsPage() {
             initialPreferences={preferences}
             onPreferencesChange={handlePreferencesChange}
             userEmail={userEmail}
+            activeLeadId={activeLeadId}
+            onDrawerClose={() => setActiveLeadId(null)}
             renderHeader={() => (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
                 <div>
@@ -388,6 +479,78 @@ export default function LeadsPage() {
                       SIMULATION MODE
                     </span>
                   )}
+
+                  {/* Bell Notification center */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowNotifications(!showNotifications)}
+                      className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs relative"
+                      title="Workspace Reminders"
+                    >
+                      <Bell className="w-4 h-4" />
+                      {notifications.filter(n => !n.read).length > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center animate-pulse border border-white dark:border-zinc-900">
+                          {notifications.filter(n => !n.read).length}
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Notifications Dropdown Panel (Premium 3D Popover style) */}
+                    {showNotifications && (
+                      <div className="absolute right-0 mt-3.5 w-80 max-h-96 overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl space-y-3 text-slate-800 dark:text-zinc-200 select-none">
+                        <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2">
+                          <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <Bell className="w-4 h-4 text-[#D4AF37]" />
+                            Reminder Alerts
+                          </span>
+                          {notifications.length > 0 && (
+                            <button
+                              onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                              className="text-[9px] font-bold uppercase tracking-wider text-[#D4AF37] hover:underline"
+                            >
+                              Mark all as read
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {notifications.length === 0 ? (
+                            <div className="text-center py-8 text-xs text-slate-400 italic">
+                              No active reminders triggered yet.
+                            </div>
+                          ) : (
+                            notifications.map(n => (
+                              <button
+                                key={n.id}
+                                onClick={() => {
+                                  setNotifications(prev => prev.map(notif => notif.id === n.id ? { ...notif, read: true } : notif));
+                                  setShowNotifications(false);
+                                  setActiveLeadId(n.leadId);
+                                }}
+                                className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-start gap-2.5 hover:translate-x-0.5 ${
+                                  n.read 
+                                    ? 'bg-slate-50/50 dark:bg-zinc-900/20 border-slate-200/50 dark:border-zinc-900/60' 
+                                    : 'bg-[#D4AF37]/5 dark:bg-[#C5A059]/5 border-[#D4AF37]/20 dark:border-[#C5A059]/20 shadow-xs'
+                                }`}
+                              >
+                                <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${n.read ? 'bg-zinc-300 dark:bg-zinc-700' : 'bg-rose-500 animate-ping'}`} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <span className="text-xs font-extrabold text-slate-800 dark:text-zinc-200 truncate">{n.leadName}</span>
+                                    <span className="text-[8px] font-bold font-mono text-zinc-400 dark:text-zinc-550 shrink-0">
+                                      {new Date(n.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 font-semibold truncate mt-0.5">{n.text}</p>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <button
                     onClick={() => setSettingsOpen(true)}
                     className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs"

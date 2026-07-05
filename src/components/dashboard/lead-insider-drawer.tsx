@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Check, User, DollarSign, FileText, Lock, Users, Briefcase, Plus, Calendar, Tag, Mail, Phone,
   FileIcon, ChevronRight, CheckSquare, AlarmClock, Trash2, Edit2, Clock, Shield,
-  CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle
+  CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle, ArrowLeft, ArrowRight
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -27,13 +27,6 @@ const MOCK_TEAM_MEMBERS = [
   { id: 't2', name: 'Karan Singh', role: 'Cinematographer' },
   { id: 't3', name: 'Sneha Reddy', role: 'Main Editor' },
   { id: 't4', name: 'Amit Patel', role: 'Drone Operator' }
-];
-
-const SIMULATED_USERS = [
-  { name: 'Sushant Nawale', role: 'Super Admin', avatar: 'SN', color: 'from-amber-500 to-amber-600' },
-  { name: 'Rahul Sharma', role: 'Lead Photographer', avatar: 'RS', color: 'from-blue-500 to-indigo-600' },
-  { name: 'Sneha Reddy', role: 'Main Editor', avatar: 'SR', color: 'from-emerald-500 to-teal-600' },
-  { name: 'Karan Singh', role: 'Cinematographer', avatar: 'KS', color: 'from-rose-500 to-pink-600' }
 ];
 
 interface CommentThread {
@@ -75,6 +68,61 @@ const parseCommentText = (rawText: string, createdByEmail?: string | null): Comm
   };
 };
 
+const getAuthorFromEmail = (email: string | null | undefined) => {
+  if (!email) {
+    return {
+      name: 'Sushant Nawale',
+      role: 'Super Admin',
+      avatar: 'SN',
+      color: 'from-amber-500 to-amber-600'
+    };
+  }
+  
+  const emailLower = email.toLowerCase();
+  if (emailLower === 'sushantnawale700@gmail.com') {
+    return {
+      name: 'Sushant Nawale',
+      role: 'Super Admin',
+      avatar: 'SN',
+      color: 'from-amber-500 to-amber-600'
+    };
+  }
+  if (emailLower.startsWith('rahul')) {
+    return {
+      name: 'Rahul Sharma',
+      role: 'Lead Photographer',
+      avatar: 'RS',
+      color: 'from-blue-500 to-indigo-600'
+    };
+  }
+  if (emailLower.startsWith('sneha')) {
+    return {
+      name: 'Sneha Reddy',
+      role: 'Main Editor',
+      avatar: 'SR',
+      color: 'from-emerald-500 to-teal-600'
+    };
+  }
+  if (emailLower.startsWith('karan')) {
+    return {
+      name: 'Karan Singh',
+      role: 'Cinematographer',
+      avatar: 'KS',
+      color: 'from-rose-500 to-pink-600'
+    };
+  }
+
+  const prefix = email.split('@')[0];
+  const name = prefix.split(/[\._-]/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  const avatar = prefix.slice(0, 2).toUpperCase();
+  return {
+    name,
+    role: 'Team Member',
+    avatar,
+    color: 'from-slate-500 to-zinc-600'
+  };
+};
+
 export function LeadInsiderDrawer({
   lead,
   onClose,
@@ -97,10 +145,20 @@ export function LeadInsiderDrawer({
   const [followupDate, setFollowupDate] = useState('');
   const [followupTime, setFollowupTime] = useState('');
 
-  // Simulated User Access
-  const [currentUserSim, setCurrentUserSim] = useState(SIMULATED_USERS[0]);
+  // Custom 3D Reminder Date & Time selection states
+  const [showRemDatePicker, setShowRemDatePicker] = useState(false);
+  const [showRemTimePicker, setShowRemTimePicker] = useState(false);
+  const [remMonth, setRemMonth] = useState(new Date().getMonth());
+  const [remYear, setRemYear] = useState(new Date().getFullYear());
+
+  const [selectedHour, setSelectedHour] = useState('12');
+  const [selectedMinute, setSelectedMinute] = useState('00');
+  const [selectedPeriod, setSelectedPeriod] = useState('PM');
+
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
-  const [filterMode, setFilterMode] = useState<'all' | 'active' | 'resolved' | 'reminders'>('all');
+
+  // Resolve user profile automatically based on auth email
+  const authorProfile = getAuthorFromEmail(userEmail);
 
   // Check role
   const isAdmin = userEmail === 'sushantnawale700@gmail.com' || userEmail?.includes('admin') || userEmail?.includes('owner');
@@ -152,6 +210,22 @@ export function LeadInsiderDrawer({
     handleFieldChange({ raw_payload: updatedPayload });
   };
 
+  // 24 Hour Time conversion
+  const get24HourTime = (hour: string, minute: string, period: string) => {
+    let h = parseInt(hour, 10);
+    if (period === 'PM' && h < 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${minute}`;
+  };
+
+  const updateFollowupTime = (h: string, m: string, p: string) => {
+    setSelectedHour(h);
+    setSelectedMinute(m);
+    setSelectedPeriod(p);
+    const time24 = get24HourTime(h, m, p);
+    setFollowupTime(time24);
+  };
+
   // Add structured Comment Thread
   const handleAddComment = async () => {
     if (!commentText.trim()) return;
@@ -160,8 +234,8 @@ export function LeadInsiderDrawer({
 
     const threadObj: CommentThread = {
       text: commentText.trim(),
-      authorName: currentUserSim.name,
-      authorRole: currentUserSim.role,
+      authorName: authorProfile.name,
+      authorRole: authorProfile.role,
       resolved: false,
       replies: []
     };
@@ -233,7 +307,7 @@ export function LeadInsiderDrawer({
 
   // Delete Comment Thread
   const handleDeleteComment = async (commentId: string) => {
-    if (!confirm('Are you sure you want to delete this comment thread?')) return;
+    if (!confirm('Are you sure you want to delete this comment?')) return;
     try {
       const { error } = await supabase
         .from('client_comments')
@@ -245,27 +319,6 @@ export function LeadInsiderDrawer({
       }
     } catch (err) {
       console.error('Delete comment error:', err);
-    }
-  };
-
-  // Resolve Comment Thread
-  const handleResolveThread = async (commentId: string, currentThread: CommentThread) => {
-    const updatedThread: CommentThread = {
-      ...currentThread,
-      resolved: !currentThread.resolved
-    };
-
-    try {
-      const { error } = await supabase
-        .from('client_comments')
-        .update({ comment_text: JSON.stringify(updatedThread) })
-        .eq('id', commentId);
-
-      if (!error) {
-        await fetchComments();
-      }
-    } catch (err) {
-      console.error('Resolve thread error:', err);
     }
   };
 
@@ -281,8 +334,8 @@ export function LeadInsiderDrawer({
         {
           id: 'rep_' + Date.now(),
           text: replyText,
-          authorName: currentUserSim.name,
-          authorRole: currentUserSim.role,
+          authorName: authorProfile.name,
+          authorRole: authorProfile.role,
           createdAt: new Date().toISOString()
         }
       ]
@@ -350,98 +403,52 @@ export function LeadInsiderDrawer({
     });
   };
 
-  // Upgraded Google Sheets Style Comments View
+  // Upgraded Comments View (Simple Google Sheets style feed, no active/resolve tabs)
   const renderCommentsTimeline = () => {
     const parsedComments = commentsList.map(c => ({
       ...c,
       thread: parseCommentText(c.comment_text, c.created_by_user_email)
     }));
 
-    // Filter threads
-    const filteredComments = parsedComments.filter(c => {
-      if (filterMode === 'active') return !c.thread.resolved;
-      if (filterMode === 'resolved') return c.thread.resolved;
-      if (filterMode === 'reminders') return c.alert_flag && c.followup_at;
-      return true;
-    });
-
     return (
       <div className="space-y-5">
-        {/* Simulated Team Member Switcher for Workspace Collaboration */}
-        <div className="p-3.5 bg-slate-50 dark:bg-zinc-900/60 border border-[#E8E5DF] dark:border-zinc-900 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white shrink-0 bg-gradient-to-tr ${currentUserSim.color} shadow-sm`}>
-              {currentUserSim.avatar}
+        {/* Commenting Credentials Badge */}
+        <div className="p-3 bg-slate-50/60 dark:bg-zinc-900/40 border border-[#E8E5DF] dark:border-zinc-900 rounded-2xl flex items-center justify-between gap-3 select-none">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-7.5 h-7.5 rounded-full flex items-center justify-center text-xs font-black text-white shrink-0 bg-gradient-to-tr ${authorProfile.color} shadow-xs`}>
+              {authorProfile.avatar}
             </div>
             <div className="text-left">
-              <span className="block text-xs font-extrabold text-slate-800 dark:text-zinc-200">{currentUserSim.name}</span>
-              <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">{currentUserSim.role}</span>
+              <span className="block text-xs font-extrabold text-slate-800 dark:text-zinc-200">Commenting as: {authorProfile.name}</span>
+              <span className="block text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider">{authorProfile.role}</span>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 self-end sm:self-auto">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Posting As:</span>
-            <select
-              value={currentUserSim.name}
-              onChange={(e) => {
-                const selected = SIMULATED_USERS.find(u => u.name === e.target.value);
-                if (selected) setCurrentUserSim(selected);
-              }}
-              className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-xs font-black rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer text-slate-700 dark:text-zinc-350 shadow-xs"
-            >
-              {SIMULATED_USERS.map(u => (
-                <option key={u.name} value={u.name}>{u.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Filter Toolbar Mode */}
-        <div className="flex border border-slate-250/60 dark:border-zinc-900 bg-slate-50/60 dark:bg-zinc-950/40 p-1 rounded-xl gap-1 shrink-0">
-          {[
-            { id: 'all', label: 'All Threads' },
-            { id: 'active', label: 'Active' },
-            { id: 'resolved', label: 'Resolved' },
-            { id: 'reminders', label: 'Reminders' }
-          ].map(f => (
-            <button
-              key={f.id}
-              onClick={() => setFilterMode(f.id as any)}
-              className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
-                filterMode === f.id 
-                  ? 'bg-white dark:bg-zinc-900 text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-800 shadow-xs' 
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-zinc-350'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+          <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-450 rounded text-[9px] font-extrabold tracking-wide uppercase select-none">
+            Active Session
+          </span>
         </div>
 
         {/* Comments Feed list */}
         <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
           {loadingComments ? (
             <div className="text-center py-6">
-              <span className="text-xs text-slate-400 italic">Syncing Google Sheets comments...</span>
+              <span className="text-xs text-slate-400 italic">Syncing comments...</span>
             </div>
-          ) : filteredComments.length === 0 ? (
-            <div className="text-center py-10 border border-dashed border-slate-200 dark:border-zinc-900 rounded-2xl bg-slate-50/20 dark:bg-zinc-950/20">
+          ) : parsedComments.length === 0 ? (
+            <div className="text-center py-12 border border-dashed border-slate-200 dark:border-zinc-900 rounded-2xl bg-slate-50/20 dark:bg-zinc-950/20">
               <MessageSquare className="w-6 h-6 text-slate-400 dark:text-zinc-650 mx-auto mb-2 opacity-50" />
-              <p className="text-xs text-slate-400 font-medium">No {filterMode !== 'all' ? filterMode : ''} comment threads found.</p>
+              <p className="text-xs text-slate-400 font-medium">No comments posted yet.</p>
             </div>
           ) : (
-            filteredComments.map((comm) => {
+            parsedComments.map((comm) => {
               const thread = comm.thread;
-              const parentAvatar = SIMULATED_USERS.find(u => u.name === thread.authorName)?.avatar || 'RS';
-              const parentColor = SIMULATED_USERS.find(u => u.name === thread.authorName)?.color || 'from-indigo-500 to-purple-600';
+              const parentAvatar = getAuthorFromEmail(comm.created_by_user_email).avatar;
+              const parentColor = getAuthorFromEmail(comm.created_by_user_email).color;
 
               return (
                 <div 
                   key={comm.id} 
-                  className={`border border-[#E8E5DF] dark:border-zinc-900/60 p-4 rounded-2xl space-y-3 relative group/card transition-all ${
-                    thread.resolved 
-                      ? 'bg-slate-100/50 dark:bg-zinc-950/40 opacity-70' 
-                      : 'bg-white dark:bg-zinc-950/80 shadow-xs hover:shadow-md'
-                  }`}
+                  className="border border-[#E8E5DF] dark:border-zinc-900/60 p-4 rounded-2xl space-y-3 bg-white dark:bg-zinc-950/80 shadow-xs hover:shadow-md transition-all relative group"
                 >
                   {/* Parent Comment Header */}
                   <div className="flex items-start justify-between gap-3">
@@ -455,41 +462,30 @@ export function LeadInsiderDrawer({
                       </div>
                     </div>
                     
-                    {/* Timestamp & Action Toolbar */}
+                    {/* Timestamp & Actions */}
                     <div className="flex items-center gap-1.5 text-right">
                       <span className="text-[10px] text-slate-400 font-semibold font-mono">
                         {formatDateTime(comm.created_at)}
                       </span>
                       
-                      <div className="flex items-center gap-1">
-                        {/* Resolve Checkmark (Google Sheets Style) */}
-                        <button
-                          onClick={() => handleResolveThread(comm.id, thread)}
-                          title={thread.resolved ? "Re-open Thread" : "Resolve Thread"}
-                          className={`p-1 rounded-md transition-colors ${
-                            thread.resolved 
-                              ? 'text-emerald-500 hover:bg-emerald-500/10' 
-                              : 'text-zinc-400 hover:text-emerald-500 hover:bg-emerald-500/5'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                        </button>
-                        
-                        {/* Edit Action */}
+                      <div className="flex items-center gap-0.5">
+                        {/* Edit Action Icon */}
                         <button
                           onClick={() => {
                             setEditingCommentId(comm.id);
                             setEditingCommentText(thread.text);
                           }}
                           className="p-1 text-zinc-400 hover:text-orange-400 hover:bg-orange-500/5 rounded-md transition-colors"
+                          title="Edit Comment"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
 
-                        {/* Delete Action */}
+                        {/* Delete Action Icon */}
                         <button
                           onClick={() => handleDeleteComment(comm.id)}
                           className="p-1 text-zinc-400 hover:text-rose-500 hover:bg-rose-500/5 rounded-md transition-colors"
+                          title="Delete Comment"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -522,7 +518,7 @@ export function LeadInsiderDrawer({
                         </button>
                       </div>
                     ) : (
-                      <p className={`text-slate-800 dark:text-zinc-200 text-xs font-bold leading-relaxed ${thread.resolved ? 'line-through text-slate-400 dark:text-zinc-500' : ''}`}>
+                      <p className="text-slate-800 dark:text-zinc-200 text-xs font-bold leading-relaxed">
                         {thread.text}
                       </p>
                     )}
@@ -532,9 +528,9 @@ export function LeadInsiderDrawer({
                       <div className="mt-2.5 p-2 bg-[#D4AF37]/5 dark:bg-[#C5A059]/5 border border-[#D4AF37]/20 dark:border-[#C5A059]/20 rounded-xl flex items-center justify-between text-[10px] text-[#D4AF37] font-semibold">
                         <span className="flex items-center gap-1">
                           <AlarmClock className="w-3.5 h-3.5 animate-bounce shrink-0" />
-                          Follow-up Scheduled: {formatDateTime(comm.followup_at)}
+                          Follow-up Reminder: {formatDateTime(comm.followup_at)}
                         </span>
-                        <span className="text-[8px] bg-[#D4AF37]/15 px-1.5 py-0.5 rounded font-mono uppercase tracking-wider">Active Alert</span>
+                        <span className="text-[8px] bg-[#D4AF37]/15 px-1.5 py-0.5 rounded font-mono uppercase tracking-wider">Scheduled</span>
                       </div>
                     )}
                   </div>
@@ -543,12 +539,12 @@ export function LeadInsiderDrawer({
                   {thread.replies && thread.replies.length > 0 && (
                     <div className="pl-11 space-y-3 pt-2.5 border-t border-slate-100 dark:border-zinc-900/60">
                       {thread.replies.map((reply: any) => {
-                        const replyAvatar = SIMULATED_USERS.find(u => u.name === reply.authorName)?.avatar || 'RS';
-                        const replyColor = SIMULATED_USERS.find(u => u.name === reply.authorName)?.color || 'from-indigo-500 to-purple-600';
+                        const replyAvatar = getAuthorFromEmail(reply.authorEmail).avatar;
+                        const replyColor = getAuthorFromEmail(reply.authorEmail).color;
                         return (
                           <div key={reply.id} className="flex items-start justify-between gap-2.5 group/reply">
                             <div className="flex items-start gap-2.5 min-w-0">
-                              <CornerDownRight className="w-4 h-4 text-slate-300 dark:text-zinc-700 shrink-0 mt-2" />
+                              <CornerDownRight className="w-4 h-4 text-slate-300 dark:text-zinc-750 shrink-0 mt-2" />
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 bg-gradient-to-tr ${replyColor} shadow-xs mt-0.5`}>
                                 {replyAvatar}
                               </div>
@@ -577,27 +573,25 @@ export function LeadInsiderDrawer({
                     </div>
                   )}
 
-                  {/* Inline Reply Input (Only show if not resolved) */}
-                  {!thread.resolved && (
-                    <div className="pl-11 pt-1.5">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="Reply to this thread..."
-                          value={replyTexts[comm.id] || ''}
-                          onChange={(e) => setReplyTexts(prev => ({ ...prev, [comm.id]: e.target.value }))}
-                          onKeyDown={(e) => e.key === 'Enter' && handleAddReply(comm.id, thread)}
-                          className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
-                        />
-                        <button
-                          onClick={() => handleAddReply(comm.id, thread)}
-                          className="p-2 bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 hover:text-orange-500 rounded-xl transition-all"
-                        >
-                          <Reply className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                  {/* Inline Reply Input */}
+                  <div className="pl-11 pt-1.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Reply to this thread..."
+                        value={replyTexts[comm.id] || ''}
+                        onChange={(e) => setReplyTexts(prev => ({ ...prev, [comm.id]: e.target.value }))}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddReply(comm.id, thread)}
+                        className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
+                      />
+                      <button
+                        onClick={() => handleAddReply(comm.id, thread)}
+                        className="p-2 bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 hover:text-orange-500 rounded-xl transition-all"
+                      >
+                        <Reply className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  )}
+                  </div>
                 </div>
               );
             })
@@ -637,29 +631,208 @@ export function LeadInsiderDrawer({
               </button>
             </div>
 
+            {/* Custom 3D Reminder Date & Time Selection Component */}
             {enableFollowup && (
               <motion.div 
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
-                className="p-3.5 bg-orange-500/5 border border-orange-500/10 rounded-2xl space-y-2.5"
+                className="p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl space-y-3.5 shadow-sm text-[#1A1A1A] dark:text-[#F5F5F5] select-none"
               >
-                <div className="text-[10px] font-bold text-orange-400 uppercase tracking-wide flex items-center gap-1.5">
+                <div className="text-[10px] font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
                   <AlarmClock className="w-3.5 h-3.5" />
                   Voice Reminder Scheduling (Alert Hook)
                 </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <input 
-                    type="date"
-                    value={followupDate}
-                    onChange={(e) => setFollowupDate(e.target.value)}
-                    className="bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 rounded-xl p-2 text-center font-mono font-bold text-xs"
-                  />
-                  <input 
-                    type="time"
-                    value={followupTime}
-                    onChange={(e) => setFollowupTime(e.target.value)}
-                    className="bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 rounded-xl p-2 text-center font-mono font-bold text-xs"
-                  />
+
+                <div className="grid grid-cols-2 gap-3.5">
+                  {/* Custom 3D Date Button Trigger */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRemDatePicker(!showRemDatePicker);
+                        setShowRemTimePicker(false);
+                      }}
+                      className="w-full flex items-center gap-2 p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl hover:border-[#D4AF37] dark:hover:border-[#C5A059] transition-all text-xs font-bold shadow-xs justify-center"
+                    >
+                      <Calendar className="w-4 h-4 text-[#D4AF37]" />
+                      <span>
+                        {followupDate 
+                          ? new Date(followupDate).toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'}) 
+                          : 'Select Date'}
+                      </span>
+                    </button>
+
+                    {/* Custom 3D Date Picker Calendar Dropdown */}
+                    {showRemDatePicker && (
+                      <div className="absolute left-0 right-0 mt-2 z-50 p-3.5 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-2xl shadow-xl space-y-3 w-[260px]">
+                        {/* Month Select Headers */}
+                        <div className="flex items-center justify-between pb-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (remMonth === 0) {
+                                setRemMonth(11);
+                                setRemYear(remYear - 1);
+                              } else {
+                                setRemMonth(remMonth - 1);
+                              }
+                            }}
+                            className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-650"
+                          >
+                            <ArrowLeft className="w-4 h-4" />
+                          </button>
+                          <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
+                            {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][remMonth]} {remYear}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (remMonth === 11) {
+                                setRemMonth(0);
+                                setRemYear(remYear + 1);
+                              } else {
+                                setRemMonth(remMonth + 1);
+                              }
+                            }}
+                            className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-650"
+                          >
+                            <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Calendar Day Header */}
+                        <div className="grid grid-cols-7 gap-1 text-center">
+                          {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                            <span key={d} className="text-[10px] font-bold text-zinc-400 dark:text-zinc-555 uppercase">{d}</span>
+                          ))}
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="grid grid-cols-7 gap-1 text-center">
+                          {(() => {
+                            const daysInM = new Date(remYear, remMonth + 1, 0).getDate();
+                            const startIdx = new Date(remYear, remMonth, 1).getDay();
+                            const cells = [];
+                            for (let i = 0; i < startIdx; i++) {
+                              cells.push(<div key={`empty-${i}`} className="w-7 h-7" />);
+                            }
+                            for (let d = 1; d <= daysInM; d++) {
+                              const curDateS = `${remYear}-${String(remMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                              const isSelected = followupDate === curDateS;
+                              cells.push(
+                                <button
+                                  key={d}
+                                  type="button"
+                                  onClick={() => {
+                                    setFollowupDate(curDateS);
+                                    setShowRemDatePicker(false);
+                                  }}
+                                  className={`w-7 h-7 text-[11px] font-bold rounded-lg flex items-center justify-center transition-all ${
+                                    isSelected 
+                                      ? 'bg-[#D4AF37] text-white rounded-full font-black shadow-md' 
+                                      : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                                  }`}
+                                >
+                                  {d}
+                                </button>
+                              );
+                            }
+                            return cells;
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Custom 3D Time Button Trigger */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRemTimePicker(!showRemTimePicker);
+                        setShowRemDatePicker(false);
+                      }}
+                      className="w-full flex items-center gap-2 p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl hover:border-[#D4AF37] dark:hover:border-[#C5A059] transition-all text-xs font-bold shadow-xs justify-center"
+                    >
+                      <Clock className="w-4 h-4 text-[#D4AF37]" />
+                      <span>{selectedHour}:{selectedMinute} {selectedPeriod}</span>
+                    </button>
+
+                    {/* Custom 3D Time Picker Dropdown Card */}
+                    {showRemTimePicker && (
+                      <div className="absolute right-0 mt-2 z-50 p-4 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-2xl shadow-xl space-y-4 w-[280px]">
+                        <div className="text-center font-mono font-black text-slate-800 dark:text-zinc-200 text-sm border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2 flex justify-center gap-1.5 items-center">
+                          <span className="text-[#D4AF37]">{selectedHour}</span>
+                          <span>:</span>
+                          <span className="text-[#D4AF37]">{selectedMinute}</span>
+                          <span className="text-[10px] bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded font-sans uppercase font-bold text-slate-650">{selectedPeriod}</span>
+                        </div>
+
+                        {/* Hours Selector Grid */}
+                        <div className="space-y-1.5">
+                          <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-555 block text-left">Hours</span>
+                          <div className="grid grid-cols-6 gap-1">
+                            {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(h => (
+                              <button
+                                key={h}
+                                type="button"
+                                onClick={() => updateFollowupTime(h, selectedMinute, selectedPeriod)}
+                                className={`py-1 text-[10px] font-bold rounded ${
+                                  selectedHour === h 
+                                    ? 'bg-[#D4AF37] text-white font-black shadow-xs' 
+                                    : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-350 hover:bg-slate-100 dark:hover:bg-zinc-850'
+                                }`}
+                              >
+                                {parseInt(h, 10)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Minutes Selector Grid */}
+                        <div className="space-y-1.5">
+                          <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-555 block text-left">Minutes</span>
+                          <div className="grid grid-cols-4 gap-1">
+                            {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => (
+                              <button
+                                key={m}
+                                type="button"
+                                onClick={() => updateFollowupTime(selectedHour, m, selectedPeriod)}
+                                className={`py-1 text-[10px] font-bold rounded ${
+                                  selectedMinute === m 
+                                    ? 'bg-[#D4AF37] text-white font-black shadow-xs' 
+                                    : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-350 hover:bg-slate-100 dark:hover:bg-zinc-855'
+                                }`}
+                              >
+                                :{m}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* AM/PM Toggle */}
+                        <div className="flex border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1 bg-slate-50 dark:bg-zinc-950">
+                          {['AM', 'PM'].map(p => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => {
+                                updateFollowupTime(selectedHour, selectedMinute, p);
+                                setShowRemTimePicker(false);
+                              }}
+                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all ${
+                                selectedPeriod === p 
+                                  ? 'bg-white dark:bg-zinc-900 text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-800 shadow-xs' 
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -800,7 +973,7 @@ export function LeadInsiderDrawer({
 
                     {/* Team Allocations & Assignees */}
                     <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-zinc-900">
-                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-550 tracking-wider flex items-center gap-1.5">
+                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-555 tracking-wider flex items-center gap-1.5">
                         <Users className="w-3.5 h-3.5 text-orange-500" />
                         Team Allocations & Assignees
                       </h4>
@@ -893,7 +1066,7 @@ export function LeadInsiderDrawer({
                         <Lock className="w-12 h-12 text-rose-500 mx-auto animate-pulse" />
                         <h3 className="text-sm font-black text-rose-400 uppercase tracking-wide">Access Token Mismatch</h3>
                         <p className="text-xs text-slate-500 leading-relaxed">
-                          Standard Shooter accounts do not possess authentication clearances to view financial billing matrix structures.
+                          Standard Shooter accounts do not possess authentication clearances to view financial billing registry structures.
                         </p>
                       </div>
                     ) : (

@@ -32,6 +32,8 @@ interface LeadTableProps {
   onPreferencesChange?: (newPrefs: any) => void;
   userEmail?: string | null;
   renderHeader?: () => React.ReactNode;
+  activeLeadId?: string | null;
+  onDrawerClose?: () => void;
 }
 
 interface ColumnConfig {
@@ -95,12 +97,25 @@ export function LeadTable({
   initialPreferences,
   onPreferencesChange,
   userEmail,
-  renderHeader
+  renderHeader,
+  activeLeadId,
+  onDrawerClose
 }: LeadTableProps) {
   const [mounted, setMounted] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(104);
   const headerRef = useRef<HTMLDivElement>(null);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
+
+  useEffect(() => {
+    if (activeLeadId) {
+      const found = leads.find(l => l.id === activeLeadId);
+      if (found) {
+        setSelectedLead(found);
+        setDrawerMode('comments');
+      }
+    }
+  }, [activeLeadId, leads]);
+
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'tasks'>('table');
   const [phoneActionMenuLeadId, setPhoneActionMenuLeadId] = useState<string | null>(null);
   const [syncingLeadId, setSyncingLeadId] = useState<string | null>(null);
@@ -2986,7 +3001,10 @@ export function LeadTable({
         {selectedLead && (
           <LeadInsiderDrawer
             lead={selectedLead}
-            onClose={() => setSelectedLead(null)}
+            onClose={() => {
+              setSelectedLead(null);
+              if (onDrawerClose) onDrawerClose();
+            }}
             onLeadUpdate={(leadId, updatedFields) => {
               setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updatedFields } : l));
               if (selectedLead && selectedLead.id === leadId) {
