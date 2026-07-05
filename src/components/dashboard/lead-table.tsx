@@ -1304,7 +1304,7 @@ export function LeadTable({
       
       {/* Pinned/Sticky Left Header block */}
       {renderHeader && (
-        <div className="sticky left-0 w-full bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-6 pb-2">
+        <div className="sticky left-0 w-full z-[60] bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-6 pb-2">
           {renderHeader()}
         </div>
       )}

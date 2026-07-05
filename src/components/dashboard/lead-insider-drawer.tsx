@@ -171,6 +171,7 @@ export function LeadInsiderDrawer({
   const [selectedPeriod, setSelectedPeriod] = useState('PM');
 
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
+  const [filterMode, setFilterMode] = useState<'all' | 'comments' | 'reminders'>('all');
 
   // Resolve user profile automatically based on auth email
   const authorProfile = getAuthorFromEmail(userEmail);
@@ -462,6 +463,12 @@ export function LeadInsiderDrawer({
 
   // Upgraded Comments View (Simple Google Sheets style feed)
   const renderCommentsTimeline = () => {
+    const filteredComments = commentsList.filter(c => {
+      if (filterMode === 'comments') return !c.alert_flag;
+      if (filterMode === 'reminders') return !!c.alert_flag;
+      return true;
+    });
+
     return (
       <div className="space-y-5">
         {/* Commenting Credentials Badge */}
@@ -480,15 +487,40 @@ export function LeadInsiderDrawer({
           </span>
         </div>
 
+        {/* Comment Filter Tabs (All / Comments / Reminders) */}
+        <div className="flex border border-slate-200 dark:border-zinc-900 bg-[#FAF8F5] dark:bg-zinc-950/40 p-1 rounded-xl gap-1 shrink-0">
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'comments', label: 'Comments Only' },
+            { id: 'reminders', label: 'Reminders Only' }
+          ].map(f => {
+            const active = filterMode === f.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFilterMode(f.id as any)}
+                className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                  active 
+                    ? 'bg-white dark:bg-zinc-900 text-[#D4AF37] border border-slate-200 dark:border-zinc-800 shadow-xs' 
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-zinc-350'
+                }`}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Comments Feed list */}
         <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
-          {commentsList.length === 0 ? (
+          {filteredComments.length === 0 ? (
             <div className="text-center py-12 border border-dashed border-slate-200 dark:border-zinc-900 rounded-2xl bg-slate-50/20 dark:bg-zinc-950/20">
               <MessageSquare className="w-6 h-6 text-slate-400 dark:text-zinc-650 mx-auto mb-2 opacity-50" />
-              <p className="text-xs text-slate-400 font-medium">No comments posted yet.</p>
+              <p className="text-xs text-slate-400 font-medium">No comments found.</p>
             </div>
           ) : (
-            commentsList.map((comm) => {
+            filteredComments.map((comm) => {
               const replies = comm.replies || [];
               const parentAvatar = getAuthorFromEmail(comm.authorName === 'Sushant Nawale' ? 'sushantnawale700@gmail.com' : 'rahul@gmail.com').avatar;
               const parentColor = getAuthorFromEmail(comm.authorName === 'Sushant Nawale' ? 'sushantnawale700@gmail.com' : 'rahul@gmail.com').color;
@@ -512,7 +544,7 @@ export function LeadInsiderDrawer({
                     
                     {/* Timestamp & Actions */}
                     <div className="flex items-center gap-1.5 text-right">
-                      <span className="text-[10px] text-slate-400 font-semibold font-mono">
+                      <span className="text-[10.5px] text-slate-900 dark:text-zinc-150 font-bold font-sans">
                         {formatDateTime(comm.createdAt)}
                       </span>
                       
@@ -601,12 +633,12 @@ export function LeadInsiderDrawer({
                                   <span className="text-xs font-extrabold text-slate-800 dark:text-zinc-350">{reply.authorName}</span>
                                   <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider bg-slate-100 dark:bg-zinc-900 px-1 rounded">{reply.authorRole}</span>
                                 </div>
-                                <p className="text-slate-800 dark:text-zinc-200 text-xs font-semibold leading-relaxed mt-1 text-left">{reply.text}</p>
+                                <p className="text-slate-800 dark:text-zinc-200 text-xs font-semibold leading-relaxed mt-1 text-left font-sans">{reply.text}</p>
                               </div>
                             </div>
                             
                             <div className="flex items-center gap-1 text-right shrink-0">
-                              <span className="text-[9px] text-slate-400 font-medium font-mono">{formatDateTime(reply.createdAt)}</span>
+                              <span className="text-[10px] text-slate-700 dark:text-zinc-250 font-bold font-sans">{formatDateTime(reply.createdAt)}</span>
                               <button
                                 onClick={() => handleDeleteReply(comm.id, comm, reply.id)}
                                 className="p-1 text-zinc-400 hover:text-rose-500 rounded opacity-0 group-hover/reply:opacity-100 transition-opacity"
@@ -630,7 +662,7 @@ export function LeadInsiderDrawer({
                         value={replyTexts[comm.id] || ''}
                         onChange={(e) => setReplyTexts(prev => ({ ...prev, [comm.id]: e.target.value }))}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddReply(comm.id, comm)}
-                        className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
+                        className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
                       />
                       <button
                         onClick={() => handleAddReply(comm.id, comm)}
