@@ -83,6 +83,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 // ─── Active Socket Reference ─────────────────────────────────────────────────
 let sock = null;
 let reconnectTimer = null;
+let isFirstStartup = true;
+let lastQrTime = 0;
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(state, extras = {}) {
     await supabase
@@ -643,15 +645,18 @@ async function startBaileysSocket() {
     logger.info('🚀 Starting Baileys socket...');
     await updateSessionState('connecting');
     const authDir = getAuthPath(WORKSPACE_ID);
-    // Programmatically wipe stuck session state: clear creds.json before loading multi-file auth
-    const credsPath = path.join(authDir, 'creds.json');
-    if (fs.existsSync(credsPath)) {
-        try {
-            fs.unlinkSync(credsPath);
-            logger.info('🗑️ Stuck session credentials wiped from auth directory to ensure fresh handshake.');
-        }
-        catch (e) {
-            logger.error({ err: e }, 'Failed to wipe stuck credentials during startup');
+    // Programmatically wipe stuck session state: clear creds.json before loading multi-file auth (only on first startup)
+    if (isFirstStartup) {
+        isFirstStartup = false;
+        const credsPath = path.join(authDir, 'creds.json');
+        if (fs.existsSync(credsPath)) {
+            try {
+                fs.unlinkSync(credsPath);
+                logger.info('🗑️ Stuck session credentials wiped from auth directory on first startup to ensure fresh handshake.');
+            }
+            catch (e) {
+                logger.error({ err: e }, 'Failed to wipe stuck credentials during startup');
+            }
         }
     }
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -686,18 +691,26 @@ async function startBaileysSocket() {
     // ── Event: connection.update — handle QR, open, close ──
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        // New QR code generated — save to DB so UI can display it
+        logger.info({ update }, '🔌 Received connection update event');
+        // New QR code generated — save to DB with a stable 15s throttle interval
         if (qr) {
-            logger.info('📱 New QR code generated');
-            await supabase
-                .from('baileys_sessions')
-                .upsert({
-                workspace_id: WORKSPACE_ID,
-                qr_string: qr,
-                qr_expires_at: new Date(Date.now() + 60_000).toISOString(), // expires in 60s
-                conn_state: 'connecting',
-                updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' });
+            const now = Date.now();
+            if (now - lastQrTime > 15_000) {
+                lastQrTime = now;
+                logger.info('📱 Storing fresh QR code in database...');
+                await supabase
+                    .from('baileys_sessions')
+                    .upsert({
+                    workspace_id: WORKSPACE_ID,
+                    qr_string: qr,
+                    qr_expires_at: new Date(Date.now() + 60_000).toISOString(), // expires in 60s
+                    conn_state: 'connecting',
+                    updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id' });
+            }
+            else {
+                logger.info('📱 QR update ignored (throttled to preserve stable front-end scanning window)');
+            }
         }
         if (connection === 'open') {
             logger.info('✅ WhatsApp connected!');
@@ -714,11 +727,18 @@ async function startBaileysSocket() {
             }, { onConflict: 'workspace_id' });
         }
         if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const error = lastDisconnect?.error;
+            const statusCode = error?.output?.statusCode;
             const isReplaced = statusCode === DisconnectReason.connectionReplaced;
             const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
             const shouldReconnect = !isLoggedOut && !isReplaced;
-            logger.warn({ statusCode, shouldReconnect }, '🔌 Connection closed');
+            logger.error({
+                statusCode,
+                shouldReconnect,
+                message: error?.message,
+                stack: error?.stack,
+                lastDisconnect
+            }, '🔌 Connection closed details');
             await updateSessionState('disconnected');
             if (isLoggedOut) {
                 logger.warn('🚪 Logged out (401). Wiping credentials folder and triggering fresh QR...');

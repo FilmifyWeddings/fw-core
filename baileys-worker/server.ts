@@ -108,6 +108,8 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY
 // ─── Active Socket Reference ─────────────────────────────────────────────────
 let sock: ReturnType<typeof makeWASocket> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let isFirstStartup = true;
+let lastQrTime = 0;
 
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(
@@ -758,14 +760,17 @@ async function startBaileysSocket(): Promise<void> {
 
   const authDir = getAuthPath(WORKSPACE_ID);
 
-  // Programmatically wipe stuck session state: clear creds.json before loading multi-file auth
-  const credsPath = path.join(authDir, 'creds.json');
-  if (fs.existsSync(credsPath)) {
-    try {
-      fs.unlinkSync(credsPath);
-      logger.info('🗑️ Stuck session credentials wiped from auth directory to ensure fresh handshake.');
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to wipe stuck credentials during startup');
+  // Programmatically wipe stuck session state: clear creds.json before loading multi-file auth (only on first startup)
+  if (isFirstStartup) {
+    isFirstStartup = false;
+    const credsPath = path.join(authDir, 'creds.json');
+    if (fs.existsSync(credsPath)) {
+      try {
+        fs.unlinkSync(credsPath);
+        logger.info('🗑️ Stuck session credentials wiped from auth directory on first startup to ensure fresh handshake.');
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to wipe stuck credentials during startup');
+      }
     }
   }
 
@@ -807,18 +812,26 @@ async function startBaileysSocket(): Promise<void> {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    // New QR code generated — save to DB so UI can display it
+    logger.info({ update }, '🔌 Received connection update event');
+
+    // New QR code generated — save to DB with a stable 15s throttle interval
     if (qr) {
-      logger.info('📱 New QR code generated');
-      await supabase
-        .from('baileys_sessions')
-        .upsert({
-          workspace_id: WORKSPACE_ID,
-          qr_string: qr,
-          qr_expires_at: new Date(Date.now() + 60_000).toISOString(), // expires in 60s
-          conn_state: 'connecting',
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id' });
+      const now = Date.now();
+      if (now - lastQrTime > 15_000) {
+        lastQrTime = now;
+        logger.info('📱 Storing fresh QR code in database...');
+        await supabase
+          .from('baileys_sessions')
+          .upsert({
+            workspace_id: WORKSPACE_ID,
+            qr_string: qr,
+            qr_expires_at: new Date(Date.now() + 60_000).toISOString(), // expires in 60s
+            conn_state: 'connecting',
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id' });
+      } else {
+        logger.info('📱 QR update ignored (throttled to preserve stable front-end scanning window)');
+      }
     }
 
     if (connection === 'open') {
@@ -838,12 +851,19 @@ async function startBaileysSocket(): Promise<void> {
     }
 
     if (connection === 'close') {
-      const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+      const error = lastDisconnect?.error as Boom;
+      const statusCode = error?.output?.statusCode;
       const isReplaced = statusCode === DisconnectReason.connectionReplaced;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
       const shouldReconnect = !isLoggedOut && !isReplaced;
 
-      logger.warn({ statusCode, shouldReconnect }, '🔌 Connection closed');
+      logger.error({ 
+        statusCode, 
+        shouldReconnect, 
+        message: error?.message, 
+        stack: error?.stack,
+        lastDisconnect 
+      }, '🔌 Connection closed details');
 
       await updateSessionState('disconnected');
 
