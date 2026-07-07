@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch server.ts",
-    "build": "tsc",
+    "build": "tsc && tsc ../src/lib/queue-processor.ts --outDir ./dist/src/lib/ --target ES2022 --module NodeNext --moduleResolution NodeNext --esModuleInterop --skipLibCheck",
     "start": "node dist/server.js"
   },
   "dependencies": {

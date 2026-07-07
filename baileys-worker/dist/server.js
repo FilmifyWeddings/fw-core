@@ -1141,6 +1141,14 @@ function startHealthServer() {
             res.end(JSON.stringify({ success: false, error: err.message || 'Internal Server Error' }));
         }
     });
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            logger.error({ port: PORT }, `⚠️ Port ${PORT} is already in use by a lingering process. Health server could not bind, but WhatsApp socket will remain active.`);
+        }
+        else {
+            logger.error({ err }, '🔴 Health server encountered an error');
+        }
+    });
     server.listen(PORT, () => {
         logger.info({ port: PORT }, `🌐 Health server running on port ${PORT}`);
     });
