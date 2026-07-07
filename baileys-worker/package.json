@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch server.ts",
     "build": "tsc",
-    "start": "tsx server.ts"
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",

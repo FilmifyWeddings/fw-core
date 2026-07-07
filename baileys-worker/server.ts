@@ -877,8 +877,8 @@ async function startBaileysSocket(): Promise<void> {
     for (const msg of messages) {
       // Sniff outgoing native flow button payloads (e.g. from WhatsBoost)
       if (msg.key.fromMe) {
-        const msgStr = JSON.stringify(msg.message, null, 2);
-        if (msgStr.includes('nativeFlowMessage') || msgStr.includes('interactiveMessage')) {
+        const msgStr = msg.message ? JSON.stringify(msg.message, null, 2) : null;
+        if (msgStr && (msgStr.includes('nativeFlowMessage') || msgStr.includes('interactiveMessage'))) {
           logger.info({ rawPayload: msg.message }, '🔍 DETECTED OUTGOING NATIVE FLOW PAYLOAD');
           console.log("================= DETECTED OUTGOING PAYLOAD =================");
           console.log(msgStr);

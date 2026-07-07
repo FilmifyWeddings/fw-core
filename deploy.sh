@@ -24,6 +24,6 @@ npm install
 
 echo "Restarting WhatsApp Persistent Worker under PM2..."
 pm2 delete baileys-worker 2>/dev/null || true
-pm2 start "npx tsx server.ts" --name "baileys-worker"
+pm2 start "node dist/server.js" --name "baileys-worker"
 
 echo "=== Deployment completed at $(date) ==="
