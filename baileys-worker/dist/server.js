@@ -670,7 +670,7 @@ async function startBaileysSocket() {
         printQRInTerminal: true,
         generateHighQualityLinkPreview: true,
         markOnlineOnConnect: false,
-        browser: Browsers.appropriate('Chrome'),
+        browser: Browsers.appropriate('Edge'),
     });
     // Store binding removed
     // ── Event: creds.update — save creds on every update ──
