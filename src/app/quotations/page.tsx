@@ -379,6 +379,47 @@ export default function QuotationMakerPage() {
   // Inline edit state for elements
   const [inlineEditingText, setInlineEditingText] = useState<string | null>(null);
 
+  // Workspace scaling states
+  const [scale, setScale] = useState(0.5);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleResize = () => {
+      if (workspaceRef.current) {
+        const parent = workspaceRef.current;
+        const parentWidth = parent.clientWidth - 48;
+        const parentHeight = parent.clientHeight - 48;
+        
+        const baseWidth = 794;
+        const baseHeight = 1123;
+        
+        const scaleX = parentWidth / baseWidth;
+        const scaleY = parentHeight / baseHeight;
+        
+        const newScale = Math.min(scaleX, scaleY, 1);
+        setScale(newScale);
+      }
+    };
+
+    handleResize();
+    
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    if (workspaceRef.current) {
+      resizeObserver.observe(workspaceRef.current);
+    }
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [activePageIndex]);
+
   // Preset Injections
   const [presets, setPresets] = useState<QuotationPreset[]>([]);
 
@@ -568,7 +609,18 @@ export default function QuotationMakerPage() {
     setSuccessMessage(null);
 
     // Format Page 3 dynamic elements into page state before saving
-    const updatedPages = pages.map(page => {
+    const updatedPages = pages.map((page, idx) => {
+      if (idx === 0) {
+        return {
+          ...page,
+          elements: page.elements.map(el => {
+            if (el.id === 'cover-couple-names') {
+              return { ...el, content: coupleNames };
+            }
+            return el;
+          })
+        };
+      }
       if (page.pageType === 'functions') {
         const titleEl = page.elements.find(el => el.id === 'functions-heading') || {
           id: 'functions-heading',
@@ -1417,28 +1469,37 @@ export default function QuotationMakerPage() {
 
         {/* WORKSPACE VIEWPORT BACKDROP */}
         <div 
-          className="flex-1 overflow-y-auto p-10 flex flex-col items-center justify-start bg-[#F3EFEA] relative"
+          ref={workspaceRef}
+          className="flex-1 overflow-hidden flex flex-col items-center justify-center bg-[#F3EFEA] relative"
           onClick={() => setSelectedElement(null)}
         >
           
-          {/* THE DIGITAL MATTE COVER PAPER PAGE (SCALABLE & SELECTABLE) */}
+          {/* THE DIGITAL MATTE COVER PAPER PAGE (RESPONSIVE SCALED A4) */}
           <div 
             id="quotation-canvas-container"
-            className="w-full max-w-[620px] shadow-2xl rounded-2xl overflow-hidden border border-[#E0D8CC] transition-all relative transform duration-300 hover:shadow-black/10 flex flex-col"
+            className="shadow-2xl rounded-2xl overflow-hidden border border-[#E0D8CC] bg-[#FAF6F0] flex flex-col"
+            style={{
+              width: '794px',
+              height: '1123px',
+              transform: `scale(${scale})`,
+              transformOrigin: 'center center',
+              flexShrink: 0
+            }}
           >
             
             {/* The active canvas page with matte paper texture styling */}
             <div 
-              className="relative aspect-[210/297] w-full bg-[#FAF6F0] p-[20mm] flex flex-col justify-between select-none relative overflow-hidden"
+              className="relative w-full h-full p-[75px] flex flex-col justify-between select-none overflow-hidden"
               style={{
                 backgroundImage: `radial-gradient(#ebe5da 1.5px, transparent 1.5px), radial-gradient(#ebe5da 1.5px, #FAF6F0 1.5px)`,
                 backgroundSize: '30px 30px',
-                backgroundPosition: '0 0, 15px 15px'
+                backgroundPosition: '0 0, 15px 15px',
+                boxSizing: 'border-box'
               }}
             >
               
               {/* Dynamic canvas element rendering */}
-              {pages[activePageIndex]?.elements.map(el => {
+              {activePageIndex !== 0 && pages[activePageIndex]?.elements.map(el => {
                 const isSelected = selectedElement?.pageIndex === activePageIndex && selectedElement?.elementId === el.id;
                 
                 // Style configurations
@@ -1826,12 +1887,126 @@ export default function QuotationMakerPage() {
                 </div>
               )}
 
+              {/* Page 1 Custom Premium Cover Page Layout */}
+              {activePageIndex === 0 && (
+                <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-15 select-text">
+                  {/* Top Section */}
+                  <div className="w-full flex flex-col items-center pt-4">
+                    {/* Couple Names / Client x Partner */}
+                    <div 
+                      onClick={(e) => handleElementClick(e, 0, 'cover-couple-names')}
+                      className={`w-full text-center transition px-2 py-1 rounded-lg ${
+                        selectedElement?.elementId === 'cover-couple-names'
+                          ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
+                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                      }`}
+                    >
+                      <input
+                        type="text"
+                        value={coupleNames}
+                        onChange={e => setCoupleNames(e.target.value.toUpperCase())}
+                        className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-3xl font-serif text-[#606248] font-bold tracking-widest"
+                      />
+                    </div>
+                    
+                    {/* Border Wrapper for WEDDING QUOTATION */}
+                    <div className="w-full border-t border-b border-[#E8E2D9]/80 py-2.5 mt-3 flex flex-col items-center">
+                      <div 
+                        onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-1')}
+                        className={`w-full text-center transition px-2 py-0.5 rounded ${
+                          selectedElement?.elementId === 'cover-subtitle-1'
+                            ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
+                            : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                        }`}
+                      >
+                        <span className="text-xs font-serif text-[#C2B280] tracking-[0.25em] font-semibold">
+                          WEDDING QUOTATION
+                        </span>
+                      </div>
+                      
+                      {/* Subtitle Parameters (Location / Date) */}
+                      <div 
+                        onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-2')}
+                        className={`w-full text-center transition px-2 py-0.5 rounded mt-1.5 ${
+                          selectedElement?.elementId === 'cover-subtitle-2'
+                            ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
+                            : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                        }`}
+                      >
+                        <input
+                          type="text"
+                          value={pages[0]?.elements.find(el => el.id === 'cover-subtitle-2')?.content || 'BOTH SIDES - LOCATION'}
+                          onChange={e => {
+                            const updatedVal = e.target.value;
+                            setPages(prev => prev.map((p, pi) => {
+                              if (pi === 0) {
+                                return {
+                                  ...p,
+                                  elements: p.elements.map(el => el.id === 'cover-subtitle-2' ? { ...el, content: updatedVal } : el)
+                                };
+                              }
+                              return p;
+                            }));
+                          }}
+                          className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-[10px] text-zinc-500 font-sans tracking-[0.1em]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Middle Section: Logo */}
+                  <div 
+                    onClick={(e) => handleElementClick(e, 0, 'cover-logo-text')}
+                    className={`absolute top-[38%] left-1/2 -translate-x-1/2 w-[80%] text-center transition px-3 py-1.5 rounded-xl z-20 ${
+                      selectedElement?.elementId === 'cover-logo-text'
+                        ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
+                        : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                    }`}
+                  >
+                    <div className="text-xl font-bold tracking-[0.18em] text-[#606248] font-serif uppercase">
+                      FILMIFY WEDDINGS
+                    </div>
+                    <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5">
+                      Premium Editorial Studio
+                    </div>
+                  </div>
+
+                  {/* Bottom Section: Hero couple image cutout */}
+                  <div 
+                    onClick={(e) => handleElementClick(e, 0, 'cover-hero-image')}
+                    className={`absolute bottom-0 left-10 right-10 top-[48%] group transition overflow-hidden rounded-2xl bg-transparent border border-transparent shadow-none flex items-end justify-center z-10 ${
+                      selectedElement?.elementId === 'cover-hero-image'
+                        ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
+                        : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                    }`}
+                  >
+                    <img 
+                      src={pages[0]?.elements.find(el => el.id === 'cover-hero-image')?.content || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
+                      alt="Cover couple cutout" 
+                      className="w-full h-full object-contain" 
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerImageSwap(0, 'cover-hero-image', pages[0]?.elements.find(el => el.id === 'cover-hero-image')?.content || '');
+                      }}
+                      className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-2xl animate-fade-in"
+                    >
+                      <Upload className="w-4 h-4 text-[#D4AF37]" />
+                      Swap Couple Photo
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* FOOTER BAR (Cover brand branding) */}
-              <div className="absolute bottom-6 left-10 right-10 flex items-center justify-between border-t border-[#E8E2D9]/50 pt-3 text-[9px] text-[#8A7E56] font-medium tracking-wide">
-                <span>FILMIFY WEDDINGS</span>
-                <span className="font-serif">Page {activePageIndex + 1} of 4</span>
-                <span>DIGITAL QUOTATION</span>
-              </div>
+              {activePageIndex !== 0 && (
+                <div className="absolute bottom-6 left-10 right-10 flex items-center justify-between border-t border-[#E8E2D9]/50 pt-3 text-[9px] text-[#8A7E56] font-medium tracking-wide">
+                  <span>FILMIFY WEDDINGS</span>
+                  <span className="font-serif">Page {activePageIndex + 1} of 4</span>
+                  <span>DIGITAL QUOTATION</span>
+                </div>
+              )}
 
             </div>
 
@@ -1979,7 +2154,7 @@ export default function QuotationMakerPage() {
               }}
             >
               {/* Dynamic elements */}
-              {page.elements.map(el => {
+              {pageIdx !== 0 && page.elements.map(el => {
                 const customStyle: React.CSSProperties = {
                   position: 'absolute',
                   left: `${el.x}%`,
@@ -2086,12 +2261,56 @@ export default function QuotationMakerPage() {
                 </div>
               )}
 
+              {/* Page 1 Custom Premium Cover Page Layout */}
+              {pageIdx === 0 && (
+                <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-15 select-text">
+                  {/* Top Section */}
+                  <div className="w-full flex flex-col items-center pt-4">
+                    {/* Couple Names / Client x Partner */}
+                    <div className="w-full text-center text-3xl font-serif text-[#606248] font-bold tracking-widest">
+                      {coupleNames}
+                    </div>
+                    
+                    {/* Border Wrapper for WEDDING QUOTATION */}
+                    <div className="w-full border-t border-b border-[#E8E2D9]/80 py-2.5 mt-3 flex flex-col items-center">
+                      <span className="text-xs font-serif text-[#C2B280] tracking-[0.25em] font-semibold">
+                        WEDDING QUOTATION
+                      </span>
+                      <div className="text-[10px] text-[#706E6A] font-sans tracking-[0.1em] mt-1.5 text-center">
+                        {pages[0]?.elements.find(el => el.id === 'cover-subtitle-2')?.content || 'BOTH SIDES - LOCATION'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Middle Section: Logo */}
+                  <div className="absolute top-[38%] left-1/2 -translate-x-1/2 w-[80%] text-center z-20">
+                    <div className="text-xl font-bold tracking-[0.18em] text-[#606248] font-serif uppercase">
+                      FILMIFY WEDDINGS
+                    </div>
+                    <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5">
+                      Premium Editorial Studio
+                    </div>
+                  </div>
+
+                  {/* Bottom Section: Hero couple image cutout */}
+                  <div className="absolute bottom-0 left-10 right-10 top-[48%] flex items-end justify-center z-10">
+                    <img 
+                      src={pages[0]?.elements.find(el => el.id === 'cover-hero-image')?.content || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
+                      alt="Cover couple cutout" 
+                      className="w-full h-full object-contain" 
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* FOOTER BAR */}
-              <div className="absolute bottom-6 left-10 right-10 flex items-center justify-between border-t border-[#E8E2D9]/50 pt-3 text-[9px] text-[#8A7E56] font-medium tracking-wide">
-                <span>FILMIFY WEDDINGS</span>
-                <span className="font-serif">Page {pageIdx + 1} of 4</span>
-                <span>DIGITAL QUOTATION</span>
-              </div>
+              {pageIdx !== 0 && (
+                <div className="absolute bottom-6 left-10 right-10 flex items-center justify-between border-t border-[#E8E2D9]/50 pt-3 text-[9px] text-[#8A7E56] font-medium tracking-wide">
+                  <span>FILMIFY WEDDINGS</span>
+                  <span className="font-serif">Page {pageIdx + 1} of 4</span>
+                  <span>DIGITAL QUOTATION</span>
+                </div>
+              )}
             </div>
           ))}
         </div>
