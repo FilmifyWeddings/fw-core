@@ -487,30 +487,32 @@ export function LeadInsiderDrawer({
           </span>
         </div>
 
-        {/* Comment Filter Tabs (All / Comments / Reminders) */}
-        <div className="flex border border-slate-200 dark:border-zinc-900 bg-[#FAF8F5] dark:bg-zinc-950/40 p-1 rounded-xl gap-1 shrink-0">
-          {[
-            { id: 'all', label: 'All' },
-            { id: 'comments', label: 'Comments Only' },
-            { id: 'reminders', label: 'Reminders Only' }
-          ].map(f => {
-            const active = filterMode === f.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setFilterMode(f.id as any)}
-                className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
-                  active 
-                    ? 'bg-white dark:bg-zinc-900 text-[#D4AF37] border border-slate-200 dark:border-zinc-800 shadow-xs' 
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-zinc-350'
-                }`}
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Comment Filter Tabs (All / Comments / Reminders) - only inline when not in commentsOnlyMode */}
+        {!commentsOnlyMode && (
+          <div className="flex border border-slate-200 dark:border-zinc-900 bg-[#FAF8F5] dark:bg-zinc-950/40 p-1 rounded-xl gap-1 shrink-0">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'comments', label: 'Comments Only' },
+              { id: 'reminders', label: 'Reminders Only' }
+            ].map(f => {
+              const active = filterMode === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFilterMode(f.id as any)}
+                  className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                    active 
+                      ? 'bg-white dark:bg-zinc-900 text-[#D4AF37] border border-slate-200 dark:border-zinc-800 shadow-xs' 
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-zinc-350'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Comments Feed list */}
         <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
@@ -544,7 +546,7 @@ export function LeadInsiderDrawer({
                     
                     {/* Timestamp & Actions */}
                     <div className="flex items-center gap-1.5 text-right">
-                      <span className="text-[10.5px] text-slate-900 dark:text-zinc-150 font-bold font-sans">
+                      <span className="text-[11px] font-extrabold text-black dark:text-zinc-100 font-mono">
                         {formatDateTime(comm.createdAt)}
                       </span>
                       
@@ -638,7 +640,7 @@ export function LeadInsiderDrawer({
                             </div>
                             
                             <div className="flex items-center gap-1 text-right shrink-0">
-                              <span className="text-[10px] text-slate-700 dark:text-zinc-250 font-bold font-sans">{formatDateTime(reply.createdAt)}</span>
+                              <span className="text-[10px] font-extrabold text-black dark:text-zinc-100 font-mono">{formatDateTime(reply.createdAt)}</span>
                               <button
                                 onClick={() => handleDeleteReply(comm.id, comm, reply.id)}
                                 className="p-1 text-zinc-400 hover:text-rose-500 rounded opacity-0 group-hover/reply:opacity-100 transition-opacity"
@@ -979,8 +981,8 @@ export function LeadInsiderDrawer({
           </button>
         </div>
 
-        {/* Tab Selection (Hidden in Comments Only Mode) */}
-        {!commentsOnlyMode && (
+        {/* Tab Selection (Render filters in Comments Only Mode) */}
+        {!commentsOnlyMode ? (
           <div className="flex border-b border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950/30 p-1.5 gap-1 shrink-0">
             {[
               { id: 'overview', label: 'Overview', icon: Briefcase },
@@ -1003,6 +1005,32 @@ export function LeadInsiderDrawer({
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex border-b border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950/30 p-1.5 gap-1 shrink-0">
+            {[
+              { id: 'all', label: 'All', icon: Clock },
+              { id: 'comments', label: 'Comments Only', icon: MessageSquare },
+              { id: 'reminders', label: 'Reminders Only', icon: AlarmClock }
+            ].map(f => {
+              const Icon = f.icon;
+              const active = filterMode === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFilterMode(f.id as any)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold rounded-xl transition-all ${
+                    active 
+                      ? 'bg-white dark:bg-zinc-900 text-[#D4AF37] border border-slate-200 dark:border-zinc-800 shadow-sm' 
+                      : 'text-slate-500 dark:text-zinc-550 hover:text-slate-855 dark:hover:text-zinc-350'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{f.label}</span>
                 </button>
               );
             })}

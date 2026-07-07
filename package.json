@@ -16,6 +16,8 @@
     "bufferutil": "^4.0.9",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "libphonenumber-js": "^1.13.7",
     "lucide-react": "^1.17.0",
     "next": "16.2.9",

@@ -1300,14 +1300,17 @@ export function LeadTable({
   };
 
   return (
-    <div className="flex-1 overflow-auto w-full relative select-none" ref={tableContainerRef}>
+    <div className="flex-1 flex flex-col min-h-0 w-full relative">
       
-      {/* Pinned/Sticky Left Header block */}
-      {renderHeader && (
-        <div className="sticky left-0 w-full z-[60] bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-6 pb-2">
-          {renderHeader()}
-        </div>
-      )}
+      {/* Table viewport container (with overflow-auto) */}
+      <div className="flex-1 overflow-auto w-full relative select-none" ref={tableContainerRef}>
+        
+        {/* Pinned/Sticky Left Header block */}
+        {renderHeader && (
+          <div className="sticky left-0 w-full z-[100] bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-6 pb-2">
+            {renderHeader()}
+          </div>
+        )}
 
       {/* Sticky Header Anchor Stack */}
       <div ref={headerRef} className="sticky top-0 left-0 w-full z-50 bg-white dark:bg-[#0c0c0e] px-4 md:px-6 pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
@@ -2523,9 +2526,6 @@ export function LeadTable({
                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
                     <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{stage.name}</span>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-650 bg-slate-50 dark:bg-zinc-950 px-2 py-0.5 rounded-md border border-slate-200 dark:border-zinc-900">
-                    {stageLeads.length}
-                  </span>
                 </div>
 
                 {/* Cards Container */}
@@ -2632,6 +2632,8 @@ export function LeadTable({
           />
         </div>
       )}
+
+      </div>
 
       {/* Bulk Actions Sliding Dock */}
       <AnimatePresenceComponent>

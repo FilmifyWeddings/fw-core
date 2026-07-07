@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, prepareWAMessageMedia, generateWAMessageFromContent, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -89,39 +89,19 @@ async function updateSessionState(state, extras = {}) {
         updated_at: new Date().toISOString(),
     }, { onConflict: 'workspace_id' });
 }
-function formatNativeFlowButtons(rawButtons) {
-    return (rawButtons || []).map((btn) => {
-        const type = btn.type || '';
-        if (type === 'quick_reply') {
-            return {
-                name: "quick_reply",
-                buttonParamsJson: JSON.stringify({
-                    display_text: btn.text || btn.label || '',
-                    id: btn.value || btn.id || ''
-                })
-            };
+function formatActionLinksText(rawButtons) {
+    if (!rawButtons || rawButtons.length === 0)
+        return '';
+    const lines = rawButtons.map((btn) => {
+        if (btn.type === 'url') {
+            return `🔗 ${btn.text}: ${btn.value}`;
         }
-        if (type === 'url') {
-            return {
-                name: "cta_url",
-                buttonParamsJson: JSON.stringify({
-                    display_text: btn.text || btn.label || 'Link',
-                    url: btn.value || '',
-                    merchant_url: btn.value || ''
-                })
-            };
-        }
-        if (type === 'phone' || type === 'call') {
-            return {
-                name: "cta_call",
-                buttonParamsJson: JSON.stringify({
-                    display_text: btn.text || btn.label || 'Call',
-                    phone_number: btn.value || ''
-                })
-            };
+        if (btn.type === 'phone' || btn.type === 'call') {
+            return `📞 ${btn.text}: ${btn.value}`;
         }
         return null;
     }).filter(Boolean);
+    return lines.length > 0 ? '\n\n' + lines.join('\n') : '';
 }
 // ─── Media Helpers ──────────────────────────────────────────────────────────
 function detectMimeTypeFromUrl(url) {
@@ -405,23 +385,6 @@ async function sendTemplateMessage(to, templateId, variables) {
         throw new Error('Socket not connected');
     const tplType = tpl.tpl_type || (tpl.media_url ? 'media' : 'text');
     const pj = tpl.tpl_payload || {};
-    const footer = pj.footer || '';
-    // ── LIST message ────────────────────────────────────────────────────────────
-    if (tplType === 'list') {
-        const sections = pj.sections || [];
-        const buttonText = pj.buttonText || pj.button_text || 'Options';
-        const result = await sock.sendMessage(to, {
-            listMessage: {
-                title: body,
-                description: footer,
-                buttonText,
-                footerText: footer,
-                listType: 1,
-                sections,
-            }
-        });
-        return result?.key?.id ?? null;
-    }
     // ── POLL message ─────────────────────────────────────────────────────────────
     if (tplType === 'poll') {
         const pollOpts = (pj.options || []).map((o) => (typeof o === 'string' ? o : o.text));
@@ -435,64 +398,20 @@ async function sendTemplateMessage(to, templateId, variables) {
         });
         return result?.key?.id ?? null;
     }
-    // ── BUTTONS (Quick Reply / URL / Phone) ───────────────────────────────────
+    // ── ACTION LINKS (URL / Phone — text-formatted for reliable delivery) ────
     const rawButtons = tpl.tpl_buttons || [];
-    if (rawButtons.length > 0) {
-        const nativeFlowButtons = formatNativeFlowButtons(rawButtons);
-        let headerStructure = { hasMediaAttachment: false };
-        const hasValidMedia = tpl.media_url && tpl.media_url !== 'null' && tpl.media_url.trim() !== '';
-        if (hasValidMedia) {
-            const isVideo = tpl.media_type === 'video' || (tpl.media_url && tpl.media_url.toLowerCase().endsWith('.mp4'));
-            try {
-                // Download media to buffer first — eliminates VPS→URL network issues
-                const detectedMime = detectMimeTypeFromUrl(tpl.media_url);
-                const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(tpl.media_url, detectedMime);
-                const finalIsVideo = resolvedMime.startsWith('video/');
-                logger.info({ to, mediaUrl: tpl.media_url.slice(0, 80), resolvedMime, bufferSize: buffer.length }, '📤 Preparing WAMessageMedia for template interactive message');
-                const mediaUploaded = await prepareWAMessageMedia(finalIsVideo
-                    ? { video: buffer, mimetype: resolvedMime }
-                    : { image: buffer, mimetype: resolvedMime }, { upload: sock.waUploadToServer, logger });
-                headerStructure = {
-                    title: body || "",
-                    hasMediaAttachment: true,
-                    ...(finalIsVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
-                };
-            }
-            catch (mediaErr) {
-                logger.error({ to, error: mediaErr.message }, '❌ Failed to prepare media for template buttons — sending without media');
-                headerStructure = { title: body || "", hasMediaAttachment: false };
-            }
-        }
-        else {
-            headerStructure = {
-                title: "",
-                hasMediaAttachment: false
-            };
-        }
-        logger.info({ to, nativeFlowButtons, headerStructure, footer: footer || "" }, '📤 Sending template interactiveMessage');
-        const messageContent = {
-            interactiveMessage: {
-                header: headerStructure,
-                body: { text: body || "" },
-                footer: { text: footer || "" },
-                nativeFlowMessage: {
-                    buttons: nativeFlowButtons,
-                    messageParamsVersion: 1
-                }
-            }
-        };
-        const userJid = sock.user?.id || '';
-        const waMessage = generateWAMessageFromContent(to, messageContent, { userJid });
-        await sock.relayMessage(to, waMessage.message, { messageId: waMessage.key.id });
-        return waMessage.key.id ?? null;
+    const actionLinksText = formatActionLinksText(rawButtons);
+    const finalBody = (body || '') + actionLinksText;
+    if (actionLinksText) {
+        logger.info({ to, linkCount: rawButtons.length }, '📤 Sending template with action links as text');
     }
-    // ── MEDIA (no buttons) ────────────────────────────────────────────────────
+    // ── MEDIA (with or without action links) ─────────────────────────────────
     if (tpl.media_url) {
         const mimeType = detectMimeTypeFromUrl(tpl.media_url);
-        return sendMediaMessage(to, tpl.media_url, body, mimeType);
+        return sendMediaMessage(to, tpl.media_url, finalBody, mimeType);
     }
     // ── PLAIN TEXT ────────────────────────────────────────────────────────────
-    return sendTextMessage(to, body);
+    return sendTextMessage(to, finalBody);
 }
 async function dispatchGroupCard(groupJid, leadData) {
     if (!sock)
@@ -510,6 +429,74 @@ async function dispatchGroupCard(groupJid, leadData) {
         `_FW Core — Automated Lead Alert_`;
     await sock.sendMessage(groupJid, { text: card });
     logger.info({ groupJid, name }, '📤 Group dispatch sent');
+}
+/**
+ * Parses a dynamic lead alert template and sends it to a WhatsApp group.
+ * Placeholders: {{created_time}}, {{full_name}}, {{shoot_type}}, {{location}},
+ *               {{budget}}, {{phone}}, {{email}}, {{source}}, etc.
+ */
+async function sendGroupAlert(groupId, leadData, templateStr) {
+    if (!sock)
+        throw new Error('Socket not connected');
+    if (!templateStr || !templateStr.trim()) {
+        throw new Error('Template string is empty');
+    }
+    const replaceFn = (match, key) => {
+        const normalizedKey = key.trim().toLowerCase();
+        // Time fields
+        if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
+            return new Date().toLocaleString('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        }
+        // Client fields — check leadData properties (case-insensitive)
+        const leadKeys = Object.keys(leadData);
+        const matchedKey = leadKeys.find(k => k.toLowerCase() === normalizedKey);
+        if (matchedKey !== undefined && leadData[matchedKey] !== undefined && leadData[matchedKey] !== null) {
+            return String(leadData[matchedKey]);
+        }
+        // Common alias mappings
+        const aliasMap = {
+            full_name: ['name', 'full_name', 'lead_name', 'client_name'],
+            phone: ['phone', 'phone_number', 'mobile', 'contact'],
+            email: ['email', 'email_address'],
+            source: ['source', 'lead_source', 'platform'],
+            shoot_type: ['shoot_type', 'shoot', 'kind_of_shoot', 'category'],
+            location: ['location', 'city', 'address', 'area'],
+            budget: ['budget', 'max_budget', 'price', 'amount'],
+            score: ['score', 'lead_score'],
+            status: ['status', 'lead_status'],
+        };
+        const aliases = aliasMap[normalizedKey] || [normalizedKey];
+        for (const alias of aliases) {
+            const found = leadKeys.find(k => k.toLowerCase() === alias);
+            if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null) {
+                return String(leadData[found]);
+            }
+        }
+        // Check raw_payload nested object
+        if (leadData.raw_payload && typeof leadData.raw_payload === 'object') {
+            const rp = leadData.raw_payload;
+            const rpKeys = Object.keys(rp);
+            for (const alias of aliases) {
+                const found = rpKeys.find(k => k.toLowerCase() === alias);
+                if (found !== undefined && rp[found] !== undefined && rp[found] !== null) {
+                    return String(rp[found]);
+                }
+            }
+        }
+        return '';
+    };
+    const formatted = templateStr.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
+    const result = await sock.sendMessage(groupId, { text: formatted });
+    const waMessageId = result?.key?.id ?? null;
+    logger.info({ groupId, waMessageId }, '📤 Group lead alert sent');
+    return waMessageId;
 }
 // ─── Action Handler (implements ActionHandler interface from queue-processor) ──
 /**
@@ -546,6 +533,11 @@ async function executeAction(action) {
         case 'group_dispatch': {
             const { groupJid, leadData } = action.payload;
             await dispatchGroupCard(groupJid, leadData);
+            break;
+        }
+        case 'group_lead_alert': {
+            const { groupId, leadData, templateStr } = action.payload;
+            waMessageId = await sendGroupAlert(groupId, leadData, templateStr);
             break;
         }
         default:
@@ -606,9 +598,10 @@ async function runSweeper() {
         logger.error({ err }, 'Sweeper error');
     }
 }
-// ─── Supabase Realtime Subscription ─────────────────────────────────────────
-// Realtime triggers an immediate drain when a new action is inserted.
-// The 5-second polling interval below is the safety net for missed events.
+// ─── Supabase Realtime: baileys_action_queue Listener ────────────────────────
+// Triggers an immediate drain when a new action is inserted.
+// No polling interval — Realtime drives instant actions;
+// scheduleNextDelayedCheck() handles time-delayed nodes.
 function startActionQueueListener() {
     logger.info('📡 Subscribing to baileys_action_queue realtime...');
     supabase
@@ -622,17 +615,23 @@ function startActionQueueListener() {
         const action = payload.new;
         if (action.status !== 'pending')
             return;
-        logger.info({ actionId: action.id, type: action.action_type }, '🎯 Realtime trigger — draining queue');
-        // Trigger a queue drain instead of processing single action inline
-        // This ensures retry-eligible actions are also picked up in the same sweep
+        // If this action has a future next_retry_at it's a delayed node — reschedule
+        if (action.next_retry_at && new Date(action.next_retry_at) > new Date()) {
+            logger.info({ actionId: action.id, type: action.action_type, next_retry_at: action.next_retry_at }, '⏱  Delayed action inserted — rescheduling next check');
+            await scheduleNextDelayedCheck();
+            return;
+        }
+        logger.info({ actionId: action.id, type: action.action_type }, '🎯 Realtime trigger — draining queue immediately');
         await runQueueDrain();
+        // After drain, reschedule in case delayed actions remain
+        await scheduleNextDelayedCheck();
     })
         .subscribe((status) => {
-        logger.info({ status }, '📡 Realtime subscription status');
+        logger.info({ status }, '📡 baileys_action_queue realtime subscription status');
     });
     // Startup drain: catch any pending actions that arrived while worker was offline
     logger.info('📋 Running startup queue drain...');
-    runQueueDrain();
+    runQueueDrain().then(() => scheduleNextDelayedCheck());
 }
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
 async function startBaileysSocket() {
@@ -892,7 +891,17 @@ function getRequestBody(req) {
 // ─── Health Check & API Bridge HTTP Server ───────────────────────────────────
 function startHealthServer() {
     const server = http.createServer(async (req, res) => {
+        // ── CORS Headers ────────────────────────────────────────────────────────
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         res.setHeader('Content-Type', 'application/json');
+        // Handle CORS preflight
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
         try {
             const parsedUrl = new URL(req.url ?? '', `http://localhost:${PORT}`);
             if (req.method === 'GET' && parsedUrl.pathname === '/health') {
@@ -1014,75 +1023,21 @@ function startHealthServer() {
                         });
                         waMessageId = pollResult?.key?.id ?? null;
                         break;
-                    case 'list': {
-                        // Interactive List Message
-                        const { listButtonText, listSections, footer: listFooter } = payload;
-                        if (!text)
-                            throw new Error('Missing: text (list title)');
-                        const listResult = await sock.sendMessage(jid, {
-                            listMessage: {
-                                title: text,
-                                description: listFooter || '',
-                                buttonText: listButtonText || 'Options',
-                                footerText: listFooter || '',
-                                listType: 1,
-                                sections: listSections || [],
-                            }
-                        });
-                        waMessageId = listResult?.key?.id ?? null;
-                        break;
-                    }
                     case 'buttons': {
-                        // Interactive Quick-Reply / URL / Phone buttons
-                        const { rawButtons, buttons: payloadButtons, footer: btnFooter } = payload;
+                        // Action links (URL / Phone) — text-formatted for reliable delivery
+                        const { rawButtons, buttons: payloadButtons } = payload;
                         const targetButtons = payloadButtons || rawButtons || [];
                         if (!text)
                             throw new Error('Missing: text (buttons body)');
-                        const nativeFlowButtons = formatNativeFlowButtons(targetButtons);
-                        let headerStructure = { hasMediaAttachment: false };
-                        const hasValidMedia = mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '';
-                        if (hasValidMedia) {
-                            try {
-                                const detectedMime = mimeType || detectMimeTypeFromUrl(mediaUrl);
-                                const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(mediaUrl, detectedMime);
-                                const finalIsVideo = resolvedMime.startsWith('video/');
-                                logger.info({ jid, mediaUrl: mediaUrl.slice(0, 80), resolvedMime, bufferSize: buffer.length }, '📤 Preparing WAMessageMedia for interactive message');
-                                const mediaUploaded = await prepareWAMessageMedia(finalIsVideo
-                                    ? { video: buffer, mimetype: resolvedMime }
-                                    : { image: buffer, mimetype: resolvedMime }, { upload: sock.waUploadToServer, logger });
-                                headerStructure = {
-                                    title: text || "",
-                                    hasMediaAttachment: true,
-                                    ...(finalIsVideo ? { videoMessage: mediaUploaded.videoMessage } : { imageMessage: mediaUploaded.imageMessage })
-                                };
-                            }
-                            catch (mediaErr) {
-                                logger.error({ jid, error: mediaErr.message }, '❌ Failed to prepare media for interactive message — sending without media');
-                                headerStructure = { title: "", hasMediaAttachment: false };
-                            }
+                        const actionLinksText = formatActionLinksText(targetButtons);
+                        const finalText = text + actionLinksText;
+                        if (mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '') {
+                            const mimeTypeDetect = mimeType || detectMimeTypeFromUrl(mediaUrl);
+                            waMessageId = await sendMediaMessage(jid, mediaUrl, finalText, mimeTypeDetect);
                         }
                         else {
-                            headerStructure = {
-                                title: "",
-                                hasMediaAttachment: false
-                            };
+                            waMessageId = await sendTextMessage(jid, finalText);
                         }
-                        logger.info({ jid, nativeFlowButtons, headerStructure, footer: btnFooter || "" }, '📤 Sending unified interactiveMessage');
-                        const messageContent = {
-                            interactiveMessage: {
-                                header: headerStructure,
-                                body: { text: text || "" },
-                                footer: { text: btnFooter || "" },
-                                nativeFlowMessage: {
-                                    buttons: nativeFlowButtons,
-                                    messageParamsVersion: 1
-                                }
-                            }
-                        };
-                        const userJid = sock.user?.id || '';
-                        const waMessage = generateWAMessageFromContent(jid, messageContent, { userJid });
-                        await sock.relayMessage(jid, waMessage.message, { messageId: waMessage.key.id });
-                        waMessageId = waMessage.key.id ?? null;
                         break;
                     }
                     default:
@@ -1090,6 +1045,71 @@ function startHealthServer() {
                 }
                 res.writeHead(200);
                 res.end(JSON.stringify({ success: true, waMessageId }));
+                return;
+            }
+            if (req.method === 'POST' && parsedUrl.pathname === '/fetch-groups') {
+                logger.info('Fetch groups requested');
+                if (!sock) {
+                    res.writeHead(503);
+                    res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
+                    return;
+                }
+                try {
+                    const groupMap = await sock.groupFetchAllParticipating();
+                    const groups = Object.values(groupMap).map((g) => ({
+                        jid: g.id,
+                        display_name: g.subject || g.id.split('@')[0],
+                        participant_count: g.participants?.length ?? 0,
+                        is_group: true,
+                    }));
+                    // Upsert into baileys_chats for persistence
+                    const rows = groups.map((g) => ({
+                        workspace_id: WORKSPACE_ID,
+                        jid: g.jid,
+                        display_name: g.display_name,
+                        is_group: true,
+                        updated_at: new Date().toISOString(),
+                    }));
+                    if (rows.length > 0) {
+                        await supabase
+                            .from('baileys_chats')
+                            .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+                    }
+                    logger.info({ count: groups.length }, '✅ Groups fetched and synced');
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ success: true, groups }));
+                }
+                catch (err) {
+                    logger.error({ err }, '❌ Failed to fetch groups');
+                    res.writeHead(500);
+                    res.end(JSON.stringify({ success: false, error: err.message || 'Failed to fetch groups' }));
+                }
+                return;
+            }
+            if (req.method === 'POST' && parsedUrl.pathname === '/send-group-alert') {
+                const bodyStr = await getRequestBody(req);
+                const payload = JSON.parse(bodyStr);
+                logger.info({ payload }, 'Received send-group-alert request');
+                if (!sock) {
+                    res.writeHead(503);
+                    res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
+                    return;
+                }
+                const { groupId, leadData, templateStr } = payload;
+                if (!groupId || !templateStr) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ success: false, error: 'Missing required fields: groupId, templateStr' }));
+                    return;
+                }
+                try {
+                    const waMessageId = await sendGroupAlert(groupId, leadData || {}, templateStr);
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ success: true, waMessageId }));
+                }
+                catch (err) {
+                    res.writeHead(500);
+                    res.end(JSON.stringify({ success: false, error: err.message }));
+                }
                 return;
             }
             res.writeHead(404);
@@ -1105,22 +1125,387 @@ function startHealthServer() {
         logger.info({ port: PORT }, `🌐 Health server running on port ${PORT}`);
     });
 }
+// ─── Dynamic Delayed-Check Scheduler ─────────────────────────────────────────
+// Replaces the 5-second setInterval. Queries the earliest pending action whose
+// next_retry_at has not yet passed, then sets a single setTimeout to fire
+// exactly when that window opens. Eliminates constant polling egress.
+let delayedCheckTimer = null;
+async function scheduleNextDelayedCheck() {
+    if (delayedCheckTimer) {
+        clearTimeout(delayedCheckTimer);
+        delayedCheckTimer = null;
+    }
+    try {
+        const now = new Date().toISOString();
+        const { data: nextAction } = await supabase
+            .from('baileys_action_queue')
+            .select('next_retry_at')
+            .eq('workspace_id', WORKSPACE_ID)
+            .eq('status', 'pending')
+            .not('next_retry_at', 'is', null)
+            .gt('next_retry_at', now)
+            .order('next_retry_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+        if (nextAction?.next_retry_at) {
+            const fireAt = new Date(nextAction.next_retry_at).getTime();
+            const delayMs = Math.max(fireAt - Date.now(), 500); // at least 500ms
+            logger.info({ delayMs, fireAt: nextAction.next_retry_at }, '⏱  Scheduling next delayed queue drain');
+            delayedCheckTimer = setTimeout(async () => {
+                delayedCheckTimer = null;
+                await runQueueDrain().catch(err => logger.error({ err }, 'Delayed drain error'));
+                await scheduleNextDelayedCheck();
+            }, delayMs);
+        }
+        else {
+            // No delayed actions pending — check again in 5 minutes as a safety net
+            delayedCheckTimer = setTimeout(async () => {
+                delayedCheckTimer = null;
+                await scheduleNextDelayedCheck();
+            }, 5 * 60 * 1000);
+        }
+    }
+    catch (err) {
+        logger.error({ err }, 'scheduleNextDelayedCheck error — retrying in 60s');
+        delayedCheckTimer = setTimeout(() => {
+            delayedCheckTimer = null;
+            scheduleNextDelayedCheck();
+        }, 60_000);
+    }
+}
+// ─── triggerWorkflowsForLead ──────────────────────────────────────────────────
+// Maps a newly inserted lead's source field → trigger_type and fires all
+// matching enabled custom_workflows for that workspace.
+async function triggerWorkflowsForLead(lead, workspaceId) {
+    try {
+        const source = String(lead.source || 'manual').toLowerCase();
+        // Map raw lead source → workflow trigger_type
+        let triggerType;
+        if (source === 'facebook' || source === 'meta' || source === 'facebook_lead') {
+            triggerType = 'facebook_lead';
+        }
+        else if (source === 'google_sheets' || source === 'sheets') {
+            triggerType = 'facebook_lead'; // Sheets leads re-use the same pipeline trigger
+        }
+        else if (source === 'webhook' || source === 'website' || source === 'wordpress') {
+            triggerType = 'webhook';
+        }
+        else if (source === 'manual' || source === 'crm') {
+            triggerType = 'crm_entry';
+        }
+        else {
+            triggerType = 'crm_entry'; // default
+        }
+        // Fetch all enabled workflows matching this workspace + trigger
+        const { data: workflows, error } = await supabase
+            .from('custom_workflows')
+            .select('id, name, trigger_type, trigger_config, steps')
+            .eq('workspace_id', workspaceId)
+            .eq('is_enabled', true)
+            .eq('trigger_type', triggerType);
+        if (error) {
+            logger.error({ err: error.message, workspaceId, triggerType }, 'triggerWorkflowsForLead: DB query error');
+            return;
+        }
+        if (!workflows || workflows.length === 0) {
+            logger.debug({ workspaceId, triggerType, leadId: lead.id }, 'No matching workflows for lead trigger');
+            return;
+        }
+        logger.info({ count: workflows.length, triggerType, leadId: lead.id, workspaceId }, '⚡ Triggering custom workflows for new lead');
+        // Fire each workflow asynchronously without blocking the Realtime callback
+        for (const wf of workflows) {
+            (async () => {
+                try {
+                    // Import the workflow engine dynamically (avoids circular dependency)
+                    const enginePath = '../src/lib/workflow-engine.js';
+                    const { executeWorkflow } = await import(enginePath);
+                    await executeWorkflow(supabase, {
+                        id: wf.id,
+                        workspace_id: workspaceId,
+                        name: wf.name,
+                        trigger_type: wf.trigger_type,
+                        trigger_config: wf.trigger_config || {},
+                        steps: wf.steps || [],
+                        is_enabled: true,
+                    }, triggerType, lead // trigger payload
+                    );
+                    // Bump run stats
+                    await supabase.rpc('rpc_bump_workflow_run_stats', {
+                        p_workflow_id: wf.id,
+                        p_status: 'success',
+                    });
+                    logger.info({ workflowId: wf.id, workflowName: wf.name }, '✅ Workflow executed successfully');
+                }
+                catch (wfErr) {
+                    const errMsg = wfErr instanceof Error ? wfErr.message : String(wfErr);
+                    logger.error({ workflowId: wf.id, err: errMsg }, '❌ Workflow execution failed');
+                    // Bump failed stat
+                    try {
+                        await supabase.rpc('rpc_bump_workflow_run_stats', {
+                            p_workflow_id: wf.id,
+                            p_status: 'failed',
+                        });
+                    }
+                    catch { }
+                }
+            })();
+        }
+    }
+    catch (err) {
+        logger.error({ err }, 'triggerWorkflowsForLead: unexpected error');
+    }
+}
+// ─── Supabase Realtime: Leads INSERT Listener ────────────────────────────────
+// Subscribes to INSERT events on the `leads` table.
+// The moment a new lead lands (from Facebook webhook, manual CRM entry, or Google Sheets
+// ingestion), this fires triggerWorkflowsForLead immediately — zero polling.
+function startLeadsRealtimeListener() {
+    logger.info('📡 Subscribing to leads table realtime (INSERT)...');
+    supabase
+        .channel('leads_ingestion_pipeline')
+        .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'leads',
+        filter: `workspace_id=eq.${WORKSPACE_ID}`,
+    }, async (payload) => {
+        const lead = payload.new;
+        logger.info({ leadId: lead.id, source: lead.source, name: lead.name }, '🎯 Realtime: new lead inserted — triggering workflows');
+        await triggerWorkflowsForLead(lead, WORKSPACE_ID);
+        // Asynchronously trigger Google Contacts Ingest Sync
+        (async () => {
+            try {
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+                const syncRes = await fetch(`${appUrl}/api/workflows/google-contacts/sync-lead`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ leadId: lead.id, workspaceId: WORKSPACE_ID }),
+                });
+                if (syncRes.ok) {
+                    const resData = await syncRes.json();
+                    logger.info({ leadId: lead.id, resData }, 'Google Contacts sync triggered successfully.');
+                }
+                else {
+                    const errText = await syncRes.text();
+                    logger.warn({ leadId: lead.id, error: errText }, 'Google Contacts sync trigger response error.');
+                }
+            }
+            catch (e) {
+                logger.error({ leadId: lead.id, error: e.message }, 'Error triggering Google Contacts sync.');
+            }
+        })();
+    })
+        .subscribe((status) => {
+        logger.info({ status }, '📡 Leads realtime subscription status');
+    });
+}
+// ─── Google Sheets Background Watcher ────────────────────────────────────────
+// Polls every 60 seconds across all Google-connected workspaces.
+// Detects newly appended rows (beyond the last known row count stored in
+// integration_credentials.config.last_row_count), maps column headers to lead
+// fields, and inserts new leads to kick off the realtime workflow pipeline.
+async function runGoogleSheetsWatchCycle() {
+    try {
+        // Fetch all google integrations that have a spreadsheet config
+        const { data: integrations, error } = await supabase
+            .from('integration_credentials')
+            .select('user_id, access_token, refresh_token, config')
+            .eq('provider', 'google')
+            .eq('status', 'connected');
+        if (error) {
+            if (error.message?.includes('schema cache')) {
+                logger.debug('integration_credentials not in schema cache — skipping Google Sheets watch');
+                return;
+            }
+            logger.error({ err: error.message }, 'Google Sheets watcher: DB query error');
+            return;
+        }
+        if (!integrations || integrations.length === 0)
+            return;
+        for (const integration of integrations) {
+            const config = integration.config || {};
+            if (!integration.access_token)
+                continue;
+            const activeSheetsList = config.active_sheets || {};
+            const sheetsList = config.sheets || {};
+            const activeSheets = [];
+            if (Object.keys(activeSheetsList).length > 0) {
+                Object.entries(activeSheetsList).forEach(([key, sheet]) => {
+                    if (sheet.enabled && sheet.sheet_name) {
+                        activeSheets.push({
+                            spreadsheet_id: sheet.spreadsheet_id || config.spreadsheet_id || '',
+                            name: sheet.sheet_name,
+                            mappings: sheet.mappings || { name: 'name', phone: 'phone', email: 'email' },
+                            last_row_count: sheet.last_row_count || 1,
+                            composite_key: key
+                        });
+                    }
+                });
+            }
+            else if (Object.keys(sheetsList).length > 0) {
+                Object.entries(sheetsList).forEach(([title, sheet]) => {
+                    if (sheet.enabled) {
+                        activeSheets.push({
+                            spreadsheet_id: config.spreadsheet_id || '',
+                            name: title,
+                            mappings: sheet.mappings || { name: 'name', phone: 'phone', email: 'email' },
+                            last_row_count: sheet.last_row_count || 1
+                        });
+                    }
+                });
+            }
+            else if (config.spreadsheet_id) {
+                // Fallback to legacy single sheet
+                const sheetName = config.sheet_name || 'Sheet1';
+                const lastRowCount = config.last_row_count || 1;
+                activeSheets.push({
+                    spreadsheet_id: config.spreadsheet_id,
+                    name: sheetName,
+                    mappings: { name: 'name', phone: 'phone', email: 'email' },
+                    last_row_count: lastRowCount
+                });
+            }
+            for (const activeSheet of activeSheets) {
+                if (!activeSheet.spreadsheet_id)
+                    continue;
+                try {
+                    // Fetch the spreadsheet values using correct spreadsheet ID
+                    const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${activeSheet.spreadsheet_id}/values/${encodeURIComponent(activeSheet.name)}`;
+                    const res = await fetch(sheetsUrl, {
+                        headers: { Authorization: `Bearer ${integration.access_token}` },
+                    });
+                    if (!res.ok) {
+                        logger.warn({ workspaceId: integration.user_id, status: res.status, sheetName: activeSheet.name, spreadsheetId: activeSheet.spreadsheet_id }, 'Google Sheets API call failed for worksheet');
+                        continue;
+                    }
+                    const sheetsData = await res.json();
+                    const rows = sheetsData.values || [];
+                    if (rows.length <= activeSheet.last_row_count) {
+                        continue;
+                    }
+                    // Row 0 = headers
+                    const headers = (rows[0] || []).map((h) => h.trim().toLowerCase());
+                    const newRows = rows.slice(activeSheet.last_row_count); // rows after last processed index
+                    logger.info({ workspaceId: integration.user_id, newRowCount: newRows.length, spreadsheetId: activeSheet.spreadsheet_id, sheetName: activeSheet.name }, '📊 Google Sheets: new rows detected');
+                    const leadsToInsert = [];
+                    const mapping = activeSheet.mappings;
+                    for (const row of newRows) {
+                        // Map columns to lead fields via header name matching
+                        const rowObj = {};
+                        headers.forEach((h, i) => { rowObj[h] = row[i] || ''; });
+                        let nameVal = '';
+                        let phoneVal = '';
+                        let emailVal = '';
+                        const customPayload = {};
+                        Object.entries(mapping).forEach(([field, headerCol]) => {
+                            const cleanHeader = String(headerCol || '').trim().toLowerCase();
+                            const matchedVal = rowObj[cleanHeader] || '';
+                            if (field === 'name') {
+                                nameVal = matchedVal;
+                            }
+                            else if (field === 'phone') {
+                                phoneVal = matchedVal;
+                            }
+                            else if (field === 'email') {
+                                emailVal = matchedVal;
+                            }
+                            else {
+                                // Custom mapping key (renamed/assigned by user)
+                                customPayload[field] = matchedVal;
+                            }
+                        });
+                        // Set fallbacks if not mapped or blank
+                        if (!nameVal) {
+                            nameVal = rowObj['name'] || rowObj['full name'] || rowObj['full_name'] ||
+                                rowObj['client name'] || rowObj['lead name'] || `Sheet Lead`;
+                        }
+                        if (!phoneVal) {
+                            phoneVal = rowObj['phone'] || rowObj['mobile'] || rowObj['contact'] || rowObj['phone number'] || '';
+                        }
+                        if (!emailVal) {
+                            emailVal = rowObj['email'] || rowObj['email address'] || '';
+                        }
+                        leadsToInsert.push({
+                            workspace_id: integration.user_id,
+                            name: nameVal.trim(),
+                            phone: phoneVal.replace(/[^0-9]/g, ''),
+                            email: emailVal.trim(),
+                            source: 'google_sheets',
+                            status: 'new',
+                            raw_payload: {
+                                ...rowObj,
+                                ...customPayload
+                            },
+                        });
+                    }
+                    if (leadsToInsert.length > 0) {
+                        const { error: insertErr } = await supabase
+                            .from('leads')
+                            .insert(leadsToInsert);
+                        if (insertErr) {
+                            logger.error({ err: insertErr.message }, 'Google Sheets watcher: lead insert error');
+                        }
+                        else {
+                            logger.info({ count: leadsToInsert.length, workspaceId: integration.user_id, sheetName: activeSheet.name }, '✅ Google Sheets leads ingested → Realtime pipeline will fire');
+                            // Update last_row_count in config
+                            if (activeSheet.composite_key && config.active_sheets && config.active_sheets[activeSheet.composite_key]) {
+                                config.active_sheets[activeSheet.composite_key].last_row_count = rows.length;
+                            }
+                            else if (config.sheets && config.sheets[activeSheet.name]) {
+                                config.sheets[activeSheet.name].last_row_count = rows.length;
+                            }
+                            else {
+                                config.last_row_count = rows.length;
+                            }
+                            await supabase
+                                .from('integration_credentials')
+                                .update({ config })
+                                .eq('user_id', integration.user_id)
+                                .eq('provider', 'google');
+                        }
+                    }
+                }
+                catch (innerErr) {
+                    logger.error({ err: innerErr, workspaceId: integration.user_id, sheetName: activeSheet.name }, 'Google Sheets watcher: error processing sheet');
+                }
+            }
+        }
+    }
+    catch (err) {
+        logger.error({ err }, 'runGoogleSheetsWatchCycle: unexpected error');
+    }
+}
+function startGoogleSheetsWatcher() {
+    logger.info('📊 Google Sheets watcher starting (60s interval)...');
+    // Initial run after a short delay, then every 60s
+    setTimeout(() => {
+        runGoogleSheetsWatchCycle().catch(err => logger.error({ err }, 'Sheets initial watch error'));
+        setInterval(() => {
+            runGoogleSheetsWatchCycle().catch(err => logger.error({ err }, 'Sheets watch cycle error'));
+        }, 60_000);
+    }, 10_000);
+}
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 async function main() {
     logger.info('🔥 FW Core — Baileys Worker Starting...');
     logger.info({ workspaceId: WORKSPACE_ID }, '🏢 Workspace');
     startHealthServer();
+    // ── Supabase Realtime: queue + leads listeners ──
     startActionQueueListener();
+    startLeadsRealtimeListener();
+    // ── Google Sheets background watcher (60s polling) ──
+    startGoogleSheetsWatcher();
+    // ── Start WhatsApp Baileys socket ──
     await startBaileysSocket();
-    // ── Polling interval: drain queue every 5 seconds (safety net for missed Realtime events)
-    setInterval(() => {
-        runQueueDrain().catch(err => logger.error({ err }, 'Polling drain error'));
-    }, 5_000);
-    // ── Sweeper: recover stuck 'processing' rows every 60 seconds
+    // ── Dynamic delayed-check scheduler replaces the old 5s setInterval ──
+    // Only delayed-node actions need a timer; instant actions are driven by Realtime.
+    await scheduleNextDelayedCheck();
+    // ── Sweeper: recover stuck 'processing' rows every 60 seconds ──
     setInterval(() => {
         runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));
     }, 60_000);
-    logger.info('✅ Queue polling (5s) and sweeper (60s) active.');
+    logger.info('✅ Realtime listeners active. Dynamic delay scheduler running. Sweeper (60s) active.');
+    logger.info('✅ Polling setInterval REMOVED — egress now driven by Realtime + scheduleNextDelayedCheck.');
 }
 main().catch((err) => {
     logger.fatal({ err }, '💥 Worker crashed');

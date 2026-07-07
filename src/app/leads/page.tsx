@@ -139,9 +139,9 @@ export default function LeadsPage() {
         setShowNotifications(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside, true);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
     };
   }, [showNotifications]);
 
@@ -527,7 +527,7 @@ export default function LeadsPage() {
                   )}
 
                   {/* Bell Notification center */}
-                  <div className="relative" ref={notifContainerRef}>
+                  <div className="relative z-50" ref={notifContainerRef}>
                     <button
                       onClick={() => setShowNotifications(!showNotifications)}
                       className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs relative"
@@ -587,14 +587,14 @@ export default function LeadsPage() {
                                     <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${n.read ? 'bg-zinc-300 dark:bg-zinc-700' : 'bg-rose-500 animate-ping'}`} />
                                     <div className="min-w-0 flex-1">
                                       <div className="flex items-center justify-between gap-1">
-                                        <span className="text-xs truncate font-bold text-slate-500 dark:text-zinc-400">
-                                          For: <span className="font-extrabold text-[#D4AF37] dark:text-[#C5A059] ml-0.5">{n.leadName}</span>
-                                        </span>
                                         <span className="text-[9px] font-bold text-slate-500 dark:text-zinc-400 shrink-0">
-                                          {new Date(n.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                          {new Date(n.time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} {new Date(n.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                                         </span>
                                       </div>
-                                      <p className="text-xs text-slate-900 dark:text-white font-bold leading-normal mt-1 break-words whitespace-normal font-sans">{n.text}</p>
+                                      <div className="text-xs leading-normal mt-1 break-words whitespace-normal font-sans">
+                                        <span className="font-extrabold text-[#D4AF37] dark:text-[#C5A059] mr-1.5">{n.leadName}:</span>
+                                        <span className="text-slate-900 dark:text-white font-bold">{n.text}</span>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -611,11 +611,11 @@ export default function LeadsPage() {
                                       localStorage.setItem('leads_notified_comment_ids', JSON.stringify(newNotified));
                                     }
                                   }}
-                                  className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg shrink-0 transition-all flex items-center gap-0.5 border border-emerald-200 dark:border-emerald-900/50 bg-emerald-500/5"
-                                  title="Mark Complete & Hide"
+                                  className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg shrink-0 transition-all flex items-center gap-1 border border-emerald-200 dark:border-emerald-900/50 bg-emerald-500/5 font-medium"
+                                  title="Complete & Hide"
                                 >
-                                  <Check className="w-3 h-3" />
-                                  <span className="text-[9px] font-black uppercase tracking-wider px-0.5 font-sans">Done</span>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span className="text-[9px] font-bold tracking-wider font-sans">Complete</span>
                                 </button>
                               </div>
                             ))

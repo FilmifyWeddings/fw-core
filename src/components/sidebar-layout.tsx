@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, Database, Send, Download, Megaphone, Layers, 
   Settings, HelpCircle, Sun, Moon, Menu, ChevronDown, ChevronRight, 
-  LogOut, Search, MessageSquare, FileSpreadsheet, Check, Shield, GitBranch
+  LogOut, Search, MessageSquare, FileSpreadsheet, Check, Shield, GitBranch,
+  FileText
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -133,6 +134,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       name: 'Leads',
       icon: Database,
       path: '/leads'
+    },
+    {
+      name: 'Quotation Maker',
+      icon: FileText,
+      path: '/quotations'
     },
     {
       name: 'Single Send',

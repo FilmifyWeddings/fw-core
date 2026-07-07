@@ -180,3 +180,77 @@ export interface DashboardStats {
   totalMessagesFailed: number;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Canva-like Quotation Maker Types
+// ─────────────────────────────────────────────────────────────
+
+export type CanvasElementType = 'text' | 'image' | 'shape';
+
+export interface CanvasElement {
+  id: string;
+  type: CanvasElementType;
+  content: string;
+  x: number; // percentage or absolute pixels
+  y: number;
+  width: number;
+  height: number;
+  fontSize?: number;
+  fontFamily?: string;
+  color?: string;
+  fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  letterSpacing?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  // Additional flex or grid layout flags for nested grids
+  isGridContainer?: boolean;
+  gridItems?: Array<{ id: string; content: string; label?: string }>;
+}
+
+export interface CanvasPage {
+  pageIndex: number;
+  elements: CanvasElement[];
+  backgroundImage?: string;
+  pageType?: 'cover' | 'about' | 'functions' | 'pricing';
+}
+
+export interface PricingSummary {
+  regular_price: number;
+  offer_price: number;
+  savings: number;
+}
+
+export interface QuotationTemplate {
+  id: string;
+  name: string;
+  thumbnail_url: string | null;
+  default_config: CanvasPage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Quotation {
+  id: string;
+  user_id: string;
+  client_name: string;
+  couple_names: string | null;
+  current_page_index: number;
+  canvas_data: CanvasPage[];
+  pricing_summary: PricingSummary;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationPreset {
+  id: string;
+  user_id: string;
+  package_name: string;
+  data_payload: {
+    functions?: Array<{ date: string; title: string; items: string[] }>;
+    deliverables?: string[];
+    pricing?: { regular_price: number; offer_price: number };
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+
