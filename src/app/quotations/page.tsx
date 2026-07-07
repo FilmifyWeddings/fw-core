@@ -46,20 +46,67 @@ const DEFAULT_DELIVERABLES = [
   'Mini Album Book & One Photobook Calendar.'
 ];
 
+const FUNCTION_NAMES = ['HALDI', 'SANGEET', 'WEDDING', 'RECEPTION', 'MEHNDI', 'ENGAGEMENT', 'PRE-WEDDING', 'COCKTAIL'];
+
+const REQUIREMENT_OPTIONS = [
+  'Traditional Photography',
+  'Professional Traditional Videography',
+  'Candid Photography',
+  'Jaw-dropping Cinematography',
+  'Drone Aerial Shots',
+  'Wedding Teaser & Reel',
+  'Full Length separate video',
+  'Live Streaming (Youtube/FB)',
+  'LED Wall Setup',
+  'Crane/Jib Operation'
+];
+
+const DELIVERABLE_OPTIONS = [
+  '1 Premium Photobook',
+  'Indigo Photobook 30 Sheets',
+  'Mini Album Book',
+  'One Photobook Calendar',
+  'Pen Drive Storage',
+  'Google Drive Link',
+  '1 Year Data Drive Access',
+  'Raw Photo Delivery (JPEG/RAW)',
+  'Cinematic Teaser & Highlight Film'
+];
+
+const SESSION_HOURS_OPTIONS = [
+  '4 Hours Session',
+  '6 Hours Session',
+  '8 Hours - Full Day',
+  '12 Hours - Extended',
+  'Unlimited - Multi-Day'
+];
+
 const DEFAULT_FUNCTIONS = [
   {
     id: 'func-haldi',
-    title: '4 JAN - HALDI',
+    title: '2026-01-04 | 10:00 | 4 Hours Session | HALDI',
+    name: 'HALDI',
+    date: '2026-01-04',
+    time: '10:00',
+    hours: '4 Hours Session',
     items: ['Traditional Photography', 'Professional Traditional Videography', 'Candid Photography', 'Jaw-dropping Cinematography']
   },
   {
     id: 'func-sangeet',
-    title: '4 JAN - SANGEET',
+    title: '2026-01-04 | 18:00 | 6 Hours Session | SANGEET',
+    name: 'SANGEET',
+    date: '2026-01-04',
+    time: '18:00',
+    hours: '6 Hours Session',
     items: ['Traditional Photography', 'Professional Traditional Videography', 'Candid Photography', 'Jaw-dropping Cinematography']
   },
   {
     id: 'func-wedding',
-    title: '5 JAN - WEDDING',
+    title: '2026-01-05 | 09:00 | 8 Hours - Full Day | WEDDING',
+    name: 'WEDDING',
+    date: '2026-01-05',
+    time: '09:00',
+    hours: '8 Hours - Full Day',
     items: ['Traditional Photography', 'Professional Traditional Videography', 'Candid Photography', 'Jaw-dropping Cinematography']
   }
 ];
@@ -311,6 +358,8 @@ export default function QuotationMakerPage() {
   // Dynamic Lists (Page 3)
   const [functions, setFunctions] = useState(DEFAULT_FUNCTIONS);
   const [deliverables, setDeliverables] = useState<string[]>(DEFAULT_DELIVERABLES);
+  const [activePopover, setActivePopover] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Database / Templates States
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -468,7 +517,34 @@ export default function QuotationMakerPage() {
         funcsEl.gridItems.forEach(item => {
           let group = grouped.find(g => g.title === item.label);
           if (!group) {
-            group = { id: `func-${item.label?.toLowerCase().replace(/\s+/g, '-')}`, title: item.label || '', items: [] };
+            let name = 'HALDI';
+            let date = '2026-01-04';
+            let time = '10:00';
+            let hours = '4 Hours Session';
+            
+            const parts = (item.label || '').split(' | ');
+            if (parts.length === 4) {
+              date = parts[0];
+              time = parts[1];
+              hours = parts[2];
+              name = parts[3];
+            } else if ((item.label || '').includes(' - ')) {
+              const legacyParts = (item.label || '').split(' - ');
+              name = (legacyParts[1] || 'HALDI').trim().toUpperCase();
+              date = legacyParts[0] || '2026-01-04';
+            } else if (item.label) {
+              name = item.label.toUpperCase();
+            }
+
+            group = { 
+              id: `func-${grouped.length}-${Date.now()}`, 
+              title: item.label || '', 
+              name,
+              date,
+              time,
+              hours,
+              items: [] 
+            };
             grouped.push(group);
           }
           group.items.push(item.content);
@@ -521,7 +597,7 @@ export default function QuotationMakerPage() {
           gridItems: functions.flatMap(f => f.items.map((item, idx) => ({
             id: `${f.id}-item-${idx}`,
             content: item,
-            label: f.title
+            label: `${f.date || '2026-01-04'} | ${f.time || '10:00'} | ${f.hours || '4 Hours Session'} | ${f.name || 'HALDI'}`
           })))
         };
 
@@ -668,11 +744,37 @@ export default function QuotationMakerPage() {
     }
 
     if (prFuncs && prFuncs.length > 0) {
-      setFunctions(prFuncs.map((f, i) => ({
-        id: `func-preset-${i}`,
-        title: f.date,
-        items: f.items
-      })));
+      setFunctions(prFuncs.map((f, i) => {
+        let name = 'HALDI';
+        let date = '2026-01-04';
+        let time = '10:00';
+        let hours = '4 Hours Session';
+        
+        const titleStr = f.date || '';
+        const parts = titleStr.split(' | ');
+        if (parts.length === 4) {
+          date = parts[0];
+          time = parts[1];
+          hours = parts[2];
+          name = parts[3];
+        } else if (titleStr.includes(' - ')) {
+          const legacyParts = titleStr.split(' - ');
+          name = (legacyParts[1] || 'HALDI').trim().toUpperCase();
+          date = legacyParts[0] || '2026-01-04';
+        } else if (titleStr) {
+          name = titleStr.toUpperCase();
+        }
+
+        return {
+          id: `func-preset-${i}-${Date.now()}`,
+          title: `${date} | ${time} | ${hours} | ${name}`,
+          name,
+          date,
+          time,
+          hours,
+          items: f.items || []
+        };
+      }));
     }
 
     if (prDelivs && prDelivs.length > 0) {
@@ -867,10 +969,24 @@ export default function QuotationMakerPage() {
     }));
   };
 
+  const addRequirementToFunction = (funcId: string, req: string) => {
+    setFunctions(prev => prev.map(f => {
+      if (f.id === funcId) {
+        if (f.items.includes(req)) return f;
+        const merged = { ...f, items: [...f.items, req] };
+        merged.title = `${merged.date} | ${merged.time} | ${merged.hours} | ${merged.name}`;
+        return merged;
+      }
+      return f;
+    }));
+  };
+
   const deleteFunctionItem = (funcId: string, itemIndex: number) => {
     setFunctions(prev => prev.map(f => {
       if (f.id === funcId) {
-        return { ...f, items: f.items.filter((_, idx) => idx !== itemIndex) };
+        const merged = { ...f, items: f.items.filter((_, idx) => idx !== itemIndex) };
+        merged.title = `${merged.date} | ${merged.time} | ${merged.hours} | ${merged.name}`;
+        return merged;
       }
       return f;
     }));
@@ -881,10 +997,41 @@ export default function QuotationMakerPage() {
       if (f.id === funcId) {
         const updatedItems = [...f.items];
         updatedItems[itemIndex] = newValue;
-        return { ...f, items: updatedItems };
+        const merged = { ...f, items: updatedItems };
+        merged.title = `${merged.date} | ${merged.time} | ${merged.hours} | ${merged.name}`;
+        return merged;
       }
       return f;
     }));
+  };
+
+  const updateFunctionDetails = (funcId: string, updates: Partial<typeof DEFAULT_FUNCTIONS[0]>) => {
+    setFunctions(prev => prev.map(f => {
+      if (f.id === funcId) {
+        const merged = { ...f, ...updates };
+        merged.title = `${merged.date} | ${merged.time} | ${merged.hours} | ${merged.name}`;
+        return merged;
+      }
+      return f;
+    }));
+  };
+
+  const addNewFunctionCard = () => {
+    const newId = `func-new-${Date.now()}`;
+    const newFunc = {
+      id: newId,
+      title: '2026-01-06 | 10:00 | 4 Hours Session | NEW EVENT',
+      name: 'NEW EVENT',
+      date: '2026-01-06',
+      time: '10:00',
+      hours: '4 Hours Session',
+      items: ['Candid Photography']
+    };
+    setFunctions(prev => [...prev, newFunc]);
+  };
+
+  const deleteFunctionCard = (funcId: string) => {
+    setFunctions(prev => prev.filter(f => f.id !== funcId));
   };
 
   // Helpers for deliverables list items (Page 3)
@@ -1282,7 +1429,7 @@ export default function QuotationMakerPage() {
             
             {/* The active canvas page with matte paper texture styling */}
             <div 
-              className="relative aspect-[1/1.414] w-full bg-[#FAF6F0] p-10 flex flex-col justify-between select-none relative overflow-hidden"
+              className="relative aspect-[210/297] w-full bg-[#FAF6F0] p-[20mm] flex flex-col justify-between select-none relative overflow-hidden"
               style={{
                 backgroundImage: `radial-gradient(#ebe5da 1.5px, transparent 1.5px), radial-gradient(#ebe5da 1.5px, #FAF6F0 1.5px)`,
                 backgroundSize: '30px 30px',
@@ -1399,48 +1546,199 @@ export default function QuotationMakerPage() {
                 <div className="absolute inset-x-10 top-[14%] bottom-8 flex flex-col justify-between z-10 select-text overflow-y-auto pr-1">
                   
                   {/* FUNCTIONS GRID (Haldi, Sangeet, Wedding) */}
-                  <div className="grid grid-cols-3 gap-6">
-                    {functions.map(func => (
-                      <div key={func.id} className="bg-white/60 backdrop-blur-sm border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm">
-                        <div>
-                          <div className="bg-[#606248] text-white text-[10px] font-bold tracking-widest uppercase rounded-full px-2.5 py-1 text-center font-serif mb-3">
-                            {func.title}
+                  <div className="grid grid-cols-2 gap-6 w-full">
+                    {functions.map(func => {
+                      const parts = func.title.split(' | ');
+                      const displayDate = parts[0] || func.date || '2026-01-04';
+                      const displayTime = parts[1] || func.time || '10:00';
+                      const displayHours = parts[2] || func.hours || '4 Hours Session';
+                      const displayName = parts[3] || func.name || func.title;
+
+                      return (
+                        <div key={func.id} className="relative bg-white/60 backdrop-blur-sm border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm min-h-[160px]">
+                          <div>
+                            {/* Card Header Row */}
+                            <div className="flex items-center justify-between gap-1.5 mb-2.5">
+                              {/* Function Name Dropdown */}
+                              <select
+                                value={func.name}
+                                onChange={e => updateFunctionDetails(func.id, { name: e.target.value.toUpperCase() })}
+                                className="bg-[#606248] text-white text-[9px] font-bold tracking-widest uppercase rounded-full px-2 py-0.5 text-center font-serif focus:outline-none border-none cursor-pointer hover:bg-[#4d4f3a] transition"
+                              >
+                                {FUNCTION_NAMES.map(name => (
+                                  <option key={name} value={name} className="bg-[#FAF6F0] text-[#606248] font-sans font-medium uppercase text-xs">
+                                    {name}
+                                  </option>
+                                ))}
+                              </select>
+
+                              {/* Date Time Picker Trigger */}
+                              <div className="relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActivePopover(activePopover === `datetime-${func.id}` ? null : `datetime-${func.id}`);
+                                  }}
+                                  className="text-[9px] font-bold text-[#8A7E56] hover:text-[#606248] border border-[#E8E2D9] rounded-md px-1.5 py-0.5 bg-[#FAF6F0]/80 transition flex items-center gap-1"
+                                >
+                                  <span>📅 {displayDate} | ⏰ {displayTime} ({displayHours.split(' ')[0]}h)</span>
+                                </button>
+                                
+                                {/* Popover container */}
+                                {activePopover === `datetime-${func.id}` && (
+                                  <div className="absolute top-[28px] right-0 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl p-4 shadow-xl z-30 w-[240px] text-zinc-800 flex flex-col gap-3 select-text">
+                                    <div className="text-xs font-bold text-[#606248] border-b border-[#E8E2D9]/60 pb-1.5 font-serif uppercase tracking-wider">
+                                      Event Schedule
+                                    </div>
+                                    
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-[10px] text-zinc-500 font-semibold uppercase">Event Date</label>
+                                      <input
+                                        type="date"
+                                        value={func.date}
+                                        onChange={e => updateFunctionDetails(func.id, { date: e.target.value })}
+                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none"
+                                      />
+                                    </div>
+
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-[10px] text-zinc-500 font-semibold uppercase">Start Time</label>
+                                      <input
+                                        type="time"
+                                        value={func.time}
+                                        onChange={e => updateFunctionDetails(func.id, { time: e.target.value })}
+                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none"
+                                      />
+                                    </div>
+
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-[10px] text-zinc-500 font-semibold uppercase">Duration</label>
+                                      <select
+                                        value={func.hours}
+                                        onChange={e => updateFunctionDetails(func.id, { hours: e.target.value })}
+                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none"
+                                      >
+                                        {SESSION_HOURS_OPTIONS.map(opt => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <button
+                                      onClick={() => setActivePopover(null)}
+                                      className="mt-1 w-full bg-[#606248] text-white py-1.5 text-xs font-bold rounded-lg hover:bg-[#4d4f3a] transition"
+                                    >
+                                      Done
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Delete Card Trigger */}
+                              <button
+                                onClick={() => deleteFunctionCard(func.id)}
+                                className="p-0.5 text-rose-500 hover:bg-rose-50 rounded transition"
+                                title="Delete event"
+                              >
+                                <Trash className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            
+                            {/* Requirements items list */}
+                            <ul className="space-y-1">
+                              {func.items.map((item, idx) => (
+                                <li key={idx} className="group flex items-start gap-1.5 text-[10px] font-medium text-zinc-700 leading-tight">
+                                  <span className="text-[#606248]">•</span>
+                                  <span className="flex-1 font-sans">{item}</span>
+                                  <button
+                                    onClick={() => deleteFunctionItem(func.id, idx)}
+                                    className="opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition"
+                                  >
+                                    <Trash className="w-2.5 h-2.5" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
                           </div>
-                          
-                          <ul className="space-y-1.5">
-                            {func.items.map((item, idx) => (
-                              <li key={idx} className="group flex items-start gap-1.5 text-[11px] font-medium text-zinc-700 leading-tight">
-                                <span className="text-[#606248]">•</span>
+
+                          {/* Requirements tag selector dropdown */}
+                          <div className="relative mt-2">
+                            {activePopover === `req-${func.id}` ? (
+                              <div className="absolute bottom-[32px] left-0 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl p-2.5 shadow-xl z-30 flex flex-col gap-2 max-h-[180px] overflow-y-auto w-[200px] select-text">
                                 <input
                                   type="text"
-                                  value={item}
-                                  onChange={e => editFunctionItem(func.id, idx, e.target.value)}
-                                  className="bg-transparent border-none p-0 flex-1 focus:outline-none focus:ring-0 text-[11px] text-zinc-700 font-sans"
+                                  placeholder="Search or type..."
+                                  value={searchQuery}
+                                  onChange={e => setSearchQuery(e.target.value)}
+                                  className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-0.5 text-[10px] focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none text-zinc-800"
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && searchQuery.trim()) {
+                                      addRequirementToFunction(func.id, searchQuery.trim());
+                                      setSearchQuery('');
+                                      setActivePopover(null);
+                                    }
+                                  }}
                                 />
-                                <button
-                                  onClick={() => deleteFunctionItem(func.id, idx)}
-                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition"
-                                >
-                                  <Trash className="w-3 h-3" />
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
+                                
+                                <div className="flex flex-col gap-0.5 overflow-y-auto max-h-[110px] pr-1">
+                                  {REQUIREMENT_OPTIONS.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase())).map(opt => (
+                                    <button
+                                      key={opt}
+                                      onClick={() => {
+                                        addRequirementToFunction(func.id, opt);
+                                        setSearchQuery('');
+                                        setActivePopover(null);
+                                      }}
+                                      className="w-full text-left px-2 py-1 hover:bg-[#606248]/5 rounded text-[10px] text-zinc-700 transition"
+                                    >
+                                      {opt}
+                                    </button>
+                                  ))}
+                                  {searchQuery.trim() && (
+                                    <button
+                                      onClick={() => {
+                                        addRequirementToFunction(func.id, searchQuery.trim());
+                                        setSearchQuery('');
+                                        setActivePopover(null);
+                                      }}
+                                      className="w-full text-left px-2 py-1 hover:bg-[#606248]/5 rounded text-[10px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
+                                    >
+                                      + Add "{searchQuery}"
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setSearchQuery('');
+                                  setActivePopover(`req-${func.id}`);
+                                }}
+                                className="w-full py-0.5 border border-dashed border-[#606248]/40 hover:border-[#606248] text-[#606248] hover:bg-[#606248]/5 text-[9px] font-bold rounded-lg transition flex items-center justify-center gap-1"
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                                Add Requirement
+                              </button>
+                            )}
+                          </div>
                         </div>
+                      );
+                    })}
 
-                        <button
-                          onClick={() => addFunctionItem(func.id)}
-                          className="mt-3.5 w-full py-1 border border-dashed border-[#606248]/40 hover:border-[#606248] text-[#606248] hover:bg-[#606248]/5 text-[10px] font-bold rounded-lg transition flex items-center justify-center gap-1"
-                        >
-                          <Plus className="w-3 h-3" />
-                          Add Item
-                        </button>
-                      </div>
-                    ))}
+                    {/* Add Function Card Trigger */}
+                    {functions.length < 4 && (
+                      <button
+                        onClick={addNewFunctionCard}
+                        className="bg-[#FAF6F0]/40 border border-dashed border-[#606248]/30 hover:border-[#606248]/80 hover:bg-[#FAF6F0]/70 rounded-xl p-4 flex flex-col items-center justify-center shadow-sm text-[#606248] text-xs font-bold transition gap-2 min-h-[160px]"
+                      >
+                        <Plus className="w-6 h-6" />
+                        Add Event Card
+                      </button>
+                    )}
                   </div>
 
                   {/* DELIVERABLES LIST BLOCK */}
-                  <div className="bg-white/50 backdrop-blur-sm border border-[#E8E2D9]/50 rounded-xl p-5 mt-4 shadow-sm flex flex-col justify-between">
+                  <div className="bg-white/50 backdrop-blur-sm border border-[#E8E2D9]/50 rounded-xl p-4 mt-4 shadow-sm flex flex-col justify-between">
                     <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5">
                       {deliverables.map((deliv, idx) => (
                         <li key={idx} className="group flex items-start gap-2 text-[11.5px] text-zinc-800 leading-relaxed font-sans">
@@ -1461,13 +1759,68 @@ export default function QuotationMakerPage() {
                       ))}
                     </ul>
 
-                    <button
-                      onClick={addDeliverableItem}
-                      className="mt-4 w-full py-1.5 border border-dashed border-[#606248]/30 hover:border-[#606248] text-[#606248] hover:bg-[#606248]/5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Deliverable
-                    </button>
+                    {/* Deliverables tag selector dropdown */}
+                    <div className="relative mt-4">
+                      {activePopover === 'deliv' ? (
+                        <div className="absolute bottom-[40px] left-1/2 transform -translate-x-1/2 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl p-3 shadow-xl z-30 flex flex-col gap-2 max-h-[220px] overflow-y-auto w-[240px] select-text">
+                          <input
+                            type="text"
+                            placeholder="Search or add custom..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none text-zinc-800"
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && searchQuery.trim()) {
+                                setDeliverables(prev => [...prev, searchQuery.trim()]);
+                                setSearchQuery('');
+                                setActivePopover(null);
+                              }
+                            }}
+                          />
+                          
+                          <div className="flex flex-col gap-1 overflow-y-auto max-h-[140px] pr-1">
+                            {DELIVERABLE_OPTIONS.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase())).map(opt => (
+                              <button
+                                key={opt}
+                                onClick={() => {
+                                  if (!deliverables.includes(opt)) {
+                                    setDeliverables(prev => [...prev, opt]);
+                                  }
+                                  setSearchQuery('');
+                                  setActivePopover(null);
+                                }}
+                                className="w-full text-left px-2.5 py-1.5 hover:bg-[#606248]/5 rounded text-[11px] text-zinc-700 transition"
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                            {searchQuery.trim() && (
+                              <button
+                                onClick={() => {
+                                  setDeliverables(prev => [...prev, searchQuery.trim()]);
+                                  setSearchQuery('');
+                                  setActivePopover(null);
+                                }}
+                                className="w-full text-left px-2.5 py-1.5 hover:bg-[#606248]/5 rounded text-[11px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
+                              >
+                                + Add custom "{searchQuery}"
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSearchQuery('');
+                            setActivePopover('deliv');
+                          }}
+                          className="w-full py-1.5 border border-dashed border-[#606248]/30 hover:border-[#606248] text-[#606248] hover:bg-[#606248]/5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add Deliverable
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                 </div>
@@ -1686,32 +2039,45 @@ export default function QuotationMakerPage() {
               {pageIdx === 2 && (
                 <div className="absolute inset-x-10 top-[14%] bottom-8 flex flex-col justify-between z-10">
                   {/* FUNCTIONS GRID */}
-                  <div className="grid grid-cols-3 gap-6">
-                    {functions.map(func => (
-                      <div key={func.id} className="bg-white/60 border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm">
-                        <div>
-                          <div className="bg-[#606248] text-white text-[10px] font-bold tracking-widest uppercase rounded-full px-2.5 py-1 text-center font-serif mb-3">
-                            {func.title}
+                  <div className="grid grid-cols-2 gap-6 w-full">
+                    {functions.map(func => {
+                      const parts = func.title.split(' | ');
+                      const displayDate = parts[0] || func.date || '2026-01-04';
+                      const displayTime = parts[1] || func.time || '10:00';
+                      const displayHours = parts[2] || func.hours || '4 Hours Session';
+                      const displayName = parts[3] || func.name || func.title;
+
+                      return (
+                        <div key={func.id} style={{ pageBreakInside: 'avoid' }} className="bg-white/60 border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm min-h-[140px]">
+                          <div>
+                            <div className="flex items-center justify-between border-b border-[#E8E2D9]/40 pb-1.5 mb-2">
+                              <div className="bg-[#606248] text-white text-[9px] font-bold tracking-widest uppercase rounded-full px-2.5 py-0.5 text-center font-serif">
+                                {displayName}
+                              </div>
+                              <div className="text-[8px] font-bold text-[#8A7E56] font-sans">
+                                📅 {displayDate} | ⏰ {displayTime} ({displayHours.split(' ')[0]}h)
+                              </div>
+                            </div>
+                            <ul className="space-y-1">
+                              {func.items.map((item, idx) => (
+                                <li key={idx} className="flex items-start gap-1.5 text-[9.5px] font-medium text-zinc-700 leading-tight">
+                                  <span className="text-[#606248]">•</span>
+                                  <span className="font-sans">{item}</span>
+                                </li>
+                              ))}
+                            </ul>
                           </div>
-                          <ul className="space-y-1.5">
-                            {func.items.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-1.5 text-[11px] font-medium text-zinc-700 leading-tight">
-                                <span className="text-[#606248]">•</span>
-                                <span className="font-sans">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* DELIVERABLES LIST */}
-                  <div className="bg-white/50 border border-[#E8E2D9]/50 rounded-xl p-5 mt-4 shadow-sm">
-                    <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                  <div className="bg-white/50 border border-[#E8E2D9]/50 rounded-xl p-4 mt-3 shadow-sm">
+                    <ul className="grid grid-cols-2 gap-x-6 gap-y-1">
                       {deliverables.map((deliv, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-[11.5px] text-zinc-800 leading-relaxed font-sans">
-                          <span className="text-[#606248] font-bold mt-0.5">•</span>
+                        <li key={idx} className="flex items-start gap-1.5 text-[10.5px] text-zinc-800 leading-relaxed font-sans">
+                          <span className="text-[#606248] font-bold">•</span>
                           <span>{deliv}</span>
                         </li>
                       ))}
