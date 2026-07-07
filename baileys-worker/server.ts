@@ -24,6 +24,7 @@ import makeWASocket, {
   BaileysEventMap,
   prepareWAMessageMedia,
   generateWAMessageFromContent,
+  Browsers,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -751,8 +752,23 @@ async function startBaileysSocket(): Promise<void> {
   await updateSessionState('connecting');
 
   const authDir = getAuthPath(WORKSPACE_ID);
+
+  // Programmatically wipe stuck session state: clear creds.json before loading multi-file auth
+  const credsPath = path.join(authDir, 'creds.json');
+  if (fs.existsSync(credsPath)) {
+    try {
+      fs.unlinkSync(credsPath);
+      logger.info('🗑️ Stuck session credentials wiped from auth directory to ensure fresh handshake.');
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to wipe stuck credentials during startup');
+    }
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version, isLatest } = await fetchLatestBaileysVersion();
+  const { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ 
+    version: [2, 3000, 1015904724] as [number, number, number], 
+    isLatest: false 
+  }));
   logger.info({ version, isLatest }, '📦 WhatsApp Web version');
 
   sock = makeWASocket({
@@ -765,6 +781,7 @@ async function startBaileysSocket(): Promise<void> {
     printQRInTerminal: true,
     generateHighQualityLinkPreview: true,
     markOnlineOnConnect: false,
+    browser: Browsers.appropriate('Chrome'),
   });
 
   // Store binding removed

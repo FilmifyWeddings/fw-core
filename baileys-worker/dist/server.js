@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, Browsers, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -638,8 +638,22 @@ async function startBaileysSocket() {
     logger.info('🚀 Starting Baileys socket...');
     await updateSessionState('connecting');
     const authDir = getAuthPath(WORKSPACE_ID);
+    // Programmatically wipe stuck session state: clear creds.json before loading multi-file auth
+    const credsPath = path.join(authDir, 'creds.json');
+    if (fs.existsSync(credsPath)) {
+        try {
+            fs.unlinkSync(credsPath);
+            logger.info('🗑️ Stuck session credentials wiped from auth directory to ensure fresh handshake.');
+        }
+        catch (e) {
+            logger.error({ err: e }, 'Failed to wipe stuck credentials during startup');
+        }
+    }
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
-    const { version, isLatest } = await fetchLatestBaileysVersion();
+    const { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
+        version: [2, 3000, 1015904724],
+        isLatest: false
+    }));
     logger.info({ version, isLatest }, '📦 WhatsApp Web version');
     sock = makeWASocket({
         version,
@@ -651,6 +665,7 @@ async function startBaileysSocket() {
         printQRInTerminal: true,
         generateHighQualityLinkPreview: true,
         markOnlineOnConnect: false,
+        browser: Browsers.appropriate('Chrome'),
     });
     // Store binding removed
     // ── Event: creds.update — save creds on every update ──
