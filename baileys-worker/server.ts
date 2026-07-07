@@ -38,9 +38,6 @@ import { fileURLToPath } from 'url';
 // Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
 globalThis.WebSocket = ws as any;
 
-// Initialize dotenv configuration
-config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -50,16 +47,24 @@ const logger = pino({
   transport: { target: 'pino-pretty' },
 });
 
-// ─── Config ──────────────────────────────────────────────────────────────────
-// Load from parent .env.local if present (Next.js config location)
-try {
-  const parentEnvPath = path.join(__dirname, '..', '.env.local');
-  if (fs.existsSync(parentEnvPath)) {
-    config({ path: parentEnvPath });
-    logger.info('✅ Loaded env from parent .env.local');
+// ─── Config (Absolute Dotenv Paths) ─────────────────────────────────────────
+const envPaths = [
+  path.resolve(__dirname, '.env'),
+  path.resolve(__dirname, '../.env'),
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, '../.env.local'),
+  path.resolve(__dirname, '../../.env.local'),
+];
+
+for (const p of envPaths) {
+  if (fs.existsSync(p)) {
+    try {
+      config({ path: p });
+      logger.info(`✅ Loaded environment variables from: ${p}`);
+    } catch (err) {
+      logger.warn({ err, path: p }, 'Failed to load environment path');
+    }
   }
-} catch (e) {
-  logger.warn('Failed to load parent .env.local');
 }
 
 
