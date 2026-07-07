@@ -770,11 +770,18 @@ async function startBaileysSocket(): Promise<void> {
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ 
-    version: [2, 3000, 1015904724] as [number, number, number], 
+  let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ 
+    version: [2, 3000, 1017531287] as [number, number, number], 
     isLatest: false 
   }));
-  logger.info({ version, isLatest }, '📦 WhatsApp Web version');
+
+  // Force latest WhatsApp Web version if the dynamically fetched one is older than our high fallback
+  const minVersion = [2, 3000, 1017531287];
+  if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
+    version = minVersion as [number, number, number];
+    isLatest = true;
+  }
+  logger.info({ version, isLatest }, '📦 WhatsApp Web version (enforced high-version fallback)');
 
   sock = makeWASocket({
     version,
