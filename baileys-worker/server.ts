@@ -798,7 +798,9 @@ async function startBaileysSocket(): Promise<void> {
     printQRInTerminal: true,
     generateHighQualityLinkPreview: true,
     markOnlineOnConnect: false,
-    browser: Browsers.appropriate('Edge'),
+    browser: ['Ubuntu', 'Chrome', '20.0.0'],
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
   });
 
   // Store binding removed

@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, Browsers, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -681,7 +681,9 @@ async function startBaileysSocket() {
         printQRInTerminal: true,
         generateHighQualityLinkPreview: true,
         markOnlineOnConnect: false,
-        browser: Browsers.appropriate('Edge'),
+        browser: ['Ubuntu', 'Chrome', '20.0.0'],
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
     });
     // Store binding removed
     // ── Event: creds.update — save creds on every update ──
