@@ -369,6 +369,7 @@ export default function QuotationMakerPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isImportingTemplate, setIsImportingTemplate] = useState<boolean>(false);
 
   // Image Swap Modal States
   const [showImageModal, setShowImageModal] = useState(false);
@@ -602,6 +603,49 @@ export default function QuotationMakerPage() {
     showToast('Quotation loaded successfully!', 'success');
   };
 
+  const handleTemplateImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingTemplate(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onloadend = async () => {
+        const base64data = reader.result;
+        try {
+          const res = await fetch('/api/quotations/import-template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64data, filename: file.name })
+          });
+          const data = await res.json();
+          if (data.success) {
+            setPages(data.pages);
+            setCoupleNames(data.couple_names);
+            setClientName(data.client_name);
+            setRegularPrice(data.pricing_summary.regular_price);
+            setOfferPrice(data.pricing_summary.offer_price);
+            setSavings(data.pricing_summary.savings);
+            showToast('AI Importer successfully extracted design layout and locked template components!', 'success');
+          } else {
+            showToast(data.error || 'Import failed', 'error');
+          }
+        } catch (err: any) {
+          showToast(err.message || 'Import failed', 'error');
+        } finally {
+          setIsImportingTemplate(false);
+        }
+      };
+    } catch (err: any) {
+      showToast(err.message || 'Import failed', 'error');
+      setIsImportingTemplate(false);
+    }
+  };
+
   // Save current workspace state to database
   const saveQuotation = async () => {
     setIsSaving(true);
@@ -668,6 +712,23 @@ export default function QuotationMakerPage() {
         return {
           ...page,
           elements: [titleEl, functionsContainer, delivTitleEl, deliverablesContainer]
+        };
+      }
+      if (idx === 3) {
+        return {
+          ...page,
+          elements: page.elements.map(el => {
+            if (el.id === 'pricing-main-price') {
+              return { ...el, content: `Rs ${offerPrice.toLocaleString()}/-` };
+            }
+            if (el.id === 'pricing-regular-price') {
+              return { ...el, content: `Regular Quotation : Rs ${regularPrice.toLocaleString()}/-` };
+            }
+            if (el.id === 'pricing-savings-banner') {
+              return { ...el, content: `Save Rs ${savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.` };
+            }
+            return el;
+          })
         };
       }
       return page;
@@ -1184,6 +1245,39 @@ export default function QuotationMakerPage() {
 
           <hr className="border-zinc-800" />
 
+          {/* AI Template Importer */}
+          <div className="space-y-3.5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#D4AF37] flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+              AI Design Template Importer
+            </h3>
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+              Upload a Canva PDF export or high-resolution template image. Our AI Vision model will extract the layouts, dimensions, typography, and lock the design structure while exposing dynamic placeholders.
+            </p>
+            <div className="relative border border-dashed border-zinc-700 hover:border-[#606248] rounded-xl p-4 transition bg-zinc-950/40 text-center cursor-pointer group">
+              {isImportingTemplate ? (
+                <div className="flex flex-col items-center justify-center py-2.5 gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-[#D4AF37]" />
+                  <span className="text-[11px] text-zinc-400 font-medium">AI Vision analyzing design...</span>
+                </div>
+              ) : (
+                <label className="cursor-pointer flex flex-col items-center justify-center py-1 gap-1">
+                  <Upload className="w-6 h-6 text-zinc-500 group-hover:text-[#D4AF37] transition font-bold" />
+                  <span className="text-[11px] text-zinc-400 font-semibold group-hover:text-white transition mt-1.5">Upload Template Capture</span>
+                  <span className="text-[9px] text-zinc-600">Supports PDF, PNG, JPG</span>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={handleTemplateImport}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <hr className="border-zinc-800" />
+
           {/* Client Settings */}
           <div className="space-y-3.5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
@@ -1499,7 +1593,7 @@ export default function QuotationMakerPage() {
             >
               
               {/* Dynamic canvas element rendering */}
-              {activePageIndex !== 0 && pages[activePageIndex]?.elements.map(el => {
+              {activePageIndex !== 0 && activePageIndex !== 1 && activePageIndex !== 3 && pages[activePageIndex]?.elements.map(el => {
                 const isSelected = selectedElement?.pageIndex === activePageIndex && selectedElement?.elementId === el.id;
                 
                 // Style configurations
@@ -1999,6 +2093,209 @@ export default function QuotationMakerPage() {
                 </div>
               )}
 
+              {/* Page 2 Custom Premium About Us Layout */}
+              {activePageIndex === 1 && (
+                <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-10 select-text">
+                  {/* Birds flying at the top right */}
+                  <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
+                    <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      {/* V-formation birds */}
+                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke="#606248" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke="#606248" strokeWidth="1.1" strokeLinecap="round" fill="none" />
+                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke="#606248" strokeWidth="0.9" strokeLinecap="round" fill="none" />
+                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke="#606248" strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke="#606248" strokeWidth="0.7" strokeLinecap="round" fill="none" />
+                    </svg>
+                  </div>
+
+                  {/* Monogram logo */}
+                  <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
+                    <div className="relative w-[150px] h-[100px]">
+                      {/* U and S */}
+                      <div className="absolute left-[15px] top-[32px] flex items-baseline">
+                        <span className="text-7xl font-serif text-[#606248] font-light">U</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">S</span>
+                      </div>
+                      {/* A and BOUT */}
+                      <div className="absolute left-[60px] top-[0px] flex items-baseline">
+                        <span className="text-7xl font-serif text-[#606248] font-light">A</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">BOUT</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quote Section */}
+                  <div 
+                    onClick={(e) => handleElementClick(e, 1, 'about-quote')}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      const content = pages[1]?.elements.find(el => el.id === 'about-quote')?.content || '';
+                      setInlineEditingText(content);
+                    }}
+                    className={`relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center transition rounded-xl ${
+                      selectedElement?.elementId === 'about-quote'
+                        ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
+                        : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                    }`}
+                  >
+                    <span className="absolute left-4 top-0 text-4xl font-serif text-[#606248] font-bold">“</span>
+                    {inlineEditingText !== null && selectedElement?.elementId === 'about-quote' ? (
+                      <textarea
+                        value={inlineEditingText}
+                        onChange={e => setInlineEditingText(e.target.value)}
+                        onBlur={() => handleInlineTextSave(1, 'about-quote', inlineEditingText)}
+                        className="w-full bg-white text-zinc-950 p-2 border border-[#606248] rounded text-center text-xs font-sans focus:outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <p className="text-[12px] font-sans text-zinc-700 leading-relaxed font-medium">
+                        {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
+                      </p>
+                    )}
+                    <span className="absolute right-4 bottom-0 text-4xl font-serif text-[#606248] font-bold">”</span>
+                  </div>
+
+                  {/* Two Photos Side-by-Side */}
+                  <div className="grid grid-cols-2 gap-6 w-full px-2 mt-4">
+                    {/* Left image */}
+                    <div 
+                      onClick={(e) => handleElementClick(e, 1, 'about-img-left')}
+                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] ${
+                        selectedElement?.elementId === 'about-img-left'
+                          ? 'outline-2 outline-dashed outline-[#606248] bg-zinc-200'
+                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                      }`}
+                    >
+                      <img 
+                        src={pages[1]?.elements.find(el => el.id === 'about-img-left')?.content || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600'} 
+                        alt="About left couple" 
+                        className="w-full h-full object-cover" 
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerImageSwap(1, 'about-img-left', pages[1]?.elements.find(el => el.id === 'about-img-left')?.content || '');
+                        }}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-xl"
+                      >
+                        <Upload className="w-4 h-4 text-[#D4AF37]" />
+                        Swap Image
+                      </button>
+                    </div>
+
+                    {/* Right image */}
+                    <div 
+                      onClick={(e) => handleElementClick(e, 1, 'about-img-right')}
+                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] ${
+                        selectedElement?.elementId === 'about-img-right'
+                          ? 'outline-2 outline-dashed outline-[#606248] bg-zinc-200'
+                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                      }`}
+                    >
+                      <img 
+                        src={pages[1]?.elements.find(el => el.id === 'about-img-right')?.content || 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600'} 
+                        alt="About right couple" 
+                        className="w-full h-full object-cover" 
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerImageSwap(1, 'about-img-right', pages[1]?.elements.find(el => el.id === 'about-img-right')?.content || '');
+                        }}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-xl"
+                      >
+                        <Upload className="w-4 h-4 text-[#D4AF37]" />
+                        Swap Image
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Page 4 Custom Premium Early Booking Offer Layout */}
+              {activePageIndex === 3 && (
+                <div className="absolute inset-x-[75px] top-[75px] bottom-0 z-10 flex flex-col justify-between select-text">
+                  {/* Heading */}
+                  <div className="w-full flex flex-col items-center">
+                    <div className="text-3xl font-serif text-[#606248] font-bold tracking-widest text-center uppercase">
+                      EARLY BOOKING OFFER
+                    </div>
+                    
+                    {/* Offer Price Box */}
+                    <div 
+                      onClick={(e) => handleElementClick(e, 3, 'pricing-main-price')}
+                      className={`border border-[#E8E2D9] px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm transition ${
+                        selectedElement?.elementId === 'pricing-main-price'
+                          ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
+                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                      }`}
+                    >
+                      <span className="text-2xl font-serif font-bold text-[#606248] tracking-wider">
+                        Rs {offerPrice.toLocaleString()}/-
+                      </span>
+                    </div>
+
+                    {/* Regular Price Subtitle */}
+                    <div className="text-xs font-medium text-[#706E6A] tracking-wider mt-3">
+                      Regular Quotation : Rs {regularPrice.toLocaleString()}/-
+                    </div>
+
+                    {/* Exclude notes box */}
+                    <div className="border border-[#E8E2D9] px-6 py-2 mt-4 rounded bg-white/20 max-w-[420px] text-center">
+                      <span className="text-[9.5px] font-sans text-zinc-500 tracking-wide font-medium leading-relaxed">
+                        This excludes travel, accommodation, food & any add-on services.
+                      </span>
+                    </div>
+
+                    {/* Savings Highlight Banner */}
+                    <div className="w-full bg-[#606248] text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed">
+                      Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
+                    </div>
+                  </div>
+
+                  {/* Logo overlay & bottom palace cover photo */}
+                  <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
+                    {/* Centered Logo text right above the cutout skyline */}
+                    <div className="text-center z-20 pb-4">
+                      <div className="text-lg font-bold tracking-[0.2em] text-[#606248] font-serif uppercase">
+                        FILMIFY WEDDINGS
+                      </div>
+                      <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
+                        Premium Editorial Studio
+                      </div>
+                    </div>
+
+                    {/* Palace/Castle cutout photo occupying the bottom */}
+                    <div 
+                      onClick={(e) => handleElementClick(e, 3, 'pricing-palace-image')}
+                      className={`w-full h-[250px] relative overflow-hidden rounded-t-3xl border border-[#E0D8CC]/50 shadow-lg group transition ${
+                        selectedElement?.elementId === 'pricing-palace-image'
+                          ? 'outline-2 outline-dashed outline-[#606248]'
+                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
+                      }`}
+                    >
+                      <img 
+                        src={pages[3]?.elements.find(el => el.id === 'pricing-palace-image')?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
+                        alt="Palace backdrop" 
+                        className="w-full h-full object-cover" 
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerImageSwap(3, 'pricing-palace-image', pages[3]?.elements.find(el => el.id === 'pricing-palace-image')?.content || '');
+                        }}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-t-3xl"
+                      >
+                        <Upload className="w-4 h-4 text-[#D4AF37]" />
+                        Swap Cover Image
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* FOOTER BAR (Cover brand branding) */}
               {activePageIndex !== 0 && (
                 <div className="absolute bottom-6 left-10 right-10 flex items-center justify-between border-t border-[#E8E2D9]/50 pt-3 text-[9px] text-[#8A7E56] font-medium tracking-wide">
@@ -2154,7 +2451,7 @@ export default function QuotationMakerPage() {
               }}
             >
               {/* Dynamic elements */}
-              {pageIdx !== 0 && page.elements.map(el => {
+              {pageIdx !== 0 && pageIdx !== 1 && pageIdx !== 3 && page.elements.map(el => {
                 const customStyle: React.CSSProperties = {
                   position: 'absolute',
                   left: `${el.x}%`,
@@ -2299,6 +2596,126 @@ export default function QuotationMakerPage() {
                       alt="Cover couple cutout" 
                       className="w-full h-full object-contain" 
                     />
+                  </div>
+                </div>
+              )}
+
+              {/* Page 2 Custom Premium About Us Layout */}
+              {pageIdx === 1 && (
+                <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-10 select-text">
+                  {/* Birds flying at the top right */}
+                  <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
+                    <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      {/* V-formation birds */}
+                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke="#606248" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke="#606248" strokeWidth="1.1" strokeLinecap="round" fill="none" />
+                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke="#606248" strokeWidth="0.9" strokeLinecap="round" fill="none" />
+                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke="#606248" strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke="#606248" strokeWidth="0.7" strokeLinecap="round" fill="none" />
+                    </svg>
+                  </div>
+
+                  {/* Monogram logo */}
+                  <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
+                    <div className="relative w-[150px] h-[100px]">
+                      {/* U and S */}
+                      <div className="absolute left-[15px] top-[32px] flex items-baseline">
+                        <span className="text-7xl font-serif text-[#606248] font-light">U</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">S</span>
+                      </div>
+                      {/* A and BOUT */}
+                      <div className="absolute left-[60px] top-[0px] flex items-baseline">
+                        <span className="text-7xl font-serif text-[#606248] font-light">A</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">BOUT</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quote Section */}
+                  <div className="relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center">
+                    <span className="absolute left-4 top-0 text-4xl font-serif text-[#606248] font-bold">“</span>
+                    <p className="text-[12px] font-sans text-zinc-700 leading-relaxed font-medium">
+                      {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
+                    </p>
+                    <span className="absolute right-4 bottom-0 text-4xl font-serif text-[#606248] font-bold">”</span>
+                  </div>
+
+                  {/* Two Photos Side-by-Side */}
+                  <div className="grid grid-cols-2 gap-6 w-full px-2 mt-4">
+                    <div className="overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5]">
+                      <img 
+                        src={pages[1]?.elements.find(el => el.id === 'about-img-left')?.content || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600'} 
+                        alt="About left couple" 
+                        className="w-full h-full object-cover" 
+                      />
+                    </div>
+                    <div className="overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5]">
+                      <img 
+                        src={pages[1]?.elements.find(el => el.id === 'about-img-right')?.content || 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600'} 
+                        alt="About right couple" 
+                        className="w-full h-full object-cover" 
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Page 4 Custom Premium Early Booking Offer Layout */}
+              {pageIdx === 3 && (
+                <div className="absolute inset-x-[75px] top-[75px] bottom-0 z-10 flex flex-col justify-between select-text">
+                  {/* Heading */}
+                  <div className="w-full flex flex-col items-center">
+                    <div className="text-3xl font-serif text-[#606248] font-bold tracking-widest text-center uppercase">
+                      EARLY BOOKING OFFER
+                    </div>
+                    
+                    {/* Offer Price Box */}
+                    <div className="border border-[#E8E2D9] px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm">
+                      <span className="text-2xl font-serif font-bold text-[#606248] tracking-wider">
+                        Rs {offerPrice.toLocaleString()}/-
+                      </span>
+                    </div>
+
+                    {/* Regular Price Subtitle */}
+                    <div className="text-xs font-medium text-[#706E6A] tracking-wider mt-3">
+                      Regular Quotation : Rs {regularPrice.toLocaleString()}/-
+                    </div>
+
+                    {/* Exclude notes box */}
+                    <div className="border border-[#E8E2D9] px-6 py-2 mt-4 rounded bg-white/20 max-w-[420px] text-center">
+                      <span className="text-[9.5px] font-sans text-zinc-500 tracking-wide font-medium leading-relaxed">
+                        This excludes travel, accommodation, food & any add-on services.
+                      </span>
+                    </div>
+
+                    {/* Savings Highlight Banner */}
+                    <div className="w-full bg-[#606248] text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed">
+                      Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
+                    </div>
+                  </div>
+
+                  {/* Logo overlay & bottom palace cover photo */}
+                  <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
+                    {/* Centered Logo text right above the cutout skyline */}
+                    <div className="text-center z-20 pb-4">
+                      <div className="text-lg font-bold tracking-[0.2em] text-[#606248] font-serif uppercase">
+                        FILMIFY WEDDINGS
+                      </div>
+                      <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
+                        Premium Editorial Studio
+                      </div>
+                    </div>
+
+                    {/* Palace/Castle cutout photo occupying the bottom */}
+                    <div className="w-full h-[250px] relative overflow-hidden rounded-t-3xl border border-[#E0D8CC]/50 shadow-lg">
+                      <img 
+                        src={pages[3]?.elements.find(el => el.id === 'pricing-palace-image')?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
+                        alt="Palace backdrop" 
+                        className="w-full h-full object-cover" 
+                      />
+                    </div>
                   </div>
                 </div>
               )}
