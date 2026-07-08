@@ -370,6 +370,9 @@ export default function QuotationMakerPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isImportingTemplate, setIsImportingTemplate] = useState<boolean>(false);
+  const [accentColor, setAccentColor] = useState<string>('#606248');
+  const [accentHoverColor, setAccentHoverColor] = useState<string>('#4d4e3a');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('editorial');
 
   // Image Swap Modal States
   const [showImageModal, setShowImageModal] = useState(false);
@@ -1176,6 +1179,16 @@ export default function QuotationMakerPage() {
 
   return (
     <div className="flex h-screen bg-[#F3EFEA] text-zinc-900 overflow-hidden font-sans">
+      {/* Dynamic Theme Color Styles */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        .theme-accent-text { color: ${accentColor} !important; }
+        .theme-accent-bg { background-color: ${accentColor} !important; }
+        .theme-accent-border { border-color: ${accentColor} !important; }
+        .theme-accent-hover-bg:hover { background-color: ${accentHoverColor} !important; }
+        .theme-accent-hover-text:hover { color: ${accentHoverColor} !important; }
+        .theme-accent-focus:focus { border-color: ${accentColor} !important; --tw-ring-color: ${accentColor} !important; }
+        .theme-accent-stroke { stroke: ${accentColor} !important; }
+      `}} />
       
       {/* Toast Notifications */}
       {successMessage && (
@@ -1241,6 +1254,76 @@ export default function QuotationMakerPage() {
               <Plus className="w-3.5 h-3.5" />
               Create New Quotation
             </button>
+          </div>
+
+          <hr className="border-zinc-800" />
+
+          {/* Template & Accent Theme Selection */}
+          <div className="space-y-3.5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#D4AF37] flex items-center gap-2">
+              <Layout className="w-3.5 h-3.5 text-[#D4AF37]" />
+              Template & Accent Theme
+            </h3>
+            
+            {/* Base Layout Template Dropdown */}
+            <div className="space-y-1">
+              <label className="text-[11px] text-zinc-400 font-semibold">Choose Layout Template</label>
+              <select
+                value={selectedTemplateId}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedTemplateId(val);
+                  showToast(`Switched starting layout template to ${val === 'editorial' ? 'Filmify Editorial' : 'Minimalist Clean'}.`, 'success');
+                }}
+                className="w-full bg-zinc-850 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#606248] transition cursor-pointer font-sans"
+              >
+                <option value="editorial">Filmify Premium Editorial (Monogram & Palace)</option>
+                <option value="minimalist">Minimalist Clean Proposal (Modern & Spaced)</option>
+              </select>
+            </div>
+
+            {/* Accent Theme Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-zinc-400 font-semibold">Select Accent Theme</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={() => { setAccentColor('#5D5B3F'); setAccentHoverColor('#4D4B34'); }}
+                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
+                    accentColor === '#5D5B3F' ? 'bg-[#5D5B3F]/20 border-[#5D5B3F]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
+                  }`}
+                >
+                  <span className="h-3 w-3 rounded-full bg-[#5D5B3F] inline-block shrink-0"></span>
+                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Olive Garden</span>
+                </button>
+                <button 
+                  onClick={() => { setAccentColor('#8D7249'); setAccentHoverColor('#735C3A'); }}
+                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
+                    accentColor === '#8D7249' ? 'bg-[#8D7249]/20 border-[#8D7249]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
+                  }`}
+                >
+                  <span className="h-3 w-3 rounded-full bg-[#8D7249] inline-block shrink-0"></span>
+                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Royal Gold</span>
+                </button>
+                <button 
+                  onClick={() => { setAccentColor('#8C4E4E'); setAccentHoverColor('#703D3D'); }}
+                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
+                    accentColor === '#8C4E4E' ? 'bg-[#8C4E4E]/20 border-[#8C4E4E]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
+                  }`}
+                >
+                  <span className="h-3 w-3 rounded-full bg-[#8C4E4E] inline-block shrink-0"></span>
+                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Crimson Blush</span>
+                </button>
+                <button 
+                  onClick={() => { setAccentColor('#1E1E1E'); setAccentHoverColor('#0A0A0A'); }}
+                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
+                    accentColor === '#1E1E1E' ? 'bg-[#1E1E1E]/20 border-[#1E1E1E]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
+                  }`}
+                >
+                  <span className="h-3 w-3 rounded-full bg-[#1E1E1E] inline-block shrink-0"></span>
+                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Obsidian Black</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           <hr className="border-zinc-800" />
@@ -1718,10 +1801,10 @@ export default function QuotationMakerPage() {
                               <select
                                 value={func.name}
                                 onChange={e => updateFunctionDetails(func.id, { name: e.target.value.toUpperCase() })}
-                                className="bg-[#606248] text-white text-[9px] font-bold tracking-widest uppercase rounded-full px-2 py-0.5 text-center font-serif focus:outline-none border-none cursor-pointer hover:bg-[#4d4f3a] transition"
+                                className="theme-accent-bg text-white text-[9px] font-bold tracking-widest uppercase rounded-full px-2 py-0.5 text-center font-serif focus:outline-none border-none cursor-pointer theme-accent-hover-bg transition"
                               >
                                 {FUNCTION_NAMES.map(name => (
-                                  <option key={name} value={name} className="bg-[#FAF6F0] text-[#606248] font-sans font-medium uppercase text-xs">
+                                  <option key={name} value={name} className="bg-[#FAF6F0] theme-accent-text font-sans font-medium uppercase text-xs">
                                     {name}
                                   </option>
                                 ))}
@@ -1734,7 +1817,7 @@ export default function QuotationMakerPage() {
                                     e.stopPropagation();
                                     setActivePopover(activePopover === `datetime-${func.id}` ? null : `datetime-${func.id}`);
                                   }}
-                                  className="text-[9px] font-bold text-[#8A7E56] hover:text-[#606248] border border-[#E8E2D9] rounded-md px-1.5 py-0.5 bg-[#FAF6F0]/80 transition flex items-center gap-1"
+                                  className="text-[9px] font-bold text-[#8A7E56] theme-accent-hover-text border border-[#E8E2D9] rounded-md px-1.5 py-0.5 bg-[#FAF6F0]/80 transition flex items-center gap-1"
                                 >
                                   <span>📅 {displayDate} | ⏰ {displayTime} ({displayHours.split(' ')[0]}h)</span>
                                 </button>
@@ -1742,7 +1825,7 @@ export default function QuotationMakerPage() {
                                 {/* Popover container */}
                                 {activePopover === `datetime-${func.id}` && (
                                   <div className="absolute top-[28px] right-0 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl p-4 shadow-xl z-30 w-[240px] text-zinc-800 flex flex-col gap-3 select-text">
-                                    <div className="text-xs font-bold text-[#606248] border-b border-[#E8E2D9]/60 pb-1.5 font-serif uppercase tracking-wider">
+                                    <div className="text-xs font-bold theme-accent-text border-b border-[#E8E2D9]/60 pb-1.5 font-serif uppercase tracking-wider">
                                       Event Schedule
                                     </div>
                                     
@@ -1752,7 +1835,7 @@ export default function QuotationMakerPage() {
                                         type="date"
                                         value={func.date}
                                         onChange={e => updateFunctionDetails(func.id, { date: e.target.value })}
-                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none"
+                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs theme-accent-focus focus:outline-none"
                                       />
                                     </div>
 
@@ -1762,7 +1845,7 @@ export default function QuotationMakerPage() {
                                         type="time"
                                         value={func.time}
                                         onChange={e => updateFunctionDetails(func.id, { time: e.target.value })}
-                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none"
+                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs theme-accent-focus focus:outline-none"
                                       />
                                     </div>
 
@@ -1771,7 +1854,7 @@ export default function QuotationMakerPage() {
                                       <select
                                         value={func.hours}
                                         onChange={e => updateFunctionDetails(func.id, { hours: e.target.value })}
-                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none"
+                                        className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2.5 py-1 text-xs theme-accent-focus focus:outline-none"
                                       >
                                         {SESSION_HOURS_OPTIONS.map(opt => (
                                           <option key={opt} value={opt}>{opt}</option>
@@ -1781,7 +1864,7 @@ export default function QuotationMakerPage() {
 
                                     <button
                                       onClick={() => setActivePopover(null)}
-                                      className="mt-1 w-full bg-[#606248] text-white py-1.5 text-xs font-bold rounded-lg hover:bg-[#4d4f3a] transition"
+                                      className="mt-1 w-full theme-accent-bg text-white py-1.5 text-xs font-bold rounded-lg theme-accent-hover-bg transition"
                                     >
                                       Done
                                     </button>
@@ -1803,7 +1886,7 @@ export default function QuotationMakerPage() {
                             <ul className="space-y-1">
                               {func.items.map((item, idx) => (
                                 <li key={idx} className="group flex items-start gap-1.5 text-[10px] font-medium text-zinc-700 leading-tight">
-                                  <span className="text-[#606248]">•</span>
+                                  <span className="theme-accent-text">•</span>
                                   <span className="flex-1 font-sans">{item}</span>
                                   <button
                                     onClick={() => deleteFunctionItem(func.id, idx)}
@@ -1825,7 +1908,7 @@ export default function QuotationMakerPage() {
                                   placeholder="Search or type..."
                                   value={searchQuery}
                                   onChange={e => setSearchQuery(e.target.value)}
-                                  className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-0.5 text-[10px] focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none text-zinc-800"
+                                  className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-0.5 text-[10px] theme-accent-focus focus:outline-none text-zinc-800"
                                   onKeyDown={e => {
                                     if (e.key === 'Enter' && searchQuery.trim()) {
                                       addRequirementToFunction(func.id, searchQuery.trim());
@@ -1844,7 +1927,7 @@ export default function QuotationMakerPage() {
                                         setSearchQuery('');
                                         setActivePopover(null);
                                       }}
-                                      className="w-full text-left px-2 py-1 hover:bg-[#606248]/5 rounded text-[10px] text-zinc-700 transition"
+                                      className="w-full text-left px-2 py-1 hover:bg-zinc-800/10 rounded text-[10px] text-zinc-700 transition"
                                     >
                                       {opt}
                                     </button>
@@ -1856,7 +1939,7 @@ export default function QuotationMakerPage() {
                                         setSearchQuery('');
                                         setActivePopover(null);
                                       }}
-                                      className="w-full text-left px-2 py-1 hover:bg-[#606248]/5 rounded text-[10px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
+                                      className="w-full text-left px-2 py-1 hover:bg-zinc-800/10 rounded text-[10px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
                                     >
                                       + Add "{searchQuery}"
                                     </button>
@@ -1869,7 +1952,7 @@ export default function QuotationMakerPage() {
                                   setSearchQuery('');
                                   setActivePopover(`req-${func.id}`);
                                 }}
-                                className="w-full py-0.5 border border-dashed border-[#606248]/40 hover:border-[#606248] text-[#606248] hover:bg-[#606248]/5 text-[9px] font-bold rounded-lg transition flex items-center justify-center gap-1"
+                                className="w-full py-0.5 border border-dashed border-zinc-700 hover:theme-accent-border theme-accent-text hover:bg-zinc-800/10 text-[9px] font-bold rounded-lg transition flex items-center justify-center gap-1"
                               >
                                 <Plus className="w-2.5 h-2.5" />
                                 Add Requirement
@@ -1884,7 +1967,7 @@ export default function QuotationMakerPage() {
                     {functions.length < 4 && (
                       <button
                         onClick={addNewFunctionCard}
-                        className="bg-[#FAF6F0]/40 border border-dashed border-[#606248]/30 hover:border-[#606248]/80 hover:bg-[#FAF6F0]/70 rounded-xl p-4 flex flex-col items-center justify-center shadow-sm text-[#606248] text-xs font-bold transition gap-2 min-h-[160px]"
+                        className="bg-[#FAF6F0]/40 border border-dashed border-zinc-700 hover:theme-accent-border hover:bg-[#FAF6F0]/70 rounded-xl p-4 flex flex-col items-center justify-center shadow-sm theme-accent-text text-xs font-bold transition gap-2 min-h-[160px]"
                       >
                         <Plus className="w-6 h-6" />
                         Add Event Card
@@ -1897,7 +1980,7 @@ export default function QuotationMakerPage() {
                     <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5">
                       {deliverables.map((deliv, idx) => (
                         <li key={idx} className="group flex items-start gap-2 text-[11.5px] text-zinc-800 leading-relaxed font-sans">
-                          <span className="text-[#606248] font-bold mt-0.5">•</span>
+                          <span className="theme-accent-text font-bold mt-0.5">•</span>
                           <input
                             type="text"
                             value={deliv}
@@ -1923,7 +2006,7 @@ export default function QuotationMakerPage() {
                             placeholder="Search or add custom..."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-[#606248] focus:border-[#606248] focus:outline-none text-zinc-800"
+                            className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-1 text-xs theme-accent-focus focus:outline-none text-zinc-800"
                             onKeyDown={e => {
                               if (e.key === 'Enter' && searchQuery.trim()) {
                                 setDeliverables(prev => [...prev, searchQuery.trim()]);
@@ -1944,7 +2027,7 @@ export default function QuotationMakerPage() {
                                   setSearchQuery('');
                                   setActivePopover(null);
                                 }}
-                                className="w-full text-left px-2.5 py-1.5 hover:bg-[#606248]/5 rounded text-[11px] text-zinc-700 transition"
+                                className="w-full text-left px-2.5 py-1.5 hover:bg-zinc-800/10 rounded text-[11px] text-zinc-700 transition"
                               >
                                 {opt}
                               </button>
@@ -1956,7 +2039,7 @@ export default function QuotationMakerPage() {
                                   setSearchQuery('');
                                   setActivePopover(null);
                                 }}
-                                className="w-full text-left px-2.5 py-1.5 hover:bg-[#606248]/5 rounded text-[11px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
+                                className="w-full text-left px-2.5 py-1.5 hover:bg-zinc-800/10 rounded text-[11px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
                               >
                                 + Add custom "{searchQuery}"
                               </button>
@@ -1969,7 +2052,7 @@ export default function QuotationMakerPage() {
                             setSearchQuery('');
                             setActivePopover('deliv');
                           }}
-                          className="w-full py-1.5 border border-dashed border-[#606248]/30 hover:border-[#606248] text-[#606248] hover:bg-[#606248]/5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1"
+                          className="w-full py-1.5 border border-dashed border-zinc-700 hover:theme-accent-border theme-accent-text hover:bg-zinc-800/10 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           Add Deliverable
@@ -1989,17 +2072,15 @@ export default function QuotationMakerPage() {
                     {/* Couple Names / Client x Partner */}
                     <div 
                       onClick={(e) => handleElementClick(e, 0, 'cover-couple-names')}
-                      className={`w-full text-center transition px-2 py-1 rounded-lg ${
-                        selectedElement?.elementId === 'cover-couple-names'
-                          ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
-                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                      }`}
+                      className={`w-full text-center transition px-2 py-1 rounded-lg hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                      style={selectedElement?.elementId === 'cover-couple-names' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
                     >
                       <input
                         type="text"
                         value={coupleNames}
                         onChange={e => setCoupleNames(e.target.value.toUpperCase())}
-                        className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-3xl font-serif text-[#606248] font-bold tracking-widest"
+                        className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-3xl font-serif font-bold tracking-widest"
+                        style={{ color: accentColor }}
                       />
                     </div>
                     
@@ -2007,11 +2088,8 @@ export default function QuotationMakerPage() {
                     <div className="w-full border-t border-b border-[#E8E2D9]/80 py-2.5 mt-3 flex flex-col items-center">
                       <div 
                         onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-1')}
-                        className={`w-full text-center transition px-2 py-0.5 rounded ${
-                          selectedElement?.elementId === 'cover-subtitle-1'
-                            ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
-                            : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                        }`}
+                        className={`w-full text-center transition px-2 py-0.5 rounded hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                        style={selectedElement?.elementId === 'cover-subtitle-1' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
                       >
                         <span className="text-xs font-serif text-[#C2B280] tracking-[0.25em] font-semibold">
                           WEDDING QUOTATION
@@ -2021,11 +2099,8 @@ export default function QuotationMakerPage() {
                       {/* Subtitle Parameters (Location / Date) */}
                       <div 
                         onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-2')}
-                        className={`w-full text-center transition px-2 py-0.5 rounded mt-1.5 ${
-                          selectedElement?.elementId === 'cover-subtitle-2'
-                            ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
-                            : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                        }`}
+                        className={`w-full text-center transition px-2 py-0.5 rounded mt-1.5 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                        style={selectedElement?.elementId === 'cover-subtitle-2' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
                       >
                         <input
                           type="text"
@@ -2051,13 +2126,10 @@ export default function QuotationMakerPage() {
                   {/* Middle Section: Logo */}
                   <div 
                     onClick={(e) => handleElementClick(e, 0, 'cover-logo-text')}
-                    className={`absolute top-[38%] left-1/2 -translate-x-1/2 w-[80%] text-center transition px-3 py-1.5 rounded-xl z-20 ${
-                      selectedElement?.elementId === 'cover-logo-text'
-                        ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
-                        : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                    }`}
+                    className={`absolute top-[38%] left-1/2 -translate-x-1/2 w-[80%] text-center transition px-3 py-1.5 rounded-xl z-20 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                    style={selectedElement?.elementId === 'cover-logo-text' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
                   >
-                    <div className="text-xl font-bold tracking-[0.18em] text-[#606248] font-serif uppercase">
+                    <div className="text-xl font-bold tracking-[0.18em] font-serif uppercase" style={{ color: accentColor }}>
                       FILMIFY WEDDINGS
                     </div>
                     <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5">
@@ -2068,11 +2140,8 @@ export default function QuotationMakerPage() {
                   {/* Bottom Section: Hero couple image cutout */}
                   <div 
                     onClick={(e) => handleElementClick(e, 0, 'cover-hero-image')}
-                    className={`absolute bottom-0 left-10 right-10 top-[48%] group transition overflow-hidden rounded-2xl bg-transparent border border-transparent shadow-none flex items-end justify-center z-10 ${
-                      selectedElement?.elementId === 'cover-hero-image'
-                        ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
-                        : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                    }`}
+                    className={`absolute bottom-0 left-10 right-10 top-[48%] group transition overflow-hidden rounded-2xl bg-transparent border border-transparent shadow-none flex items-end justify-center z-10 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                    style={selectedElement?.elementId === 'cover-hero-image' ? { outline: `2px dashed ${accentColor}` } : {}}
                   >
                     <img 
                       src={pages[0]?.elements.find(el => el.id === 'cover-hero-image')?.content || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
@@ -2100,13 +2169,13 @@ export default function QuotationMakerPage() {
                   <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
                     <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
                       {/* V-formation birds */}
-                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke="#606248" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke="#606248" strokeWidth="1.1" strokeLinecap="round" fill="none" />
-                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke="#606248" strokeWidth="0.9" strokeLinecap="round" fill="none" />
-                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke="#606248" strokeWidth="0.8" strokeLinecap="round" fill="none" />
-                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke="#606248" strokeWidth="0.7" strokeLinecap="round" fill="none" />
+                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke={accentColor} strokeWidth="1.2" strokeLinecap="round" fill="none" />
+                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke={accentColor} strokeWidth="1.1" strokeLinecap="round" fill="none" />
+                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke={accentColor} strokeWidth="0.9" strokeLinecap="round" fill="none" />
+                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke={accentColor} strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke={accentColor} strokeWidth="0.7" strokeLinecap="round" fill="none" />
                     </svg>
                   </div>
 
@@ -2114,14 +2183,14 @@ export default function QuotationMakerPage() {
                   <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
                     <div className="relative w-[150px] h-[100px]">
                       {/* U and S */}
-                      <div className="absolute left-[15px] top-[32px] flex items-baseline">
-                        <span className="text-7xl font-serif text-[#606248] font-light">U</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">S</span>
+                      <div className="absolute left-[15px] top-[32px] flex items-baseline" style={{ color: accentColor }}>
+                        <span className="text-7xl font-serif font-light">U</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">S</span>
                       </div>
                       {/* A and BOUT */}
-                      <div className="absolute left-[60px] top-[0px] flex items-baseline">
-                        <span className="text-7xl font-serif text-[#606248] font-light">A</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">BOUT</span>
+                      <div className="absolute left-[60px] top-[0px] flex items-baseline" style={{ color: accentColor }}>
+                        <span className="text-7xl font-serif font-light">A</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">BOUT</span>
                       </div>
                     </div>
                   </div>
@@ -2134,19 +2203,17 @@ export default function QuotationMakerPage() {
                       const content = pages[1]?.elements.find(el => el.id === 'about-quote')?.content || '';
                       setInlineEditingText(content);
                     }}
-                    className={`relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center transition rounded-xl ${
-                      selectedElement?.elementId === 'about-quote'
-                        ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
-                        : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                    }`}
+                    className={`relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center transition rounded-xl hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                    style={selectedElement?.elementId === 'about-quote' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
                   >
-                    <span className="absolute left-4 top-0 text-4xl font-serif text-[#606248] font-bold">“</span>
+                    <span className="absolute left-4 top-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>“</span>
                     {inlineEditingText !== null && selectedElement?.elementId === 'about-quote' ? (
                       <textarea
                         value={inlineEditingText}
                         onChange={e => setInlineEditingText(e.target.value)}
                         onBlur={() => handleInlineTextSave(1, 'about-quote', inlineEditingText)}
-                        className="w-full bg-white text-zinc-950 p-2 border border-[#606248] rounded text-center text-xs font-sans focus:outline-none"
+                        className="w-full bg-white text-zinc-950 p-2 rounded text-center text-xs font-sans focus:outline-none"
+                        style={{ border: `1px solid ${accentColor}` }}
                         autoFocus
                       />
                     ) : (
@@ -2154,7 +2221,7 @@ export default function QuotationMakerPage() {
                         {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
                       </p>
                     )}
-                    <span className="absolute right-4 bottom-0 text-4xl font-serif text-[#606248] font-bold">”</span>
+                    <span className="absolute right-4 bottom-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>”</span>
                   </div>
 
                   {/* Two Photos Side-by-Side */}
@@ -2162,11 +2229,8 @@ export default function QuotationMakerPage() {
                     {/* Left image */}
                     <div 
                       onClick={(e) => handleElementClick(e, 1, 'about-img-left')}
-                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] ${
-                        selectedElement?.elementId === 'about-img-left'
-                          ? 'outline-2 outline-dashed outline-[#606248] bg-zinc-200'
-                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                      }`}
+                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                      style={selectedElement?.elementId === 'about-img-left' ? { outline: `2px dashed ${accentColor}` } : {}}
                     >
                       <img 
                         src={pages[1]?.elements.find(el => el.id === 'about-img-left')?.content || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600'} 
@@ -2188,11 +2252,8 @@ export default function QuotationMakerPage() {
                     {/* Right image */}
                     <div 
                       onClick={(e) => handleElementClick(e, 1, 'about-img-right')}
-                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] ${
-                        selectedElement?.elementId === 'about-img-right'
-                          ? 'outline-2 outline-dashed outline-[#606248] bg-zinc-200'
-                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                      }`}
+                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                      style={selectedElement?.elementId === 'about-img-right' ? { outline: `2px dashed ${accentColor}` } : {}}
                     >
                       <img 
                         src={pages[1]?.elements.find(el => el.id === 'about-img-right')?.content || 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600'} 
@@ -2219,20 +2280,21 @@ export default function QuotationMakerPage() {
                 <div className="absolute inset-x-[75px] top-[75px] bottom-0 z-10 flex flex-col justify-between select-text">
                   {/* Heading */}
                   <div className="w-full flex flex-col items-center">
-                    <div className="text-3xl font-serif text-[#606248] font-bold tracking-widest text-center uppercase">
+                    <div className="text-3xl font-serif font-bold tracking-widest text-center uppercase" style={{ color: accentColor }}>
                       EARLY BOOKING OFFER
                     </div>
                     
                     {/* Offer Price Box */}
                     <div 
                       onClick={(e) => handleElementClick(e, 3, 'pricing-main-price')}
-                      className={`border border-[#E8E2D9] px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm transition ${
-                        selectedElement?.elementId === 'pricing-main-price'
-                          ? 'outline-2 outline-dashed outline-[#606248] bg-[#606248]/5'
-                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                      }`}
+                      className={`border px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm transition hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                      style={
+                        selectedElement?.elementId === 'pricing-main-price' 
+                          ? { outline: `2px dashed ${accentColor}`, borderColor: accentColor, backgroundColor: `${accentColor}10` }
+                          : { borderColor: '#E8E2D9' }
+                      }
                     >
-                      <span className="text-2xl font-serif font-bold text-[#606248] tracking-wider">
+                      <span className="text-2xl font-serif font-bold tracking-wider" style={{ color: accentColor }}>
                         Rs {offerPrice.toLocaleString()}/-
                       </span>
                     </div>
@@ -2250,7 +2312,7 @@ export default function QuotationMakerPage() {
                     </div>
 
                     {/* Savings Highlight Banner */}
-                    <div className="w-full bg-[#606248] text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed">
+                    <div className="w-full text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed" style={{ backgroundColor: accentColor }}>
                       Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
                     </div>
                   </div>
@@ -2259,7 +2321,7 @@ export default function QuotationMakerPage() {
                   <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
                     {/* Centered Logo text right above the cutout skyline */}
                     <div className="text-center z-20 pb-4">
-                      <div className="text-lg font-bold tracking-[0.2em] text-[#606248] font-serif uppercase">
+                      <div className="text-lg font-bold tracking-[0.2em] font-serif uppercase" style={{ color: accentColor }}>
                         FILMIFY WEDDINGS
                       </div>
                       <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
@@ -2270,11 +2332,8 @@ export default function QuotationMakerPage() {
                     {/* Palace/Castle cutout photo occupying the bottom */}
                     <div 
                       onClick={(e) => handleElementClick(e, 3, 'pricing-palace-image')}
-                      className={`w-full h-[250px] relative overflow-hidden rounded-t-3xl border border-[#E0D8CC]/50 shadow-lg group transition ${
-                        selectedElement?.elementId === 'pricing-palace-image'
-                          ? 'outline-2 outline-dashed outline-[#606248]'
-                          : 'hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60'
-                      }`}
+                      className={`w-full h-[250px] relative overflow-hidden rounded-t-3xl border border-[#E0D8CC]/50 shadow-lg group transition`}
+                      style={selectedElement?.elementId === 'pricing-palace-image' ? { outline: `2px dashed ${accentColor}` } : {}}
                     >
                       <img 
                         src={pages[3]?.elements.find(el => el.id === 'pricing-palace-image')?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
@@ -2477,7 +2536,7 @@ export default function QuotationMakerPage() {
                       style={customStyle}
                       className={`p-1.5 leading-relaxed font-serif ${
                         el.id === 'pricing-savings-banner' 
-                          ? 'bg-[#606248] text-white px-4 rounded-xl shadow-sm' 
+                          ? 'theme-accent-bg text-white px-4 rounded-xl shadow-sm' 
                           : ''
                       }`}
                     >
@@ -2523,7 +2582,7 @@ export default function QuotationMakerPage() {
                         <div key={func.id} style={{ pageBreakInside: 'avoid' }} className="bg-white/60 border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm min-h-[140px]">
                           <div>
                             <div className="flex items-center justify-between border-b border-[#E8E2D9]/40 pb-1.5 mb-2">
-                              <div className="bg-[#606248] text-white text-[9px] font-bold tracking-widest uppercase rounded-full px-2.5 py-0.5 text-center font-serif">
+                              <div className="theme-accent-bg text-white text-[9px] font-bold tracking-widest uppercase rounded-full px-2.5 py-0.5 text-center font-serif">
                                 {displayName}
                               </div>
                               <div className="text-[8px] font-bold text-[#8A7E56] font-sans">
@@ -2533,7 +2592,7 @@ export default function QuotationMakerPage() {
                             <ul className="space-y-1">
                               {func.items.map((item, idx) => (
                                 <li key={idx} className="flex items-start gap-1.5 text-[9.5px] font-medium text-zinc-700 leading-tight">
-                                  <span className="text-[#606248]">•</span>
+                                  <span className="theme-accent-text">•</span>
                                   <span className="font-sans">{item}</span>
                                 </li>
                               ))}
@@ -2549,7 +2608,7 @@ export default function QuotationMakerPage() {
                     <ul className="grid grid-cols-2 gap-x-6 gap-y-1">
                       {deliverables.map((deliv, idx) => (
                         <li key={idx} className="flex items-start gap-1.5 text-[10.5px] text-zinc-800 leading-relaxed font-sans">
-                          <span className="text-[#606248] font-bold">•</span>
+                          <span className="theme-accent-text font-bold">•</span>
                           <span>{deliv}</span>
                         </li>
                       ))}
@@ -2564,7 +2623,7 @@ export default function QuotationMakerPage() {
                   {/* Top Section */}
                   <div className="w-full flex flex-col items-center pt-4">
                     {/* Couple Names / Client x Partner */}
-                    <div className="w-full text-center text-3xl font-serif text-[#606248] font-bold tracking-widest">
+                    <div className="w-full text-center text-3xl font-serif theme-accent-text font-bold tracking-widest">
                       {coupleNames}
                     </div>
                     
@@ -2581,7 +2640,7 @@ export default function QuotationMakerPage() {
 
                   {/* Middle Section: Logo */}
                   <div className="absolute top-[38%] left-1/2 -translate-x-1/2 w-[80%] text-center z-20">
-                    <div className="text-xl font-bold tracking-[0.18em] text-[#606248] font-serif uppercase">
+                    <div className="text-xl font-bold tracking-[0.18em] theme-accent-text font-serif uppercase">
                       FILMIFY WEDDINGS
                     </div>
                     <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5">
@@ -2607,13 +2666,13 @@ export default function QuotationMakerPage() {
                   <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
                     <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
                       {/* V-formation birds */}
-                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke="#606248" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke="#606248" strokeWidth="1.1" strokeLinecap="round" fill="none" />
-                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke="#606248" strokeWidth="0.9" strokeLinecap="round" fill="none" />
-                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke="#606248" strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke="#606248" strokeWidth="0.8" strokeLinecap="round" fill="none" />
-                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke="#606248" strokeWidth="0.7" strokeLinecap="round" fill="none" />
+                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke={accentColor} strokeWidth="1.2" strokeLinecap="round" fill="none" />
+                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke={accentColor} strokeWidth="1.1" strokeLinecap="round" fill="none" />
+                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke={accentColor} strokeWidth="0.9" strokeLinecap="round" fill="none" />
+                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke={accentColor} strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke={accentColor} strokeWidth="0.7" strokeLinecap="round" fill="none" />
                     </svg>
                   </div>
 
@@ -2621,25 +2680,25 @@ export default function QuotationMakerPage() {
                   <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
                     <div className="relative w-[150px] h-[100px]">
                       {/* U and S */}
-                      <div className="absolute left-[15px] top-[32px] flex items-baseline">
-                        <span className="text-7xl font-serif text-[#606248] font-light">U</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">S</span>
+                      <div className="absolute left-[15px] top-[32px] flex items-baseline" style={{ color: accentColor }}>
+                        <span className="text-7xl font-serif font-light">U</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">S</span>
                       </div>
                       {/* A and BOUT */}
-                      <div className="absolute left-[60px] top-[0px] flex items-baseline">
-                        <span className="text-7xl font-serif text-[#606248] font-light">A</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] text-[#606248] ml-1 font-bold">BOUT</span>
+                      <div className="absolute left-[60px] top-[0px] flex items-baseline" style={{ color: accentColor }}>
+                        <span className="text-7xl font-serif font-light">A</span>
+                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">BOUT</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Quote Section */}
                   <div className="relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center">
-                    <span className="absolute left-4 top-0 text-4xl font-serif text-[#606248] font-bold">“</span>
+                    <span className="absolute left-4 top-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>“</span>
                     <p className="text-[12px] font-sans text-zinc-700 leading-relaxed font-medium">
                       {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
                     </p>
-                    <span className="absolute right-4 bottom-0 text-4xl font-serif text-[#606248] font-bold">”</span>
+                    <span className="absolute right-4 bottom-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>”</span>
                   </div>
 
                   {/* Two Photos Side-by-Side */}
@@ -2667,13 +2726,13 @@ export default function QuotationMakerPage() {
                 <div className="absolute inset-x-[75px] top-[75px] bottom-0 z-10 flex flex-col justify-between select-text">
                   {/* Heading */}
                   <div className="w-full flex flex-col items-center">
-                    <div className="text-3xl font-serif text-[#606248] font-bold tracking-widest text-center uppercase">
+                    <div className="text-3xl font-serif theme-accent-text font-bold tracking-widest text-center uppercase">
                       EARLY BOOKING OFFER
                     </div>
                     
                     {/* Offer Price Box */}
                     <div className="border border-[#E8E2D9] px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm">
-                      <span className="text-2xl font-serif font-bold text-[#606248] tracking-wider">
+                      <span className="text-2xl font-serif font-bold theme-accent-text tracking-wider">
                         Rs {offerPrice.toLocaleString()}/-
                       </span>
                     </div>
@@ -2691,7 +2750,7 @@ export default function QuotationMakerPage() {
                     </div>
 
                     {/* Savings Highlight Banner */}
-                    <div className="w-full bg-[#606248] text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed">
+                    <div className="w-full theme-accent-bg text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed">
                       Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
                     </div>
                   </div>
@@ -2700,7 +2759,7 @@ export default function QuotationMakerPage() {
                   <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
                     {/* Centered Logo text right above the cutout skyline */}
                     <div className="text-center z-20 pb-4">
-                      <div className="text-lg font-bold tracking-[0.2em] text-[#606248] font-serif uppercase">
+                      <div className="text-lg font-bold tracking-[0.2em] theme-accent-text font-serif uppercase">
                         FILMIFY WEDDINGS
                       </div>
                       <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
