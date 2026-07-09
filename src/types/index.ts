@@ -211,6 +211,9 @@ export interface CanvasPage {
   elements: CanvasElement[];
   backgroundImage?: string;
   pageType?: 'cover' | 'about' | 'functions' | 'pricing';
+  paginatedFuncs?: any[];
+  paginatedDelivs?: string[];
+  showDeliverables?: boolean;
 }
 
 export interface PricingSummary {

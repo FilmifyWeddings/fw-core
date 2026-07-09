@@ -6,7 +6,7 @@ import {
   Trash, ArrowLeft, ArrowRight, RotateCcw, Image as ImageIcon, 
   ChevronLeft, ChevronRight, FileDown, Type, AlignLeft, AlignCenter, 
   AlignRight, Bold, HelpCircle, Layout, Database, Sliders, CheckCircle2, 
-  AlertCircle, DollarSign, RefreshCw
+  AlertCircle, DollarSign, RefreshCw, FolderOpen, History, Search
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -387,6 +387,194 @@ export default function QuotationMakerPage() {
   const [scale, setScale] = useState(0.5);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
+  // Client Folder & Versions system states
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
+  const [archiveDirectories, setArchiveDirectories] = useState<any[]>([]);
+  const [selectedArchiveDirectory, setSelectedArchiveDirectory] = useState<any>(null);
+  const [isArchiveLoading, setIsArchiveLoading] = useState(false);
+
+  const fetchArchive = async (query = '') => {
+    setIsArchiveLoading(true);
+    try {
+      const res = await fetch(`/api/quotations/versions?search=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data.directories) {
+        setArchiveDirectories(data.directories);
+        if (selectedArchiveDirectory) {
+          const matched = data.directories.find((d: any) => d.clientName === selectedArchiveDirectory.clientName);
+          setSelectedArchiveDirectory(matched || null);
+        }
+      }
+    } catch (err: any) {
+      console.error('[Archive] Fetch error:', err);
+    } finally {
+      setIsArchiveLoading(false);
+    }
+  };
+
+  const getPaginatedPages = (): CanvasPage[] => {
+    // Page 0: Cover
+    const coverPage = pages.find(p => p.pageType === 'cover') || pages[0] || DEFAULT_TEMPLATE_CONFIG[0];
+    // Page 1: About
+    const aboutPage = pages.find(p => p.pageType === 'about') || pages[1] || DEFAULT_TEMPLATE_CONFIG[1];
+    // Page Last: Pricing
+    const pricingPage = pages.find(p => p.pageType === 'pricing') || pages[pages.length - 1] || DEFAULT_TEMPLATE_CONFIG[3];
+
+    const maxPageHeight = 720;
+    const paginatedFuncPages: CanvasPage[] = [];
+
+    let currentFuncs: typeof functions = [];
+    let currentHeight = 0;
+    let pageIdxCounter = 2;
+
+    functions.forEach(func => {
+      const cardHeight = 45 + (func.items.length * 18) + 20;
+
+      if (currentHeight + cardHeight > maxPageHeight && currentFuncs.length > 0) {
+        paginatedFuncPages.push({
+          pageIndex: pageIdxCounter++,
+          pageType: 'functions',
+          elements: [
+            {
+              id: `functions-heading-${pageIdxCounter}`,
+              type: 'text',
+              content: 'FUNCTIONS (CONTINUED)',
+              x: 10, y: 5, width: 80, height: 6,
+              fontSize: 24, fontFamily: 'Playfair Display', color: accentColor,
+              fontWeight: 'bold', textAlign: 'center'
+            }
+          ],
+          paginatedFuncs: [...currentFuncs],
+          paginatedDelivs: [],
+          showDeliverables: false
+        });
+        currentFuncs = [];
+        currentHeight = 0;
+      }
+
+      currentFuncs.push(func);
+      currentHeight += cardHeight;
+    });
+
+    const deliverablesHeaderHeight = 40;
+    const deliverablesContentHeight = deliverables.length * 20;
+    const totalDeliverablesHeight = deliverablesHeaderHeight + deliverablesContentHeight;
+
+    if (currentHeight + totalDeliverablesHeight <= maxPageHeight) {
+      paginatedFuncPages.push({
+        pageIndex: pageIdxCounter++,
+        pageType: 'functions',
+        elements: [
+          {
+            id: `functions-heading-${pageIdxCounter}`,
+            type: 'text',
+            content: paginatedFuncPages.length === 0 ? 'FUNCTIONS' : 'FUNCTIONS (CONTINUED)',
+            x: 10, y: 5, width: 80, height: 6,
+            fontSize: 24, fontFamily: 'Playfair Display', color: accentColor,
+            fontWeight: 'bold', textAlign: 'center'
+          },
+          {
+            id: `deliverables-heading-${pageIdxCounter}`,
+            type: 'text',
+            content: 'Deliverables',
+            x: 10, y: 44, width: 80, height: 6,
+            fontSize: 22, fontFamily: 'Cormorant Garamond', color: accentColor,
+            fontWeight: 'bold', textAlign: 'center', fontStyle: 'italic'
+          }
+        ],
+        paginatedFuncs: [...currentFuncs],
+        paginatedDelivs: [...deliverables],
+        showDeliverables: true
+      });
+    } else {
+      if (currentFuncs.length > 0) {
+        paginatedFuncPages.push({
+          pageIndex: pageIdxCounter++,
+          pageType: 'functions',
+          elements: [
+            {
+              id: `functions-heading-${pageIdxCounter}`,
+              type: 'text',
+              content: paginatedFuncPages.length === 0 ? 'FUNCTIONS' : 'FUNCTIONS (CONTINUED)',
+              x: 10, y: 5, width: 80, height: 6,
+              fontSize: 24, fontFamily: 'Playfair Display', color: accentColor,
+              fontWeight: 'bold', textAlign: 'center'
+            }
+          ],
+          paginatedFuncs: [...currentFuncs],
+          paginatedDelivs: [],
+          showDeliverables: false
+        });
+      }
+      paginatedFuncPages.push({
+        pageIndex: pageIdxCounter++,
+        pageType: 'functions',
+        elements: [
+          {
+            id: `deliverables-heading-${pageIdxCounter}`,
+            type: 'text',
+            content: 'Deliverables',
+            x: 10, y: 5, width: 80, height: 6,
+            fontSize: 22, fontFamily: 'Cormorant Garamond', color: accentColor,
+            fontWeight: 'bold', textAlign: 'center', fontStyle: 'italic'
+          }
+        ],
+        paginatedFuncs: [],
+        paginatedDelivs: [...deliverables],
+        showDeliverables: true
+      });
+    }
+
+    const updatedPricingPage = {
+      ...pricingPage,
+      pageIndex: pageIdxCounter
+    };
+
+    return [
+      { ...coverPage, pageIndex: 0 },
+      { ...aboutPage, pageIndex: 1 },
+      ...paginatedFuncPages,
+      updatedPricingPage
+    ];
+  };
+
+  const renderedPages = getPaginatedPages();
+
+  // Dynamic flow restriction: auto-fit active index to paginated page count
+  useEffect(() => {
+    if (activePageIndex >= renderedPages.length) {
+      setActivePageIndex(Math.max(0, renderedPages.length - 1));
+    }
+  }, [renderedPages.length, activePageIndex]);
+
+  // Keep pages state in sync with dynamic paginate layout configurations
+  useEffect(() => {
+    const coverPage = pages.find(p => p.pageType === 'cover') || DEFAULT_TEMPLATE_CONFIG[0];
+    const aboutPage = pages.find(p => p.pageType === 'about') || DEFAULT_TEMPLATE_CONFIG[1];
+    const pricingPage = pages.find(p => p.pageType === 'pricing') || DEFAULT_TEMPLATE_CONFIG[3];
+
+    const currentPaginated = getPaginatedPages();
+    
+    // Check deep elements changes or length mismatches
+    const currentSerialized = JSON.stringify(pages.map(p => ({
+      type: p.pageType,
+      funcs: p.paginatedFuncs,
+      delivs: p.paginatedDelivs,
+      elements: p.elements
+    })));
+    const newSerialized = JSON.stringify(currentPaginated.map(p => ({
+      type: p.pageType,
+      funcs: p.paginatedFuncs,
+      delivs: p.paginatedDelivs,
+      elements: p.elements
+    })));
+
+    if (currentSerialized !== newSerialized) {
+      setPages(currentPaginated);
+    }
+  }, [functions, deliverables, accentColor]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -717,7 +905,7 @@ export default function QuotationMakerPage() {
           elements: [titleEl, functionsContainer, delivTitleEl, deliverablesContainer]
         };
       }
-      if (idx === 3) {
+      if (page.pageType === 'pricing') {
         return {
           ...page,
           elements: page.elements.map(el => {
@@ -748,6 +936,31 @@ export default function QuotationMakerPage() {
         savings: savings
       }
     };
+
+    // Trigger local filesystem versions save (Canva folder engine)
+    try {
+      const versionRes = await fetch('/api/quotations/versions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientName: clientName,
+          coupleNames: coupleNames,
+          canvasData: updatedPages,
+          pricingSummary: {
+            regular_price: regularPrice,
+            offer_price: offerPrice,
+            savings: savings
+          },
+          quotationId: activeQuotationId
+        })
+      });
+      const versionData = await versionRes.json();
+      if (versionData.success) {
+        console.log(`[File Engine] Saved version: ${versionData.filePath}`);
+      }
+    } catch (verErr: any) {
+      console.warn('[File Engine] Error saving version:', verErr.message);
+    }
 
     try {
       let result;
@@ -1246,14 +1459,24 @@ export default function QuotationMakerPage() {
               {quotations.length === 0 && (
                 <p className="text-[11px] text-zinc-600 italic py-1">No saved quotations found.</p>
               )}
+              <button 
+                onClick={resetToNew} 
+                className="w-full text-center py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs rounded-lg font-medium transition flex items-center justify-center gap-1.5 border border-zinc-700/50"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create New Quotation
+              </button>
+              <button 
+                onClick={() => {
+                  fetchArchive();
+                  setShowArchiveModal(true);
+                }}
+                className="w-full text-center py-2 mt-1 bg-[#606248]/15 hover:bg-[#606248]/30 text-white text-xs rounded-lg font-medium transition flex items-center justify-center gap-1.5 border border-[#606248]/30"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-[#D4AF37]" />
+                Open Archive Dashboard
+              </button>
             </div>
-            <button 
-              onClick={resetToNew} 
-              className="w-full text-center py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs rounded-lg font-medium transition flex items-center justify-center gap-1.5 border border-zinc-700/50"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Create New Quotation
-            </button>
           </div>
 
           <hr className="border-zinc-800" />
@@ -1484,7 +1707,7 @@ export default function QuotationMakerPage() {
           
           <div className="flex items-center gap-2.5">
             <span className="text-xs font-semibold bg-[#606248]/15 text-[#606248] px-2.5 py-1.5 rounded-lg border border-[#606248]/10 font-serif">
-              Page {activePageIndex + 1} of 4
+              Page {activePageIndex + 1} of {renderedPages.length}
             </span>
             <div className="flex items-center gap-1">
               <button 
@@ -1495,8 +1718,8 @@ export default function QuotationMakerPage() {
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button 
-                onClick={() => setActivePageIndex(prev => Math.min(3, prev + 1))}
-                disabled={activePageIndex === 3}
+                onClick={() => setActivePageIndex(prev => Math.min(renderedPages.length - 1, prev + 1))}
+                disabled={activePageIndex === renderedPages.length - 1}
                 className="p-2 hover:bg-[#FAF6F0] rounded-lg border border-[#E8E2D9] text-[#606248] disabled:opacity-30 transition"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -1676,7 +1899,7 @@ export default function QuotationMakerPage() {
             >
               
               {/* Dynamic canvas element rendering */}
-              {activePageIndex !== 0 && activePageIndex !== 1 && activePageIndex !== 3 && pages[activePageIndex]?.elements.map(el => {
+              {activePageIndex !== 0 && activePageIndex !== 1 && activePageIndex !== renderedPages.length - 1 && renderedPages[activePageIndex]?.elements.map(el => {
                 const isSelected = selectedElement?.pageIndex === activePageIndex && selectedElement?.elementId === el.id;
                 
                 // Style configurations
@@ -1779,13 +2002,13 @@ export default function QuotationMakerPage() {
                 return null;
               })}
 
-              {/* DYNAMIC LIST COMPONENTS FOR PAGE 3 ONLY */}
-              {activePageIndex === 2 && (
-                <div className="absolute inset-x-10 top-[14%] bottom-8 flex flex-col justify-between z-10 select-text overflow-y-auto pr-1">
+              {/* DYNAMIC LIST COMPONENTS FOR FUNCTIONS PAGES */}
+              {pages[activePageIndex]?.pageType === 'functions' && (
+                <div className="absolute inset-x-10 top-[14%] bottom-8 flex flex-col justify-start gap-4 z-10 select-text overflow-y-auto pr-1">
                   
-                  {/* FUNCTIONS GRID (Haldi, Sangeet, Wedding) */}
-                  <div className="grid grid-cols-2 gap-6 w-full">
-                    {functions.map(func => {
+                  {/* FUNCTIONS STACKED VERTICALLY */}
+                  <div className="flex flex-col gap-4 w-full">
+                    {(pages[activePageIndex]?.paginatedFuncs || []).map(func => {
                       const parts = func.title.split(' | ');
                       const displayDate = parts[0] || func.date || '2026-01-04';
                       const displayTime = parts[1] || func.time || '10:00';
@@ -1793,7 +2016,7 @@ export default function QuotationMakerPage() {
                       const displayName = parts[3] || func.name || func.title;
 
                       return (
-                        <div key={func.id} className="relative bg-white/60 backdrop-blur-sm border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm min-h-[160px]">
+                        <div key={func.id} className="relative bg-white/60 backdrop-blur-sm border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm">
                           <div>
                             {/* Card Header Row */}
                             <div className="flex items-center justify-between gap-1.5 mb-2.5">
@@ -1811,7 +2034,7 @@ export default function QuotationMakerPage() {
                               </select>
 
                               {/* Date Time Picker Trigger */}
-                              <div className="relative">
+                              <div className="relative flex items-center gap-2">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1884,7 +2107,7 @@ export default function QuotationMakerPage() {
                             
                             {/* Requirements items list */}
                             <ul className="space-y-1">
-                              {func.items.map((item, idx) => (
+                              {func.items.map((item: any, idx: number) => (
                                 <li key={idx} className="group flex items-start gap-1.5 text-[10px] font-medium text-zinc-700 leading-tight">
                                   <span className="theme-accent-text">•</span>
                                   <span className="flex-1 font-sans">{item}</span>
@@ -1963,11 +2186,11 @@ export default function QuotationMakerPage() {
                       );
                     })}
 
-                    {/* Add Function Card Trigger */}
-                    {functions.length < 4 && (
+                    {/* Add Function Card Trigger (only on first functions page) */}
+                    {functions.length < 6 && pages[activePageIndex]?.pageIndex === 2 && (
                       <button
                         onClick={addNewFunctionCard}
-                        className="bg-[#FAF6F0]/40 border border-dashed border-zinc-700 hover:theme-accent-border hover:bg-[#FAF6F0]/70 rounded-xl p-4 flex flex-col items-center justify-center shadow-sm theme-accent-text text-xs font-bold transition gap-2 min-h-[160px]"
+                        className="bg-[#FAF6F0]/40 border border-dashed border-zinc-700 hover:theme-accent-border hover:bg-[#FAF6F0]/70 rounded-xl p-4 flex flex-col items-center justify-center shadow-sm theme-accent-text text-xs font-bold transition gap-2"
                       >
                         <Plus className="w-6 h-6" />
                         Add Event Card
@@ -1975,91 +2198,96 @@ export default function QuotationMakerPage() {
                     )}
                   </div>
 
-                  {/* DELIVERABLES LIST BLOCK */}
-                  <div className="bg-white/50 backdrop-blur-sm border border-[#E8E2D9]/50 rounded-xl p-4 mt-4 shadow-sm flex flex-col justify-between">
-                    <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-                      {deliverables.map((deliv, idx) => (
-                        <li key={idx} className="group flex items-start gap-2 text-[11.5px] text-zinc-800 leading-relaxed font-sans">
-                          <span className="theme-accent-text font-bold mt-0.5">•</span>
-                          <input
-                            type="text"
-                            value={deliv}
-                            onChange={e => editDeliverableItem(idx, e.target.value)}
-                            className="bg-transparent border-none p-0 flex-1 focus:outline-none focus:ring-0 text-[11.5px] text-zinc-800"
-                          />
-                          <button
-                            onClick={() => deleteDeliverableItem(idx)}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition ml-1"
-                          >
-                            <Trash className="w-3 h-3" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                  {/* DELIVERABLES LIST BLOCK (only on pages marked showDeliverables) */}
+                  {pages[activePageIndex]?.showDeliverables && (
+                    <div className="bg-white/50 backdrop-blur-sm border border-[#E8E2D9]/50 rounded-xl p-4 mt-4 shadow-sm flex flex-col justify-between">
+                      <div className="text-xs font-bold theme-accent-text border-b border-[#E8E2D9]/60 pb-1.5 mb-2 font-serif uppercase tracking-wider">
+                        Deliverables
+                      </div>
+                      <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                        {(pages[activePageIndex]?.paginatedDelivs || []).map((deliv, idx) => (
+                          <li key={idx} className="group flex items-start gap-2 text-[11.5px] text-zinc-800 leading-relaxed font-sans">
+                            <span className="theme-accent-text font-bold mt-0.5">•</span>
+                            <input
+                              type="text"
+                              value={deliv}
+                              onChange={e => editDeliverableItem(idx, e.target.value)}
+                              className="bg-transparent border-none p-0 flex-1 focus:outline-none focus:ring-0 text-[11.5px] text-zinc-800"
+                            />
+                            <button
+                              onClick={() => deleteDeliverableItem(idx)}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition ml-1"
+                            >
+                              <Trash className="w-3 h-3" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
 
-                    {/* Deliverables tag selector dropdown */}
-                    <div className="relative mt-4">
-                      {activePopover === 'deliv' ? (
-                        <div className="absolute bottom-[40px] left-1/2 transform -translate-x-1/2 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl p-3 shadow-xl z-30 flex flex-col gap-2 max-h-[220px] overflow-y-auto w-[240px] select-text">
-                          <input
-                            type="text"
-                            placeholder="Search or add custom..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-1 text-xs theme-accent-focus focus:outline-none text-zinc-800"
-                            onKeyDown={e => {
-                              if (e.key === 'Enter' && searchQuery.trim()) {
-                                setDeliverables(prev => [...prev, searchQuery.trim()]);
-                                setSearchQuery('');
-                                setActivePopover(null);
-                              }
-                            }}
-                          />
-                          
-                          <div className="flex flex-col gap-1 overflow-y-auto max-h-[140px] pr-1">
-                            {DELIVERABLE_OPTIONS.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase())).map(opt => (
-                              <button
-                                key={opt}
-                                onClick={() => {
-                                  if (!deliverables.includes(opt)) {
-                                    setDeliverables(prev => [...prev, opt]);
-                                  }
-                                  setSearchQuery('');
-                                  setActivePopover(null);
-                                }}
-                                className="w-full text-left px-2.5 py-1.5 hover:bg-zinc-800/10 rounded text-[11px] text-zinc-700 transition"
-                              >
-                                {opt}
-                              </button>
-                            ))}
-                            {searchQuery.trim() && (
-                              <button
-                                onClick={() => {
+                      {/* Deliverables tag selector dropdown */}
+                      <div className="relative mt-4">
+                        {activePopover === 'deliv' ? (
+                          <div className="absolute bottom-[40px] left-1/2 transform -translate-x-1/2 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl p-3 shadow-xl z-30 flex flex-col gap-2 max-h-[220px] overflow-y-auto w-[240px] select-text">
+                            <input
+                              type="text"
+                              placeholder="Search or add custom..."
+                              value={searchQuery}
+                              onChange={e => setSearchQuery(e.target.value)}
+                              className="w-full bg-[#FAF6F0] border border-[#E8E2D9] rounded-lg px-2 py-1 text-xs theme-accent-focus focus:outline-none text-zinc-800"
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && searchQuery.trim()) {
                                   setDeliverables(prev => [...prev, searchQuery.trim()]);
                                   setSearchQuery('');
                                   setActivePopover(null);
-                                }}
-                                className="w-full text-left px-2.5 py-1.5 hover:bg-zinc-800/10 rounded text-[11px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
-                              >
-                                + Add custom "{searchQuery}"
-                              </button>
-                            )}
+                                }
+                              }}
+                            />
+                            
+                            <div className="flex flex-col gap-1 overflow-y-auto max-h-[140px] pr-1">
+                              {DELIVERABLE_OPTIONS.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase())).map(opt => (
+                                <button
+                                  key={opt}
+                                  onClick={() => {
+                                    if (!deliverables.includes(opt)) {
+                                      setDeliverables(prev => [...prev, opt]);
+                                    }
+                                    setSearchQuery('');
+                                    setActivePopover(null);
+                                  }}
+                                  className="w-full text-left px-2.5 py-1.5 hover:bg-zinc-800/10 rounded text-[11px] text-zinc-700 transition"
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                              {searchQuery.trim() && (
+                                <button
+                                  onClick={() => {
+                                    setDeliverables(prev => [...prev, searchQuery.trim()]);
+                                    setSearchQuery('');
+                                    setActivePopover(null);
+                                  }}
+                                  className="w-full text-left px-2.5 py-1.5 hover:bg-zinc-800/10 rounded text-[11px] text-[#8A7E56] font-bold border-t border-[#E8E2D9]/40 transition"
+                                >
+                                  + Add custom "{searchQuery}"
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setSearchQuery('');
-                            setActivePopover('deliv');
-                          }}
-                          className="w-full py-1.5 border border-dashed border-zinc-700 hover:theme-accent-border theme-accent-text hover:bg-zinc-800/10 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Add Deliverable
-                        </button>
-                      )}
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSearchQuery('');
+                              setActivePopover('deliv');
+                            }}
+                            className="w-full py-1.5 border border-dashed border-zinc-700 hover:theme-accent-border theme-accent-text hover:bg-zinc-800/10 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Deliverable
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                 </div>
               )}
@@ -2276,7 +2504,7 @@ export default function QuotationMakerPage() {
               )}
 
               {/* Page 4 Custom Premium Early Booking Offer Layout */}
-              {activePageIndex === 3 && (
+              {activePageIndex === renderedPages.length - 1 && (
                 <div className="absolute inset-x-[75px] top-[75px] bottom-0 z-10 flex flex-col justify-between select-text">
                   {/* Heading */}
                   <div className="w-full flex flex-col items-center">
@@ -2286,7 +2514,7 @@ export default function QuotationMakerPage() {
                     
                     {/* Offer Price Box */}
                     <div 
-                      onClick={(e) => handleElementClick(e, 3, 'pricing-main-price')}
+                      onClick={(e) => handleElementClick(e, renderedPages.length - 1, 'pricing-main-price')}
                       className={`border px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm transition hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
                       style={
                         selectedElement?.elementId === 'pricing-main-price' 
@@ -2331,19 +2559,19 @@ export default function QuotationMakerPage() {
 
                     {/* Palace/Castle cutout photo occupying the bottom */}
                     <div 
-                      onClick={(e) => handleElementClick(e, 3, 'pricing-palace-image')}
+                      onClick={(e) => handleElementClick(e, renderedPages.length - 1, 'pricing-palace-image')}
                       className={`w-full h-[250px] relative overflow-hidden rounded-t-3xl border border-[#E0D8CC]/50 shadow-lg group transition`}
                       style={selectedElement?.elementId === 'pricing-palace-image' ? { outline: `2px dashed ${accentColor}` } : {}}
                     >
                       <img 
-                        src={pages[3]?.elements.find(el => el.id === 'pricing-palace-image')?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
+                        src={renderedPages[renderedPages.length - 1]?.elements.find(el => el.id === 'pricing-palace-image')?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
                         alt="Palace backdrop" 
                         className="w-full h-full object-cover" 
                       />
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          triggerImageSwap(3, 'pricing-palace-image', pages[3]?.elements.find(el => el.id === 'pricing-palace-image')?.content || '');
+                          triggerImageSwap(renderedPages.length - 1, 'pricing-palace-image', renderedPages[renderedPages.length - 1]?.elements.find(el => el.id === 'pricing-palace-image')?.content || '');
                         }}
                         className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-t-3xl"
                       >
@@ -2355,11 +2583,32 @@ export default function QuotationMakerPage() {
                 </div>
               )}
 
+              {/* Canva Bounding Box / Moveable Transform Controls Overlay */}
+              {selectedElement && selectedElement.pageIndex === activePageIndex && activeElement && (
+                <MoveableTransformOverlay
+                  element={activeElement}
+                  pageIndex={selectedElement.pageIndex}
+                  canvasWidth={644}
+                  canvasHeight={973}
+                  onChange={(updatedProps) => {
+                    setPages(prev => prev.map((p, pi) => {
+                      if (pi === selectedElement.pageIndex) {
+                        return {
+                          ...p,
+                          elements: p.elements.map(el => el.id === activeElement.id ? { ...el, ...updatedProps } : el)
+                        };
+                      }
+                      return p;
+                    }));
+                  }}
+                />
+              )}
+
               {/* FOOTER BAR (Cover brand branding) */}
               {activePageIndex !== 0 && (
                 <div className="absolute bottom-6 left-10 right-10 flex items-center justify-between border-t border-[#E8E2D9]/50 pt-3 text-[9px] text-[#8A7E56] font-medium tracking-wide">
                   <span>FILMIFY WEDDINGS</span>
-                  <span className="font-serif">Page {activePageIndex + 1} of 4</span>
+                  <span className="font-serif">Page {activePageIndex + 1} of {renderedPages.length}</span>
                   <span>DIGITAL QUOTATION</span>
                 </div>
               )}
@@ -2370,7 +2619,7 @@ export default function QuotationMakerPage() {
 
           {/* PAGE DOT INDICATORS */}
           <div className="flex items-center gap-2.5 mt-6 z-10">
-            {[0, 1, 2, 3].map(pageIdx => (
+            {renderedPages.map((_, pageIdx) => (
               <button
                 key={pageIdx}
                 onClick={() => setActivePageIndex(pageIdx)}
@@ -2387,6 +2636,254 @@ export default function QuotationMakerPage() {
         </div>
 
       </div>
+
+      {/* FILMIFY STUDIO ARCHIVE DASHBOARD MODAL */}
+      {showArchiveModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-6 select-text">
+          <div className="bg-[#FAF6F0] border border-[#E8E2D9] rounded-2xl w-full max-w-5xl h-[80vh] shadow-2xl flex flex-col overflow-hidden animate-zoom-in animate-duration-150">
+            
+            {/* Modal Header */}
+            <div className="bg-[#FAF6F0] border-b border-[#E8E2D9] px-6 py-4 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                <FolderOpen className="w-5 h-5 text-[#D4AF37]" />
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900 font-serif uppercase tracking-wider">
+                    Filmify Studio Archive
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-sans tracking-wide">
+                    Multi-version client directory & asset save files
+                  </p>
+                </div>
+              </div>
+              
+              {/* Search Box */}
+              <div className="relative w-64">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search client names..."
+                  value={archiveSearchQuery}
+                  onChange={(e) => {
+                    setArchiveSearchQuery(e.target.value);
+                    fetchArchive(e.target.value);
+                  }}
+                  className="w-full bg-white border border-[#E8E2D9] rounded-full pl-9 pr-4 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#606248] placeholder-zinc-400 font-sans"
+                />
+              </div>
+
+              <button 
+                onClick={() => {
+                  setShowArchiveModal(false);
+                  setSelectedArchiveDirectory(null);
+                }}
+                className="text-zinc-500 hover:text-zinc-700 bg-white hover:bg-zinc-100 border border-[#E8E2D9] px-3 py-1 text-xs font-semibold rounded-lg transition"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Modal Content - Left Sidebar (Clients) + Right View (Versions) */}
+            <div className="flex-1 flex overflow-hidden">
+              
+              {/* Left Column: Client folders */}
+              <div className="w-[320px] border-r border-[#E8E2D9] bg-[#FAF6F0]/60 overflow-y-auto p-4 flex flex-col gap-2">
+                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-2 mb-1">
+                  Client Directories
+                </div>
+                {isArchiveLoading && archiveDirectories.length === 0 ? (
+                  <div className="flex items-center justify-center p-8 text-zinc-500 text-xs">
+                    <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                    Scanning directories...
+                  </div>
+                ) : archiveDirectories.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-500 text-xs italic">
+                    No client folders found matching your query.
+                  </div>
+                ) : (
+                  archiveDirectories.map(dir => (
+                    <button
+                      key={dir.clientName}
+                      onClick={() => setSelectedArchiveDirectory(dir)}
+                      className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between gap-3 ${
+                        selectedArchiveDirectory?.clientName === dir.clientName
+                          ? 'bg-[#606248]/10 border-[#606248] text-zinc-900 shadow-sm'
+                          : 'bg-white border-[#E8E2D9] hover:bg-zinc-50 text-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-[#606248]/10 flex items-center justify-center text-[#606248] flex-shrink-0">
+                          <FolderOpen className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold truncate text-zinc-900">{dir.clientName}</div>
+                          <div className="text-[10px] text-zinc-500 truncate font-sans">
+                            {dir.versionsCount} version{dir.versionsCount > 1 ? 's' : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[9px] text-zinc-400 font-sans">
+                        {new Date(dir.lastUpdated).toLocaleDateString()}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {/* Right Column: Selected Client Versions List */}
+              <div className="flex-1 bg-white overflow-y-auto p-6">
+                {selectedArchiveDirectory ? (
+                  <div className="space-y-6">
+                    {/* Header Details */}
+                    <div className="border-b border-[#E8E2D9]/60 pb-4">
+                      <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest font-sans">
+                        Client Directory Workspace
+                      </div>
+                      <h4 className="text-xl font-bold font-serif text-[#606248] mt-1 uppercase">
+                        {selectedArchiveDirectory.clientName}
+                      </h4>
+                      <p className="text-[11px] text-zinc-500 mt-1 font-sans">
+                        Isolate folder path: <code className="bg-zinc-100 px-1 py-0.5 rounded">storage/{selectedArchiveDirectory.clientName}/Quotations/</code>
+                      </p>
+                    </div>
+
+                    {/* Versions Grid / Audit Log */}
+                    <div className="space-y-4">
+                      <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 font-sans">
+                        <History className="w-3.5 h-3.5" />
+                        Timestamped Versions History
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3.5">
+                        {selectedArchiveDirectory.versions.map((ver: any) => {
+                          const formattedDateTime = new Date(ver.createdAt).toLocaleString('en-US', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short'
+                          });
+
+                          return (
+                            <div 
+                              key={ver.filename}
+                              className="border border-[#E8E2D9] rounded-xl p-4 flex items-center justify-between gap-4 hover:border-zinc-400 transition bg-[#FAF6F0]/20"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-[#606248] text-white text-[10px] font-bold px-2 py-0.5 rounded font-serif">
+                                    {ver.versionName}
+                                  </span>
+                                  <span className="text-[11px] text-zinc-500 font-sans font-medium">
+                                    {formattedDateTime}
+                                  </span>
+                                </div>
+                                <div className="text-xs font-semibold text-zinc-800">
+                                  Couple: <span className="font-serif italic text-[#8A7E56]">{ver.coupleNames || 'Unspecified'}</span>
+                                </div>
+                                <div className="text-[10px] text-zinc-500 font-sans truncate max-w-md">
+                                  File path: <code>{ver.filePath}</code>
+                                </div>
+                                {ver.pricingSummary && (
+                                  <div className="text-[10px] text-zinc-600 font-sans flex items-center gap-3.5 pt-1.5 border-t border-dashed border-[#E8E2D9]/80 mt-1">
+                                    <span>Regular: <strong>Rs {ver.pricingSummary.regular_price?.toLocaleString()}/-</strong></span>
+                                    <span>Offer: <strong>Rs {ver.pricingSummary.offer_price?.toLocaleString()}/-</strong></span>
+                                    <span className="text-emerald-600 font-semibold">Saved: Rs {ver.pricingSummary.savings?.toLocaleString()}/-</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  // Restore this version!
+                                  setClientName(selectedArchiveDirectory.clientName);
+                                  setCoupleNames(ver.coupleNames || '');
+                                  
+                                  // Re-hydrate state from canvasData
+                                  if (ver.canvasData) {
+                                    setPages(ver.canvasData);
+                                    
+                                    // Parse functions and deliverables
+                                    const allFunctions: any[] = [];
+                                    const allDeliverables: string[] = [];
+
+                                    const funcPages = ver.canvasData.filter((p: any) => p.pageType === 'functions');
+                                    funcPages.forEach((funcPage: any) => {
+                                      const funcsEl = funcPage.elements.find((el: any) => el.id === 'functions-grid-container' || el.id.startsWith('functions-grid-container'));
+                                      if (funcsEl && funcsEl.gridItems) {
+                                        funcsEl.gridItems.forEach((item: any) => {
+                                          let group = allFunctions.find(g => g.title === item.label);
+                                          if (!group) {
+                                            let name = 'HALDI';
+                                            let date = '2026-01-04';
+                                            let time = '10:00';
+                                            let hours = '4 Hours Session';
+                                            
+                                            const parts = (item.label || '').split(' | ');
+                                            if (parts.length === 4) {
+                                              date = parts[0];
+                                              time = parts[1];
+                                              hours = parts[2];
+                                              name = parts[3];
+                                            }
+                                            group = {
+                                              id: `func-${allFunctions.length}-${Date.now()}`,
+                                              title: item.label || '',
+                                              name, date, time, hours,
+                                              items: []
+                                            };
+                                            allFunctions.push(group);
+                                          }
+                                          group.items.push(item.content);
+                                        });
+                                      }
+
+                                      const delivsEl = funcPage.elements.find((el: any) => el.id === 'deliverables-list-container' || el.id.startsWith('deliverables-list-container'));
+                                      if (delivsEl && delivsEl.gridItems) {
+                                        delivsEl.gridItems.forEach((item: any) => {
+                                          if (!allDeliverables.includes(item.content)) {
+                                            allDeliverables.push(item.content);
+                                          }
+                                        });
+                                      }
+                                    });
+                                    if (allFunctions.length > 0) setFunctions(allFunctions);
+                                    if (allDeliverables.length > 0) setDeliverables(allDeliverables);
+                                  }
+
+                                  if (ver.pricingSummary) {
+                                    setRegularPrice(ver.pricingSummary.regular_price);
+                                    setOfferPrice(ver.pricingSummary.offer_price);
+                                    setSavings(ver.pricingSummary.savings);
+                                  }
+
+                                  setShowArchiveModal(false);
+                                  setSelectedArchiveDirectory(null);
+                                  showToast(`Restored version ${ver.versionName} for client ${selectedArchiveDirectory.clientName}!`, 'success');
+                                }}
+                                className="bg-[#606248] hover:bg-[#4d4e3a] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow transition"
+                              >
+                                Restore Draft
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8 text-zinc-400">
+                    <FolderOpen className="w-12 h-12 text-zinc-300 stroke-1 mb-3" />
+                    <h5 className="text-sm font-bold text-zinc-700">No Client Folder Selected</h5>
+                    <p className="text-xs text-zinc-500 max-w-sm mt-1 leading-relaxed">
+                      Select a client workspace from the left pane to view its dynamic timestamped audit history and restore save files.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* ASSET UPLOADER IMAGE MODAL */}
       {showImageModal && (
@@ -2566,12 +3063,12 @@ export default function QuotationMakerPage() {
                 return null;
               })}
 
-              {/* Page 3 Custom layout */}
-              {pageIdx === 2 && (
-                <div className="absolute inset-x-10 top-[14%] bottom-8 flex flex-col justify-between z-10">
-                  {/* FUNCTIONS GRID */}
-                  <div className="grid grid-cols-2 gap-6 w-full">
-                    {functions.map(func => {
+              {/* PDF Functions layout */}
+              {page.pageType === 'functions' && (
+                <div className="absolute inset-x-10 top-[14%] bottom-8 flex flex-col justify-start gap-4 z-10">
+                  {/* FUNCTIONS STACKED VERTICALLY */}
+                  <div className="flex flex-col gap-4 w-full">
+                    {(page.paginatedFuncs || []).map(func => {
                       const parts = func.title.split(' | ');
                       const displayDate = parts[0] || func.date || '2026-01-04';
                       const displayTime = parts[1] || func.time || '10:00';
@@ -2579,9 +3076,9 @@ export default function QuotationMakerPage() {
                       const displayName = parts[3] || func.name || func.title;
 
                       return (
-                        <div key={func.id} style={{ pageBreakInside: 'avoid' }} className="bg-white/60 border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm min-h-[140px]">
+                        <div key={func.id} style={{ pageBreakInside: 'avoid' }} className="bg-white/60 border border-[#E8E2D9]/70 rounded-xl p-4 flex flex-col justify-between shadow-sm">
                           <div>
-                            <div className="flex items-center justify-between border-b border-[#E8E2D9]/40 pb-1.5 mb-2">
+                            <div className="flex items-center justify-between border-b border-[#E8E2D9]/40 pb-1.5 mb-2.5">
                               <div className="theme-accent-bg text-white text-[9px] font-bold tracking-widest uppercase rounded-full px-2.5 py-0.5 text-center font-serif">
                                 {displayName}
                               </div>
@@ -2590,7 +3087,7 @@ export default function QuotationMakerPage() {
                               </div>
                             </div>
                             <ul className="space-y-1">
-                              {func.items.map((item, idx) => (
+                              {func.items.map((item: any, idx: number) => (
                                 <li key={idx} className="flex items-start gap-1.5 text-[9.5px] font-medium text-zinc-700 leading-tight">
                                   <span className="theme-accent-text">•</span>
                                   <span className="font-sans">{item}</span>
@@ -2604,16 +3101,21 @@ export default function QuotationMakerPage() {
                   </div>
 
                   {/* DELIVERABLES LIST */}
-                  <div className="bg-white/50 border border-[#E8E2D9]/50 rounded-xl p-4 mt-3 shadow-sm">
-                    <ul className="grid grid-cols-2 gap-x-6 gap-y-1">
-                      {deliverables.map((deliv, idx) => (
-                        <li key={idx} className="flex items-start gap-1.5 text-[10.5px] text-zinc-800 leading-relaxed font-sans">
-                          <span className="theme-accent-text font-bold">•</span>
-                          <span>{deliv}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                  {page.showDeliverables && (
+                    <div className="bg-white/50 border border-[#E8E2D9]/50 rounded-xl p-4 mt-3 shadow-sm">
+                      <div className="text-xs font-bold theme-accent-text border-b border-[#E8E2D9]/60 pb-1.5 mb-2 font-serif uppercase tracking-wider">
+                        Deliverables
+                      </div>
+                      <ul className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                        {(page.paginatedDelivs || []).map((deliv, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5 text-[10.5px] text-zinc-800 leading-relaxed font-sans">
+                            <span className="theme-accent-text font-bold">•</span>
+                            <span>{deliv}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2795,3 +3297,192 @@ export default function QuotationMakerPage() {
     </div>
   );
 }
+
+// Canva-like Bounding Box / Transform Overlay Component
+interface MoveableTransformOverlayProps {
+  element: CanvasElement;
+  pageIndex: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  onChange: (updated: Partial<CanvasElement>) => void;
+}
+
+const MoveableTransformOverlay: React.FC<MoveableTransformOverlayProps> = ({
+  element,
+  pageIndex,
+  canvasWidth,
+  canvasHeight,
+  onChange
+}) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState<string | null>(null); // 'tl', 'tr', 'bl', 'br'
+  const startPos = useRef({ x: 0, y: 0 });
+  const startElementState = useRef({ x: 0, y: 0, width: 0, height: 0, fontSize: 0 });
+
+  const handlePointerDown = (e: React.PointerEvent, action: 'drag' | 'resize', handle?: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+    startPos.current = { x: e.clientX, y: e.clientY };
+    startElementState.current = {
+      x: element.x,
+      y: element.y,
+      width: element.width,
+      height: element.height || 8,
+      fontSize: element.fontSize || 16
+    };
+
+    if (action === 'drag') {
+      setIsDragging(true);
+    } else if (action === 'resize' && handle) {
+      setIsResizing(handle);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging && !isResizing) return;
+    e.stopPropagation();
+
+    const deltaX = e.clientX - startPos.current.x;
+    const deltaY = e.clientY - startPos.current.y;
+
+    // Convert pixel delta to percentage
+    const deltaXPercent = (deltaX / canvasWidth) * 100;
+    const deltaYPercent = (deltaY / canvasHeight) * 100;
+
+    if (isDragging) {
+      const nextX = Math.max(0, Math.min(100 - startElementState.current.width, startElementState.current.x + deltaXPercent));
+      const nextY = Math.max(0, Math.min(100 - startElementState.current.height, startElementState.current.y + deltaYPercent));
+      onChange({ x: Number(nextX.toFixed(2)), y: Number(nextY.toFixed(2)) });
+    } else if (isResizing) {
+      const handle = isResizing;
+      let nextWidth = startElementState.current.width;
+      let nextHeight = startElementState.current.height;
+      let nextX = startElementState.current.x;
+      let nextY = startElementState.current.y;
+
+      const minWidthPercent = (20 / canvasWidth) * 100;
+      const minHeightPercent = (20 / canvasHeight) * 100;
+
+      if (handle === 'br') {
+        nextWidth = startElementState.current.width + deltaXPercent;
+        nextHeight = startElementState.current.height + deltaYPercent;
+      } else if (handle === 'bl') {
+        nextWidth = startElementState.current.width - deltaXPercent;
+        nextHeight = startElementState.current.height + deltaYPercent;
+        nextX = startElementState.current.x + deltaXPercent;
+      } else if (handle === 'tr') {
+        nextWidth = startElementState.current.width + deltaXPercent;
+        nextHeight = startElementState.current.height - deltaYPercent;
+        nextY = startElementState.current.y + deltaYPercent;
+      } else if (handle === 'tl') {
+        nextWidth = startElementState.current.width - deltaXPercent;
+        nextHeight = startElementState.current.height - deltaYPercent;
+        nextX = startElementState.current.x + deltaXPercent;
+        nextY = startElementState.current.y + deltaYPercent;
+      }
+
+      if (nextWidth < minWidthPercent) {
+        nextWidth = minWidthPercent;
+        if (handle === 'bl' || handle === 'tl') {
+          nextX = startElementState.current.x + startElementState.current.width - minWidthPercent;
+        }
+      }
+      if (nextHeight < minHeightPercent) {
+        nextHeight = minHeightPercent;
+        if (handle === 'tr' || handle === 'tl') {
+          nextY = startElementState.current.y + startElementState.current.height - minHeightPercent;
+        }
+      }
+
+      // STRICT ASPECT RATIO LOCK FOR IMAGES
+      if (element.type === 'image') {
+        const aspect = startElementState.current.width / startElementState.current.height;
+        const scaleW = nextWidth / startElementState.current.width;
+        const scaleH = nextHeight / startElementState.current.height;
+        const scale = Math.max(scaleW, scaleH);
+
+        nextWidth = startElementState.current.width * scale;
+        nextHeight = startElementState.current.height * scale;
+
+        if (handle === 'bl') {
+          nextX = startElementState.current.x + (startElementState.current.width - nextWidth);
+        } else if (handle === 'tr') {
+          nextY = startElementState.current.y + (startElementState.current.height - nextHeight);
+        } else if (handle === 'tl') {
+          nextX = startElementState.current.x + (startElementState.current.width - nextWidth);
+          nextY = startElementState.current.y + (startElementState.current.height - nextHeight);
+        }
+      }
+
+      // DYNAMIC FONT RESIZING FOR TEXT
+      let nextFontSize = startElementState.current.fontSize;
+      if (element.type === 'text') {
+        const scale = nextWidth / startElementState.current.width;
+        nextFontSize = Math.max(6, Math.round(startElementState.current.fontSize * scale));
+      }
+
+      onChange({
+        x: Number(nextX.toFixed(2)),
+        y: Number(nextY.toFixed(2)),
+        width: Number(nextWidth.toFixed(2)),
+        height: Number(nextHeight.toFixed(2)),
+        fontSize: nextFontSize
+      });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    setIsDragging(false);
+    setIsResizing(null);
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${element.x}%`,
+        top: `${element.y}%`,
+        width: `${element.width}%`,
+        height: `${element.height || 8}%`,
+        border: '2px solid #3b82f6',
+        pointerEvents: 'auto',
+        cursor: 'move',
+        zIndex: 40
+      }}
+      onPointerDown={(e) => handlePointerDown(e, 'drag')}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
+      {/* Corner Handles */}
+      {['tl', 'tr', 'bl', 'br'].map((handle) => {
+        const style: React.CSSProperties = {
+          position: 'absolute',
+          width: '8px',
+          height: '8px',
+          backgroundColor: '#ffffff',
+          border: '2px solid #3b82f6',
+          borderRadius: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 50
+        };
+
+        if (handle === 'tl') { style.left = '0'; style.top = '0'; style.cursor = 'nwse-resize'; }
+        if (handle === 'tr') { style.left = '100%'; style.top = '0'; style.cursor = 'nesw-resize'; }
+        if (handle === 'bl') { style.left = '0'; style.top = '100%'; style.cursor = 'nesw-resize'; }
+        if (handle === 'br') { style.left = '100%'; style.top = '100%'; style.cursor = 'nwse-resize'; }
+
+        return (
+          <div
+            key={handle}
+            style={style}
+            onPointerDown={(e) => handlePointerDown(e, 'resize', handle)}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
