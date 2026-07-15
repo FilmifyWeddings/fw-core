@@ -6,7 +6,7 @@ import {
   Trash, ArrowLeft, ArrowRight, RotateCcw, Image as ImageIcon, 
   ChevronLeft, ChevronRight, FileDown, Type, AlignLeft, AlignCenter, 
   AlignRight, Bold, HelpCircle, Layout, Database, Sliders, CheckCircle2, 
-  AlertCircle, DollarSign, RefreshCw, FolderOpen, History, Search
+  AlertCircle, DollarSign, RefreshCw, FolderOpen, History, Search, Folder, Edit
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -278,6 +278,340 @@ const DEFAULT_TEMPLATE_CONFIG: CanvasPage[] = [
   }
 ];
 
+const TEMPLATE_2_IVORY_MINIMALIST: CanvasPage[] = [
+  // Page 1: Cover
+  {
+    pageIndex: 0,
+    pageType: 'cover',
+    elements: [
+      {
+        id: 'cover-couple-names',
+        type: 'text',
+        content: 'PRNAY x MAYURI',
+        x: 10, y: 15, width: 80, height: 10,
+        fontSize: 32, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.25em'
+      },
+      {
+        id: 'cover-subtitle-1',
+        type: 'text',
+        content: 'WEDDING QUOTATION',
+        x: 10, y: 32, width: 80, height: 5,
+        fontSize: 14, fontFamily: 'Cormorant Garamond', color: '#A39268',
+        fontWeight: 'normal', textAlign: 'center', letterSpacing: '0.3em'
+      },
+      {
+        id: 'cover-subtitle-2',
+        type: 'text',
+        content: 'BOTH SIDES - LOCATION',
+        x: 10, y: 38, width: 80, height: 5,
+        fontSize: 9, fontFamily: 'Inter', color: '#8E8D88',
+        fontWeight: 'normal', textAlign: 'center', letterSpacing: '0.15em'
+      },
+      {
+        id: 'cover-logo-text',
+        type: 'text',
+        content: 'FILMIFY WEDDINGS',
+        x: 10, y: 55, width: 80, height: 6,
+        fontSize: 16, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.2em'
+      },
+      {
+        id: 'cover-hero-image',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
+        x: 25, y: 68, width: 50, height: 26
+      }
+    ]
+  },
+  // Page 2: About Us
+  {
+    pageIndex: 1,
+    pageType: 'about',
+    elements: [
+      {
+        id: 'about-heading',
+        type: 'text',
+        content: 'ABOUT US',
+        x: 10, y: 12, width: 80, height: 10,
+        fontSize: 24, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.2em'
+      },
+      {
+        id: 'about-quote',
+        type: 'text',
+        content: '“ Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever. ”',
+        x: 12, y: 25, width: 76, height: 22,
+        fontSize: 14, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'normal', textAlign: 'center', fontStyle: 'normal'
+      },
+      {
+        id: 'about-img-left',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600',
+        x: 15, y: 52, width: 32, height: 38
+      },
+      {
+        id: 'about-img-right',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600',
+        x: 53, y: 52, width: 32, height: 38
+      }
+    ]
+  },
+  // Page 3: Functions & Deliverables
+  {
+    pageIndex: 2,
+    pageType: 'functions',
+    elements: [
+      {
+        id: 'functions-heading',
+        type: 'text',
+        content: 'FUNCTIONS',
+        x: 10, y: 5, width: 80, height: 6,
+        fontSize: 22, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.2em'
+      },
+      {
+        id: 'deliverables-heading',
+        type: 'text',
+        content: 'Deliverables',
+        x: 10, y: 44, width: 80, height: 6,
+        fontSize: 20, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'bold', textAlign: 'center', fontStyle: 'italic', letterSpacing: '0.2em'
+      }
+    ]
+  },
+  // Page 4: Early Booking Offer
+  {
+    pageIndex: 3,
+    pageType: 'pricing',
+    elements: [
+      {
+        id: 'pricing-heading',
+        type: 'text',
+        content: 'EARLY BOOKING OFFER',
+        x: 10, y: 8, width: 80, height: 8,
+        fontSize: 26, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.2em'
+      },
+      {
+        id: 'pricing-main-price',
+        type: 'text',
+        content: 'Rs 80,000/-',
+        x: 20, y: 18, width: 60, height: 8,
+        fontSize: 30, fontFamily: 'Cormorant Garamond', color: '#A39268',
+        fontWeight: 'bold', textAlign: 'center'
+      },
+      {
+        id: 'pricing-regular-price',
+        type: 'text',
+        content: 'Regular Quotation : Rs 1,00,000/-',
+        x: 20, y: 28, width: 60, height: 5,
+        fontSize: 13, fontFamily: 'Inter', color: '#8E8D88',
+        fontWeight: 'normal', textAlign: 'center'
+      },
+      {
+        id: 'pricing-excludes',
+        type: 'text',
+        content: 'This excludes travel, accommodation, food & any add-on services.',
+        x: 15, y: 35, width: 70, height: 4,
+        fontSize: 9, fontFamily: 'Inter', color: '#8E8D88',
+        fontWeight: 'normal', textAlign: 'center'
+      },
+      {
+        id: 'pricing-savings-banner',
+        type: 'text',
+        content: 'Save Rs 20,000 With Our Special Offer. The Special Offer Ends in the Next 7 days.',
+        x: 10, y: 44, width: 80, height: 8,
+        fontSize: 11, fontFamily: 'Inter', color: '#FFFFFF',
+        fontWeight: 'bold', textAlign: 'center'
+      },
+      {
+        id: 'pricing-palace-image',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800',
+        x: 25, y: 65, width: 50, height: 25
+      },
+      {
+        id: 'pricing-logo-text',
+        type: 'text',
+        content: 'FILMIFY WEDDINGS',
+        x: 10, y: 92, width: 80, height: 5,
+        fontSize: 15, fontFamily: 'Cormorant Garamond', color: '#4A493B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.15em'
+      }
+    ]
+  }
+];
+
+const TEMPLATE_3_EMERALD_GOLD: CanvasPage[] = [
+  // Page 1: Cover
+  {
+    pageIndex: 0,
+    pageType: 'cover',
+    elements: [
+      {
+        id: 'cover-couple-names',
+        type: 'text',
+        content: 'PRNAY x MAYURI',
+        x: 10, y: 10, width: 80, height: 10,
+        fontSize: 36, fontFamily: 'Playfair Display', color: '#1B3B2B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.1em'
+      },
+      {
+        id: 'cover-subtitle-1',
+        type: 'text',
+        content: 'WEDDING QUOTATION',
+        x: 10, y: 26, width: 80, height: 5,
+        fontSize: 13, fontFamily: 'Montserrat', color: '#D4AF37',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.2em'
+      },
+      {
+        id: 'cover-subtitle-2',
+        type: 'text',
+        content: 'BOTH SIDES - LOCATION',
+        x: 10, y: 32, width: 80, height: 5,
+        fontSize: 10, fontFamily: 'Inter', color: '#706E6A',
+        fontWeight: 'normal', textAlign: 'center', letterSpacing: '0.08em'
+      },
+      {
+        id: 'cover-logo-text',
+        type: 'text',
+        content: 'FILMIFY WEDDINGS',
+        x: 10, y: 42, width: 80, height: 6,
+        fontSize: 20, fontFamily: 'Playfair Display', color: '#1B3B2B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.15em'
+      },
+      {
+        id: 'cover-hero-image',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
+        x: 20, y: 55, width: 60, height: 38
+      }
+    ]
+  },
+  // Page 2: About Us
+  {
+    pageIndex: 1,
+    pageType: 'about',
+    elements: [
+      {
+        id: 'about-heading',
+        type: 'text',
+        content: 'ABOUT US',
+        x: 10, y: 15, width: 80, height: 10,
+        fontSize: 26, fontFamily: 'Playfair Display', color: '#1B3B2B',
+        fontWeight: 'bold', textAlign: 'center'
+      },
+      {
+        id: 'about-quote',
+        type: 'text',
+        content: '“ Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever. ”',
+        x: 12, y: 30, width: 76, height: 20,
+        fontSize: 15, fontFamily: 'Playfair Display', color: '#111111',
+        fontWeight: 'normal', textAlign: 'center', fontStyle: 'italic'
+      },
+      {
+        id: 'about-img-left',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600',
+        x: 12, y: 56, width: 35, height: 34
+      },
+      {
+        id: 'about-img-right',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600',
+        x: 53, y: 56, width: 35, height: 34
+      }
+    ]
+  },
+  // Page 3: Functions & Deliverables
+  {
+    pageIndex: 2,
+    pageType: 'functions',
+    elements: [
+      {
+        id: 'functions-heading',
+        type: 'text',
+        content: 'FUNCTIONS',
+        x: 10, y: 5, width: 80, height: 6,
+        fontSize: 24, fontFamily: 'Playfair Display', color: '#1B3B2B',
+        fontWeight: 'bold', textAlign: 'center'
+      },
+      {
+        id: 'deliverables-heading',
+        type: 'text',
+        content: 'Deliverables',
+        x: 10, y: 44, width: 80, height: 6,
+        fontSize: 22, fontFamily: 'Playfair Display', color: '#1B3B2B',
+        fontWeight: 'bold', textAlign: 'center', fontStyle: 'italic'
+      }
+    ]
+  },
+  // Page 4: Early Booking Offer
+  {
+    pageIndex: 3,
+    pageType: 'pricing',
+    elements: [
+      {
+        id: 'pricing-heading',
+        type: 'text',
+        content: 'EARLY BOOKING OFFER',
+        x: 10, y: 8, width: 80, height: 8,
+        fontSize: 28, fontFamily: 'Playfair Display', color: '#1B3B2B',
+        fontWeight: 'bold', textAlign: 'center'
+      },
+      {
+        id: 'pricing-main-price',
+        type: 'text',
+        content: 'Rs 80,000/-',
+        x: 20, y: 18, width: 60, height: 8,
+        fontSize: 32, fontFamily: 'Playfair Display', color: '#D4AF37',
+        fontWeight: 'bold', textAlign: 'center'
+      },
+      {
+        id: 'pricing-regular-price',
+        type: 'text',
+        content: 'Regular Quotation : Rs 1,00,000/-',
+        x: 20, y: 28, width: 60, height: 5,
+        fontSize: 14, fontFamily: 'Inter', color: '#706E6A',
+        fontWeight: 'normal', textAlign: 'center'
+      },
+      {
+        id: 'pricing-excludes',
+        type: 'text',
+        content: 'This excludes travel, accommodation, food & any add-on services.',
+        x: 15, y: 35, width: 70, height: 4,
+        fontSize: 10, fontFamily: 'Inter', color: '#706E6A',
+        fontWeight: 'normal', textAlign: 'center'
+      },
+      {
+        id: 'pricing-savings-banner',
+        type: 'text',
+        content: 'Save Rs 20,000 With Our Special Offer. The Special Offer Ends in the Next 7 days.',
+        x: 10, y: 44, width: 80, height: 8,
+        fontSize: 13, fontFamily: 'Montserrat', color: '#FFFFFF',
+        fontWeight: 'bold', textAlign: 'center'
+      },
+      {
+        id: 'pricing-palace-image',
+        type: 'image',
+        content: 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800',
+        x: 20, y: 66, width: 60, height: 28
+      },
+      {
+        id: 'pricing-logo-text',
+        type: 'text',
+        content: 'FILMIFY WEDDINGS',
+        x: 10, y: 95, width: 80, height: 5,
+        fontSize: 16, fontFamily: 'Playfair Display', color: '#1B3B2B',
+        fontWeight: 'bold', textAlign: 'center', letterSpacing: '0.12em'
+      }
+    ]
+  }
+];
+
 const PRESETS_LIST: Omit<QuotationPreset, 'id' | 'user_id' | 'created_at' | 'updated_at'>[] = [
   {
     package_name: 'Gold Premium Package',
@@ -339,6 +673,18 @@ const PRESETS_LIST: Omit<QuotationPreset, 'id' | 'user_id' | 'created_at' | 'upd
   }
 ];
 
+const getTemplateConfig = (id: string): CanvasPage[] => {
+  switch (id) {
+    case 'minimalist':
+      return TEMPLATE_2_IVORY_MINIMALIST;
+    case 'emerald_gold':
+      return TEMPLATE_3_EMERALD_GOLD;
+    case 'editorial':
+    default:
+      return DEFAULT_TEMPLATE_CONFIG;
+  }
+};
+
 export default function QuotationMakerPage() {
   // Global States
   const [pages, setPages] = useState<CanvasPage[]>(DEFAULT_TEMPLATE_CONFIG);
@@ -361,6 +707,28 @@ export default function QuotationMakerPage() {
   const [activePopover, setActivePopover] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Helper for rendering template background texture style
+  const getPageBackgroundStyle = (templateId: string): React.CSSProperties => {
+    if (templateId === 'emerald_gold') {
+      return {
+        backgroundColor: '#1B3B2B',
+        backgroundImage: 'none'
+      };
+    }
+    if (templateId === 'minimalist') {
+      return {
+        backgroundColor: '#FDFDFB',
+        backgroundImage: 'none'
+      };
+    }
+    return {
+      backgroundColor: '#FAF6F0',
+      backgroundImage: 'radial-gradient(#ebe5da 1.5px, transparent 1.5px), radial-gradient(#ebe5da 1.5px, #FAF6F0 1.5px)',
+      backgroundSize: '30px 30px',
+      backgroundPosition: '0 0, 15px 15px'
+    };
+  };
+
   // Database / Templates States
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [activeQuotationId, setActiveQuotationId] = useState<string | null>(null);
@@ -373,6 +741,41 @@ export default function QuotationMakerPage() {
   const [accentColor, setAccentColor] = useState<string>('#606248');
   const [accentHoverColor, setAccentHoverColor] = useState<string>('#4d4e3a');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('editorial');
+
+  // Folder & View States
+  const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
+  const [clientNameFilter, setClientNameFilter] = useState<string>('');
+  const [folders, setFolders] = useState<{ id: string; name: string; created_at: string }[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('fw_quotation_folders');
+      if (saved) return JSON.parse(saved);
+    }
+    return [{ id: 'default', name: 'My Designs', created_at: new Date().toISOString() }];
+  });
+  const [activeFolderId, setActiveFolderId] = useState<string>('default');
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [folderRenameName, setFolderRenameName] = useState<string>('');
+  
+  // Template Preview / Default Template States
+  const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
+  const [defaultTemplateId, setDefaultTemplateId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('fw_default_template_id') || '';
+    }
+    return '';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('fw_quotation_folders', JSON.stringify(folders));
+  }, [folders]);
+
+  useEffect(() => {
+    if (defaultTemplateId) {
+      localStorage.setItem('fw_default_template_id', defaultTemplateId);
+    } else {
+      localStorage.removeItem('fw_default_template_id');
+    }
+  }, [defaultTemplateId]);
 
   // Image Swap Modal States
   const [showImageModal, setShowImageModal] = useState(false);
@@ -708,6 +1111,16 @@ export default function QuotationMakerPage() {
           updated_at: new Date().toISOString()
         })));
       }
+
+      // 3. Fetch Folders
+      const { data: fData, error: fError } = await supabase
+        .from('quotation_folders')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (fError) throw fError;
+      if (fData && fData.length > 0) {
+        setFolders(fData);
+      }
     } catch (err: any) {
       console.warn('Supabase fetch issue, utilizing local fallback state. Details:', err.message);
       // Load from localStorage if present
@@ -729,6 +1142,78 @@ export default function QuotationMakerPage() {
     }
   };
 
+  // Folder helper operations
+  const createFolder = async (name: string) => {
+    const newFolder = {
+      id: `folder-${Date.now()}`,
+      name,
+      created_at: new Date().toISOString()
+    };
+    
+    try {
+      const { error } = await supabase
+        .from('quotation_folders')
+        .insert([{ id: newFolder.id, name: newFolder.name }]);
+      if (error) throw error;
+      console.log('Folder saved to Supabase');
+    } catch (err: any) {
+      console.warn('Could not save folder to Supabase, falling back to local storage', err.message);
+    }
+    
+    setFolders(prev => [...prev, newFolder]);
+    setActiveFolderId(newFolder.id);
+  };
+
+  const deleteFolder = async (folderId: string) => {
+    if (folderId === 'default') {
+      showToast('Cannot delete default folder.', 'error');
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('quotation_folders')
+        .delete()
+        .eq('id', folderId);
+      if (error) throw error;
+      console.log('Folder deleted from Supabase');
+    } catch (err: any) {
+      console.warn('Could not delete folder from Supabase, falling back to local storage', err.message);
+    }
+    
+    setFolders(prev => prev.filter(f => f.id !== folderId));
+    if (activeFolderId === folderId) {
+      setActiveFolderId('default');
+    }
+    
+    // Move quotation associations to 'default' folder
+    setQuotations(prev => prev.map(q => q.folder_id === folderId ? { ...q, folder_id: 'default' } : q));
+    const savedLocal = localStorage.getItem('fw_quotations');
+    if (savedLocal) {
+      const localList: Quotation[] = JSON.parse(savedLocal);
+      const updated = localList.map(q => q.folder_id === folderId ? { ...q, folder_id: 'default' } : q);
+      localStorage.setItem('fw_quotations', JSON.stringify(updated));
+    }
+  };
+
+  const renameFolder = async (folderId: string, newName: string) => {
+    if (!newName.trim()) return;
+    
+    try {
+      const { error } = await supabase
+        .from('quotation_folders')
+        .update({ name: newName })
+        .eq('id', folderId);
+      if (error) throw error;
+      console.log('Folder renamed in Supabase');
+    } catch (err: any) {
+      console.warn('Could not rename folder in Supabase, falling back to local storage', err.message);
+    }
+    
+    setFolders(prev => prev.map(f => f.id === folderId ? { ...f, name: newName } : f));
+    setEditingFolderId(null);
+  };
+
   // Select a quotation to edit
   const loadQuotation = (quotation: Quotation) => {
     setActiveQuotationId(quotation.id);
@@ -738,6 +1223,29 @@ export default function QuotationMakerPage() {
     setRegularPrice(quotation.pricing_summary.regular_price);
     setOfferPrice(quotation.pricing_summary.offer_price);
     setSavings(quotation.pricing_summary.savings);
+    if (quotation.folder_id) {
+      setActiveFolderId(quotation.folder_id);
+    }
+    setView('editor');
+
+    // Auto-detect template ID
+    const firstCoverPage = quotation.canvas_data.find(p => p.pageType === 'cover');
+    const coupleNamesEl = firstCoverPage?.elements.find(el => el.id === 'cover-couple-names');
+    if (coupleNamesEl) {
+      if (coupleNamesEl.color === '#1B3B2B') {
+        setSelectedTemplateId('emerald_gold');
+        setAccentColor('#1B3B2B');
+        setAccentHoverColor('#11261B');
+      } else if (coupleNamesEl.fontFamily === 'Cormorant Garamond') {
+        setSelectedTemplateId('minimalist');
+        setAccentColor('#4A493B');
+        setAccentHoverColor('#36352A');
+      } else {
+        setSelectedTemplateId('editorial');
+        setAccentColor('#606248');
+        setAccentHoverColor('#4d4e3a');
+      }
+    }
     
     // Parse dynamic components from state if available
     const funcPage = quotation.canvas_data.find(p => p.pageType === 'functions');
@@ -792,6 +1300,62 @@ export default function QuotationMakerPage() {
     }
     
     showToast('Quotation loaded successfully!', 'success');
+  };
+
+  const deleteQuotation = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('quotations')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      showToast('Quotation deleted successfully from database.', 'info');
+    } catch (err: any) {
+      console.warn('Could not delete from database, updating local storage:', err.message);
+    }
+    
+    // Always clean up local storage fallback
+    const savedLocal = localStorage.getItem('fw_quotations');
+    if (savedLocal) {
+      const localList: Quotation[] = JSON.parse(savedLocal);
+      const filtered = localList.filter(q => q.id !== id);
+      localStorage.setItem('fw_quotations', JSON.stringify(filtered));
+      setQuotations(filtered);
+    }
+    if (activeQuotationId === id) {
+      resetToNew();
+    }
+    fetchQuotationsAndPresets();
+  };
+
+  const handleSelectTemplate = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    
+    if (templateId === 'minimalist') {
+      setAccentColor('#4A493B');
+      setAccentHoverColor('#36352A');
+    } else if (templateId === 'emerald_gold') {
+      setAccentColor('#1B3B2B');
+      setAccentHoverColor('#11261B');
+    } else {
+      setAccentColor('#606248');
+      setAccentHoverColor('#4d4e3a');
+    }
+
+    setActiveQuotationId(null);
+    setClientName('New Client Quotation');
+    setCoupleNames('PRNAY x MAYURI');
+    setPages(getTemplateConfig(templateId));
+    setRegularPrice(100000);
+    setOfferPrice(80000);
+    setFunctions(DEFAULT_FUNCTIONS);
+    setDeliverables(DEFAULT_DELIVERABLES);
+    setSelectedElement(null);
+
+    setShowTemplateModal(false);
+    setView('editor');
+    showToast(`Initialized workspace with ${templateId === 'minimalist' ? 'Ivory Minimalist' : templateId === 'emerald_gold' ? 'Royal Emerald & Gold' : 'Filmify Editorial'} layout template!`, 'success');
   };
 
   const handleTemplateImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -934,7 +1498,8 @@ export default function QuotationMakerPage() {
         regular_price: regularPrice,
         offer_price: offerPrice,
         savings: savings
-      }
+      },
+      folder_id: activeFolderId
     };
 
     // Trigger local filesystem versions save (Canva folder engine)
@@ -1013,6 +1578,7 @@ export default function QuotationMakerPage() {
             offer_price: offerPrice,
             savings: savings
           },
+          folder_id: activeFolderId,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
@@ -1416,18 +1982,485 @@ export default function QuotationMakerPage() {
           <span className="text-sm font-semibold">{errorMessage}</span>
         </div>
       )}
+      {/* ---------------------------------------------------- */}
+      {/* 1. CANVA-STYLE FOLDERS DASHBOARD VIEW */}
+      {/* ---------------------------------------------------- */}
+      {view === 'dashboard' && (
+        <div className="flex flex-1 overflow-hidden bg-[#FDFDFB]">
+          {/* LEFT SIDEBAR: Canva-style folders & library */}
+          <div className="w-64 bg-[#F4F3EF] border-r border-stone-250 flex flex-col justify-between flex-shrink-0 text-stone-800">
+            <div>
+              {/* Sidebar Header */}
+              <div className="p-6 border-b border-stone-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-900/10 flex items-center justify-center">
+                    <Sparkles className="w-4 h-4 text-amber-900" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-serif font-bold text-sm tracking-wide text-stone-900">Filmify Studio</span>
+                    <span className="text-[10px] text-stone-500 font-medium tracking-wide">Quotation Space</span>
+                  </div>
+                </div>
+              </div>
 
-      {/* LEFT SIDEBAR PANEL: SETTINGS & CONTROLS */}
-      <div className="w-80 bg-zinc-900 border-r border-zinc-800 flex flex-col justify-between flex-shrink-0 text-zinc-300">
-        
-        {/* Sidebar Header */}
-        <div className="p-5 border-b border-zinc-800">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-[#D4AF37]" />
-            <h1 className="text-lg font-bold tracking-tight text-white font-serif">Quotation Engine</h1>
+              {/* Sidebar Navigation */}
+              <div className="p-4 space-y-6">
+                {/* Main Views */}
+                <div className="space-y-1">
+                  <button 
+                    onClick={() => { setActiveFolderId('all'); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-colors ${activeFolderId === 'all' ? 'bg-amber-900/10 text-amber-900' : 'hover:bg-stone-200 text-stone-600'}`}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    <span>All Designs</span>
+                  </button>
+                </div>
+
+                {/* Folders Engine list */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-3">
+                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Folders</span>
+                    <button 
+                      onClick={() => {
+                        const name = prompt('Enter folder name:');
+                        if (name) createFolder(name);
+                      }}
+                      className="text-stone-500 hover:text-amber-900 transition-colors p-0.5 rounded"
+                      title="Add New Folder"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 max-h-[300px] overflow-y-auto scrollbar-thin">
+                    {folders.map(folder => (
+                      <div 
+                        key={folder.id}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFolderId(folder.id);
+                          setFolderRenameName(folder.name);
+                        }}
+                        className={`group flex items-center justify-between px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer ${activeFolderId === folder.id ? 'bg-amber-900/10 text-amber-900 font-bold' : 'hover:bg-stone-200 text-stone-600 font-medium'}`}
+                      >
+                        <button 
+                          onClick={() => setActiveFolderId(folder.id)}
+                          className="flex items-center gap-3 flex-1 text-left min-w-0"
+                        >
+                          <Folder className="w-4 h-4 flex-shrink-0" />
+                          {editingFolderId === folder.id ? (
+                            <input
+                              type="text"
+                              value={folderRenameName}
+                              onChange={(e) => setFolderRenameName(e.target.value)}
+                              onBlur={() => renameFolder(folder.id, folderRenameName)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') renameFolder(folder.id, folderRenameName);
+                                if (e.key === 'Escape') setEditingFolderId(null);
+                              }}
+                              className="w-full bg-white border border-stone-305 rounded px-1.5 py-0.5 text-zinc-900 focus:outline-none focus:ring-1 focus:ring-amber-900"
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <span className="truncate">{folder.name}</span>
+                          )}
+                        </button>
+                        
+                        {editingFolderId !== folder.id && (
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingFolderId(folder.id);
+                                setFolderRenameName(folder.name);
+                              }}
+                              className="p-1 text-stone-500 hover:text-amber-900 hover:bg-stone-300/50 rounded"
+                              title="Rename folder"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            {folder.id !== 'default' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Are you sure you want to delete folder "${folder.name}"?`)) {
+                                    deleteFolder(folder.id);
+                                  }
+                                }}
+                                className="p-1 text-stone-500 hover:text-rose-600 hover:bg-rose-50 rounded"
+                                title="Delete folder"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-zinc-500">Design premium digital canvas documents for clients.</p>
+
+          {/* MAIN CONTAINER: Search bar, quotation list grid */}
+          <div className="flex-1 flex flex-col bg-[#FDFDFB] overflow-hidden">
+            {/* Topbar */}
+            <div className="h-16 border-b border-stone-200 px-8 flex items-center justify-between bg-white flex-shrink-0">
+              <div className="flex items-center gap-4 w-96">
+                <Search className="w-4 h-4 text-stone-400" />
+                <input 
+                  type="text"
+                  placeholder="Search your wedding quotations..."
+                  value={clientNameFilter || ''}
+                  onChange={(e) => setClientNameFilter(e.target.value)}
+                  className="w-full bg-transparent border-none text-xs text-stone-850 placeholder-stone-400 focus:outline-none focus:ring-0"
+                />
+              </div>
+
+              <div>
+                <button
+                  onClick={() => {
+                    if (defaultTemplateId) {
+                      handleSelectTemplate(defaultTemplateId);
+                    } else {
+                      setShowTemplateModal(true);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#606248] to-[#4d4e3a] hover:from-[#4d4e3a] hover:to-[#3b3c2d] text-white text-xs font-bold rounded-lg shadow-md hover:shadow-lg transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Quotation</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Dashboard Workspace */}
+            <div className="flex-1 overflow-y-auto p-8">
+              {/* Folder Breadcrumb/Header */}
+              <div className="mb-8 flex items-center justify-between">
+                <div>
+                  <h2 className="font-serif font-bold text-2xl text-stone-900 tracking-wide">
+                    {activeFolderId === 'all' 
+                      ? 'All Projects' 
+                      : (folders.find(f => f.id === activeFolderId)?.name || 'Projects')}
+                  </h2>
+                  <p className="text-xs text-stone-500 mt-1.5 font-medium">
+                    Manage and edit premium PDF wedding quotation templates.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quotations Grid */}
+              {(() => {
+                const filtered = quotations.filter(q => {
+                  const matchFolder = activeFolderId === 'all' || q.folder_id === activeFolderId;
+                  const matchClient = !clientNameFilter || q.client_name.toLowerCase().includes(clientNameFilter.toLowerCase()) || (q.couple_names && q.couple_names.toLowerCase().includes(clientNameFilter.toLowerCase()));
+                  return matchFolder && matchClient;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-stone-200 rounded-2xl bg-stone-50/50">
+                      <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mb-4">
+                        <Folder className="w-6 h-6 text-stone-400" />
+                      </div>
+                      <h3 className="font-serif text-sm font-semibold text-stone-850">No Quotations Found</h3>
+                      <p className="text-[11px] text-stone-500 mt-1 max-w-xs text-center font-medium">
+                        Create a premium proposal design or drag/move an existing template here to start working.
+                      </p>
+                      <button
+                        onClick={() => setShowTemplateModal(true)}
+                        className="mt-4 flex items-center gap-1.5 px-3 py-1.5 border border-stone-300 rounded-lg text-xs font-semibold text-stone-700 hover:bg-stone-50 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-stone-500" />
+                        Choose a Template
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {filtered.map(q => {
+                      const coupleNames = q.couple_names || 'Client & Partner';
+                      const lastUpdated = q.updated_at ? new Date(q.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
+                      
+                      const firstPage = q.canvas_data.find(p => p.pageType === 'cover');
+                      const coupleNamesEl = firstPage?.elements.find(el => el.id === 'cover-couple-names');
+                      const isEmerald = coupleNamesEl?.color === '#1B3B2B';
+                      const isMinimal = coupleNamesEl?.fontFamily === 'Cormorant Garamond';
+                      
+                      let accentClass = 'bg-[#606248]/5 text-[#606248]';
+                      let thumbBg = 'bg-[#FAF6F0]';
+                      let templateLabel = 'Editorial';
+                      
+                      if (isEmerald) {
+                        accentClass = 'bg-[#1B3B2B]/5 text-[#1B3B2B]';
+                        thumbBg = 'bg-[#EBF2EE]';
+                        templateLabel = 'Emerald & Gold';
+                      } else if (isMinimal) {
+                        accentClass = 'bg-[#4A493B]/5 text-[#4A493B]';
+                        thumbBg = 'bg-[#F9F9F6]';
+                        templateLabel = 'Ivory Minimalist';
+                      }
+
+                      return (
+                        <div 
+                          key={q.id}
+                          onDoubleClick={() => loadQuotation(q)}
+                          className="group border border-stone-200 hover:border-stone-350 bg-white rounded-xl shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col justify-between cursor-pointer"
+                        >
+                          {/* Visual thumbnail */}
+                          <div className={`h-40 ${thumbBg} flex items-center justify-center p-6 border-b border-stone-100 relative`}>
+                            <div className="text-center">
+                              <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-stone-400 block mb-1">Wedding Quote</span>
+                              <h4 className="font-serif font-bold text-stone-850 truncate max-w-[160px] text-sm uppercase tracking-wider">{coupleNames}</h4>
+                              <div className="w-12 h-[1px] bg-stone-250 mx-auto mt-2" />
+                            </div>
+
+                            {/* Hover overlay actions */}
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); loadQuotation(q); }}
+                                className="px-3.5 py-1.5 bg-white text-stone-900 rounded-lg text-xs font-semibold shadow hover:bg-stone-50 transition-colors"
+                              >
+                                Edit Canvas
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Are you sure you want to delete quotation for "${q.client_name}"?`)) {
+                                    deleteQuotation(q.id);
+                                  }
+                                }}
+                                className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+                                title="Delete Quotation"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Card details */}
+                          <div className="p-4 flex flex-col justify-between flex-1">
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <h3 className="font-semibold text-xs text-stone-850 truncate max-w-[140px]">{q.client_name}</h3>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${accentClass}`}>
+                                  {templateLabel}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-stone-500 font-medium">Updated: {lastUpdated}</p>
+                            </div>
+
+                            {/* Dropdown to move folder */}
+                            <div className="mt-3 pt-2.5 border-t border-stone-100 flex items-center justify-between">
+                              <span className="text-[9.5px] font-bold text-[#A39268] tracking-wide">
+                                Rs {q.pricing_summary.offer_price.toLocaleString()}/-
+                              </span>
+
+                              <select
+                                value={q.folder_id || 'default'}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={async (e) => {
+                                  e.stopPropagation();
+                                  const targetFolder = e.target.value;
+                                  
+                                  setQuotations(prev => prev.map(item => item.id === q.id ? { ...item, folder_id: targetFolder } : item));
+                                  
+                                  try {
+                                    const { error } = await supabase
+                                      .from('quotations')
+                                      .update({ folder_id: targetFolder })
+                                      .eq('id', q.id);
+                                    if (error) throw error;
+                                    showToast(`Moved quotation to folder.`, 'success');
+                                  } catch (err: any) {
+                                    console.warn('Could not sync folder move to Supabase, updating local fallback:', err.message);
+                                    const savedLocal = localStorage.getItem('fw_quotations');
+                                    if (savedLocal) {
+                                      const localList: Quotation[] = JSON.parse(savedLocal);
+                                      const updated = localList.map(item => item.id === q.id ? { ...item, folder_id: targetFolder } : item);
+                                      localStorage.setItem('fw_quotations', JSON.stringify(updated));
+                                    }
+                                  }
+                                }}
+                                className="text-[9.5px] bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none font-semibold text-stone-600"
+                              >
+                                {folders.map(f => (
+                                  <option key={f.id} value={f.id}>{f.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* TEMPLATE SELECTOR MODAL GALLERY */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99998] flex items-center justify-center p-4">
+          <div className="bg-[#FDFDFB] border border-stone-205 rounded-2xl w-full max-w-4xl shadow-2xl p-8 overflow-hidden flex flex-col justify-between max-h-[85vh] animate-zoom-in">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-stone-200">
+              <div>
+                <h3 className="font-serif font-bold text-xl text-stone-900 tracking-wide flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-900" />
+                  Select Quotation Template
+                </h3>
+                <p className="text-xs text-stone-500 mt-1 font-medium">Choose a base template structure for your new quote.</p>
+              </div>
+              <button 
+                onClick={() => setShowTemplateModal(false)}
+                className="text-stone-400 hover:text-stone-600 text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Template grid */}
+            <div className="flex-1 overflow-y-auto py-6 grid grid-cols-1 md:grid-cols-3 gap-6 scrollbar-thin">
+              {/* Template 1: Classic Editorial */}
+              <div 
+                className="group border border-stone-200 hover:border-stone-400 bg-white rounded-xl shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col justify-between cursor-pointer"
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  handleSelectTemplate('editorial');
+                }}
+              >
+                <div className="h-44 bg-[#FAF6F0] flex items-center justify-center p-6 border-b border-stone-100 relative">
+                  <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-stone-400 block mb-1">Template 1</span>
+                  <h4 className="font-serif font-bold text-[#606248] text-sm tracking-widest uppercase">Editorial</h4>
+                  
+                  {/* Default setting badge */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDefaultTemplateId(defaultTemplateId === 'editorial' ? '' : 'editorial');
+                    }}
+                    className={`absolute top-3 right-3 px-2 py-1 rounded text-[9px] font-bold transition flex items-center gap-1 ${
+                      defaultTemplateId === 'editorial' ? 'bg-[#606248] text-white' : 'bg-stone-200 text-stone-650 hover:bg-stone-300'
+                    }`}
+                  >
+                    <Check className="w-2.5 h-2.5" />
+                    <span>{defaultTemplateId === 'editorial' ? 'Default' : 'Set Default'}</span>
+                  </button>
+                </div>
+                <div className="p-4">
+                  <h5 className="font-semibold text-xs text-stone-850">Classic Editorial</h5>
+                  <p className="text-[10px] text-stone-500 mt-1 leading-relaxed">Luxury layout split, custom couple cutout cover, grid layout.</p>
+                </div>
+              </div>
+
+              {/* Template 2: Ivory Minimalist */}
+              <div 
+                className="group border border-stone-200 hover:border-stone-400 bg-white rounded-xl shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col justify-between cursor-pointer"
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  handleSelectTemplate('minimalist');
+                }}
+              >
+                <div className="h-44 bg-[#F9F9F6] flex items-center justify-center p-6 border-b border-stone-100 relative">
+                  <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-stone-400 block mb-1">Template 2</span>
+                  <h4 className="font-serif font-bold text-[#4A493B] text-sm tracking-widest uppercase">Ivory Minimalist</h4>
+
+                  {/* Default setting badge */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDefaultTemplateId(defaultTemplateId === 'minimalist' ? '' : 'minimalist');
+                    }}
+                    className={`absolute top-3 right-3 px-2 py-1 rounded text-[9px] font-bold transition flex items-center gap-1 ${
+                      defaultTemplateId === 'minimalist' ? 'bg-[#4A493B] text-white' : 'bg-stone-200 text-stone-650 hover:bg-stone-300'
+                    }`}
+                  >
+                    <Check className="w-2.5 h-2.5" />
+                    <span>{defaultTemplateId === 'minimalist' ? 'Default' : 'Set Default'}</span>
+                  </button>
+                </div>
+                <div className="p-4">
+                  <h5 className="font-semibold text-xs text-stone-850">Ivory Minimalist</h5>
+                  <p className="text-[10px] text-stone-500 mt-1 leading-relaxed">Serif fonts, spacious breathing padding, off-white layers, single-line separators.</p>
+                </div>
+              </div>
+
+              {/* Template 3: Royal Emerald & Gold */}
+              <div 
+                className="group border border-stone-200 hover:border-stone-400 bg-white rounded-xl shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col justify-between cursor-pointer"
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  handleSelectTemplate('emerald_gold');
+                }}
+              >
+                <div className="h-44 bg-[#EBF2EE] flex items-center justify-center p-6 border-b border-stone-100 relative">
+                  <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-stone-400 block mb-1">Template 3</span>
+                  <h4 className="font-serif font-bold text-[#1B3B2B] text-sm tracking-widest uppercase">Royal Emerald</h4>
+
+                  {/* Default setting badge */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDefaultTemplateId(defaultTemplateId === 'emerald_gold' ? '' : 'emerald_gold');
+                    }}
+                    className={`absolute top-3 right-3 px-2 py-1 rounded text-[9px] font-bold transition flex items-center gap-1 ${
+                      defaultTemplateId === 'emerald_gold' ? 'bg-[#1B3B2B] text-white' : 'bg-stone-200 text-stone-650 hover:bg-stone-300'
+                    }`}
+                  >
+                    <Check className="w-2.5 h-2.5" />
+                    <span>{defaultTemplateId === 'emerald_gold' ? 'Default' : 'Set Default'}</span>
+                  </button>
+                </div>
+                <div className="p-4">
+                  <h5 className="font-semibold text-xs text-stone-850">Royal Emerald & Gold</h5>
+                  <p className="text-[10px] text-stone-500 mt-1 leading-relaxed">Contrast deep emerald background, luxury gold borders, centered isolated image frames.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. FILMIFY STUDIO CANVAS EDITOR VIEW */}
+      {view === 'editor' && (
+        <>
+          {/* LEFT SIDEBAR PANEL: SETTINGS & CONTROLS */}
+          <div className="w-80 bg-zinc-900 border-r border-zinc-800 flex flex-col justify-between flex-shrink-0 text-zinc-300">
+            
+            {/* Sidebar Header */}
+            <div className="p-5 border-b border-zinc-800">
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={() => {
+                    setView('dashboard');
+                    setActiveQuotationId(null);
+                    setClientName('');
+                    setCoupleNames('');
+                    setRegularPrice(100000);
+                    setOfferPrice(80000);
+                    setSavings(20000);
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[11px] font-bold text-zinc-400 hover:text-white transition-colors"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Dashboard</span>
+                </button>
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Canvas Editor</span>
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-5 h-5 text-[#D4AF37]" />
+                <h1 className="text-lg font-bold tracking-tight text-white font-serif">Quotation Engine</h1>
+              </div>
+              <p className="text-xs text-zinc-500">Design premium digital canvas documents for clients.</p>
+            </div>
 
         {/* Workspace Form inputs */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
@@ -1891,9 +2924,7 @@ export default function QuotationMakerPage() {
             <div 
               className="relative w-full h-full p-[75px] flex flex-col justify-between select-none overflow-hidden"
               style={{
-                backgroundImage: `radial-gradient(#ebe5da 1.5px, transparent 1.5px), radial-gradient(#ebe5da 1.5px, #FAF6F0 1.5px)`,
-                backgroundSize: '30px 30px',
-                backgroundPosition: '0 0, 15px 15px',
+                ...getPageBackgroundStyle(selectedTemplateId),
                 boxSizing: 'border-box'
               }}
             >
@@ -2295,291 +3326,472 @@ export default function QuotationMakerPage() {
               {/* Page 1 Custom Premium Cover Page Layout */}
               {activePageIndex === 0 && (
                 <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-15 select-text">
-                  {/* Top Section */}
-                  <div className="w-full flex flex-col items-center pt-4">
-                    {/* Couple Names / Client x Partner */}
-                    <div 
-                      onClick={(e) => handleElementClick(e, 0, 'cover-couple-names')}
-                      className={`w-full text-center transition px-2 py-1 rounded-lg hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                      style={selectedElement?.elementId === 'cover-couple-names' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
-                    >
-                      <input
-                        type="text"
-                        value={coupleNames}
-                        onChange={e => setCoupleNames(e.target.value.toUpperCase())}
-                        className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-3xl font-serif font-bold tracking-widest"
-                        style={{ color: accentColor }}
-                      />
-                    </div>
-                    
-                    {/* Border Wrapper for WEDDING QUOTATION */}
-                    <div className="w-full border-t border-b border-[#E8E2D9]/80 py-2.5 mt-3 flex flex-col items-center">
-                      <div 
-                        onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-1')}
-                        className={`w-full text-center transition px-2 py-0.5 rounded hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                        style={selectedElement?.elementId === 'cover-subtitle-1' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
-                      >
-                        <span className="text-xs font-serif text-[#C2B280] tracking-[0.25em] font-semibold">
-                          WEDDING QUOTATION
-                        </span>
-                      </div>
-                      
-                      {/* Subtitle Parameters (Location / Date) */}
-                      <div 
-                        onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-2')}
-                        className={`w-full text-center transition px-2 py-0.5 rounded mt-1.5 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                        style={selectedElement?.elementId === 'cover-subtitle-2' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
-                      >
-                        <input
-                          type="text"
-                          value={pages[0]?.elements.find(el => el.id === 'cover-subtitle-2')?.content || 'BOTH SIDES - LOCATION'}
-                          onChange={e => {
-                            const updatedVal = e.target.value;
-                            setPages(prev => prev.map((p, pi) => {
-                              if (pi === 0) {
-                                return {
-                                  ...p,
-                                  elements: p.elements.map(el => el.id === 'cover-subtitle-2' ? { ...el, content: updatedVal } : el)
-                                };
-                              }
-                              return p;
-                            }));
+                  {(() => {
+                    const coupleNamesEl = pages[0]?.elements.find(el => el.id === 'cover-couple-names');
+                    const subtitle1El = pages[0]?.elements.find(el => el.id === 'cover-couple-names');
+                    const subtitle2El = pages[0]?.elements.find(el => el.id === 'cover-subtitle-2');
+                    const logoTextEl = pages[0]?.elements.find(el => el.id === 'cover-logo-text');
+                    const heroImageEl = pages[0]?.elements.find(el => el.id === 'cover-hero-image');
+
+                    const getFontFamilyStyle = (fontName?: string) => {
+                      if (!fontName) return 'inherit';
+                      return FONTS_LIST.find(f => f.name === fontName)?.family || 'inherit';
+                    };
+
+                    return (
+                      <>
+                        <div className="w-full flex flex-col items-center pt-4">
+                          {/* Couple Names / Client x Partner */}
+                          <div 
+                            onClick={(e) => handleElementClick(e, 0, 'cover-couple-names')}
+                            className={`w-full text-center transition px-2 py-1 rounded-lg hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                            style={selectedElement?.elementId === 'cover-couple-names' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
+                          >
+                            <input
+                              type="text"
+                              value={coupleNames}
+                              onChange={e => setCoupleNames(e.target.value.toUpperCase())}
+                              className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 font-bold"
+                              style={{ 
+                                color: coupleNamesEl?.color || accentColor,
+                                fontFamily: getFontFamilyStyle(coupleNamesEl?.fontFamily),
+                                fontSize: coupleNamesEl?.fontSize ? `${coupleNamesEl.fontSize}px` : '30px',
+                                letterSpacing: coupleNamesEl?.letterSpacing || '0.15em'
+                              }}
+                            />
+                          </div>
+                          
+                          {/* Border Wrapper for WEDDING QUOTATION */}
+                          <div 
+                            className="w-full py-2.5 mt-3 flex flex-col items-center"
+                            style={{
+                              borderTop: selectedTemplateId === 'minimalist' ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(232, 226, 217, 0.8)',
+                              borderBottom: selectedTemplateId === 'minimalist' ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(232, 226, 217, 0.8)'
+                            }}
+                          >
+                            <div 
+                              onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-1')}
+                              className={`w-full text-center transition px-2 py-0.5 rounded hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                              style={selectedElement?.elementId === 'cover-subtitle-1' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
+                            >
+                              <span 
+                                className="font-semibold"
+                                style={{
+                                  color: subtitle1El?.color || '#C2B280',
+                                  fontFamily: getFontFamilyStyle(subtitle1El?.fontFamily),
+                                  fontSize: subtitle1El?.fontSize ? `${subtitle1El.fontSize}px` : '12px',
+                                  letterSpacing: subtitle1El?.letterSpacing || '0.25em'
+                                }}
+                              >
+                                {subtitle1El?.content || 'WEDDING QUOTATION'}
+                              </span>
+                            </div>
+                            
+                            {/* Subtitle Parameters (Location / Date) */}
+                            <div 
+                              onClick={(e) => handleElementClick(e, 0, 'cover-subtitle-2')}
+                              className={`w-full text-center transition px-2 py-0.5 rounded mt-1.5 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                              style={selectedElement?.elementId === 'cover-subtitle-2' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
+                            >
+                              <input
+                                type="text"
+                                value={subtitle2El?.content || 'BOTH SIDES - LOCATION'}
+                                onChange={e => {
+                                  const updatedVal = e.target.value;
+                                  setPages(prev => prev.map((p, pi) => {
+                                    if (pi === 0) {
+                                      return {
+                                        ...p,
+                                        elements: p.elements.map(el => el.id === 'cover-subtitle-2' ? { ...el, content: updatedVal } : el)
+                                      };
+                                    }
+                                    return p;
+                                  }));
+                                }}
+                                className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 font-medium"
+                                style={{
+                                  color: subtitle2El?.color || '#706E6A',
+                                  fontFamily: getFontFamilyStyle(subtitle2El?.fontFamily),
+                                  fontSize: subtitle2El?.fontSize ? `${subtitle2El.fontSize}px` : '10px',
+                                  letterSpacing: subtitle2El?.letterSpacing || '0.05em'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Middle Section: Logo */}
+                        <div 
+                          onClick={(e) => handleElementClick(e, 0, 'cover-logo-text')}
+                          className={`absolute left-1/2 -translate-x-1/2 w-[80%] text-center transition px-3 py-1.5 rounded-xl z-20 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                          style={{
+                            top: `${logoTextEl?.y || 38}%`,
+                            outline: selectedElement?.elementId === 'cover-logo-text' ? `2px dashed ${accentColor}` : undefined,
+                            backgroundColor: selectedElement?.elementId === 'cover-logo-text' ? `${accentColor}10` : undefined
                           }}
-                          className="w-full text-center bg-transparent border-none p-0 focus:outline-none focus:ring-0 text-[10px] text-zinc-500 font-sans tracking-[0.1em]"
-                        />
-                      </div>
-                    </div>
-                  </div>
+                        >
+                          <div 
+                            className="font-bold uppercase" 
+                            style={{ 
+                              color: logoTextEl?.color || accentColor,
+                              fontFamily: getFontFamilyStyle(logoTextEl?.fontFamily),
+                              fontSize: logoTextEl?.fontSize ? `${logoTextEl.fontSize}px` : '20px',
+                              letterSpacing: logoTextEl?.letterSpacing || '0.18em'
+                            }}
+                          >
+                            {logoTextEl?.content || 'FILMIFY WEDDINGS'}
+                          </div>
+                          <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
+                            {selectedTemplateId === 'minimalist' ? 'Ivory Studio Minimalist' : 'Premium Editorial Studio'}
+                          </div>
+                        </div>
 
-                  {/* Middle Section: Logo */}
-                  <div 
-                    onClick={(e) => handleElementClick(e, 0, 'cover-logo-text')}
-                    className={`absolute top-[38%] left-1/2 -translate-x-1/2 w-[80%] text-center transition px-3 py-1.5 rounded-xl z-20 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                    style={selectedElement?.elementId === 'cover-logo-text' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
-                  >
-                    <div className="text-xl font-bold tracking-[0.18em] font-serif uppercase" style={{ color: accentColor }}>
-                      FILMIFY WEDDINGS
-                    </div>
-                    <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5">
-                      Premium Editorial Studio
-                    </div>
-                  </div>
-
-                  {/* Bottom Section: Hero couple image cutout */}
-                  <div 
-                    onClick={(e) => handleElementClick(e, 0, 'cover-hero-image')}
-                    className={`absolute bottom-0 left-10 right-10 top-[48%] group transition overflow-hidden rounded-2xl bg-transparent border border-transparent shadow-none flex items-end justify-center z-10 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                    style={selectedElement?.elementId === 'cover-hero-image' ? { outline: `2px dashed ${accentColor}` } : {}}
-                  >
-                    <img 
-                      src={pages[0]?.elements.find(el => el.id === 'cover-hero-image')?.content || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
-                      alt="Cover couple cutout" 
-                      className="w-full h-full object-contain" 
-                    />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerImageSwap(0, 'cover-hero-image', pages[0]?.elements.find(el => el.id === 'cover-hero-image')?.content || '');
-                      }}
-                      className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-2xl animate-fade-in"
-                    >
-                      <Upload className="w-4 h-4 text-[#D4AF37]" />
-                      Swap Couple Photo
-                    </button>
-                  </div>
+                        {/* Bottom Section: Hero couple image cutout */}
+                        <div 
+                          onClick={(e) => handleElementClick(e, 0, 'cover-hero-image')}
+                          className={`absolute left-10 right-10 group transition overflow-hidden rounded-2xl bg-transparent border flex items-end justify-center z-10 hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                          style={{
+                            top: `${heroImageEl?.y || 48}%`,
+                            bottom: '0',
+                            border: selectedTemplateId === 'emerald_gold' ? '2px solid #D4AF37' : 'none',
+                            outline: selectedElement?.elementId === 'cover-hero-image' ? `2px dashed ${accentColor}` : undefined
+                          }}
+                        >
+                          <img 
+                            src={heroImageEl?.content || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
+                            alt="Cover couple cutout" 
+                            className="w-full h-full object-contain" 
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerImageSwap(0, 'cover-hero-image', heroImageEl?.content || '');
+                            }}
+                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-t-3xl"
+                          >
+                            <Upload className="w-4 h-4 text-[#D4AF37]" />
+                            Swap Cover Image
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
               {/* Page 2 Custom Premium About Us Layout */}
               {activePageIndex === 1 && (
                 <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-10 select-text">
-                  {/* Birds flying at the top right */}
-                  <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
-                    <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      {/* V-formation birds */}
-                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke={accentColor} strokeWidth="1.2" strokeLinecap="round" fill="none" />
-                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke={accentColor} strokeWidth="1.1" strokeLinecap="round" fill="none" />
-                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke={accentColor} strokeWidth="0.9" strokeLinecap="round" fill="none" />
-                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke={accentColor} strokeWidth="0.8" strokeLinecap="round" fill="none" />
-                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke={accentColor} strokeWidth="0.7" strokeLinecap="round" fill="none" />
-                    </svg>
-                  </div>
+                  {/* Birds flying at the top right - only for Editorial */}
+                  {selectedTemplateId === 'editorial' && (
+                    <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
+                      <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        {/* V-formation birds */}
+                        <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke={accentColor} strokeWidth="1.2" strokeLinecap="round" fill="none" />
+                        <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                        <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke={accentColor} strokeWidth="1.1" strokeLinecap="round" fill="none" />
+                        <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke={accentColor} strokeWidth="0.9" strokeLinecap="round" fill="none" />
+                        <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                        <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke={accentColor} strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                        <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke={accentColor} strokeWidth="0.7" strokeLinecap="round" fill="none" />
+                      </svg>
+                    </div>
+                  )}
 
-                  {/* Monogram logo */}
-                  <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
-                    <div className="relative w-[150px] h-[100px]">
-                      {/* U and S */}
-                      <div className="absolute left-[15px] top-[32px] flex items-baseline" style={{ color: accentColor }}>
-                        <span className="text-7xl font-serif font-light">U</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">S</span>
-                      </div>
-                      {/* A and BOUT */}
-                      <div className="absolute left-[60px] top-[0px] flex items-baseline" style={{ color: accentColor }}>
-                        <span className="text-7xl font-serif font-light">A</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">BOUT</span>
+                  {/* Header / Monogram logo */}
+                  {selectedTemplateId === 'editorial' ? (
+                    <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
+                      <div className="relative w-[150px] h-[100px]">
+                        <div className="absolute left-[15px] top-[32px] flex items-baseline" style={{ color: accentColor }}>
+                          <span className="text-7xl font-serif font-light">U</span>
+                          <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">S</span>
+                        </div>
+                        <div className="absolute left-[60px] top-[0px] flex items-baseline" style={{ color: accentColor }}>
+                          <span className="text-7xl font-serif font-light">A</span>
+                          <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">BOUT</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="w-full flex justify-center items-center h-[100px] mt-4">
+                      {(() => {
+                        const aboutHeadingEl = pages[1]?.elements.find(el => el.id === 'about-heading');
+                        const font = aboutHeadingEl?.fontFamily ? FONTS_LIST.find(f => f.name === aboutHeadingEl.fontFamily)?.family : 'inherit';
+                        return (
+                          <h3 
+                            className="font-bold tracking-widest text-2xl" 
+                            style={{ 
+                              color: aboutHeadingEl?.color || accentColor, 
+                              fontFamily: font,
+                              letterSpacing: aboutHeadingEl?.letterSpacing || '0.2em'
+                            }}
+                          >
+                            {aboutHeadingEl?.content || 'ABOUT US'}
+                          </h3>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {/* Quote Section */}
-                  <div 
-                    onClick={(e) => handleElementClick(e, 1, 'about-quote')}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      const content = pages[1]?.elements.find(el => el.id === 'about-quote')?.content || '';
-                      setInlineEditingText(content);
-                    }}
-                    className={`relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center transition rounded-xl hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                    style={selectedElement?.elementId === 'about-quote' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
-                  >
-                    <span className="absolute left-4 top-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>“</span>
-                    {inlineEditingText !== null && selectedElement?.elementId === 'about-quote' ? (
-                      <textarea
-                        value={inlineEditingText}
-                        onChange={e => setInlineEditingText(e.target.value)}
-                        onBlur={() => handleInlineTextSave(1, 'about-quote', inlineEditingText)}
-                        className="w-full bg-white text-zinc-950 p-2 rounded text-center text-xs font-sans focus:outline-none"
-                        style={{ border: `1px solid ${accentColor}` }}
-                        autoFocus
-                      />
-                    ) : (
-                      <p className="text-[12px] font-sans text-zinc-700 leading-relaxed font-medium">
-                        {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
-                      </p>
-                    )}
-                    <span className="absolute right-4 bottom-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>”</span>
-                  </div>
+                  {(() => {
+                    const aboutQuoteEl = pages[1]?.elements.find(el => el.id === 'about-quote');
+                    const font = aboutQuoteEl?.fontFamily ? FONTS_LIST.find(f => f.name === aboutQuoteEl.fontFamily)?.family : 'inherit';
+                    return (
+                      <div 
+                        onClick={(e) => handleElementClick(e, 1, 'about-quote')}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          const content = pages[1]?.elements.find(el => el.id === 'about-quote')?.content || '';
+                          setInlineEditingText(content);
+                        }}
+                        className={`relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center transition rounded-xl hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                        style={selectedElement?.elementId === 'about-quote' ? { outline: `2px dashed ${accentColor}`, backgroundColor: `${accentColor}10` } : {}}
+                      >
+                        <span className="absolute left-4 top-0 text-4xl font-serif font-bold" style={{ color: aboutQuoteEl?.color || accentColor }}>“</span>
+                        {inlineEditingText !== null && selectedElement?.elementId === 'about-quote' ? (
+                          <textarea
+                            value={inlineEditingText}
+                            onChange={e => setInlineEditingText(e.target.value)}
+                            onBlur={() => handleInlineTextSave(1, 'about-quote', inlineEditingText)}
+                            className="w-full bg-white text-zinc-950 p-2 rounded text-center text-xs font-sans focus:outline-none"
+                            style={{ border: `1px solid ${accentColor}` }}
+                            autoFocus
+                          />
+                        ) : (
+                          <p 
+                            className="text-[12px] leading-relaxed font-medium"
+                            style={{
+                              color: aboutQuoteEl?.color || '#111111',
+                              fontFamily: font,
+                              fontStyle: aboutQuoteEl?.fontStyle || 'normal'
+                            }}
+                          >
+                            {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
+                          </p>
+                        )}
+                        <span className="absolute right-4 bottom-0 text-4xl font-serif font-bold" style={{ color: aboutQuoteEl?.color || accentColor }}>”</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Two Photos Side-by-Side */}
-                  <div className="grid grid-cols-2 gap-6 w-full px-2 mt-4">
-                    {/* Left image */}
-                    <div 
-                      onClick={(e) => handleElementClick(e, 1, 'about-img-left')}
-                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                      style={selectedElement?.elementId === 'about-img-left' ? { outline: `2px dashed ${accentColor}` } : {}}
-                    >
-                      <img 
-                        src={pages[1]?.elements.find(el => el.id === 'about-img-left')?.content || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600'} 
-                        alt="About left couple" 
-                        className="w-full h-full object-cover" 
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerImageSwap(1, 'about-img-left', pages[1]?.elements.find(el => el.id === 'about-img-left')?.content || '');
-                        }}
-                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-xl"
-                      >
-                        <Upload className="w-4 h-4 text-[#D4AF37]" />
-                        Swap Image
-                      </button>
-                    </div>
+                  {(() => {
+                    const imgLeftEl = pages[1]?.elements.find(el => el.id === 'about-img-left');
+                    const imgRightEl = pages[1]?.elements.find(el => el.id === 'about-img-right');
 
-                    {/* Right image */}
-                    <div 
-                      onClick={(e) => handleElementClick(e, 1, 'about-img-right')}
-                      className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5] hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                      style={selectedElement?.elementId === 'about-img-right' ? { outline: `2px dashed ${accentColor}` } : {}}
-                    >
-                      <img 
-                        src={pages[1]?.elements.find(el => el.id === 'about-img-right')?.content || 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600'} 
-                        alt="About right couple" 
-                        className="w-full h-full object-cover" 
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerImageSwap(1, 'about-img-right', pages[1]?.elements.find(el => el.id === 'about-img-right')?.content || '');
-                        }}
-                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-xl"
-                      >
-                        <Upload className="w-4 h-4 text-[#D4AF37]" />
-                        Swap Image
-                      </button>
-                    </div>
-                  </div>
+                    return (
+                      <div className="grid grid-cols-2 gap-6 w-full px-2 mt-4">
+                        {/* Left image */}
+                        <div 
+                          onClick={(e) => handleElementClick(e, 1, 'about-img-left')}
+                          className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border shadow-sm aspect-[4/5] hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                          style={{
+                            borderColor: selectedTemplateId === 'emerald_gold' ? '#D4AF37' : selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E0D8CC',
+                            borderWidth: selectedTemplateId === 'emerald_gold' ? '2px' : '1px',
+                            outline: selectedElement?.elementId === 'about-img-left' ? `2px dashed ${accentColor}` : undefined
+                          }}
+                        >
+                          <img 
+                            src={imgLeftEl?.content || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600'} 
+                            alt="About left couple" 
+                            className="w-full h-full object-cover" 
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerImageSwap(1, 'about-img-left', imgLeftEl?.content || '');
+                            }}
+                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-xl"
+                          >
+                            <Upload className="w-4 h-4 text-[#D4AF37]" />
+                            Swap Image
+                          </button>
+                        </div>
+
+                        {/* Right image */}
+                        <div 
+                          onClick={(e) => handleElementClick(e, 1, 'about-img-right')}
+                          className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border shadow-sm aspect-[4/5] hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                          style={{
+                            borderColor: selectedTemplateId === 'emerald_gold' ? '#D4AF37' : selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E0D8CC',
+                            borderWidth: selectedTemplateId === 'emerald_gold' ? '2px' : '1px',
+                            outline: selectedElement?.elementId === 'about-img-right' ? `2px dashed ${accentColor}` : undefined
+                          }}
+                        >
+                          <img 
+                            src={imgRightEl?.content || 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600'} 
+                            alt="About right couple" 
+                            className="w-full h-full object-cover" 
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerImageSwap(1, 'about-img-right', imgRightEl?.content || '');
+                            }}
+                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-xl"
+                          >
+                            <Upload className="w-4 h-4 text-[#D4AF37]" />
+                            Swap Image
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
               {/* Page 4 Custom Premium Early Booking Offer Layout */}
               {activePageIndex === renderedPages.length - 1 && (
                 <div className="absolute inset-x-[75px] top-[75px] bottom-0 z-10 flex flex-col justify-between select-text">
-                  {/* Heading */}
-                  <div className="w-full flex flex-col items-center">
-                    <div className="text-3xl font-serif font-bold tracking-widest text-center uppercase" style={{ color: accentColor }}>
-                      EARLY BOOKING OFFER
-                    </div>
-                    
-                    {/* Offer Price Box */}
-                    <div 
-                      onClick={(e) => handleElementClick(e, renderedPages.length - 1, 'pricing-main-price')}
-                      className={`border px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm transition hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
-                      style={
-                        selectedElement?.elementId === 'pricing-main-price' 
-                          ? { outline: `2px dashed ${accentColor}`, borderColor: accentColor, backgroundColor: `${accentColor}10` }
-                          : { borderColor: '#E8E2D9' }
-                      }
-                    >
-                      <span className="text-2xl font-serif font-bold tracking-wider" style={{ color: accentColor }}>
-                        Rs {offerPrice.toLocaleString()}/-
-                      </span>
-                    </div>
+                  {(() => {
+                    const pricingPage = renderedPages[renderedPages.length - 1];
+                    const headingEl = pricingPage?.elements.find(el => el.id === 'pricing-heading');
+                    const mainPriceEl = pricingPage?.elements.find(el => el.id === 'pricing-main-price');
+                    const regularPriceEl = pricingPage?.elements.find(el => el.id === 'pricing-regular-price');
+                    const excludesEl = pricingPage?.elements.find(el => el.id === 'pricing-excludes');
+                    const savingsEl = pricingPage?.elements.find(el => el.id === 'pricing-savings-banner');
+                    const palaceImgEl = pricingPage?.elements.find(el => el.id === 'pricing-palace-image');
+                    const logoTextEl = pricingPage?.elements.find(el => el.id === 'pricing-logo-text');
 
-                    {/* Regular Price Subtitle */}
-                    <div className="text-xs font-medium text-[#706E6A] tracking-wider mt-3">
-                      Regular Quotation : Rs {regularPrice.toLocaleString()}/-
-                    </div>
+                    const getFontFamilyStyle = (fontName?: string) => {
+                      if (!fontName) return 'inherit';
+                      return FONTS_LIST.find(f => f.name === fontName)?.family || 'inherit';
+                    };
 
-                    {/* Exclude notes box */}
-                    <div className="border border-[#E8E2D9] px-6 py-2 mt-4 rounded bg-white/20 max-w-[420px] text-center">
-                      <span className="text-[9.5px] font-sans text-zinc-500 tracking-wide font-medium leading-relaxed">
-                        This excludes travel, accommodation, food & any add-on services.
-                      </span>
-                    </div>
+                    return (
+                      <>
+                        {/* Heading */}
+                        <div className="w-full flex flex-col items-center">
+                          <div 
+                            className="text-center font-bold uppercase" 
+                            style={{ 
+                              color: headingEl?.color || accentColor,
+                              fontFamily: getFontFamilyStyle(headingEl?.fontFamily),
+                              fontSize: headingEl?.fontSize ? `${headingEl.fontSize}px` : '28px',
+                              letterSpacing: headingEl?.letterSpacing || '0.15em'
+                            }}
+                          >
+                            {headingEl?.content || 'EARLY BOOKING OFFER'}
+                          </div>
+                          
+                          {/* Offer Price Box */}
+                          <div 
+                            onClick={(e) => handleElementClick(e, renderedPages.length - 1, 'pricing-main-price')}
+                            className={`border px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm transition hover:outline-1 hover:outline-dashed hover:outline-[#C2B280]/60`}
+                            style={
+                              selectedElement?.elementId === 'pricing-main-price' 
+                                ? { outline: `2px dashed ${accentColor}`, borderColor: accentColor, backgroundColor: `${accentColor}10` }
+                                : { borderColor: selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E8E2D9' }
+                            }
+                          >
+                            <span 
+                              className="font-bold tracking-wider" 
+                              style={{ 
+                                color: mainPriceEl?.color || accentColor,
+                                fontFamily: getFontFamilyStyle(mainPriceEl?.fontFamily),
+                                fontSize: mainPriceEl?.fontSize ? `${mainPriceEl.fontSize}px` : '24px'
+                              }}
+                            >
+                              Rs {offerPrice.toLocaleString()}/-
+                            </span>
+                          </div>
 
-                    {/* Savings Highlight Banner */}
-                    <div className="w-full text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed" style={{ backgroundColor: accentColor }}>
-                      Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
-                    </div>
-                  </div>
+                          {/* Regular Price Subtitle */}
+                          <div 
+                            className="tracking-wider mt-3"
+                            style={{
+                              color: regularPriceEl?.color || '#706E6A',
+                              fontFamily: getFontFamilyStyle(regularPriceEl?.fontFamily),
+                              fontSize: regularPriceEl?.fontSize ? `${regularPriceEl.fontSize}px` : '12px'
+                            }}
+                          >
+                            Regular Quotation : Rs {regularPrice.toLocaleString()}/-
+                          </div>
 
-                  {/* Logo overlay & bottom palace cover photo */}
-                  <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
-                    {/* Centered Logo text right above the cutout skyline */}
-                    <div className="text-center z-20 pb-4">
-                      <div className="text-lg font-bold tracking-[0.2em] font-serif uppercase" style={{ color: accentColor }}>
-                        FILMIFY WEDDINGS
-                      </div>
-                      <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
-                        Premium Editorial Studio
-                      </div>
-                    </div>
+                          {/* Exclude notes box */}
+                          <div 
+                            className="px-6 py-2 mt-4 rounded bg-white/20 max-w-[420px] text-center border"
+                            style={{
+                              borderColor: selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E8E2D9'
+                            }}
+                          >
+                            <span 
+                              className="tracking-wide font-medium leading-relaxed"
+                              style={{
+                                color: excludesEl?.color || '#706E6A',
+                                fontFamily: getFontFamilyStyle(excludesEl?.fontFamily),
+                                fontSize: excludesEl?.fontSize ? `${excludesEl.fontSize}px` : '9.5px'
+                              }}
+                            >
+                              This excludes travel, accommodation, food & any add-on services.
+                            </span>
+                          </div>
 
-                    {/* Palace/Castle cutout photo occupying the bottom */}
-                    <div 
-                      onClick={(e) => handleElementClick(e, renderedPages.length - 1, 'pricing-palace-image')}
-                      className={`w-full h-[250px] relative overflow-hidden rounded-t-3xl border border-[#E0D8CC]/50 shadow-lg group transition`}
-                      style={selectedElement?.elementId === 'pricing-palace-image' ? { outline: `2px dashed ${accentColor}` } : {}}
-                    >
-                      <img 
-                        src={renderedPages[renderedPages.length - 1]?.elements.find(el => el.id === 'pricing-palace-image')?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
-                        alt="Palace backdrop" 
-                        className="w-full h-full object-cover" 
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerImageSwap(renderedPages.length - 1, 'pricing-palace-image', renderedPages[renderedPages.length - 1]?.elements.find(el => el.id === 'pricing-palace-image')?.content || '');
-                        }}
-                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-t-3xl"
-                      >
-                        <Upload className="w-4 h-4 text-[#D4AF37]" />
-                        Swap Cover Image
-                      </button>
-                    </div>
-                  </div>
+                          {/* Savings Highlight Banner */}
+                          <div 
+                            className="w-full text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold tracking-wide leading-relaxed" 
+                            style={{ 
+                              backgroundColor: savingsEl?.color === '#FFFFFF' ? accentColor : (savingsEl?.color || accentColor),
+                              fontFamily: getFontFamilyStyle(savingsEl?.fontFamily),
+                              fontSize: savingsEl?.fontSize ? `${savingsEl.fontSize}px` : '12px'
+                            }}
+                          >
+                            Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
+                          </div>
+                        </div>
+
+                        {/* Logo overlay & bottom palace cover photo */}
+                        <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
+                          {/* Centered Logo text right above the cutout skyline */}
+                          <div className="text-center z-20 pb-4">
+                            <div 
+                              className="font-bold tracking-[0.2em] uppercase" 
+                              style={{ 
+                                color: logoTextEl?.color || accentColor,
+                                fontFamily: getFontFamilyStyle(logoTextEl?.fontFamily),
+                                fontSize: logoTextEl?.fontSize ? `${logoTextEl.fontSize}px` : '16px'
+                              }}
+                            >
+                              {logoTextEl?.content || 'FILMIFY WEDDINGS'}
+                            </div>
+                            <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
+                              {selectedTemplateId === 'minimalist' ? 'Ivory Studio Minimalist' : 'Premium Editorial Studio'}
+                            </div>
+                          </div>
+
+                          {/* Palace/Castle cutout photo occupying the bottom */}
+                          <div 
+                            onClick={(e) => handleElementClick(e, renderedPages.length - 1, 'pricing-palace-image')}
+                            className={`w-full relative overflow-hidden group transition border shadow-lg`}
+                            style={{
+                              height: `${palaceImgEl?.height ? palaceImgEl.height * 8.5 : 250}px`,
+                              borderColor: selectedTemplateId === 'emerald_gold' ? '#D4AF37' : selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : 'rgba(224, 216, 204, 0.5)',
+                              borderWidth: selectedTemplateId === 'emerald_gold' ? '2px' : '1px',
+                              borderRadius: selectedTemplateId === 'minimalist' ? '12px' : '24px 24px 0 0',
+                              outline: selectedElement?.elementId === 'pricing-palace-image' ? `2px dashed ${accentColor}` : undefined
+                            }}
+                          >
+                            <img 
+                              src={palaceImgEl?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
+                              alt="Palace backdrop" 
+                              className="w-full h-full object-cover" 
+                            />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerImageSwap(renderedPages.length - 1, 'pricing-palace-image', palaceImgEl?.content || '');
+                              }}
+                              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-medium text-xs rounded-t-3xl"
+                            >
+                              <Upload className="w-4 h-4 text-[#D4AF37]" />
+                              Swap Cover Image
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -2636,6 +3848,8 @@ export default function QuotationMakerPage() {
         </div>
 
       </div>
+        </>
+      )}
 
       {/* FILMIFY STUDIO ARCHIVE DASHBOARD MODAL */}
       {showArchiveModal && (
@@ -2879,11 +4093,10 @@ export default function QuotationMakerPage() {
                 )}
               </div>
 
-            </div>
-
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ASSET UPLOADER IMAGE MODAL */}
       {showImageModal && (
@@ -2996,18 +4209,16 @@ export default function QuotationMakerPage() {
             <div 
               key={pageIdx}
               id={`pdf-page-${pageIdx}`}
-              className="relative bg-[#FAF6F0] p-10 flex flex-col justify-between overflow-hidden"
+              className="relative p-10 flex flex-col justify-between overflow-hidden"
               style={{
                 width: '794px',
                 height: '1123px',
-                backgroundImage: `radial-gradient(#ebe5da 1.5px, transparent 1.5px), radial-gradient(#ebe5da 1.5px, #FAF6F0 1.5px)`,
-                backgroundSize: '30px 30px',
-                backgroundPosition: '0 0, 15px 15px',
+                ...getPageBackgroundStyle(selectedTemplateId),
                 boxSizing: 'border-box'
               }}
             >
               {/* Dynamic elements */}
-              {pageIdx !== 0 && pageIdx !== 1 && pageIdx !== 3 && page.elements.map(el => {
+              {pageIdx !== 0 && pageIdx !== 1 && pageIdx !== pages.length - 1 && page.elements.map(el => {
                 const customStyle: React.CSSProperties = {
                   position: 'absolute',
                   left: `${el.x}%`,
@@ -3122,162 +4333,365 @@ export default function QuotationMakerPage() {
               {/* Page 1 Custom Premium Cover Page Layout */}
               {pageIdx === 0 && (
                 <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-15 select-text">
-                  {/* Top Section */}
-                  <div className="w-full flex flex-col items-center pt-4">
-                    {/* Couple Names / Client x Partner */}
-                    <div className="w-full text-center text-3xl font-serif theme-accent-text font-bold tracking-widest">
-                      {coupleNames}
-                    </div>
-                    
-                    {/* Border Wrapper for WEDDING QUOTATION */}
-                    <div className="w-full border-t border-b border-[#E8E2D9]/80 py-2.5 mt-3 flex flex-col items-center">
-                      <span className="text-xs font-serif text-[#C2B280] tracking-[0.25em] font-semibold">
-                        WEDDING QUOTATION
-                      </span>
-                      <div className="text-[10px] text-[#706E6A] font-sans tracking-[0.1em] mt-1.5 text-center">
-                        {pages[0]?.elements.find(el => el.id === 'cover-subtitle-2')?.content || 'BOTH SIDES - LOCATION'}
-                      </div>
-                    </div>
-                  </div>
+                  {(() => {
+                    const coupleNamesEl = pages[0]?.elements.find(el => el.id === 'cover-couple-names');
+                    const subtitle1El = pages[0]?.elements.find(el => el.id === 'cover-couple-names');
+                    const subtitle2El = pages[0]?.elements.find(el => el.id === 'cover-subtitle-2');
+                    const logoTextEl = pages[0]?.elements.find(el => el.id === 'cover-logo-text');
+                    const heroImageEl = pages[0]?.elements.find(el => el.id === 'cover-hero-image');
 
-                  {/* Middle Section: Logo */}
-                  <div className="absolute top-[38%] left-1/2 -translate-x-1/2 w-[80%] text-center z-20">
-                    <div className="text-xl font-bold tracking-[0.18em] theme-accent-text font-serif uppercase">
-                      FILMIFY WEDDINGS
-                    </div>
-                    <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5">
-                      Premium Editorial Studio
-                    </div>
-                  </div>
+                    const getFontFamilyStyle = (fontName?: string) => {
+                      if (!fontName) return 'inherit';
+                      return FONTS_LIST.find(f => f.name === fontName)?.family || 'inherit';
+                    };
 
-                  {/* Bottom Section: Hero couple image cutout */}
-                  <div className="absolute bottom-0 left-10 right-10 top-[48%] flex items-end justify-center z-10">
-                    <img 
-                      src={pages[0]?.elements.find(el => el.id === 'cover-hero-image')?.content || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
-                      alt="Cover couple cutout" 
-                      className="w-full h-full object-contain" 
-                    />
-                  </div>
+                    return (
+                      <>
+                        {/* Top Section */}
+                        <div className="w-full flex flex-col items-center pt-4">
+                          {/* Couple Names / Client x Partner */}
+                          <div 
+                            className="w-full text-center font-bold"
+                            style={{ 
+                              color: coupleNamesEl?.color || accentColor,
+                              fontFamily: getFontFamilyStyle(coupleNamesEl?.fontFamily),
+                              fontSize: coupleNamesEl?.fontSize ? `${coupleNamesEl.fontSize}px` : '30px',
+                              letterSpacing: coupleNamesEl?.letterSpacing || '0.15em'
+                            }}
+                          >
+                            {coupleNames}
+                          </div>
+                          
+                          {/* Border Wrapper for WEDDING QUOTATION */}
+                          <div 
+                            className="w-full py-2.5 mt-3 flex flex-col items-center"
+                            style={{
+                              borderTop: selectedTemplateId === 'minimalist' ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(232, 226, 217, 0.8)',
+                              borderBottom: selectedTemplateId === 'minimalist' ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(232, 226, 217, 0.8)'
+                            }}
+                          >
+                            <span 
+                              className="font-semibold"
+                              style={{
+                                color: subtitle1El?.color || '#C2B280',
+                                fontFamily: getFontFamilyStyle(subtitle1El?.fontFamily),
+                                fontSize: subtitle1El?.fontSize ? `${subtitle1El.fontSize}px` : '12px',
+                                letterSpacing: subtitle1El?.letterSpacing || '0.25em'
+                              }}
+                            >
+                              {subtitle1El?.content || 'WEDDING QUOTATION'}
+                            </span>
+                            <div 
+                              className="mt-1.5 text-center font-medium"
+                              style={{
+                                color: subtitle2El?.color || '#706E6A',
+                                fontFamily: getFontFamilyStyle(subtitle2El?.fontFamily),
+                                fontSize: subtitle2El?.fontSize ? `${subtitle2El.fontSize}px` : '10px',
+                                letterSpacing: subtitle2El?.letterSpacing || '0.05em'
+                              }}
+                            >
+                              {subtitle2El?.content || 'BOTH SIDES - LOCATION'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Middle Section: Logo */}
+                        <div 
+                          className="absolute left-1/2 -translate-x-1/2 w-[80%] text-center z-20"
+                          style={{
+                            top: `${logoTextEl?.y || 38}%`
+                          }}
+                        >
+                          <div 
+                            className="font-bold uppercase"
+                            style={{ 
+                              color: logoTextEl?.color || accentColor,
+                              fontFamily: getFontFamilyStyle(logoTextEl?.fontFamily),
+                              fontSize: logoTextEl?.fontSize ? `${logoTextEl.fontSize}px` : '20px',
+                              letterSpacing: logoTextEl?.letterSpacing || '0.18em'
+                            }}
+                          >
+                            {logoTextEl?.content || 'FILMIFY WEDDINGS'}
+                          </div>
+                          <div className="text-[7px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
+                            {selectedTemplateId === 'minimalist' ? 'Ivory Studio Minimalist' : 'Premium Editorial Studio'}
+                          </div>
+                        </div>
+
+                        {/* Bottom Section: Hero couple image cutout */}
+                        <div 
+                          className="absolute left-10 right-10 flex items-end justify-center z-10"
+                          style={{
+                            top: `${heroImageEl?.y || 48}%`,
+                            bottom: '0',
+                            border: selectedTemplateId === 'emerald_gold' ? '2px solid #D4AF37' : 'none',
+                            borderRadius: selectedTemplateId === 'minimalist' ? '12px' : 'none',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          <img 
+                            src={heroImageEl?.content || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
+                            alt="Cover couple cutout" 
+                            className="w-full h-full object-contain" 
+                          />
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
               {/* Page 2 Custom Premium About Us Layout */}
               {pageIdx === 1 && (
                 <div className="absolute inset-0 flex flex-col justify-between p-[75px] z-10 select-text">
-                  {/* Birds flying at the top right */}
-                  <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
-                    <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      {/* V-formation birds */}
-                      <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke={accentColor} strokeWidth="1.2" strokeLinecap="round" fill="none" />
-                      <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke={accentColor} strokeWidth="1.1" strokeLinecap="round" fill="none" />
-                      <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke={accentColor} strokeWidth="0.9" strokeLinecap="round" fill="none" />
-                      <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
-                      <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke={accentColor} strokeWidth="0.8" strokeLinecap="round" fill="none" />
-                      <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke={accentColor} strokeWidth="0.7" strokeLinecap="round" fill="none" />
-                    </svg>
-                  </div>
+                  {/* Birds flying at the top right - only for Editorial */}
+                  {selectedTemplateId === 'editorial' && (
+                    <div className="absolute top-[8%] right-[15%] opacity-80 pointer-events-none">
+                      <svg width="140" height="60" viewBox="0 0 140 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        {/* V-formation birds */}
+                        <path d="M10 20 Q15 17 20 20 Q23 17 26 20" stroke={accentColor} strokeWidth="1.2" strokeLinecap="round" fill="none" />
+                        <path d="M32 12 Q36 9 40 12 Q43 9 46 12" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                        <path d="M48 24 Q52 21 56 24 Q59 21 62 24" stroke={accentColor} strokeWidth="1.1" strokeLinecap="round" fill="none" />
+                        <path d="M66 16 Q69 13 72 16 Q75 13 78 16" stroke={accentColor} strokeWidth="0.9" strokeLinecap="round" fill="none" />
+                        <path d="M84 28 Q87 25 90 28 Q93 25 96 28" stroke={accentColor} strokeWidth="1" strokeLinecap="round" fill="none" />
+                        <path d="M100 20 Q103 17 106 20 Q109 17 112 20" stroke={accentColor} strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                        <path d="M118 12 Q121 9 124 12 Q127 9 130 12" stroke={accentColor} strokeWidth="0.7" strokeLinecap="round" fill="none" />
+                      </svg>
+                    </div>
+                  )}
 
-                  {/* Monogram logo */}
-                  <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
-                    <div className="relative w-[150px] h-[100px]">
-                      {/* U and S */}
-                      <div className="absolute left-[15px] top-[32px] flex items-baseline" style={{ color: accentColor }}>
-                        <span className="text-7xl font-serif font-light">U</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">S</span>
-                      </div>
-                      {/* A and BOUT */}
-                      <div className="absolute left-[60px] top-[0px] flex items-baseline" style={{ color: accentColor }}>
-                        <span className="text-7xl font-serif font-light">A</span>
-                        <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">BOUT</span>
+                  {/* Header / Monogram logo */}
+                  {selectedTemplateId === 'editorial' ? (
+                    <div className="w-full flex justify-center items-center h-[120px] select-none mt-4">
+                      <div className="relative w-[150px] h-[100px]">
+                        <div className="absolute left-[15px] top-[32px] flex items-baseline" style={{ color: accentColor }}>
+                          <span className="text-7xl font-serif font-light">U</span>
+                          <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">S</span>
+                        </div>
+                        <div className="absolute left-[60px] top-[0px] flex items-baseline" style={{ color: accentColor }}>
+                          <span className="text-7xl font-serif font-light">A</span>
+                          <span className="text-[9px] font-sans tracking-[0.15em] ml-1 font-bold">BOUT</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="w-full flex justify-center items-center h-[100px] mt-4">
+                      {(() => {
+                        const aboutHeadingEl = pages[1]?.elements.find(el => el.id === 'about-heading');
+                        const font = aboutHeadingEl?.fontFamily ? FONTS_LIST.find(f => f.name === aboutHeadingEl.fontFamily)?.family : 'inherit';
+                        return (
+                          <h3 
+                            className="font-bold tracking-widest text-2xl" 
+                            style={{ 
+                              color: aboutHeadingEl?.color || accentColor, 
+                              fontFamily: font,
+                              letterSpacing: aboutHeadingEl?.letterSpacing || '0.2em'
+                            }}
+                          >
+                            {aboutHeadingEl?.content || 'ABOUT US'}
+                          </h3>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {/* Quote Section */}
-                  <div className="relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center">
-                    <span className="absolute left-4 top-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>“</span>
-                    <p className="text-[12px] font-sans text-zinc-700 leading-relaxed font-medium">
-                      {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
-                    </p>
-                    <span className="absolute right-4 bottom-0 text-4xl font-serif font-bold" style={{ color: accentColor }}>”</span>
-                  </div>
+                  {(() => {
+                    const aboutQuoteEl = pages[1]?.elements.find(el => el.id === 'about-quote');
+                    const font = aboutQuoteEl?.fontFamily ? FONTS_LIST.find(f => f.name === aboutQuoteEl.fontFamily)?.family : 'inherit';
+                    return (
+                      <div className="relative px-12 py-3 mx-2 my-2 text-center flex items-center justify-center">
+                        <span className="absolute left-4 top-0 text-4xl font-serif font-bold" style={{ color: aboutQuoteEl?.color || accentColor }}>“</span>
+                        <p 
+                          className="text-[12px] leading-relaxed font-medium"
+                          style={{
+                            color: aboutQuoteEl?.color || '#111111',
+                            fontFamily: font,
+                            fontStyle: aboutQuoteEl?.fontStyle || 'normal'
+                          }}
+                        >
+                          {pages[1]?.elements.find(el => el.id === 'about-quote')?.content}
+                        </p>
+                        <span className="absolute right-4 bottom-0 text-4xl font-serif font-bold" style={{ color: aboutQuoteEl?.color || accentColor }}>”</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Two Photos Side-by-Side */}
-                  <div className="grid grid-cols-2 gap-6 w-full px-2 mt-4">
-                    <div className="overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5]">
-                      <img 
-                        src={pages[1]?.elements.find(el => el.id === 'about-img-left')?.content || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600'} 
-                        alt="About left couple" 
-                        className="w-full h-full object-cover" 
-                      />
-                    </div>
-                    <div className="overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm aspect-[4/5]">
-                      <img 
-                        src={pages[1]?.elements.find(el => el.id === 'about-img-right')?.content || 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600'} 
-                        alt="About right couple" 
-                        className="w-full h-full object-cover" 
-                      />
-                    </div>
-                  </div>
+                  {(() => {
+                    const imgLeftEl = pages[1]?.elements.find(el => el.id === 'about-img-left');
+                    const imgRightEl = pages[1]?.elements.find(el => el.id === 'about-img-right');
+
+                    return (
+                      <div className="grid grid-cols-2 gap-6 w-full px-2 mt-4">
+                        <div 
+                          className="overflow-hidden rounded-xl bg-[#E8E2D9] relative border shadow-sm aspect-[4/5]"
+                          style={{
+                            borderColor: selectedTemplateId === 'emerald_gold' ? '#D4AF37' : selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E0D8CC',
+                            borderWidth: selectedTemplateId === 'emerald_gold' ? '2px' : '1px'
+                          }}
+                        >
+                          <img 
+                            src={imgLeftEl?.content || 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=600'} 
+                            alt="About left couple" 
+                            className="w-full h-full object-cover" 
+                          />
+                        </div>
+                        <div 
+                          className="overflow-hidden rounded-xl bg-[#E8E2D9] relative border shadow-sm aspect-[4/5]"
+                          style={{
+                            borderColor: selectedTemplateId === 'emerald_gold' ? '#D4AF37' : selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E0D8CC',
+                            borderWidth: selectedTemplateId === 'emerald_gold' ? '2px' : '1px'
+                          }}
+                        >
+                          <img 
+                            src={imgRightEl?.content || 'https://images.unsplash.com/photo-1606800052052-a08af7148866?auto=format&fit=crop&q=80&w=600'} 
+                            alt="About right couple" 
+                            className="w-full h-full object-cover" 
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
               {/* Page 4 Custom Premium Early Booking Offer Layout */}
-              {pageIdx === 3 && (
+              {pageIdx === pages.length - 1 && (
                 <div className="absolute inset-x-[75px] top-[75px] bottom-0 z-10 flex flex-col justify-between select-text">
-                  {/* Heading */}
-                  <div className="w-full flex flex-col items-center">
-                    <div className="text-3xl font-serif theme-accent-text font-bold tracking-widest text-center uppercase">
-                      EARLY BOOKING OFFER
-                    </div>
-                    
-                    {/* Offer Price Box */}
-                    <div className="border border-[#E8E2D9] px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm">
-                      <span className="text-2xl font-serif font-bold theme-accent-text tracking-wider">
-                        Rs {offerPrice.toLocaleString()}/-
-                      </span>
-                    </div>
+                  {(() => {
+                    const pricingPage = pages[pages.length - 1];
+                    const headingEl = pricingPage?.elements.find(el => el.id === 'pricing-heading');
+                    const mainPriceEl = pricingPage?.elements.find(el => el.id === 'pricing-main-price');
+                    const regularPriceEl = pricingPage?.elements.find(el => el.id === 'pricing-regular-price');
+                    const excludesEl = pricingPage?.elements.find(el => el.id === 'pricing-excludes');
+                    const savingsEl = pricingPage?.elements.find(el => el.id === 'pricing-savings-banner');
+                    const palaceImgEl = pricingPage?.elements.find(el => el.id === 'pricing-palace-image');
+                    const logoTextEl = pricingPage?.elements.find(el => el.id === 'pricing-logo-text');
 
-                    {/* Regular Price Subtitle */}
-                    <div className="text-xs font-medium text-[#706E6A] tracking-wider mt-3">
-                      Regular Quotation : Rs {regularPrice.toLocaleString()}/-
-                    </div>
+                    const getFontFamilyStyle = (fontName?: string) => {
+                      if (!fontName) return 'inherit';
+                      return FONTS_LIST.find(f => f.name === fontName)?.family || 'inherit';
+                    };
 
-                    {/* Exclude notes box */}
-                    <div className="border border-[#E8E2D9] px-6 py-2 mt-4 rounded bg-white/20 max-w-[420px] text-center">
-                      <span className="text-[9.5px] font-sans text-zinc-500 tracking-wide font-medium leading-relaxed">
-                        This excludes travel, accommodation, food & any add-on services.
-                      </span>
-                    </div>
+                    return (
+                      <>
+                        {/* Heading */}
+                        <div className="w-full flex flex-col items-center">
+                          <div 
+                            className="text-center font-bold uppercase" 
+                            style={{ 
+                              color: headingEl?.color || accentColor,
+                              fontFamily: getFontFamilyStyle(headingEl?.fontFamily),
+                              fontSize: headingEl?.fontSize ? `${headingEl.fontSize}px` : '28px',
+                              letterSpacing: headingEl?.letterSpacing || '0.15em'
+                            }}
+                          >
+                            {headingEl?.content || 'EARLY BOOKING OFFER'}
+                          </div>
+                          
+                          {/* Offer Price Box */}
+                          <div 
+                            className="border px-8 py-2.5 mt-5 rounded-lg text-center bg-white/40 shadow-sm"
+                            style={{
+                              borderColor: selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E8E2D9'
+                            }}
+                          >
+                            <span 
+                              className="font-bold tracking-wider" 
+                              style={{ 
+                                color: mainPriceEl?.color || accentColor,
+                                fontFamily: getFontFamilyStyle(mainPriceEl?.fontFamily),
+                                fontSize: mainPriceEl?.fontSize ? `${mainPriceEl.fontSize}px` : '24px'
+                              }}
+                            >
+                              Rs {offerPrice.toLocaleString()}/-
+                            </span>
+                          </div>
 
-                    {/* Savings Highlight Banner */}
-                    <div className="w-full theme-accent-bg text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold text-[12px] tracking-wide font-sans leading-relaxed">
-                      Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
-                    </div>
-                  </div>
+                          {/* Regular Price Subtitle */}
+                          <div 
+                            className="tracking-wider mt-3"
+                            style={{
+                              color: regularPriceEl?.color || '#706E6A',
+                              fontFamily: getFontFamilyStyle(regularPriceEl?.fontFamily),
+                              fontSize: regularPriceEl?.fontSize ? `${regularPriceEl.fontSize}px` : '12px'
+                            }}
+                          >
+                            Regular Quotation : Rs {regularPrice.toLocaleString()}/-
+                          </div>
 
-                  {/* Logo overlay & bottom palace cover photo */}
-                  <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
-                    {/* Centered Logo text right above the cutout skyline */}
-                    <div className="text-center z-20 pb-4">
-                      <div className="text-lg font-bold tracking-[0.2em] theme-accent-text font-serif uppercase">
-                        FILMIFY WEDDINGS
-                      </div>
-                      <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
-                        Premium Editorial Studio
-                      </div>
-                    </div>
+                          {/* Exclude notes box */}
+                          <div 
+                            className="px-6 py-2 mt-4 rounded bg-white/20 max-w-[420px] text-center border"
+                            style={{
+                              borderColor: selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : '#E8E2D9'
+                            }}
+                          >
+                            <span 
+                              className="tracking-wide font-medium leading-relaxed"
+                              style={{
+                                color: excludesEl?.color || '#706E6A',
+                                fontFamily: getFontFamilyStyle(excludesEl?.fontFamily),
+                                fontSize: excludesEl?.fontSize ? `${excludesEl.fontSize}px` : '9.5px'
+                              }}
+                            >
+                              This excludes travel, accommodation, food & any add-on services.
+                            </span>
+                          </div>
 
-                    {/* Palace/Castle cutout photo occupying the bottom */}
-                    <div className="w-full h-[250px] relative overflow-hidden rounded-t-3xl border border-[#E0D8CC]/50 shadow-lg">
-                      <img 
-                        src={pages[3]?.elements.find(el => el.id === 'pricing-palace-image')?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
-                        alt="Palace backdrop" 
-                        className="w-full h-full object-cover" 
-                      />
-                    </div>
-                  </div>
+                          {/* Savings Highlight Banner */}
+                          <div 
+                            className="w-full text-white py-3 px-6 mt-6 rounded-xl shadow-sm text-center font-bold tracking-wide leading-relaxed" 
+                            style={{ 
+                              backgroundColor: savingsEl?.color === '#FFFFFF' ? accentColor : (savingsEl?.color || accentColor),
+                              fontFamily: getFontFamilyStyle(savingsEl?.fontFamily),
+                              fontSize: savingsEl?.fontSize ? `${savingsEl.fontSize}px` : '12px'
+                            }}
+                          >
+                            Save Rs {savings.toLocaleString()} With Our Special Offer. The Special Offer Ends in the Next 7 days.
+                          </div>
+                        </div>
+
+                        {/* Logo overlay & bottom palace cover photo */}
+                        <div className="relative w-full h-[320px] flex flex-col justify-between items-center mt-6">
+                          {/* Centered Logo text right above the cutout skyline */}
+                          <div className="text-center z-20 pb-4">
+                            <div 
+                              className="font-bold tracking-[0.2em] uppercase" 
+                              style={{ 
+                                color: logoTextEl?.color || accentColor,
+                                fontFamily: getFontFamilyStyle(logoTextEl?.fontFamily),
+                                fontSize: logoTextEl?.fontSize ? `${logoTextEl.fontSize}px` : '16px'
+                              }}
+                            >
+                              {logoTextEl?.content || 'FILMIFY WEDDINGS'}
+                            </div>
+                            <div className="text-[6.5px] text-[#8A7E56] font-sans tracking-[0.3em] uppercase mt-0.5 font-bold">
+                              {selectedTemplateId === 'minimalist' ? 'Ivory Studio Minimalist' : 'Premium Editorial Studio'}
+                            </div>
+                          </div>
+
+                          {/* Palace/Castle cutout photo occupying the bottom */}
+                          <div 
+                            className="w-full relative overflow-hidden shadow-lg border"
+                            style={{
+                              height: `${palaceImgEl?.height ? palaceImgEl.height * 8.5 : 250}px`,
+                              borderColor: selectedTemplateId === 'emerald_gold' ? '#D4AF37' : selectedTemplateId === 'minimalist' ? 'rgba(0,0,0,0.06)' : 'rgba(224, 216, 204, 0.5)',
+                              borderWidth: selectedTemplateId === 'emerald_gold' ? '2px' : '1px',
+                              borderRadius: selectedTemplateId === 'minimalist' ? '12px' : '24px 24px 0 0'
+                            }}
+                          >
+                            <img 
+                              src={palaceImgEl?.content || 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&q=80&w=800'} 
+                              alt="Palace backdrop" 
+                              className="w-full h-full object-cover" 
+                            />
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -3285,7 +4699,7 @@ export default function QuotationMakerPage() {
               {pageIdx !== 0 && (
                 <div className="absolute bottom-6 left-10 right-10 flex items-center justify-between border-t border-[#E8E2D9]/50 pt-3 text-[9px] text-[#8A7E56] font-medium tracking-wide">
                   <span>FILMIFY WEDDINGS</span>
-                  <span className="font-serif">Page {pageIdx + 1} of 4</span>
+                  <span className="font-serif">Page {pageIdx + 1} of {pages.length}</span>
                   <span>DIGITAL QUOTATION</span>
                 </div>
               )}

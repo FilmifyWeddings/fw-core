@@ -241,6 +241,7 @@ export interface Quotation {
   pricing_summary: PricingSummary;
   created_at: string;
   updated_at: string;
+  folder_id?: string | null;
 }
 
 export interface QuotationPreset {
