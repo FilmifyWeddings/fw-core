@@ -9,6 +9,7 @@ import {
   AlertCircle, DollarSign, RefreshCw, FolderOpen, History, Search, Folder, Edit
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import Moveable from 'react-moveable';
 import { 
   CanvasPage, CanvasElement, PricingSummary, 
   Quotation, QuotationPreset, QuotationTemplate 
@@ -796,6 +797,133 @@ export default function QuotationMakerPage() {
   const [archiveDirectories, setArchiveDirectories] = useState<any[]>([]);
   const [selectedArchiveDirectory, setSelectedArchiveDirectory] = useState<any>(null);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
+
+  // Canva-like editor states
+  const [activeDomElement, setActiveDomElement] = useState<HTMLElement | null>(null);
+  const [editingTextElementId, setEditingTextElementId] = useState<string | null>(null);
+  const [uploadTarget, setUploadTarget] = useState<{ pageIndex: number; elementId: string } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const updateElementPosition = (pageIndex: number, elementId: string, xPercent: number, yPercent: number) => {
+    setPages(prevPages =>
+      prevPages.map((page, pIdx) => {
+        if (pIdx === pageIndex) {
+          return {
+            ...page,
+            elements: page.elements.map(el => {
+              if (el.id === elementId) {
+                return { ...el, x: parseFloat(xPercent.toFixed(2)), y: parseFloat(yPercent.toFixed(2)) };
+              }
+              return el;
+            })
+          };
+        }
+        return page;
+      })
+    );
+  };
+
+  const updateElementDimensionsAndFont = (pageIndex: number, elementId: string, widthPercent: number, heightPercent: number, fontSize?: number) => {
+    setPages(prevPages =>
+      prevPages.map((page, pIdx) => {
+        if (pIdx === pageIndex) {
+          return {
+            ...page,
+            elements: page.elements.map(el => {
+              if (el.id === elementId) {
+                const updated: any = {
+                  ...el,
+                  width: parseFloat(widthPercent.toFixed(2)),
+                  height: parseFloat(heightPercent.toFixed(2))
+                };
+                if (fontSize !== undefined) {
+                  updated.fontSize = fontSize;
+                }
+                return updated;
+              }
+              return el;
+            })
+          };
+        }
+        return page;
+      })
+    );
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.getAttribute('contenteditable') === 'true' || 
+          document.activeElement?.tagName === 'INPUT' || 
+          document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      if (e.key === 'Escape') {
+        setSelectedElement(null);
+        setActiveDomElement(null);
+        setEditingTextElementId(null);
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedElement) {
+          setPages(prevPages =>
+            prevPages.map((page, pIdx) => {
+              if (pIdx === selectedElement.pageIndex) {
+                return {
+                  ...page,
+                  elements: page.elements.filter(el => el.id !== selectedElement.elementId)
+                };
+              }
+              return page;
+            })
+          );
+          setSelectedElement(null);
+          setActiveDomElement(null);
+          setEditingTextElementId(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedElement]);
+
+  const handleDirectImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, pageIndex: number, elementId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    showToast('Uploading custom asset...', 'info');
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `custom-assets/${fileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('quotations')
+        .upload(filePath, file);
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from('quotations').getPublicUrl(filePath);
+      if (!data?.publicUrl) throw new Error('Could not get public URL');
+      setPages(prevPages =>
+        prevPages.map((page, pIdx) => {
+          if (pIdx === pageIndex) {
+            return {
+              ...page,
+              elements: page.elements.map(el => el.id === elementId ? { ...el, content: data.publicUrl } : el)
+            };
+          }
+          return page;
+        })
+      );
+      showToast('Uploaded asset successfully!', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Asset upload failed', 'error');
+    } finally {
+      setIsUploading(false);
+      setUploadTarget(null);
+    }
+  };
 
   const fetchArchive = async (query = '') => {
     setIsArchiveLoading(true);
@@ -1682,7 +1810,23 @@ export default function QuotationMakerPage() {
   // Element Selection Handler
   const handleElementClick = (e: React.MouseEvent, pageIndex: number, elementId: string) => {
     e.stopPropagation();
+    const isAlreadySelected = selectedElement?.pageIndex === pageIndex && selectedElement?.elementId === elementId;
     setSelectedElement({ pageIndex, elementId });
+    const domNode = document.getElementById(`element-${elementId}`);
+    if (domNode) {
+      setActiveDomElement(domNode);
+    }
+    const page = pages[pageIndex];
+    const el = page?.elements.find(item => item.id === elementId);
+    if (el && el.type === 'text') {
+      if (isAlreadySelected) {
+        setEditingTextElementId(elementId);
+      } else {
+        setEditingTextElementId(null);
+      }
+    } else {
+      setEditingTextElementId(null);
+    }
   };
 
   // Inline text edit saving
@@ -2957,10 +3101,12 @@ export default function QuotationMakerPage() {
                   return (
                     <div
                       key={el.id}
+                      id={`element-${el.id}`}
                       onClick={(e) => handleElementClick(e, activePageIndex, el.id)}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
                         setInlineEditingText(el.content);
+                        setEditingTextElementId(el.id);
                       }}
                       style={customStyle}
                       className={`group transition rounded-md p-1.5 flex items-center justify-center ${
@@ -3001,6 +3147,7 @@ export default function QuotationMakerPage() {
                   return (
                     <div
                       key={el.id}
+                      id={`element-${el.id}`}
                       onClick={(e) => handleElementClick(e, activePageIndex, el.id)}
                       style={customStyle}
                       className={`group transition overflow-hidden rounded-xl bg-[#E8E2D9] relative border border-[#E0D8CC] shadow-sm ${
@@ -3795,23 +3942,57 @@ export default function QuotationMakerPage() {
                 </div>
               )}
 
-              {/* Canva Bounding Box / Moveable Transform Controls Overlay */}
-              {selectedElement && selectedElement.pageIndex === activePageIndex && activeElement && (
-                <MoveableTransformOverlay
-                  element={activeElement}
-                  pageIndex={selectedElement.pageIndex}
-                  canvasWidth={644}
-                  canvasHeight={973}
-                  onChange={(updatedProps) => {
-                    setPages(prev => prev.map((p, pi) => {
-                      if (pi === selectedElement.pageIndex) {
-                        return {
-                          ...p,
-                          elements: p.elements.map(el => el.id === activeElement.id ? { ...el, ...updatedProps } : el)
-                        };
-                      }
-                      return p;
-                    }));
+              {/* REACT-MOVEABLE DRAG/RESIZE OVERLAY */}
+              {mounted && activeDomElement && selectedElement && selectedElement.pageIndex === activePageIndex && activeElement && (
+                <Moveable
+                  target={activeDomElement}
+                  draggable={editingTextElementId === null}
+                  resizable={editingTextElementId === null}
+                  keepRatio={activeElement.type === 'image'}
+                  throttleDrag={1}
+                  throttleResize={1}
+                  onDrag={({ target, left, top }) => {
+                    target.style.left = `${left}px`;
+                    target.style.top = `${top}px`;
+                  }}
+                  onDragEnd={({ target }) => {
+                    const parent = (target as HTMLElement).offsetParent as HTMLElement;
+                    if (parent) {
+                      const leftPx = parseFloat(target.style.left || '0');
+                      const topPx = parseFloat(target.style.top || '0');
+                      const xPercent = (leftPx / parent.clientWidth) * 100;
+                      const yPercent = (topPx / parent.clientHeight) * 100;
+                      updateElementPosition(activePageIndex, activeElement.id, xPercent, yPercent);
+                    }
+                  }}
+                  onResizeStart={({ target }) => {
+                    target.setAttribute('data-initial-font-size', String(parseFloat(target.style.fontSize || '14')));
+                    target.setAttribute('data-initial-width', String(target.clientWidth));
+                  }}
+                  onResize={({ target, width, height, drag }) => {
+                    target.style.width = `${width}px`;
+                    target.style.height = `${height}px`;
+                    target.style.left = `${drag.left}px`;
+                    target.style.top = `${drag.top}px`;
+                    const initialFontSize = parseFloat(target.getAttribute('data-initial-font-size') || '0');
+                    const initialWidth = parseFloat(target.getAttribute('data-initial-width') || '0');
+                    if (initialFontSize && initialWidth && activeElement.type !== 'image') {
+                      const newFontSize = Math.round(initialFontSize * (width / initialWidth));
+                      target.style.fontSize = `${newFontSize}px`;
+                    }
+                  }}
+                  onResizeEnd={({ target }) => {
+                    const parent = (target as HTMLElement).offsetParent as HTMLElement;
+                    if (parent) {
+                      const widthPct = (target.clientWidth / parent.clientWidth) * 100;
+                      const heightPct = (target.clientHeight / parent.clientHeight) * 100;
+                      const xPct = (parseFloat(target.style.left || '0') / parent.clientWidth) * 100;
+                      const yPct = (parseFloat(target.style.top || '0') / parent.clientHeight) * 100;
+                      const fontAttr = target.style.fontSize;
+                      const fontSizeNum = fontAttr ? parseInt(fontAttr) : undefined;
+                      updateElementPosition(activePageIndex, activeElement.id, xPct, yPct);
+                      updateElementDimensionsAndFont(activePageIndex, activeElement.id, widthPct, heightPct, fontSizeNum);
+                    }
                   }}
                 />
               )}
@@ -3846,6 +4027,108 @@ export default function QuotationMakerPage() {
           </div>
 
         </div>
+
+        {/* FLOATING TYPOGRAPHY MINI-DOCK */}
+        {mounted && activeDomElement && selectedElement && selectedElement.pageIndex === activePageIndex && activeElement && (
+          <div
+            style={{
+              position: 'absolute',
+              left: activeDomElement.offsetLeft * scale + (activeDomElement.clientWidth * scale) / 2,
+              top: activeDomElement.offsetTop * scale - 55,
+              transform: 'translateX(-50%)',
+              zIndex: 200,
+            }}
+            className="flex items-center gap-1.5 bg-zinc-950/95 backdrop-blur border border-zinc-800 rounded-xl px-3 py-1.5 shadow-2xl text-white select-none animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {activeElement.type === 'text' && (
+              <>
+                {/* Font Family */}
+                <select
+                  value={activeElement.fontFamily || 'Inter'}
+                  onChange={e => updateSelectedElement('fontFamily', e.target.value)}
+                  className="bg-transparent text-[11px] font-semibold text-zinc-300 border-none outline-none cursor-pointer max-w-[80px]"
+                >
+                  {FONTS_LIST.map(font => (
+                    <option key={font.name} value={font.name} className="bg-zinc-900 text-white">{font.name}</option>
+                  ))}
+                </select>
+                <div className="w-px h-4 bg-zinc-700" />
+                {/* Font Size */}
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => updateSelectedElement('fontSize', Math.max(8, (activeElement.fontSize || 12) - 1))} className="w-5 h-5 flex items-center justify-center hover:bg-zinc-800 rounded text-zinc-300 text-xs font-bold">-</button>
+                  <span className="text-[11px] font-bold text-zinc-200 min-w-[18px] text-center">{activeElement.fontSize || 12}</span>
+                  <button onClick={() => updateSelectedElement('fontSize', Math.min(120, (activeElement.fontSize || 12) + 1))} className="w-5 h-5 flex items-center justify-center hover:bg-zinc-800 rounded text-zinc-300 text-xs font-bold">+</button>
+                </div>
+                <div className="w-px h-4 bg-zinc-700" />
+                {/* Alignment */}
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => updateSelectedElement('textAlign', 'left')} className={`p-1 rounded ${activeElement.textAlign === 'left' ? 'bg-[#C2B280] text-zinc-950' : 'text-zinc-400 hover:bg-zinc-800'}`}><AlignLeft className="w-3 h-3" /></button>
+                  <button onClick={() => updateSelectedElement('textAlign', 'center')} className={`p-1 rounded ${activeElement.textAlign === 'center' ? 'bg-[#C2B280] text-zinc-950' : 'text-zinc-400 hover:bg-zinc-800'}`}><AlignCenter className="w-3 h-3" /></button>
+                  <button onClick={() => updateSelectedElement('textAlign', 'right')} className={`p-1 rounded ${activeElement.textAlign === 'right' ? 'bg-[#C2B280] text-zinc-950' : 'text-zinc-400 hover:bg-zinc-800'}`}><AlignRight className="w-3 h-3" /></button>
+                </div>
+                <div className="w-px h-4 bg-zinc-700" />
+                {/* Bold */}
+                <button onClick={() => updateSelectedElement('fontWeight', activeElement.fontWeight === 'bold' ? 'normal' : 'bold')} className={`p-1 rounded ${activeElement.fontWeight === 'bold' ? 'bg-[#C2B280] text-zinc-950' : 'text-zinc-400 hover:bg-zinc-800'}`}><Bold className="w-3 h-3" /></button>
+                <div className="w-px h-4 bg-zinc-700" />
+                {/* Color Swatches */}
+                <div className="flex items-center gap-1">
+                  {['#FFFFFF', '#000000', '#C2B280', '#606248'].map(color => (
+                    <button key={color} onClick={() => updateSelectedElement('color', color)} style={{ backgroundColor: color }} className={`w-3.5 h-3.5 rounded-full border border-white/20 hover:scale-110 transition ${activeElement.color === color ? 'ring-1 ring-amber-400' : ''}`} />
+                  ))}
+                  <input type="color" value={activeElement.color || '#000000'} onChange={e => updateSelectedElement('color', e.target.value)} className="w-3.5 h-3.5 rounded-full border-none outline-none cursor-pointer p-0 overflow-hidden" />
+                </div>
+              </>
+            )}
+            {activeElement.type === 'image' && (
+              <button
+                onClick={() => {
+                  setUploadTarget({ pageIndex: activePageIndex, elementId: activeElement.id });
+                  fileInputRef.current?.click();
+                }}
+                className="flex items-center gap-1.5 text-[11px] text-zinc-300 hover:text-white transition"
+              >
+                <Upload className="w-3 h-3 text-amber-400" />
+                Swap Image
+              </button>
+            )}
+            <div className="w-px h-4 bg-zinc-700" />
+            {/* Delete */}
+            <button
+              onClick={() => {
+                if (!selectedElement) return;
+                setPages(prevPages =>
+                  prevPages.map((page, pIdx) => {
+                    if (pIdx === selectedElement.pageIndex) {
+                      return { ...page, elements: page.elements.filter(el => el.id !== selectedElement.elementId) };
+                    }
+                    return page;
+                  })
+                );
+                setSelectedElement(null);
+                setActiveDomElement(null);
+                setEditingTextElementId(null);
+              }}
+              className="p-1 hover:bg-rose-950 text-rose-400 rounded transition"
+              title="Delete Element"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
+        {/* INVISIBLE FILE INPUT FOR DIRECT UPLOAD */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept="image/*"
+          onChange={(e) => {
+            if (uploadTarget) {
+              handleDirectImageUpload(e, uploadTarget.pageIndex, uploadTarget.elementId);
+            }
+          }}
+        />
 
       </div>
         </>
