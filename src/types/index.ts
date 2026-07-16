@@ -318,5 +318,85 @@ export interface FWWhatsAppLog {
   created_at?: string;
 }
 
+// ─────────────────────────────────────────────────────────────
+// SaaS Suite Registry Types
+// ─────────────────────────────────────────────────────────────
+
+export type SubAppSlug = 'team-manager' | 'quotations' | 'leads';
+
+export interface SuiteAppNavItem {
+  label: string;
+  icon: string;
+  href: string;
+}
+
+export interface SuiteAppConfig {
+  slug: SubAppSlug;
+  title: string;
+  subtitle: string;
+  description: string;
+  icon: string;
+  accentColor: string;
+  accentGradient: string;
+  href: string;
+  sidebarNavItems: SuiteAppNavItem[];
+}
+
+export interface SuiteRegistry {
+  apps: SuiteAppConfig[];
+}
+
+export const SUITE_REGISTRY: SuiteRegistry = {
+  apps: [
+    {
+      slug: 'team-manager',
+      title: 'Team Manager',
+      subtitle: 'Crew & Operations',
+      description: 'Manage crew standings, ledger, calendar, and project assignments for wedding operations.',
+      icon: 'Users',
+      accentColor: '#8B5CF6',
+      accentGradient: 'from-violet-500 to-purple-600',
+      href: '/team-manager',
+      sidebarNavItems: [
+        { label: 'Crew Standings', icon: 'Users', href: '/team-manager' },
+        { label: 'Projects Ledger', icon: 'FolderOpen', href: '/team-manager' },
+        { label: 'Event Calendar', icon: 'Calendar', href: '/team-manager' },
+        { label: 'Assignments', icon: 'ClipboardList', href: '/team-manager' },
+      ],
+    },
+    {
+      slug: 'quotations',
+      title: 'Quotation Maker',
+      subtitle: 'Canvas & Templates',
+      description: 'Design premium digital canvas quotation documents with Canva-style inline editing.',
+      icon: 'FileText',
+      accentColor: '#D4AF37',
+      accentGradient: 'from-amber-500 to-yellow-600',
+      href: '/quotations',
+      sidebarNavItems: [
+        { label: 'Canvas Folders', icon: 'FolderOpen', href: '/quotations' },
+        { label: 'Template Selector', icon: 'Layout', href: '/quotations' },
+        { label: 'Design Templates', icon: 'Sparkles', href: '/quotations' },
+        { label: 'Saved Quotations', icon: 'Database', href: '/quotations' },
+      ],
+    },
+    {
+      slug: 'leads',
+      title: 'Leads Integration',
+      subtitle: 'CRM & Webhooks',
+      description: 'Webhook capture statistics, Facebook Meta sync state, and automated outbox queue routers.',
+      icon: 'Database',
+      accentColor: '#10B981',
+      accentGradient: 'from-emerald-500 to-green-600',
+      href: '/leads',
+      sidebarNavItems: [
+        { label: 'Webhook Capture', icon: 'Globe', href: '/leads' },
+        { label: 'Meta Ads Sync', icon: 'Webhook', href: '/leads' },
+        { label: 'Outbox Queue', icon: 'Send', href: '/leads' },
+        { label: 'Lead Pipeline', icon: 'BarChart3', href: '/leads' },
+      ],
+    },
+  ],
+};
 
 

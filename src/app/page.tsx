@@ -1,315 +1,160 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Settings, BarChart3, Database, RefreshCw, LayoutDashboard, Layers } from 'lucide-react';
-import { Lead, LiveLog, DashboardStats } from '@/types';
-import { supabase } from '@/lib/supabase';
-import { AnalyticsCards } from '@/components/dashboard/analytics-cards';
-import { LeadFlowChart } from '@/components/dashboard/lead-flow-chart';
-// LeadTable relocated to dedicated /leads page
-import { ActivityTicker } from '@/components/dashboard/activity-ticker';
+import { Users, FileText, Database, ArrowRight, Sparkles } from 'lucide-react';
+import { SUITE_REGISTRY, type SuiteAppConfig } from '@/types';
 
-const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
-
-// Beautiful simulated data for fallback
-const MOCK_LEADS: Lead[] = [
-  {
-    id: '1',
-    workspace_id: MOCK_WORKSPACE_ID,
-    name: 'Amit Sharma',
-    email: 'amit.sharma@example.com',
-    phone: '+919876543210',
-    source: 'facebook',
-    status: 'new',
-    score: 'High-Value 🔥',
-    score_reason: 'High budget detected (₹2,50,000).',
-    raw_payload: { budget: '2.5L', venue: 'Taj Udaipur', event_date: '2026-12-15' },
-    created_at: new Date(Date.now() - 1000 * 3600 * 2).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 3600 * 2).toISOString(),
-  },
-  {
-    id: '2',
-    workspace_id: MOCK_WORKSPACE_ID,
-    name: 'Priya Patel',
-    email: 'priya.patel@example.com',
-    phone: '+918765432109',
-    source: 'facebook',
-    status: 'contacted',
-    score: 'High-Value 🔥',
-    score_reason: 'Premium destination/venue (Leela Palace Goa) with budget of ₹1,80,000.',
-    raw_payload: { budget: '1.8L', venue: 'Leela Palace Goa', event_date: '2026-11-20', functions: '3' },
-    created_at: new Date(Date.now() - 1000 * 3600 * 18).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 3600 * 18).toISOString(),
-  },
-  {
-    id: '3',
-    workspace_id: MOCK_WORKSPACE_ID,
-    name: 'Rahul Verma',
-    email: 'rahul.verma@example.com',
-    phone: '+917654321098',
-    source: 'facebook',
-    status: 'warm',
-    score: 'Warm 👍',
-    score_reason: 'Moderate budget detected (₹90,000).',
-    raw_payload: { budget: '90k', venue: 'Marriott Jaipur', event_date: '2026-10-05' },
-    created_at: new Date(Date.now() - 1000 * 3600 * 42).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 3600 * 42).toISOString(),
-  },
-  {
-    id: '4',
-    workspace_id: MOCK_WORKSPACE_ID,
-    name: 'Sneha Reddy',
-    email: 'sneha.reddy@example.com',
-    phone: '+919988776655',
-    source: 'facebook',
-    status: 'new',
-    score: 'Cold ❄️',
-    score_reason: 'Low budget detected (₹40,000).',
-    raw_payload: { budget: '40,000 INR', venue: 'Local Banquet Hall', event_date: '2026-09-12' },
-    created_at: new Date(Date.now() - 1000 * 3600 * 3).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 3600 * 3).toISOString(),
-  },
-];
-
-const MOCK_STATS: DashboardStats = {
-  totalLeads: 24,
-  highValueLeads: 12,
-  warmLeads: 8,
-  coldLeads: 4,
-  deliveryRate: 94.2,
-  totalMessagesSent: 48,
-  totalMessagesPending: 15,
-  totalMessagesFailed: 3,
+const ICON_MAP: Record<string, React.ElementType> = {
+  Users,
+  FileText,
+  Database,
 };
 
-const MOCK_LOGS: LiveLog[] = [
-  {
-    id: 'l1',
-    workspace_id: MOCK_WORKSPACE_ID,
-    lead_id: '1',
-    event_type: 'webhook_ingested',
-    message: 'Lead ingested: "Amit Sharma". Score: High-Value 🔥.',
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 3600 * 2).toISOString(),
+const SUITE_ACCENT_MAP: Record<string, { bg: string; border: string; text: string; glow: string; iconBg: string }> = {
+  'team-manager': {
+    bg: 'bg-white',
+    border: 'border-zinc-200',
+    text: 'text-zinc-900',
+    glow: 'hover:shadow-[0_20px_40px_rgba(139,92,246,0.08)]',
+    iconBg: 'bg-gradient-to-br from-violet-500 to-purple-600',
   },
-  {
-    id: 'l2',
-    workspace_id: MOCK_WORKSPACE_ID,
-    lead_id: '1',
-    event_type: 'drip_scheduled',
-    message: 'Scheduled 3 drip messages for lead "Amit Sharma".',
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 3600 * 2 + 10).toISOString(),
+  'quotations': {
+    bg: 'bg-white',
+    border: 'border-zinc-200',
+    text: 'text-zinc-900',
+    glow: 'hover:shadow-[0_20px_40px_rgba(212,175,55,0.08)]',
+    iconBg: 'bg-gradient-to-br from-amber-400 to-yellow-500',
   },
-  {
-    id: 'l3',
-    workspace_id: MOCK_WORKSPACE_ID,
-    lead_id: '1',
-    event_type: 'whatsapp_sent',
-    message: 'WhatsApp Drip sent to "Amit Sharma" (+919876543210) successfully.',
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 3600 * 2 + 120).toISOString(),
+  'leads': {
+    bg: 'bg-white',
+    border: 'border-zinc-200',
+    text: 'text-zinc-900',
+    glow: 'hover:shadow-[0_20px_40px_rgba(16,185,129,0.08)]',
+    iconBg: 'bg-gradient-to-br from-emerald-500 to-green-600',
   },
-  {
-    id: 'l4',
-    workspace_id: MOCK_WORKSPACE_ID,
-    lead_id: '2',
-    event_type: 'sync_google_success',
-    message: 'Successfully synced lead "Priya Patel" as a Google Contact.',
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 3600 * 18).toISOString(),
-  },
-  {
-    id: 'l5',
-    workspace_id: MOCK_WORKSPACE_ID,
-    lead_id: '4',
-    event_type: 'whatsapp_failed',
-    message: 'WhatsApp Drip failed to send to "Sneha Reddy" (Attempt 1/3). Error: Network Timeout.',
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 3600 * 3).toISOString(),
-  },
-];
+};
 
-const MOCK_CHART_DATA = [
-  { date: '06 Jun', leads: 2, whatsappSent: 3 },
-  { date: '07 Jun', leads: 4, whatsappSent: 5 },
-  { date: '08 Jun', leads: 3, whatsappSent: 7 },
-  { date: '09 Jun', leads: 6, whatsappSent: 12 },
-  { date: '10 Jun', leads: 5, whatsappSent: 8 },
-  { date: '11 Jun', leads: 4, whatsappSent: 9 },
-  { date: '12 Jun', leads: 8, whatsappSent: 15 },
-];
-
-export default function DashboardPage() {
-  const router = useRouter();
-  const [userId, setUserId] = useState<string>(MOCK_WORKSPACE_ID);
-  const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS);
-  const [stats, setStats] = useState<DashboardStats>(MOCK_STATS);
-  const [logs, setLogs] = useState<LiveLog[]>(MOCK_LOGS);
-  const [loading, setLoading] = useState(true);
-  const [isDemoMode, setIsDemoMode] = useState(true);
-
-  // Authenticate user & sync database profile
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-      const uId = session.user.id;
-      setUserId(uId);
-
-      // Verify or auto-create profile row
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', uId)
-        .maybeSingle();
-
-      if (!profile) {
-        await supabase.from('profiles').insert({
-          id: uId,
-          workspace_name: `${session.user.email?.split('@')[0]}'s Studio`,
-          whastboost_status: 'disconnected',
-        });
-      }
-
-      setIsDemoMode(false);
-      await loadDashboardData(uId);
-    };
-
-    checkAuth();
-  }, [router]);
-
-  const loadDashboardData = async (targetUserId: string) => {
-    setLoading(true);
-    try {
-      // Fetch from real Supabase filtered by user's workspace
-      const { data: dbLeads, error: leadsErr } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('workspace_id', targetUserId)
-        .order('created_at', { ascending: false });
-
-      const { data: dbLogs } = await supabase
-        .from('live_logs')
-        .select('*')
-        .eq('workspace_id', targetUserId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      const { data: dbQueue } = await supabase
-        .from('queue_messages')
-        .select('status')
-        .eq('workspace_id', targetUserId);
-
-      if (!leadsErr && dbLeads && dbLeads.length > 0) {
-        setLeads(dbLeads as Lead[]);
-        if (dbLogs) setLogs(dbLogs as LiveLog[]);
-        
-        // Calculate real stats
-        const high = dbLeads.filter(l => l.score === 'High-Value 🔥').length;
-        const warm = dbLeads.filter(l => l.score === 'Warm 👍').length;
-        const cold = dbLeads.filter(l => l.score === 'Cold ❄️').length;
-        
-        const sent = dbQueue?.filter(q => q.status === 'sent').length || 0;
-        const pending = dbQueue?.filter(q => q.status === 'pending' || q.status === 'processing').length || 0;
-        const failed = dbQueue?.filter(q => q.status === 'failed').length || 0;
-        const delivery = sent + failed > 0 ? parseFloat(((sent / (sent + failed)) * 100).toFixed(1)) : 100;
-
-        setStats({
-          totalLeads: dbLeads.length,
-          highValueLeads: high,
-          warmLeads: warm,
-          coldLeads: cold,
-          deliveryRate: delivery,
-          totalMessagesSent: sent,
-          totalMessagesPending: pending,
-          totalMessagesFailed: failed,
-        });
-      } else if (!leadsErr && dbLeads && dbLeads.length === 0) {
-        // If profile exists but lead count is 0, empty stats
-        setLeads([]);
-        setLogs([]);
-        setStats({
-          totalLeads: 0,
-          highValueLeads: 0,
-          warmLeads: 0,
-          coldLeads: 0,
-          deliveryRate: 100,
-          totalMessagesSent: 0,
-          totalMessagesPending: 0,
-          totalMessagesFailed: 0,
-        });
-      }
-    } catch (err) {
-      console.log('Database read error, falling back to mock dashboard data.', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStatusChange = async (leadId: string, newStatus: Lead['status']) => {
-    // Optimistic UI Update
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: newStatus, updated_at: new Date().toISOString() } : l));
-
-    if (!isDemoMode) {
-      await supabase
-        .from('leads')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', leadId);
-    }
-  };
+function SuiteCard({ app, index }: { app: SuiteAppConfig; index: number }) {
+  const Icon = ICON_MAP[app.icon] || FileText;
+  const styles = SUITE_ACCENT_MAP[app.slug];
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-[#070708] text-zinc-900 dark:text-white selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-200">
-      {/* Main Dashboard Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Dashboard Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Platform Command Center</h1>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Real-time Lead Scoring & WhatsApp Marketing Automation</p>
-          </div>
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: index * 0.1, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <Link href={app.href} className="block group">
+        <div
+          className={`relative ${styles.bg} border ${styles.border} rounded-2xl p-8 transition-all duration-500 ease-out hover:border-zinc-300 hover:-translate-y-1 ${styles.glow} cursor-pointer overflow-hidden`}
+          style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}
+        >
+          {/* Subtle gradient overlay on hover */}
+          <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-zinc-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-          <div className="flex items-center gap-3">
-            {isDemoMode && (
-              <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-md text-[10px] font-bold tracking-wide flex items-center gap-1.5">
-                <Database className="w-3 h-3" />
-                SIMULATION MODE
-              </span>
-            )}
-            <button
-              onClick={() => loadDashboardData(userId)}
-              disabled={loading}
-              className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center"
+          <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-5">
+            {/* 3D Glassmorphism Icon */}
+            <div
+              className={`w-14 h-14 rounded-xl ${styles.iconBg} flex items-center justify-center shadow-lg shadow-black/5 group-hover:scale-105 transition-transform duration-300 flex-shrink-0`}
+              style={{ boxShadow: `0 8px 24px ${app.accentColor}20` }}
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+              <Icon className="w-6 h-6 text-white" strokeWidth={1.8} />
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className={`text-base font-bold ${styles.text} tracking-tight`}>
+                  {app.title}
+                </h3>
+                <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full border border-zinc-200">
+                  {app.subtitle}
+                </span>
+              </div>
+              <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md">
+                {app.description}
+              </p>
+            </div>
+
+            {/* Arrow indicator */}
+            <div className="hidden sm:flex items-center justify-center w-10 h-10 rounded-xl border border-zinc-200 text-zinc-400 group-hover:text-zinc-700 group-hover:border-zinc-300 group-hover:bg-zinc-50 transition-all duration-300 flex-shrink-0">
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </div>
           </div>
         </div>
+      </Link>
+    </motion.div>
+  );
+}
 
-        {/* Analytics KPIs Section */}
-        <AnalyticsCards stats={stats} />
+export default function LaunchpadPage() {
+  const router = useRouter();
 
-        {/* Dynamic visual grid dashboard */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Analytics Flow chart */}
-          <div className="lg:col-span-2">
-            <LeadFlowChart data={MOCK_CHART_DATA} />
+  return (
+    <div className="min-h-screen bg-[#FAFAF9] text-zinc-900">
+      {/* Top navigation bar */}
+      <header className="border-b border-zinc-200 bg-white/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center font-bold text-xs text-white shadow-lg shadow-orange-500/15">
+              FW
+            </div>
+            <div>
+              <span className="font-bold text-sm tracking-tight text-zinc-900">FW Studio Suite</span>
+              <span className="text-[10px] text-zinc-400 font-medium ml-2 hidden sm:inline">studio.fwstudioflow.in</span>
+            </div>
           </div>
-
-          {/* Activity ticker */}
-          <div>
-            <ActivityTicker logs={logs} />
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-md text-[10px] font-bold tracking-wide flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
           </div>
         </div>
+      </header>
 
-        {/* Lead Flow Database relocated to dedicated /leads sub-page */}
+      {/* Main launchpad content */}
+      <main className="max-w-5xl mx-auto px-6 py-12 sm:py-16">
+        {/* Hero section */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="mb-10"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span className="text-[11px] font-bold text-amber-600 uppercase tracking-widest">Application Suite</span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 mb-2">
+            Welcome to your studio workspace
+          </h1>
+          <p className="text-sm text-zinc-500 max-w-lg leading-relaxed">
+            Select a product application to begin. Each tool is an independent module with its own context, navigation, and workspace.
+          </p>
+        </motion.div>
+
+        {/* Suite App Launcher Grid */}
+        <div className="space-y-4">
+          {SUITE_REGISTRY.apps.map((app, index) => (
+            <SuiteCard key={app.slug} app={app} index={index} />
+          ))}
+        </div>
+
+        {/* Footer hint */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.5 }}
+          className="mt-12 text-center"
+        >
+          <p className="text-[11px] text-zinc-400 font-medium">
+            3 applications available &middot; Click any tile to enter the workspace
+          </p>
+        </motion.div>
       </main>
     </div>
   );

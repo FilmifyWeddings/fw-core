@@ -71,3 +71,15 @@ body {
   scrollbar-color: #27272a transparent;
 }
 
+/* Mobile safe area for bottom navigation */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Ensure touch targets meet minimum 44px requirement */
+@media (max-width: 992px) {
+  button, a, [role="button"] {
+    min-height: 44px;
+  }
+}
+

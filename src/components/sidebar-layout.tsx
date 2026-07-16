@@ -8,9 +8,11 @@ import {
   LayoutDashboard, Database, Send, Download, Megaphone, Layers, 
   Settings, HelpCircle, Sun, Moon, Menu, ChevronDown, ChevronRight, 
   LogOut, Search, MessageSquare, FileSpreadsheet, Check, Shield, GitBranch,
-  FileText, Users
+  FileText, Users, ArrowLeft, Globe, BarChart3, FolderOpen, Layout,
+  Calendar, ClipboardList, Sparkles, Webhook
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { SUITE_REGISTRY, type SubAppSlug } from '@/types';
 
 const FacebookIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg 
@@ -28,8 +30,20 @@ const FacebookIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+const SUB_APP_ICON_MAP: Record<string, React.ElementType> = {
+  Users, FolderOpen, Calendar, ClipboardList, FileText, Layout, Sparkles, Database,
+  Globe, Webhook, BarChart3, Send
+};
+
 interface SidebarLayoutProps {
   children: React.ReactNode;
+}
+
+function getSubAppFromPath(pathname: string): SubAppSlug | null {
+  if (pathname.startsWith('/team-manager')) return 'team-manager';
+  if (pathname.startsWith('/quotations')) return 'quotations';
+  if (pathname.startsWith('/leads')) return 'leads';
+  return null;
 }
 
 export function SidebarLayout({ children }: SidebarLayoutProps) {
@@ -43,6 +57,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [workspaceName, setWorkspaceName] = useState<string>('My Studio');
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const subApp = getSubAppFromPath(pathname);
+  const suiteApp = subApp ? SUITE_REGISTRY.apps.find(a => a.slug === subApp) : null;
 
   // Load layout preferences and theme
   useEffect(() => {
@@ -162,7 +180,171 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
   ];
 
-  if (['/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager'].includes(pathname)) {
+  // Routes that bypass the global sidebar entirely
+  const bypassRoutes = ['/', '/login', '/home', '/admin/sushant', '/admin/dashboard'];
+  
+  // For sub-app routes, render the context-aware sidebar
+  if (subApp && suiteApp) {
+    return (
+      <div className="flex min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
+        
+        {/* Sub-App Context-Aware Sidebar */}
+        <aside className="fixed top-0 bottom-0 left-0 z-40 hidden lg:flex flex-col w-60 border-r border-zinc-200 dark:border-zinc-900 bg-zinc-50 dark:bg-zinc-950/60 backdrop-blur-md transition-all duration-300">
+          {/* Back to Suite Button */}
+          <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-900/60">
+            <Link
+              href="/"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/50 dark:hover:bg-zinc-900/40 transition-all group"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
+              <span>Back to Suite</span>
+            </Link>
+          </div>
+
+          {/* Sub-App Header */}
+          <div className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-900/60">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${suiteApp.accentGradient} flex items-center justify-center shadow-md`}>
+                {suiteApp.icon === 'Users' && <Users className="w-4 h-4 text-white" />}
+                {suiteApp.icon === 'FileText' && <FileText className="w-4 h-4 text-white" />}
+                {suiteApp.icon === 'Database' && <Database className="w-4 h-4 text-white" />}
+              </div>
+              <div>
+                <h2 className="text-xs font-bold text-zinc-900 dark:text-white tracking-tight">{suiteApp.title}</h2>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">{suiteApp.subtitle}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Context-Specific Navigation */}
+          <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+            {suiteApp.sidebarNavItems.map((item, idx) => {
+              const ItemIcon = SUB_APP_ICON_MAP[item.icon] || LayoutDashboard;
+              const isCurrentPage = pathname === item.href && idx === 0;
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all border border-transparent ${
+                    isCurrentPage
+                      ? 'bg-zinc-200 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800 text-zinc-950 dark:text-white'
+                      : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/40 dark:hover:bg-zinc-900/30'
+                  }`}
+                >
+                  <ItemIcon className={`w-4 h-4 ${isCurrentPage ? 'text-orange-500' : ''}`} />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Sidebar Footer */}
+          <div className="border-t border-zinc-200 dark:border-zinc-900/60 p-3">
+            <div className="px-1 py-0.5">
+              {!collapsed ? (
+                <div className="w-full flex items-center justify-between gap-1 p-1 bg-zinc-200/50 dark:bg-zinc-900/40 border border-zinc-300 dark:border-zinc-900/60 rounded-xl relative">
+                  <button
+                    type="button"
+                    onClick={() => setTheme('light')}
+                    className={`relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-bold rounded-lg transition-colors duration-200 focus:outline-none ${
+                      theme === 'light'
+                        ? 'text-zinc-950 dark:text-white'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <Sun className={`w-3.5 h-3.5 ${theme === 'light' ? 'text-amber-500' : ''}`} />
+                    <span>Light</span>
+                    {theme === 'light' && (
+                      <motion.div
+                        layoutId="subAppThemeActive"
+                        className="absolute inset-0 -z-10 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-sm"
+                        transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                      />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTheme('dark')}
+                    className={`relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-bold rounded-lg transition-colors duration-200 focus:outline-none ${
+                      theme === 'dark'
+                        ? 'text-zinc-950 dark:text-white'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <Moon className={`w-3.5 h-3.5 ${theme === 'dark' ? 'text-orange-500' : ''}`} />
+                    <span>Dark</span>
+                    {theme === 'dark' && (
+                      <motion.div
+                        layoutId="subAppThemeActive"
+                        className="absolute inset-0 -z-10 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-sm"
+                        transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                      />
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="w-full h-9 rounded-xl flex items-center justify-center bg-zinc-200/50 dark:bg-zinc-900/40 border border-zinc-300 dark:border-zinc-900/60 hover:border-zinc-400 dark:hover:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white transition-all focus:outline-none"
+                  title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                >
+                  {theme === 'dark' ? <Moon className="w-4 h-4 text-orange-500" /> : <Sun className="w-4 h-4 text-amber-500" />}
+                </button>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* Mobile Sub-App Bottom Navigation */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 safe-area-bottom">
+          <div className="flex items-center justify-around px-2 py-1.5">
+            {suiteApp.sidebarNavItems.slice(0, 4).map((item, idx) => {
+              const ItemIcon = SUB_APP_ICON_MAP[item.icon] || LayoutDashboard;
+              const isCurrentPage = pathname === item.href && idx === 0;
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl min-w-[64px] min-h-[44px] justify-center transition-all ${
+                    isCurrentPage
+                      ? 'text-orange-500'
+                      : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <ItemIcon className="w-5 h-5" />
+                  <span className="text-[9px] font-bold">{item.label.split(' ')[0]}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Mobile Back to Suite Header */}
+        <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800 h-14 flex items-center px-4">
+          <Link href="/" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 min-h-[44px]">
+            <ArrowLeft className="w-4 h-4" />
+            <span className="text-xs font-bold">Suite</span>
+          </Link>
+          <div className="flex-1 text-center">
+            <span className="text-xs font-bold text-zinc-900 dark:text-white">{suiteApp.title}</span>
+          </div>
+          <div className="w-10" />
+        </div>
+
+        {/* Main viewport with offset for sidebars */}
+        <main className="flex-1 min-h-screen flex flex-col min-w-0 transition-all duration-300 bg-zinc-50 dark:bg-[#070708] lg:pl-60 pt-14 lg:pt-0 pb-20 lg:pb-0">
+          {children}
+        </main>
+
+        {/* Mobile bottom nav spacer */}
+        <div className="lg:hidden h-16" />
+      </div>
+    );
+  }
+
+  // Bypass sidebar for launchpad and special routes
+  if (bypassRoutes.includes(pathname)) {
     return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
   }
 
@@ -539,10 +721,36 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       <main 
         className={`flex-1 min-h-screen flex flex-col min-w-0 transition-all duration-300 bg-zinc-50 dark:bg-[#070708] ${
           collapsed ? 'pl-16' : 'pl-60'
-        }`}
+        } pb-20 lg:pb-0`}
       >
         {children}
       </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center justify-around px-2 py-1.5">
+          {[
+            { icon: LayoutDashboard, label: 'Home', path: '/' },
+            { icon: Database, label: 'Leads', path: '/leads' },
+            { icon: FileText, label: 'Quotes', path: '/quotations' },
+            { icon: Users, label: 'Team', path: '/team-manager' },
+            { icon: Settings, label: 'Settings', path: '/settings' },
+          ].map((item) => (
+            <Link
+              key={item.path}
+              href={item.path}
+              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl min-w-[64px] min-h-[44px] justify-center transition-all ${
+                pathname === item.path
+                  ? 'text-orange-500'
+                  : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+              }`}
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="text-[9px] font-bold">{item.label}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
 
     </div>
   );

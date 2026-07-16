@@ -6,8 +6,8 @@ import { Suspense } from "react";
 import { VersionGuard } from "@/components/VersionGuard";
 
 export const metadata: Metadata = {
-  title: "FW Core - Lead Management & WhatsApp Drip Automation Platform",
-  description: "Elite Lead Management and WhatsApp drip sequencing platform for wedding photographers.",
+  title: "FW Studio Suite - Lead Management & WhatsApp Drip Automation Platform",
+  description: "Elite multi-application suite for wedding photography studio operations. Manage leads, quotations, and team operations from a unified workspace.",
 };
 
 export default function RootLayout({
