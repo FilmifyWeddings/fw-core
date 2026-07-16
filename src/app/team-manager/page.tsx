@@ -1,14 +1,18 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { 
   Users, Calendar, List, Plus, Trash2, RotateCcw, Check, X, 
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
-  Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu
+  Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
+  Database, FileText, Layers, ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { FWProject, FWTeamMember, FWAssignment } from '@/types';
+import AddProjectModal from './components/AddProjectModal';
+import { EventBlockData } from './components/EventBlock';
 
 // Semantic Theme CSS styles injected directly for strict color matching
 const customStyle = `
@@ -39,43 +43,8 @@ export default function TeamManagerPage() {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isNewMemberModalOpen, setIsNewMemberModalOpen] = useState(false);
 
-  // Coupling Input and Dynamic Modal Blocks for Project Creation
-  const [couplingName, setCouplingName] = useState('');
-  const [projectMainVenue, setProjectMainVenue] = useState('');
-  const [projectMainDate, setProjectMainDate] = useState('');
-  const [eventBlocks, setEventBlocks] = useState<Array<{
-    id: string;
-    subEventName: string;
-    subEventDate: string;
-    venueLocation: string;
-    mapLink: string;
-    startTime: string;
-    endTime: string;
-    roles: string[];
-    notes: string;
-  }>>([
-    {
-      id: Math.random().toString(),
-      subEventName: 'Wedding',
-      subEventDate: '',
-      venueLocation: '',
-      mapLink: '',
-      startTime: '14:00',
-      endTime: '22:00',
-      roles: ['TP', 'Ass'],
-      notes: ''
-    }
-  ]);
-
   // New Crew Member Form State
   const [newMember, setNewMember] = useState({ name: '', role: 'CP', phone: '', email: '' });
-
-  // Predefined Role Pool Chips
-  const ROLE_CHIPS = [
-    'TM', 'Ass', 'TP', 'TV', 'CP', 'CV', 'Dron', 'Makeup Art', 
-    'Cine 2', 'Candid 2', 'Face AI', 'social Media persone', 'Reel', 
-    'Family Photographer', 'cv 2ndGim', '2 Ass', 'Live Camera'
-  ];
 
   // Fetch initial profile & data
   useEffect(() => {
@@ -112,19 +81,22 @@ export default function TeamManagerPage() {
     if (aData) setAssignments(aData as any[]);
   };
 
-  // Add Project with Sub-Events Configuration (Matching Screenshot 2 layout)
-  const handleSaveProjectConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!couplingName || !projectMainDate || !projectMainVenue) return;
+  // Add Project with Sub-Events Configuration
+  const handleSaveProjectConfig = async (name: string, blocks: EventBlockData[]) => {
+    if (!name) return;
 
-    // Create project
+    // Create project - derive main date and venue from first block
+    const firstBlock = blocks[0];
+    const mainDate = firstBlock?.subEventDate || new Date().toISOString().split('T')[0];
+    const mainVenue = firstBlock?.venueLocation || 'TBD';
+
     const { data: project, error: pErr } = await supabase
       .from('fw_projects')
       .insert({
         user_id: userId,
-        client_name: couplingName,
-        main_date: projectMainDate,
-        main_venue: projectMainVenue,
+        client_name: name,
+        main_date: mainDate,
+        main_venue: mainVenue,
         is_archived: false
       })
       .select()
@@ -134,14 +106,14 @@ export default function TeamManagerPage() {
 
     // Insert sub-events assignments
     const insertPromises = [];
-    for (const block of eventBlocks) {
+    for (const block of blocks) {
       for (const role of block.roles) {
         insertPromises.push(
           supabase.from('fw_assignments').insert({
             user_id: userId,
             project_id: project.id,
-            sub_event_name: block.subEventName,
-            sub_event_date: block.subEventDate || projectMainDate,
+            sub_event_name: block.subEventNames.join(', '),
+            sub_event_date: block.subEventDate || mainDate,
             start_time: block.startTime,
             end_time: block.endTime,
             required_role: role,
@@ -157,23 +129,6 @@ export default function TeamManagerPage() {
     // Refresh
     await fetchData(userId);
 
-    // Reset Form
-    setCouplingName('');
-    setProjectMainDate('');
-    setProjectMainVenue('');
-    setEventBlocks([
-      {
-        id: Math.random().toString(),
-        subEventName: 'Wedding',
-        subEventDate: '',
-        venueLocation: '',
-        mapLink: '',
-        startTime: '14:00',
-        endTime: '22:00',
-        roles: ['TP', 'Ass'],
-        notes: ''
-      }
-    ]);
     setIsNewProjectModalOpen(false);
   };
 
@@ -262,43 +217,6 @@ export default function TeamManagerPage() {
       setProjects(prev => prev.filter(p => p.id !== id));
       setAssignments(prev => prev.filter(a => a.project_id !== id));
     }
-  };
-
-  // Sub-Event block handlers for Popup
-  const addEventBlock = () => {
-    setEventBlocks(prev => [
-      ...prev,
-      {
-        id: Math.random().toString(),
-        subEventName: 'Pre-wedding',
-        subEventDate: '',
-        venueLocation: '',
-        mapLink: '',
-        startTime: '10:00',
-        endTime: '18:00',
-        roles: ['Ass', 'CP'],
-        notes: ''
-      }
-    ]);
-  };
-
-  const removeEventBlock = (id: string) => {
-    if (eventBlocks.length <= 1) return;
-    setEventBlocks(prev => prev.filter(b => b.id !== id));
-  };
-
-  const updateEventBlock = (id: string, fields: Partial<typeof eventBlocks[0]>) => {
-    setEventBlocks(prev => prev.map(b => b.id === id ? { ...b, ...fields } : b));
-  };
-
-  const toggleRoleInBlock = (blockId: string, role: string) => {
-    setEventBlocks(prev => prev.map(b => {
-      if (b.id !== blockId) return b;
-      const roles = b.roles.includes(role) 
-        ? b.roles.filter(r => r !== role) 
-        : [...b.roles, role];
-      return { ...b, roles };
-    }));
   };
 
   // Countdown badge logic
@@ -465,6 +383,41 @@ export default function TeamManagerPage() {
             >
               <Trash2 className="w-4 h-4" /> Trash Recovery
             </button>
+
+            {/* Divider */}
+            <div className="h-px bg-zinc-150/60 my-4" />
+            
+            <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block px-3 mb-2">
+              Studio Suite
+            </span>
+
+            <Link 
+              href="/"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
+            >
+              <Grid className="w-4 h-4" /> Suite Home
+            </Link>
+
+            <Link 
+              href="/leads"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
+            >
+              <Database className="w-4 h-4 text-emerald-500" /> Leads Manager
+            </Link>
+
+            <Link 
+              href="/quotations"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
+            >
+              <FileText className="w-4 h-4 text-amber-500" /> Quotation Maker
+            </Link>
+
+            <Link 
+              href="/dashboard/integrations"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
+            >
+              <Layers className="w-4 h-4 text-[#6C5CE7]" /> Integrations
+            </Link>
           </nav>
         </div>
 
@@ -1076,261 +1029,13 @@ export default function TeamManagerPage() {
       </main>
 
       {/* ─────────────────────────────────────────────────────────────
-          COMPREHENSIVE ADD-PROJECT POPUP MODAL (Screenshot 2 Matching)
+          COMPREHENSIVE ADD-PROJECT POPUP MODAL (3D Glass-morphism)
          ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isNewProjectModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            
-            {/* Darkened backdrop overlay */}
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsNewProjectModalOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-
-            {/* Modal Frame Window */}
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-white rounded-[32px] w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 lg:p-8 shadow-2xl relative z-10 border border-[#6C5CE7]/8 text-[#0B111E]"
-            >
-              
-              {/* Header block with close X */}
-              <div className="flex justify-between items-center border-b border-zinc-100 pb-4 mb-6">
-                <div>
-                  <h3 className="text-base font-extrabold text-[#0B111E] tracking-tight">Create Wedding Project</h3>
-                  <p className="text-[10px] text-[#4F5E74] font-semibold mt-0.5">Set client profile parameters and dynamic program event placements.</p>
-                </div>
-                <button 
-                  onClick={() => setIsNewProjectModalOpen(false)}
-                  className="p-1 rounded-full hover:bg-zinc-100 text-[#4F5E74] hover:text-[#0B111E] transition"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveProjectConfig} className="space-y-6">
-                
-                {/* Coupling Name oversized input field */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">
-                    Client Coupling Name / Couple Profile
-                  </label>
-                  <input 
-                    type="text"
-                    required
-                    placeholder="Enter Client Coupling Name (e.g. Sharma & Malhotra)"
-                    value={couplingName}
-                    onChange={e => setCouplingName(e.target.value)}
-                    className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-3 rounded-2xl text-xs font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
-                  />
-                </div>
-
-                {/* Primary project global inputs */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Main Event Date</label>
-                    <input 
-                      type="date"
-                      required
-                      value={projectMainDate}
-                      onChange={e => setProjectMainDate(e.target.value)}
-                      className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Main Venue / Central Location</label>
-                    <input 
-                      type="text"
-                      required
-                      placeholder="e.g. Palace Grounds, Bangalore"
-                      value={projectMainVenue}
-                      onChange={e => setProjectMainVenue(e.target.value)}
-                      className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
-                    />
-                  </div>
-                </div>
-
-                {/* Dynamic Sub-Event form clones list */}
-                <div className="space-y-4 pt-4 border-t border-zinc-150">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-black text-[#6C5CE7] uppercase tracking-wider">
-                      Wedding Sub-Events & Requirements
-                    </span>
-                  </div>
-
-                  {eventBlocks.map((block, index) => (
-                    <div 
-                      key={block.id}
-                      className="bg-zinc-50/40 border border-zinc-100 rounded-3xl p-5 space-y-4 relative"
-                    >
-                      {/* Event Index Badge */}
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="bg-[#6C5CE7]/6 text-[#6C5CE7] font-black text-[9px] px-3 py-1 rounded-full border border-[#6C5CE7]/8">
-                          Event #{index + 1}
-                        </span>
-                        
-                        {eventBlocks.length > 1 && (
-                          <button 
-                            type="button"
-                            onClick={() => removeEventBlock(block.id)}
-                            className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* 4-column balanced inputs grid row */}
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        
-                        {/* Col 1: Wedding Program Type selector */}
-                        <div className="space-y-1.5">
-                          <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Wedding Program Type</label>
-                          <select 
-                            value={block.subEventName}
-                            onChange={e => updateEventBlock(block.id, { subEventName: e.target.value })}
-                            className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2.5 rounded-xl text-xs font-semibold text-[#0B111E] focus:outline-none focus:border-[#6C5CE7]"
-                          >
-                            <option value="Wedding">Wedding Ceremony</option>
-                            <option value="Pre-wedding">Pre-wedding Shoot</option>
-                            <option value="Haldi">Haldi program</option>
-                            <option value="Sangeet">Sangeet / Cocktails</option>
-                            <option value="Reception">Reception Ceremony</option>
-                            <option value="Engagement">Engagement Ring</option>
-                            <option value="Nikah">Nikah Ceremony</option>
-                            <option value="Haldi / Sangeet">Haldi / Sangeet</option>
-                            <option value="Bidai / Home Rituals">Bidai / Home Rituals</option>
-                          </select>
-                        </div>
-
-                        {/* Col 2: Program Date calendar input */}
-                        <div className="space-y-1.5">
-                          <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Program Date</label>
-                          <input 
-                            type="date"
-                            value={block.subEventDate}
-                            onChange={e => updateEventBlock(block.id, { subEventDate: e.target.value })}
-                            className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2 rounded-xl text-xs font-semibold text-[#0B111E] focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Col 3: Venue location and nested Map link */}
-                        <div className="space-y-2">
-                          <div className="space-y-1.5">
-                            <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Venue coordinates / Location</label>
-                            <input 
-                              type="text"
-                              placeholder="e.g. Royal Lawn, Mumbai"
-                              value={block.venueLocation}
-                              onChange={e => updateEventBlock(block.id, { venueLocation: e.target.value })}
-                              className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2 rounded-xl text-xs font-medium text-[#0B111E]"
-                            />
-                          </div>
-                          <input 
-                            type="text"
-                            placeholder="Map Link (e.g. https://maps.google.com)"
-                            value={block.mapLink}
-                            onChange={e => updateEventBlock(block.id, { mapLink: e.target.value })}
-                            className="w-full bg-white border border-[#6C5CE7]/8 px-3 py-1.5 rounded-lg text-[10px] font-medium text-zinc-500"
-                          />
-                        </div>
-
-                        {/* Col 4: Dual inputs split evenly for roll call & dismissal */}
-                        <div className="space-y-1.5">
-                          <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Timings</label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <span className="text-[8px] text-[#4F5E74] font-semibold block mb-0.5">Crew Roll Call</span>
-                              <input 
-                                type="time"
-                                value={block.startTime}
-                                onChange={e => updateEventBlock(block.id, { startTime: e.target.value })}
-                                className="w-full bg-white border border-[#6C5CE7]/10 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-[#0B111E]"
-                              />
-                            </div>
-                            <div>
-                              <span className="text-[8px] text-[#4F5E74] font-semibold block mb-0.5">Dismissal Est.</span>
-                              <input 
-                                type="time"
-                                value={block.endTime}
-                                onChange={e => updateEventBlock(block.id, { endTime: e.target.value })}
-                                className="w-full bg-white border border-[#6C5CE7]/10 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-[#0B111E]"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-
-                      {/* Role Chips Placement matrix section */}
-                      <div className="space-y-2 pt-2">
-                        <span className="text-[9px] font-black text-[#4F5E74] uppercase tracking-wider block">
-                          Role placements for this sub-event
-                        </span>
-                        
-                        <div className="flex flex-wrap gap-1.5">
-                          {ROLE_CHIPS.map(chip => {
-                            const isActive = block.roles.includes(chip);
-                            return (
-                              <button
-                                key={chip}
-                                type="button"
-                                onClick={() => toggleRoleInBlock(block.id, chip)}
-                                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
-                                  isActive 
-                                    ? 'bg-[#6C5CE7] border-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/10' 
-                                    : 'bg-white border-zinc-200 text-[#4F5E74] hover:border-zinc-350'
-                                }`}
-                              >
-                                {chip}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                    </div>
-                  ))}
-
-                  {/* Add Sub-Event block triggering button */}
-                  <button
-                    type="button"
-                    onClick={addEventBlock}
-                    className="w-full border border-dashed border-[#6C5CE7]/40 hover:border-[#6C5CE7] bg-white text-[#6C5CE7] text-xs font-bold py-3.5 rounded-2xl transition flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4" /> Add Wedding Event Block
-                  </button>
-                </div>
-
-                {/* Submit and Cancel Actions */}
-                <div className="flex justify-end gap-3 pt-6 border-t border-zinc-100">
-                  <button 
-                    type="button"
-                    onClick={() => setIsNewProjectModalOpen(false)}
-                    className="bg-transparent border border-zinc-200 text-[#4F5E74] text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-zinc-50 transition"
-                  >
-                    Cancel
-                  </button>
-                  
-                  <button 
-                    type="submit"
-                    className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-6 py-2.5 rounded-xl transition shadow-lg shadow-[#6C5CE7]/15"
-                  >
-                    Save Project Config
-                  </button>
-                </div>
-
-              </form>
-
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <AddProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onSave={handleSaveProjectConfig}
+      />
 
     </div>
   );
