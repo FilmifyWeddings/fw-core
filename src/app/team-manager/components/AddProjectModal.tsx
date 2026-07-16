@@ -111,7 +111,7 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-white w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto
+              className="modal-chassis bg-white w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto
                 rounded-[24px] border border-[#6C5CE7]/8 text-[#0B111E]"
               style={{
                 boxShadow: '0 30px 70px rgba(0,0,0,0.25), 0 12px 30px rgba(108, 92, 231, 0.05)',

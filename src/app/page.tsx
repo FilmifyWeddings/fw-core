@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Users, FileText, Database, ArrowRight, Sparkles } from 'lucide-react';
+import { Users, FileText, Database, Sparkles } from 'lucide-react';
 import { SUITE_REGISTRY, type SuiteAppConfig } from '@/types';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -49,39 +49,30 @@ function SuiteCard({ app, index }: { app: SuiteAppConfig; index: number }) {
     >
       <Link href={app.href} className="block group">
         <div
-          className={`relative ${styles.bg} border ${styles.border} rounded-2xl p-8 transition-all duration-500 ease-out hover:border-zinc-300 hover:-translate-y-1 ${styles.glow} cursor-pointer overflow-hidden`}
-          style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}
+          className={`relative bg-white border ${styles.border} rounded-[24px] p-6 transition-all duration-500 ease-out hover:border-zinc-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(108,92,231,0.04),0_1px_3px_rgba(108,92,231,0.02)] cursor-pointer overflow-hidden`}
+          style={{ boxShadow: '0_2px_12px_rgba(0,0,0,0.03)' }}
         >
           {/* Subtle gradient overlay on hover */}
           <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-zinc-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-          <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-5">
+          <div className="relative z-10 flex flex-col items-start gap-4">
             {/* 3D Glassmorphism Icon */}
             <div
-              className={`w-14 h-14 rounded-xl ${styles.iconBg} flex items-center justify-center shadow-lg shadow-black/5 group-hover:scale-105 transition-transform duration-300 flex-shrink-0`}
-              style={{ boxShadow: `0 8px 24px ${app.accentColor}20` }}
+              className={`w-12 h-12 rounded-xl ${styles.iconBg} flex items-center justify-center shadow-lg shadow-black/5 group-hover:scale-105 transition-transform duration-300`}
             >
-              <Icon className="w-6 h-6 text-white" strokeWidth={1.8} />
+              <Icon className="w-5.5 h-5.5 text-white" strokeWidth={1.8} />
             </div>
 
             {/* Content */}
-            <div className="flex-1 min-w-0">
+            <div className="w-full">
               <div className="flex items-center gap-2 mb-1">
-                <h3 className={`text-base font-bold ${styles.text} tracking-tight`}>
+                <h3 className="text-sm font-bold text-[#0B111E] tracking-tight">
                   {app.title}
                 </h3>
-                <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full border border-zinc-200">
-                  {app.subtitle}
-                </span>
               </div>
-              <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md">
+              <p className="text-[11px] text-[#4F5E74] leading-relaxed">
                 {app.description}
               </p>
-            </div>
-
-            {/* Arrow indicator */}
-            <div className="hidden sm:flex items-center justify-center w-10 h-10 rounded-xl border border-zinc-200 text-zinc-400 group-hover:text-zinc-700 group-hover:border-zinc-300 group-hover:bg-zinc-50 transition-all duration-300 flex-shrink-0">
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
             </div>
           </div>
         </div>
@@ -94,7 +85,7 @@ export default function LaunchpadPage() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-[#FAFAF9] text-zinc-900">
+    <div className="min-h-screen bg-[#F8F9FD] text-zinc-900">
       {/* Top navigation bar */}
       <header className="border-b border-zinc-200 bg-white/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -103,7 +94,7 @@ export default function LaunchpadPage() {
               FW
             </div>
             <div>
-              <span className="font-bold text-sm tracking-tight text-zinc-900">FW Studio Suite</span>
+              <span className="font-bold text-sm tracking-tight text-[#0B111E]">FW Studio Suite</span>
               <span className="text-[10px] text-zinc-400 font-medium ml-2 hidden sm:inline">studio.fwstudioflow.in</span>
             </div>
           </div>
@@ -129,7 +120,7 @@ export default function LaunchpadPage() {
             <Sparkles className="w-4 h-4 text-amber-500" />
             <span className="text-[11px] font-bold text-amber-600 uppercase tracking-widest">Application Suite</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 mb-2">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-[#0B111E] mb-2">
             Welcome to your studio workspace
           </h1>
           <p className="text-sm text-zinc-500 max-w-lg leading-relaxed">
@@ -137,8 +128,8 @@ export default function LaunchpadPage() {
           </p>
         </motion.div>
 
-        {/* Suite App Launcher Grid */}
-        <div className="space-y-4">
+        {/* Suite App Launcher Grid - 3-column side-by-side */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {SUITE_REGISTRY.apps.map((app, index) => (
             <SuiteCard key={app.slug} app={app} index={index} />
           ))}
