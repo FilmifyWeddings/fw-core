@@ -201,6 +201,10 @@ export interface CanvasElement {
   fontStyle?: 'normal' | 'italic';
   letterSpacing?: string;
   textAlign?: 'left' | 'center' | 'right';
+  rotation?: number;
+  skewX?: number;
+  skewY?: number;
+  zIndex?: number;
   // Additional flex or grid layout flags for nested grids
   isGridContainer?: boolean;
   gridItems?: Array<{ id: string; content: string; label?: string }>;

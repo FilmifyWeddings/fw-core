@@ -805,11 +805,99 @@ export default function QuotationMakerPage() {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Undo/Redo tracking buffers
+  const [history, setHistory] = useState<CanvasPage[][]>([]);
+  const [redoStack, setRedoStack] = useState<CanvasPage[][]>([]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  const pushToHistory = (currentState: CanvasPage[]) => {
+    setHistory(prev => [...prev, JSON.parse(JSON.stringify(currentState))]);
+    setRedoStack([]);
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const prevPages = history[history.length - 1];
+    setRedoStack(prev => [JSON.parse(JSON.stringify(pages)), ...prev]);
+    setHistory(prev => prev.slice(0, prev.length - 1));
+    setPages(prevPages);
+    setSelectedElement(null);
+    setActiveDomElement(null);
+    setEditingTextElementId(null);
+    showToast('Undo performed', 'info');
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+    const nextPages = redoStack[0];
+    setHistory(prev => [...prev, JSON.parse(JSON.stringify(pages))]);
+    setRedoStack(prev => prev.slice(1));
+    setPages(nextPages);
+    setSelectedElement(null);
+    setActiveDomElement(null);
+    setEditingTextElementId(null);
+    showToast('Redo performed', 'info');
+  };
+
+  const handleDuplicateElement = () => {
+    if (!selectedElement) return;
+    const pageIdx = selectedElement.pageIndex;
+    const elId = selectedElement.elementId;
+    const page = pages[pageIdx];
+    if (!page) return;
+    const el = page.elements.find(e => e.id === elId);
+    if (!el) return;
+
+    const cloneId = `${el.id}-copy-${Math.random().toString(36).substring(2, 5)}`;
+    const clonedElement: CanvasElement = {
+      ...JSON.parse(JSON.stringify(el)),
+      id: cloneId,
+      x: Math.min(90, el.x + 4),
+      y: Math.min(90, el.y + 4)
+    };
+
+    pushToHistory(pages);
+
+    setPages(prevPages =>
+      prevPages.map((p, idx) => {
+        if (idx === pageIdx) {
+          return {
+            ...p,
+            elements: [...p.elements, clonedElement]
+          };
+        }
+        return p;
+      })
+    );
+
+    setTimeout(() => {
+      setSelectedElement({ pageIndex: pageIdx, elementId: cloneId });
+    }, 50);
+    showToast('Element duplicated', 'info');
+  };
+
+  const arrangeElement = (action: 'front' | 'back') => {
+    if (!selectedElement) return;
+    const pageIdx = selectedElement.pageIndex;
+    const elId = selectedElement.elementId;
+    const page = pages[pageIdx];
+    if (!page) return;
+
+    const zIndices = page.elements.map(e => e.zIndex || 1);
+    const maxZ = Math.max(...zIndices, 1);
+    const minZ = Math.min(...zIndices, 1);
+    const targetZ = action === 'front' ? maxZ + 1 : Math.max(1, minZ - 1);
+
+    pushToHistory(pages);
+    updateSelectedElement('zIndex', targetZ);
+    showToast(action === 'front' ? 'Brought to front' : 'Sent to back', 'info');
+  };
+
   const updateElementPosition = (pageIndex: number, elementId: string, xPercent: number, yPercent: number) => {
+    pushToHistory(pages);
     setPages(prevPages =>
       prevPages.map((page, pIdx) => {
         if (pIdx === pageIndex) {
@@ -829,6 +917,7 @@ export default function QuotationMakerPage() {
   };
 
   const updateElementDimensionsAndFont = (pageIndex: number, elementId: string, widthPercent: number, heightPercent: number, fontSize?: number) => {
+    pushToHistory(pages);
     setPages(prevPages =>
       prevPages.map((page, pIdx) => {
         if (pIdx === pageIndex) {
@@ -857,18 +946,47 @@ export default function QuotationMakerPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Allow Esc key to unfocus / exit contenteditable
+      if (e.key === 'Escape') {
+        setSelectedElement(null);
+        setActiveDomElement(null);
+        setEditingTextElementId(null);
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        return;
+      }
+
       if (document.activeElement?.getAttribute('contenteditable') === 'true' || 
           document.activeElement?.tagName === 'INPUT' || 
           document.activeElement?.tagName === 'TEXTAREA') {
         return;
       }
-      if (e.key === 'Escape') {
-        setSelectedElement(null);
-        setActiveDomElement(null);
-        setEditingTextElementId(null);
+
+      // Undo/Redo Shortcuts
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+        return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      // Duplicate Shortcut
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        handleDuplicateElement();
+        return;
+      }
+
+      // Delete/Backspace
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedElement) {
+          e.preventDefault();
+          pushToHistory(pages);
           setPages(prevPages =>
             prevPages.map((page, pIdx) => {
               if (pIdx === selectedElement.pageIndex) {
@@ -883,12 +1001,55 @@ export default function QuotationMakerPage() {
           setSelectedElement(null);
           setActiveDomElement(null);
           setEditingTextElementId(null);
+          showToast('Element deleted', 'info');
+        }
+        return;
+      }
+
+      // Nudging coordinates smoothly (Arrow Keys)
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        if (selectedElement) {
+          e.preventDefault();
+          const pageIdx = selectedElement.pageIndex;
+          const elId = selectedElement.elementId;
+          const page = pages[pageIdx];
+          if (!page) return;
+          const el = page.elements.find(item => item.id === elId);
+          if (!el) return;
+
+          // Convert 1px / 10px to percentages (width: 794px, height: 1123px)
+          const nudgeX = e.shiftKey ? 1.25 : 0.13;
+          const nudgeY = e.shiftKey ? 0.89 : 0.09;
+
+          let newX = el.x;
+          let newY = el.y;
+
+          if (e.key === 'ArrowLeft') newX = Math.max(0, el.x - nudgeX);
+          if (e.key === 'ArrowRight') newX = Math.min(100, el.x + nudgeX);
+          if (e.key === 'ArrowUp') newY = Math.max(0, el.y - nudgeY);
+          if (e.key === 'ArrowDown') newY = Math.min(100, el.y + nudgeY);
+
+          setPages(prevPages =>
+            prevPages.map((p, idx) => {
+              if (idx === pageIdx) {
+                return {
+                  ...p,
+                  elements: p.elements.map(item =>
+                    item.id === elId
+                      ? { ...item, x: parseFloat(newX.toFixed(2)), y: parseFloat(newY.toFixed(2)) }
+                      : item
+                  )
+                };
+              }
+              return p;
+            })
+          );
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElement]);
+  }, [selectedElement, pages, history, redoStack]);
 
   const handleDirectImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, pageIndex: number, elementId: string) => {
     const file = e.target.files?.[0];
@@ -3091,7 +3252,9 @@ export default function QuotationMakerPage() {
                   fontStyle: el.fontStyle || 'normal',
                   textAlign: el.textAlign || 'left',
                   letterSpacing: el.letterSpacing || 'normal',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  transform: `rotate(${el.rotation || 0}deg) skew(${el.skewX || 0}deg, ${el.skewY || 0}deg)`,
+                  zIndex: el.zIndex !== undefined ? el.zIndex : 1
                 };
 
                 // Render TEXT TYPE elements
@@ -3120,19 +3283,38 @@ export default function QuotationMakerPage() {
                       }`}
                     >
                       {isInlineEditing ? (
-                        <textarea
-                          value={inlineEditingText || ''}
-                          onChange={e => setInlineEditingText(e.target.value)}
-                          onBlur={() => handleInlineTextSave(activePageIndex, el.id, inlineEditingText || '')}
-                          onKeyDown={e => {
+                        <span
+                          contentEditable={true}
+                          suppressContentEditableWarning={true}
+                          onBlur={(e) => {
+                            handleInlineTextSave(activePageIndex, el.id, e.currentTarget.innerText || '');
+                          }}
+                          onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault();
-                              handleInlineTextSave(activePageIndex, el.id, inlineEditingText || '');
+                              e.currentTarget.blur();
                             }
                           }}
-                          autoFocus
-                          className="w-full h-full bg-white text-zinc-950 p-1 border border-[#606248] rounded text-center focus:outline-none text-[13px] font-sans"
-                        />
+                          ref={(elRef) => {
+                            if (elRef) {
+                              elRef.focus();
+                              // Move cursor to end of text content
+                              try {
+                                const range = document.createRange();
+                                range.selectNodeContents(elRef);
+                                range.collapse(false);
+                                const sel = window.getSelection();
+                                if (sel) {
+                                  sel.removeAllRanges();
+                                  sel.addRange(range);
+                                }
+                              } catch (e) {}
+                            }
+                          }}
+                          className="w-full leading-relaxed select-text font-serif outline-none border border-dashed border-[#606248]/50 p-0.5 rounded bg-white/20 text-inherit text-center"
+                        >
+                          {el.content}
+                        </span>
                       ) : (
                         <span className="w-full leading-relaxed select-text font-serif">
                           {el.content}
@@ -3942,18 +4124,47 @@ export default function QuotationMakerPage() {
                 </div>
               )}
 
+              {/* MAGENTA SNAP LINES STYLING OVERRIDE */}
+              <style>{`
+                .moveable-line.moveable-guideline {
+                  background-color: #d946ef !important; /* magenta/purple snapping guides */
+                  opacity: 0.8;
+                }
+              `}</style>
+
               {/* REACT-MOVEABLE DRAG/RESIZE OVERLAY */}
               {mounted && activeDomElement && selectedElement && selectedElement.pageIndex === activePageIndex && activeElement && (
                 <Moveable
                   target={activeDomElement}
                   draggable={editingTextElementId === null}
                   resizable={editingTextElementId === null}
+                  rotatable={editingTextElementId === null}
+                  skewable={editingTextElementId === null}
                   keepRatio={activeElement.type === 'image'}
-                  throttleDrag={1}
-                  throttleResize={1}
-                  onDrag={({ target, left, top }) => {
+                  throttleDrag={0}
+                  throttleResize={0}
+                  throttleRotate={0}
+                  throttleSkew={0}
+                  
+                  /* Snapping guidelines configs */
+                  snappable={true}
+                  snapThreshold={5}
+                  snapCenter={true}
+                  snapHorizontal={true}
+                  snapVertical={true}
+                  snapDirections={{ left: true, right: true, top: true, bottom: true, center: true, middle: true }}
+                  elementSnapDirections={{ left: true, right: true, top: true, bottom: true, center: true, middle: true }}
+                  verticalGuidelines={[39.7, 79.4, 158.8, 397, 635.2, 714.6, 754.3]}
+                  horizontalGuidelines={[56.15, 112.3, 224.6, 561.5, 898.4, 1010.7, 1066.8]}
+                  elementGuidelines={renderedPages[activePageIndex]?.elements
+                    .filter(el => el.id !== activeElement.id)
+                    .map(el => document.getElementById(`element-${el.id}`))
+                    .filter((el): el is HTMLElement => el !== null)}
+
+                  onDrag={({ target, left, top, transform }) => {
                     target.style.left = `${left}px`;
                     target.style.top = `${top}px`;
+                    target.style.transform = transform;
                   }}
                   onDragEnd={({ target }) => {
                     const parent = (target as HTMLElement).offsetParent as HTMLElement;
@@ -3969,11 +4180,12 @@ export default function QuotationMakerPage() {
                     target.setAttribute('data-initial-font-size', String(parseFloat(target.style.fontSize || '14')));
                     target.setAttribute('data-initial-width', String(target.clientWidth));
                   }}
-                  onResize={({ target, width, height, drag }) => {
+                  onResize={({ target, width, height, drag, transform }) => {
                     target.style.width = `${width}px`;
                     target.style.height = `${height}px`;
                     target.style.left = `${drag.left}px`;
                     target.style.top = `${drag.top}px`;
+                    target.style.transform = transform;
                     const initialFontSize = parseFloat(target.getAttribute('data-initial-font-size') || '0');
                     const initialWidth = parseFloat(target.getAttribute('data-initial-width') || '0');
                     if (initialFontSize && initialWidth && activeElement.type !== 'image') {
@@ -3993,6 +4205,42 @@ export default function QuotationMakerPage() {
                       updateElementPosition(activePageIndex, activeElement.id, xPct, yPct);
                       updateElementDimensionsAndFont(activePageIndex, activeElement.id, widthPct, heightPct, fontSizeNum);
                     }
+                  }}
+                  onRotate={({ target, transform }: any) => {
+                    target.style.transform = transform;
+                  }}
+                  onRotateEnd={({ target }: any) => {
+                    const transformStr = target.style.transform || '';
+                    const rotateMatch = transformStr.match(/rotate\(([-\d.]+)deg\)/);
+                    const angle = rotateMatch ? parseFloat(rotateMatch[1]) : 0;
+                    pushToHistory(pages);
+                    updateSelectedElement('rotation', parseFloat(angle.toFixed(2)));
+                  }}
+                  onSkew={({ target, transform }: any) => {
+                    target.style.transform = transform;
+                  }}
+                  onSkewEnd={({ target }: any) => {
+                    const transformStr = target.style.transform || '';
+                    const skewXMatch = transformStr.match(/skewX\(([-\d.]+)deg\)/);
+                    const skewYMatch = transformStr.match(/skewY\(([-\d.]+)deg\)/);
+                    const skewX = skewXMatch ? parseFloat(skewXMatch[1]) : 0;
+                    const skewY = skewYMatch ? parseFloat(skewYMatch[1]) : 0;
+                    pushToHistory(pages);
+                    setPages(prevPages =>
+                      prevPages.map((page, pIdx) => {
+                        if (pIdx === activePageIndex) {
+                          return {
+                            ...page,
+                            elements: page.elements.map(item =>
+                              item.id === activeElement.id
+                                ? { ...item, skewX: parseFloat(skewX.toFixed(2)), skewY: parseFloat(skewY.toFixed(2)) }
+                                : item
+                            )
+                          };
+                        }
+                        return page;
+                      })
+                    );
                   }}
                 />
               )}
@@ -4093,10 +4341,27 @@ export default function QuotationMakerPage() {
               </button>
             )}
             <div className="w-px h-4 bg-zinc-700" />
+            {/* Layer arrangement */}
+            <button
+              onClick={() => arrangeElement('front')}
+              className="p-1 hover:bg-zinc-800 text-zinc-300 rounded text-[10px] font-bold flex items-center justify-center min-w-[32px] transition-colors"
+              title="Bring to Front (Z-Index + 1)"
+            >
+              ▲ Front
+            </button>
+            <button
+              onClick={() => arrangeElement('back')}
+              className="p-1 hover:bg-zinc-800 text-zinc-300 rounded text-[10px] font-bold flex items-center justify-center min-w-[32px] transition-colors"
+              title="Send to Back (Z-Index - 1)"
+            >
+              ▼ Back
+            </button>
+            <div className="w-px h-4 bg-zinc-700" />
             {/* Delete */}
             <button
               onClick={() => {
                 if (!selectedElement) return;
+                pushToHistory(pages);
                 setPages(prevPages =>
                   prevPages.map((page, pIdx) => {
                     if (pIdx === selectedElement.pageIndex) {
@@ -4517,7 +4782,9 @@ export default function QuotationMakerPage() {
                   letterSpacing: el.letterSpacing || 'normal',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: el.textAlign === 'center' ? 'center' : el.textAlign === 'right' ? 'flex-end' : 'flex-start'
+                  justifyContent: el.textAlign === 'center' ? 'center' : el.textAlign === 'right' ? 'flex-end' : 'flex-start',
+                  transform: `rotate(${el.rotation || 0}deg) skew(${el.skewX || 0}deg, ${el.skewY || 0}deg)`,
+                  zIndex: el.zIndex !== undefined ? el.zIndex : 1
                 };
 
                 if (el.type === 'text') {
