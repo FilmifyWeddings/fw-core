@@ -162,7 +162,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
   ];
 
-  if (['/login', '/home', '/admin/sushant', '/admin/dashboard'].includes(pathname)) {
+  if (['/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager'].includes(pathname)) {
     return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
   }
 

@@ -3,44 +3,79 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Calendar, List, Plus, Trash2, RotateCcw, Check, X, 
-  Send, AlertCircle, Eye, Search, Filter, Loader2, Sparkles, MapPin, 
-  Clock, CheckCircle, Info, Trash
+  Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
+  Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { FWProject, FWTeamMember, FWAssignment } from '@/types';
 
+// Semantic Theme CSS styles injected directly for strict color matching
+const customStyle = `
+  body {
+    background-color: #F8F9FD !important;
+    color: #0B111E !important;
+  }
+`;
+
 export default function TeamManagerPage() {
-  const [activeTab, setActiveTab] = useState<'ledger' | 'calendar' | 'trash'>('ledger');
+  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   
-  // Real-time operational data states
+  // Database States
   const [projects, setProjects] = useState<FWProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
   const [assignments, setAssignments] = useState<FWAssignment[]>([]);
   
-  // Settings & Filter states
-  const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  
   // UI Interactive States
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
+  
+  // Selected Event and Active Popover assignment anchor
+  const [activeAssigningId, setActiveAssigningId] = useState<string | null>(null);
 
-  // Modals / Creators
+  // Modals
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isNewMemberModalOpen, setIsNewMemberModalOpen] = useState(false);
-  const [isNewAssignmentModalOpen, setIsNewAssignmentModalOpen] = useState(false);
 
-  // Form states
-  const [newProject, setNewProject] = useState({ clientName: '', mainDate: '', mainVenue: '' });
-  const [newMember, setNewMember] = useState({ name: '', role: 'Lead Photographer', phone: '', email: '' });
-  const [newAssignment, setNewAssignment] = useState({
-    projectId: '', subEventName: '', subEventDate: '', startTime: '10:00', endTime: '18:00', requiredRole: 'Lead Photographer'
-  });
+  // Coupling Input and Dynamic Modal Blocks for Project Creation
+  const [couplingName, setCouplingName] = useState('');
+  const [projectMainVenue, setProjectMainVenue] = useState('');
+  const [projectMainDate, setProjectMainDate] = useState('');
+  const [eventBlocks, setEventBlocks] = useState<Array<{
+    id: string;
+    subEventName: string;
+    subEventDate: string;
+    venueLocation: string;
+    mapLink: string;
+    startTime: string;
+    endTime: string;
+    roles: string[];
+    notes: string;
+  }>>([
+    {
+      id: Math.random().toString(),
+      subEventName: 'Wedding',
+      subEventDate: '',
+      venueLocation: '',
+      mapLink: '',
+      startTime: '14:00',
+      endTime: '22:00',
+      roles: ['TP', 'Ass'],
+      notes: ''
+    }
+  ]);
+
+  // New Crew Member Form State
+  const [newMember, setNewMember] = useState({ name: '', role: 'CP', phone: '', email: '' });
+
+  // Predefined Role Pool Chips
+  const ROLE_CHIPS = [
+    'TM', 'Ass', 'TP', 'TV', 'CP', 'CV', 'Dron', 'Makeup Art', 
+    'Cine 2', 'Candid 2', 'Face AI', 'social Media persone', 'Reel', 
+    'Family Photographer', 'cv 2ndGim', '2 Ass', 'Live Camera'
+  ];
 
   // Fetch initial profile & data
   useEffect(() => {
@@ -57,19 +92,16 @@ export default function TeamManagerPage() {
   }, []);
 
   const fetchData = async (uid: string) => {
-    // 1. Fetch active projects
     const { data: pData } = await supabase
       .from('fw_projects')
       .select('*')
       .eq('user_id', uid);
     
-    // 2. Fetch team members
     const { data: mData } = await supabase
       .from('fw_team_members')
       .select('*')
       .eq('user_id', uid);
 
-    // 3. Fetch assignments
     const { data: aData } = await supabase
       .from('fw_assignments')
       .select('*, fw_team_members(*)')
@@ -80,32 +112,73 @@ export default function TeamManagerPage() {
     if (aData) setAssignments(aData as any[]);
   };
 
-  // Add Project
-  const handleAddProject = async (e: React.FormEvent) => {
+  // Add Project with Sub-Events Configuration (Matching Screenshot 2 layout)
+  const handleSaveProjectConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProject.clientName || !newProject.mainDate || !newProject.mainVenue) return;
-    
-    const { data, error } = await supabase
+    if (!couplingName || !projectMainDate || !projectMainVenue) return;
+
+    // Create project
+    const { data: project, error: pErr } = await supabase
       .from('fw_projects')
       .insert({
         user_id: userId,
-        client_name: newProject.clientName,
-        main_date: newProject.mainDate,
-        main_venue: newProject.mainVenue,
+        client_name: couplingName,
+        main_date: projectMainDate,
+        main_venue: projectMainVenue,
         is_archived: false
       })
       .select()
       .single();
 
-    if (!error && data) {
-      setProjects(prev => [...prev, data]);
-      setNewProject({ clientName: '', mainDate: '', mainVenue: '' });
-      setIsNewProjectModalOpen(false);
+    if (pErr || !project) return;
+
+    // Insert sub-events assignments
+    const insertPromises = [];
+    for (const block of eventBlocks) {
+      for (const role of block.roles) {
+        insertPromises.push(
+          supabase.from('fw_assignments').insert({
+            user_id: userId,
+            project_id: project.id,
+            sub_event_name: block.subEventName,
+            sub_event_date: block.subEventDate || projectMainDate,
+            start_time: block.startTime,
+            end_time: block.endTime,
+            required_role: role,
+            assigned_member_id: null,
+            notes: block.notes
+          })
+        );
+      }
     }
+
+    await Promise.all(insertPromises);
+    
+    // Refresh
+    await fetchData(userId);
+
+    // Reset Form
+    setCouplingName('');
+    setProjectMainDate('');
+    setProjectMainVenue('');
+    setEventBlocks([
+      {
+        id: Math.random().toString(),
+        subEventName: 'Wedding',
+        subEventDate: '',
+        venueLocation: '',
+        mapLink: '',
+        startTime: '14:00',
+        endTime: '22:00',
+        roles: ['TP', 'Ass'],
+        notes: ''
+      }
+    ]);
+    setIsNewProjectModalOpen(false);
   };
 
-  // Add Team Member
-  const handleAddMember = async (e: React.FormEvent) => {
+  // Register Team Crew Member
+  const handleRegisterCrew = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMember.name || !newMember.phone || !newMember.email) return;
 
@@ -124,87 +197,21 @@ export default function TeamManagerPage() {
 
     if (!error && data) {
       setTeamMembers(prev => [...prev, data]);
-      setNewMember({ name: '', role: 'Lead Photographer', phone: '', email: '' });
+      setNewMember({ name: '', role: 'CP', phone: '', email: '' });
       setIsNewMemberModalOpen(false);
     }
   };
 
-  // Add Sub-Event Assignment
-  const handleAddAssignment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newAssignment.projectId || !newAssignment.subEventName || !newAssignment.subEventDate) return;
-
-    const { data, error } = await supabase
-      .from('fw_assignments')
-      .insert({
-        user_id: userId,
-        project_id: newAssignment.projectId,
-        sub_event_name: newAssignment.subEventName,
-        sub_event_date: newAssignment.subEventDate,
-        start_time: newAssignment.startTime,
-        end_time: newAssignment.endTime,
-        required_role: newAssignment.requiredRole,
-        assigned_member_id: null
-      })
-      .select('*, fw_team_members(*)')
-      .single();
-
-    if (!error && data) {
-      setAssignments(prev => [...prev, data as any]);
-      setNewAssignment({
-        projectId: '', subEventName: '', subEventDate: '', startTime: '10:00', endTime: '18:00', requiredRole: 'Lead Photographer'
-      });
-      setIsNewAssignmentModalOpen(false);
-    }
-  };
-
-  // Soft-Delete Project (Move to Trash Bin)
-  const handleSoftDeleteProject = async (id: string) => {
-    const { error } = await supabase
-      .from('fw_projects')
-      .update({ is_archived: true })
-      .eq('id', id);
-
-    if (!error) {
-      setProjects(prev => prev.map(p => p.id === id ? { ...p, is_archived: true } : p));
-    }
-  };
-
-  // Restore Project from Trash Bin
-  const handleRestoreProject = async (id: string) => {
-    const { error } = await supabase
-      .from('fw_projects')
-      .update({ is_archived: false })
-      .eq('id', id);
-
-    if (!error) {
-      setProjects(prev => prev.map(p => p.id === id ? { ...p, is_archived: false } : p));
-    }
-  };
-
-  // Permanent Delete Project (Cascading Triggers)
-  const handlePermanentDeleteProject = async (id: string) => {
-    if (!confirm('Are you sure you want to permanently delete this project? All events and crew assignments will be lost.')) return;
-    const { error } = await supabase
-      .from('fw_projects')
-      .delete()
-      .eq('id', id);
-
-    if (!error) {
-      setProjects(prev => prev.filter(p => p.id !== id));
-      setAssignments(prev => prev.filter(a => a.project_id !== id));
-    }
-  };
-
-  // Re-assign Member Endpoint Orchestration
-  const handleAssignMember = async (assignmentId: string, assignedMemberId: string | null) => {
+  // Assign Member Triggering serverless WhatsBoost API Alert
+  const handleAssignCrew = async (assignmentId: string, memberId: string | null) => {
+    setActiveAssigningId(null);
     try {
       const res = await fetch('/api/assignments/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assignmentId,
-          assignedMemberId,
+          assignedMemberId: memberId,
           instantAlerts,
           userId
         })
@@ -219,835 +226,1112 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Calendar event calculations
-  const getSubEventColorDot = (role: string) => {
-    if (role.toLowerCase().includes('wedding')) return 'bg-yellow-500';
-    if (role.toLowerCase().includes('sangeet')) return 'bg-purple-500';
-    if (role.toLowerCase().includes('reception')) return 'bg-green-500';
-    return 'bg-blue-500';
+  // Soft Delete Project
+  const handleSoftDelete = async (id: string) => {
+    const { error } = await supabase
+      .from('fw_projects')
+      .update({ is_archived: true })
+      .eq('id', id);
+
+    if (!error) {
+      setProjects(prev => prev.map(p => p.id === id ? { ...p, is_archived: true } : p));
+    }
   };
 
-  // Date selectors helper
-  const getDaysInMonth = () => {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDayIndex = new Date(year, month, 1).getDay();
-    const totalDays = new Date(year, month + 1, 0).getDate();
-    
-    // Shift index to start Monday-Sunday (index 0 is Monday)
-    const shiftedFirstDay = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
-    
-    const days = [];
-    for (let i = 0; i < shiftedFirstDay; i++) {
-      days.push(null); // empty blocks before month starts
+  // Restore Project
+  const handleRestore = async (id: string) => {
+    const { error } = await supabase
+      .from('fw_projects')
+      .update({ is_archived: false })
+      .eq('id', id);
+
+    if (!error) {
+      setProjects(prev => prev.map(p => p.id === id ? { ...p, is_archived: false } : p));
     }
-    for (let d = 1; d <= totalDays; d++) {
-      days.push(new Date(year, month, d).toISOString().split('T')[0]);
-    }
-    return days;
   };
 
-  // Filters calculations
-  const filteredAssignments = assignments.filter(assign => {
-    const project = projects.find(p => p.id === assign.project_id);
-    if (!project || project.is_archived) return false;
+  // Permanent Delete
+  const handlePermanentDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to permanently delete this project?')) return;
+    const { error } = await supabase
+      .from('fw_projects')
+      .delete()
+      .eq('id', id);
 
-    const matchesSearch = project.client_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          assign.sub_event_name.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!error) {
+      setProjects(prev => prev.filter(p => p.id !== id));
+      setAssignments(prev => prev.filter(a => a.project_id !== id));
+    }
+  };
+
+  // Sub-Event block handlers for Popup
+  const addEventBlock = () => {
+    setEventBlocks(prev => [
+      ...prev,
+      {
+        id: Math.random().toString(),
+        subEventName: 'Pre-wedding',
+        subEventDate: '',
+        venueLocation: '',
+        mapLink: '',
+        startTime: '10:00',
+        endTime: '18:00',
+        roles: ['Ass', 'CP'],
+        notes: ''
+      }
+    ]);
+  };
+
+  const removeEventBlock = (id: string) => {
+    if (eventBlocks.length <= 1) return;
+    setEventBlocks(prev => prev.filter(b => b.id !== id));
+  };
+
+  const updateEventBlock = (id: string, fields: Partial<typeof eventBlocks[0]>) => {
+    setEventBlocks(prev => prev.map(b => b.id === id ? { ...b, ...fields } : b));
+  };
+
+  const toggleRoleInBlock = (blockId: string, role: string) => {
+    setEventBlocks(prev => prev.map(b => {
+      if (b.id !== blockId) return b;
+      const roles = b.roles.includes(role) 
+        ? b.roles.filter(r => r !== role) 
+        : [...b.roles, role];
+      return { ...b, roles };
+    }));
+  };
+
+  // Countdown badge logic
+  const getDaysCountdownBadge = (dateStr: string) => {
+    const diff = new Date(dateStr).getTime() - new Date().getTime();
+    const days = Math.ceil(diff / (1000 * 3600 * 24));
+    return days > 0 ? `In ${days} Days` : days === 0 ? 'Today' : `${Math.abs(days)} Days Ago`;
+  };
+
+  // Grouping assignments by event name and date inside projects cards
+  const getGroupedEvents = (projId: string) => {
+    const projAssignments = assignments.filter(a => a.project_id === projId);
+    const groups: { [key: string]: FWAssignment[] } = {};
     
-    const matchesRole = roleFilter === 'all' || assign.required_role === roleFilter;
-    
+    projAssignments.forEach(a => {
+      const key = `${a.sub_event_name}-${a.sub_event_date}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(a);
+    });
+
+    return Object.keys(groups).map(key => {
+      const list = groups[key];
+      return {
+        name: list[0].sub_event_name,
+        date: list[0].sub_event_date,
+        startTime: list[0].start_time,
+        endTime: list[0].end_time,
+        roles: list
+      };
+    });
+  };
+
+  // Capsule Pills Color Mapper
+  const getCapsulePillStyle = (assign: FWAssignment) => {
     const isAssigned = assign.assigned_member_id !== null;
-    const matchesStatus = statusFilter === 'all' || 
-                          (statusFilter === 'assigned' && isAssigned) || 
-                          (statusFilter === 'pending' && !isAssigned);
+    const name = assign.fw_team_members?.name || '';
+    const role = assign.required_role;
 
-    return matchesSearch && matchesRole && matchesStatus;
-  });
+    if (!isAssigned) {
+      return {
+        bg: 'bg-rose-50 border-rose-100 text-rose-600',
+        label: `• ${role}`,
+        dot: true
+      };
+    }
+
+    if (role === 'CP' || role === 'Cine 2' || role === 'Candid 2') {
+      return {
+        bg: 'bg-emerald-50 border-emerald-100 text-emerald-700',
+        label: `${role}: ${name}`,
+        dot: false
+      };
+    }
+    
+    return {
+      bg: 'bg-teal-50 border-teal-100 text-teal-700',
+      label: `${role}: ${name}`,
+      dot: false
+    };
+  };
+
+  // Group assignments by month for List Register View (Screenshot 3)
+  const getMonthlyAssignments = () => {
+    const list = assignments.filter(a => {
+      const p = projects.find(proj => proj.id === a.project_id);
+      return p && !p.is_archived;
+    });
+
+    // Group by month string (e.g. "August 2026")
+    const groups: { [key: string]: FWAssignment[] } = {};
+    list.forEach(a => {
+      const d = new Date(a.sub_event_date);
+      const monthStr = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      if (!groups[monthStr]) groups[monthStr] = [];
+      groups[monthStr].push(a);
+    });
+
+    // Sort months chronologically
+    return Object.keys(groups).sort((x, y) => new Date(x).getTime() - new Date(y).getTime()).map(m => ({
+      month: m,
+      items: groups[m].sort((x, y) => new Date(x.sub_event_date).getTime() - new Date(y.sub_event_date).getTime())
+    }));
+  };
 
   return (
-    <div className="min-h-screen bg-[#05070B] text-zinc-100 p-4 lg:p-8 font-sans antialiased">
-      
-      {/* 1. Header with Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-900 pb-6 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-[#6C5CE7]" />
-            FW Team & Operations Workstation
-          </h1>
-          <p className="text-xs text-zinc-400 mt-1">
-            Real-time crew allocations, calendar planning boards, and WhatsBoost transactional notifications gateway.
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#F8F9FD] text-[#0B111E] flex font-sans antialiased selection:bg-[#6C5CE7]/15">
+      <style>{customStyle}</style>
 
-        {/* Global Instant Alert Switch */}
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-3 bg-zinc-900/60 px-4 py-2 rounded-xl border border-zinc-800">
-            <span className="text-xs font-semibold text-zinc-300">WhatsBoost Outbound Alerts</span>
+      {/* ─────────────────────────────────────────────────────────────
+          LEFT WORKSPACE SIDEBAR NAVIGATION (Light Mode Premium)
+         ───────────────────────────────────────────────────────────── */}
+      <aside className="w-64 bg-white border-r border-[#6C5CE7]/8 flex flex-col justify-between py-6 px-4 shrink-0 shadow-[4px_0_24px_rgba(108,92,231,0.01)]">
+        <div className="space-y-8">
+          
+          {/* Logo Branding */}
+          <div className="flex items-center gap-3 px-2">
+            <div className="w-9 h-9 rounded-xl bg-[#6C5CE7] flex items-center justify-center text-white shadow-lg shadow-[#6C5CE7]/20">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="font-bold text-sm tracking-tight block">Filmify</span>
+              <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider">Studio Workstation</span>
+            </div>
+          </div>
+
+          {/* Nav Links Grid */}
+          <nav className="space-y-1">
             <button 
-              onClick={() => setInstantAlerts(!instantAlerts)}
-              className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${
-                instantAlerts ? 'bg-[#6C5CE7]' : 'bg-zinc-800'
+              onClick={() => setActiveTab('overview')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'overview' 
+                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
+                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
               }`}
             >
-              <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 transform ${
-                instantAlerts ? 'translate-x-4' : 'translate-x-0'
-              }`} />
+              <Grid className="w-4 h-4" /> Overview
             </button>
+            
+            <button 
+              onClick={() => setActiveTab('projects')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'projects' 
+                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
+                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Users className="w-4 h-4" /> Projects
+              </div>
+              <span className="bg-[#6C5CE7]/10 text-[#6C5CE7] text-[10px] font-bold px-2 py-0.5 rounded-md">
+                {projects.filter(p => !p.is_archived).length}
+              </span>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('list')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'list' 
+                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
+                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
+              }`}
+            >
+              <List className="w-4 h-4" /> List Register
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('calendar')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'calendar' 
+                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
+                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
+              }`}
+            >
+              <Calendar className="w-4 h-4" /> Calendar
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('trash')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'trash' 
+                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
+                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
+              }`}
+            >
+              <Trash2 className="w-4 h-4" /> Trash Recovery
+            </button>
+          </nav>
+        </div>
+
+        {/* Footer info & toggle switches */}
+        <div className="space-y-4 pt-6 border-t border-zinc-100">
+          <div className="space-y-1 px-2">
+            <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block">Operational Alerts</span>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[11px] font-semibold text-zinc-500">WhatsBoost Logs</span>
+              <button 
+                onClick={() => setInstantAlerts(!instantAlerts)}
+                className={`w-8 h-4.5 rounded-full p-0.5 transition-colors focus:outline-none ${
+                  instantAlerts ? 'bg-[#6C5CE7]' : 'bg-zinc-200'
+                }`}
+              >
+                <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform transform ${
+                  instantAlerts ? 'translate-x-3.5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
           </div>
-          
-          {/* Quick Create Actions */}
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setIsNewProjectModalOpen(true)}
-              className="bg-[#6C5CE7] hover:bg-[#6C5CE7]/90 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-[#6C5CE7]/10"
-            >
-              <Plus className="w-3.5 h-3.5" /> Project
-            </button>
-            <button 
-              onClick={() => setIsNewMemberModalOpen(true)}
-              className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" /> Crew
-            </button>
+
+          {/* User profile capsule */}
+          <div className="flex items-center gap-3 bg-zinc-50 p-2.5 rounded-2xl border border-zinc-100">
+            <div className="w-8 h-8 rounded-xl bg-[#6C5CE7]/10 flex items-center justify-center text-[#6C5CE7] font-bold text-xs">
+              SA
+            </div>
+            <div>
+              <span className="font-bold text-[11px] block leading-tight">Studio Admin</span>
+              <span className="text-[9px] text-[#4F5E74] font-semibold block mt-0.5">Owner Profile</span>
+            </div>
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* 2. Top Navigation Tabs & Search */}
-      <div className="flex flex-col lg:flex-row justify-between gap-4 mb-6">
-        <div className="flex bg-zinc-900/40 p-1 rounded-xl border border-zinc-900/60 max-w-sm">
-          <button 
-            onClick={() => setActiveTab('ledger')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'ledger' ? 'bg-[#6C5CE7] text-white' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <List className="w-3.5 h-3.5" /> Assignments Ledger
-          </button>
-          <button 
-            onClick={() => setActiveTab('calendar')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'calendar' ? 'bg-[#6C5CE7] text-white' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" /> Calendar Board
-          </button>
-          <button 
-            onClick={() => setActiveTab('trash')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'trash' ? 'bg-[#6C5CE7] text-white' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Trash className="w-3.5 h-3.5" /> Trash Recovery
-          </button>
-        </div>
+      {/* ─────────────────────────────────────────────────────────────
+          MAIN CONTENT WORKSPACE AREA
+         ───────────────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-10 max-h-screen">
+        
+        {/* Top Header Block */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h2 className="text-xl font-bold text-[#0B111E] tracking-tight flex items-center gap-2">
+              Welcome back, Studio Admin 👋
+            </h2>
+            <p className="text-xs text-[#4F5E74] font-semibold mt-0.5">
+              Here&apos;s what&apos;s happening with your weddings today.
+            </p>
+          </div>
 
-        {/* Ledger view Filters (Desktop layout) */}
-        {activeTab === 'ledger' && (
-          <div className="hidden lg:flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input 
-                type="text" 
-                placeholder="Search clients, events..."
+                type="text"
+                placeholder="Search client or location..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="bg-[#121824] border border-zinc-800 pl-9 pr-4 py-2 text-xs rounded-xl text-zinc-200 focus:outline-none focus:border-[#6C5CE7] w-60"
+                className="bg-white border border-[#6C5CE7]/10 pl-10 pr-4 py-2 text-xs rounded-xl focus:outline-none focus:border-[#6C5CE7] w-64 shadow-[0_2px_8px_rgba(108,92,231,0.02)] transition-all text-[#0B111E]"
               />
             </div>
             
-            <select 
-              value={roleFilter}
-              onChange={e => setRoleFilter(e.target.value)}
-              className="bg-[#121824] border border-zinc-800 px-3 py-2 text-xs rounded-xl text-zinc-300 focus:outline-none"
-            >
-              <option value="all">All Roles</option>
-              <option value="Lead Photographer">Lead Photographer</option>
-              <option value="Second Photographer">Second Photographer</option>
-              <option value="Cinematographer">Cinematographer</option>
-              <option value="Drone Pilot">Drone Pilot</option>
-              <option value="Editor">Editor</option>
-            </select>
-
-            <select 
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="bg-[#121824] border border-zinc-800 px-3 py-2 text-xs rounded-xl text-zinc-300 focus:outline-none"
-            >
-              <option value="all">All Status</option>
-              <option value="assigned">Crew Assigned</option>
-              <option value="pending">Pending</option>
-            </select>
-          </div>
-        )}
-
-        {/* Mobile View Filter Trigger (viewport < 992px) */}
-        {activeTab === 'ledger' && (
-          <div className="lg:hidden flex justify-between gap-3">
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input 
-                type="text" 
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="bg-[#121824] border border-zinc-800 pl-9 pr-4 py-2.5 text-xs rounded-xl text-zinc-200 focus:outline-none focus:border-[#6C5CE7] w-full"
-              />
-            </div>
             <button 
-              onClick={() => setIsFilterModalOpen(true)}
-              className="bg-[#121824] border border-zinc-800 p-2.5 rounded-xl text-zinc-300 hover:text-white"
+              onClick={() => setIsNewProjectModalOpen(true)}
+              className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-[0_4px_12px_rgba(108,92,231,0.2)] hover:shadow-[0_6px_16px_rgba(108,92,231,0.3)] flex items-center gap-1.5"
             >
-              <Filter className="w-4 h-4" />
+              <Plus className="w-4 h-4" /> Add Project
             </button>
           </div>
-        )}
-      </div>
-
-      {/* 3. Main Workspace Display */}
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-3">
-          <Loader2 className="w-8 h-8 text-[#6C5CE7] animate-spin" />
-          <span className="text-zinc-500 text-xs font-semibold">Loading operations dataset...</span>
         </div>
-      ) : (
-        <AnimatePresence mode="wait">
-          
-          {/* LEDGER LIST VIEW TAB */}
-          {activeTab === 'ledger' && (
-            <motion.div 
-              key="ledger"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="bg-[#121824]/40 border border-zinc-900 rounded-2xl overflow-hidden shadow-2xl"
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-zinc-800/80 bg-zinc-900/30 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                      <th className="px-6 py-4">Client / Project</th>
-                      <th className="px-6 py-4">Sub Event</th>
-                      <th className="px-6 py-4">Required Role</th>
-                      <th className="px-6 py-4">Scheduled Date & Time</th>
-                      <th className="px-6 py-4">Assigned Crew Member</th>
-                      <th className="px-6 py-4">Action</th>
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 1: PROJECTS GRID VIEW (Screenshot 1 Matching)
+           ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'projects' && (
+          <div className="space-y-6">
+            
+            {/* Horizontal Filter Pill Badges */}
+            <div className="flex flex-wrap gap-2.5">
+              <button className="px-4 py-1.5 rounded-full text-xs font-bold bg-[#6C5CE7] text-white transition-all shadow-md shadow-[#6C5CE7]/10">
+                All Weddings
+              </button>
+              <button className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-[#4F5E74] border border-[#6C5CE7]/8 hover:border-[#6C5CE7]/20 transition-all flex items-center gap-1">
+                Crew Pending <span className="bg-rose-50 text-rose-600 text-[10px] px-1.5 py-0.5 rounded-md font-bold">9</span>
+              </button>
+              <button className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-[#4F5E74] border border-[#6C5CE7]/8 hover:border-[#6C5CE7]/20 transition-all flex items-center gap-1">
+                Upload Pending <span className="bg-amber-50 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-md font-bold">0</span>
+              </button>
+              <button className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-[#4F5E74] border border-[#6C5CE7]/8 hover:border-[#6C5CE7]/20 transition-all flex items-center gap-1">
+                Delivered <span className="bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded-md font-bold">0</span>
+              </button>
+            </div>
+
+            {/* Masonry Projects Cards Grid (Strict 3-column setup) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {projects.filter(p => !p.is_archived).map(proj => {
+                const groupedEvents = getGroupedEvents(proj.id);
+                return (
+                  <div 
+                    key={proj.id}
+                    className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 shadow-[0_10px_30px_rgba(108,92,231,0.04),0_1px_3px_rgba(108,92,231,0.02)] hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(108,92,231,0.08)] transition-all duration-300 relative group flex flex-col justify-between"
+                  >
+                    <div>
+                      {/* Card Header */}
+                      <div className="flex justify-between items-start mb-1">
+                        <h3 className="font-extrabold text-[#0B111E] text-base group-hover:text-[#6C5CE7] transition-all">
+                          {proj.client_name}
+                        </h3>
+                        <div className="flex gap-1 opacity-60 hover:opacity-100 transition-all">
+                          <button 
+                            onClick={() => handleSoftDelete(proj.id)}
+                            className="p-1 hover:text-rose-500 rounded-lg hover:bg-rose-50 transition"
+                            title="Soft Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Countdown badge beneath title */}
+                      <div className="mb-6">
+                        <span className="bg-[#6C5CE7]/6 text-[#6C5CE7] font-bold text-[10px] px-2.5 py-1 rounded-full border border-[#6C5CE7]/10 inline-block">
+                          {getDaysCountdownBadge(proj.main_date)}
+                        </span>
+                      </div>
+
+                      {/* Events vertical stack with dashed left timeline line */}
+                      <div className="relative border-l border-dashed border-[#6C5CE7]/20 pl-5 ml-1 space-y-6">
+                        {groupedEvents.map((evt, idx) => (
+                          <div key={idx} className="relative">
+                            
+                            {/* Purple indicator bullet on left timeline path */}
+                            <span className="absolute -left-[26px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#6C5CE7] border-2 border-white ring-4 ring-[#6C5CE7]/10" />
+                            
+                            {/* Event details block */}
+                            <div>
+                              <div className="text-xs font-bold text-[#0B111E] flex items-center gap-1.5">
+                                {evt.name} <span className="text-[#4F5E74] font-semibold">| {evt.date}</span>
+                              </div>
+                              
+                              <div className="text-[10px] text-[#4F5E74] font-semibold mt-0.5 flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-[#6C5CE7]/60" />
+                                {evt.startTime} - {evt.endTime}
+                              </div>
+
+                              {/* Interactive crew capsules list */}
+                              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                {evt.roles.map(assign => {
+                                  const config = getCapsulePillStyle(assign);
+                                  const isAssigningActive = activeAssigningId === assign.id;
+                                  return (
+                                    <div key={assign.id} className="relative inline-block">
+                                      <button 
+                                        onClick={() => setActiveAssigningId(isAssigningActive ? null : assign.id)}
+                                        className={`px-3 py-1 rounded-full text-[9px] font-bold border transition-all flex items-center gap-1.5 active:scale-95 ${config.bg}`}
+                                      >
+                                        {config.dot && (
+                                          <span className="w-1 h-1 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                                        )}
+                                        {config.label}
+                                      </button>
+
+                                      {/* Selection Popover inline dropdown */}
+                                      <AnimatePresence>
+                                        {isAssigningActive && (
+                                          <>
+                                            <div 
+                                              className="fixed inset-0 z-30" 
+                                              onClick={() => setActiveAssigningId(null)} 
+                                            />
+                                            <motion.div 
+                                              initial={{ opacity: 0, y: 4 }}
+                                              animate={{ opacity: 1, y: 0 }}
+                                              exit={{ opacity: 0, y: 4 }}
+                                              className="absolute left-0 mt-1.5 bg-white border border-[#6C5CE7]/10 rounded-2xl p-2 w-48 shadow-xl z-40"
+                                            >
+                                              <span className="text-[9px] uppercase font-bold text-[#4F5E74] tracking-wider px-2 py-1 block">
+                                                Assign {assign.required_role}
+                                              </span>
+                                              <div className="max-h-36 overflow-y-auto space-y-0.5 mt-1">
+                                                <button 
+                                                  onClick={() => handleAssignCrew(assign.id, null)}
+                                                  className="w-full text-left text-[11px] font-bold px-2 py-1.5 rounded-lg text-rose-500 hover:bg-rose-50/50 transition"
+                                                >
+                                                  Unassign Crew Slot
+                                                </button>
+                                                {teamMembers.map(m => (
+                                                  <button 
+                                                    key={m.id}
+                                                    onClick={() => handleAssignCrew(assign.id, m.id)}
+                                                    className="w-full text-left text-[11px] font-medium px-2 py-1.5 rounded-lg hover:bg-zinc-50 text-[#0B111E] transition block"
+                                                  >
+                                                    {m.name}
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            </motion.div>
+                                          </>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                    </div>
+                    
+                    {/* Event location address block */}
+                    <div className="border-t border-[#6C5CE7]/8 pt-4 mt-6 flex items-center justify-between text-[10px] font-bold text-[#4F5E74]">
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-[#6C5CE7]" />
+                        {proj.main_venue}
+                      </div>
+                      <span className="bg-[#6C5CE7]/5 text-[#6C5CE7] px-2 py-0.5 rounded-md font-semibold text-[9px]">PENDING</span>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 2: LIST REGISTER VIEW (Screenshot 3 Matching)
+           ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'list' && (
+          <div className="space-y-8 bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 lg:p-8 shadow-[0_10px_30px_rgba(108,92,231,0.04)]">
+            {getMonthlyAssignments().length === 0 ? (
+              <div className="text-center py-20 text-[#4F5E74] font-semibold text-xs">
+                No active sub-event registers found.
+              </div>
+            ) : (
+              getMonthlyAssignments().map(monthBlock => (
+                <div key={monthBlock.month} className="space-y-4">
+                  
+                  {/* Month divider header */}
+                  <h3 className="text-sm font-extrabold text-[#6C5CE7] tracking-tight border-b border-[#6C5CE7]/10 pb-2">
+                    {monthBlock.month}
+                  </h3>
+
+                  <div className="divide-y divide-zinc-50">
+                    {monthBlock.items.map(a => {
+                      const p = projects.find(proj => proj.id === a.project_id);
+                      const config = getCapsulePillStyle(a);
+                      
+                      const dateObj = new Date(a.sub_event_date);
+                      const dayNum = dateObj.toLocaleString('en-US', { day: '2-digit' });
+                      const dayName = dateObj.toLocaleString('en-US', { weekday: 'long' });
+                      const monthName = dateObj.toLocaleString('en-US', { month: 'short' });
+
+                      return (
+                        <div key={a.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-zinc-50/40 px-2 rounded-xl transition">
+                          
+                          {/* Left Margin Calendar Details */}
+                          <div className="flex items-center gap-4">
+                            <div className="w-14 text-center shrink-0 border-r border-[#6C5CE7]/10 pr-3">
+                              <span className="block font-black text-sm text-[#6C5CE7] leading-none">{dayNum}</span>
+                              <span className="block text-[8px] uppercase font-bold text-[#4F5E74] tracking-wider mt-1">{monthName}</span>
+                            </div>
+                            <div>
+                              <span className="text-[11px] font-bold text-[#4F5E74] block leading-none">{dayName}</span>
+                              <span className="text-xs font-extrabold text-[#0B111E] block mt-1">
+                                {p?.client_name} <span className="font-semibold text-zinc-400">({a.sub_event_name})</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Right Aligned Assigned Capsule chips */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-[#4F5E74] font-semibold">{a.start_time} - {a.end_time}</span>
+                            <span className={`px-3.5 py-1 rounded-full text-[9px] font-bold border ${config.bg}`}>
+                              {config.label}
+                            </span>
+                          </div>
+
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 3: OVERVIEW ANALYTICS (Screenshot 4 Matching)
+           ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            
+            {/* Top scorecards row (Exactly 4 premium blocks) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              
+              {/* Scorecard 1: Total Weddings */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 shadow-[0_10px_30px_rgba(108,92,231,0.04)] relative overflow-hidden group">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block">Total Weddings</span>
+                    <span className="text-3xl font-black text-[#0B111E] block mt-2">117</span>
+                  </div>
+                  <div className="w-8 h-8 rounded-xl bg-[#6C5CE7]/5 flex items-center justify-center text-[#6C5CE7]">
+                    <Sparkles className="w-4.5 h-4.5" />
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold text-emerald-600 mt-4 flex items-center gap-1">
+                  ▲ 12% <span className="text-[#4F5E74] font-semibold">from last month</span>
+                </div>
+              </div>
+
+              {/* Scorecard 2: Active Crew */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 shadow-[0_10px_30px_rgba(108,92,231,0.04)] relative overflow-hidden group">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block">Active Crew</span>
+                    <span className="text-3xl font-black text-[#0B111E] block mt-2">32</span>
+                  </div>
+                  <div className="w-8 h-8 rounded-xl bg-[#6C5CE7]/5 flex items-center justify-center text-[#6C5CE7]">
+                    <Users className="w-4.5 h-4.5" />
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold text-emerald-600 mt-4 flex items-center gap-1">
+                  ▲ 8% <span className="text-[#4F5E74] font-semibold">from last month</span>
+                </div>
+              </div>
+
+              {/* Scorecard 3: Pending Tasks */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 shadow-[0_10px_30px_rgba(108,92,231,0.04)] relative overflow-hidden group">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block">Pending Tasks</span>
+                    <span className="text-3xl font-black text-[#0B111E] block mt-2">207</span>
+                  </div>
+                  <div className="w-8 h-8 rounded-xl bg-[#6C5CE7]/5 flex items-center justify-center text-[#6C5CE7]">
+                    <Clock className="w-4.5 h-4.5" />
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold text-rose-600 mt-4 flex items-center gap-1">
+                  ▼ 5% <span className="text-[#4F5E74] font-semibold">from last month</span>
+                </div>
+              </div>
+
+              {/* Scorecard 4: Completed */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 shadow-[0_10px_30px_rgba(108,92,231,0.04)] relative overflow-hidden group">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block">Completed</span>
+                    <span className="text-3xl font-black text-[#0B111E] block mt-2">28</span>
+                  </div>
+                  <div className="w-8 h-8 rounded-xl bg-[#6C5CE7]/5 flex items-center justify-center text-[#6C5CE7]">
+                    <CheckCircle className="w-4.5 h-4.5" />
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold text-emerald-600 mt-4 flex items-center gap-1">
+                  ▲ 16% <span className="text-[#4F5E74] font-semibold">from last month</span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Scorecard grids middle row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Upcoming Events Card Block (left) */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-5 shadow-[0_10px_30px_rgba(108,92,231,0.04)] flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-extrabold text-sm text-[#0B111E]">Upcoming Events</h3>
+                    <button className="text-[10px] font-bold text-[#6C5CE7]">View all</button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {[
+                      { date: '12 MAR', name: 'Fahad & Shifa', type: 'Wedding', time: '2:00 PM - 10:00 PM' },
+                      { date: '19 MAR', name: 'Fahad & Shifa', type: 'Wedding', time: '4:00 PM - 10:00 PM' },
+                      { date: '05 OCT', name: 'Mayur Su', type: 'Maternity Shoot', time: '5:00 PM - 12:00 PM' },
+                      { date: '08 OCT', name: 'Dhriti Magro Mittal', type: 'Product Shoot', time: '6:00 PM - 10:00 PM' }
+                    ].map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 rounded-xl hover:bg-zinc-50 transition border border-transparent hover:border-zinc-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 text-center shrink-0">
+                            <span className="block font-black text-xs text-[#6C5CE7] leading-none">{item.date.split(' ')[0]}</span>
+                            <span className="block text-[8px] uppercase font-bold text-[#4F5E74] tracking-wider mt-0.5">{item.date.split(' ')[1]}</span>
+                          </div>
+                          <div>
+                            <span className="text-[11px] font-bold text-[#0B111E] block">{item.name}</span>
+                            <span className="text-[9px] text-[#4F5E74] font-semibold block mt-0.5">{item.type} | {item.time}</span>
+                          </div>
+                        </div>
+                        <span className="bg-[#6C5CE7]/6 text-[#6C5CE7] text-[8px] font-black px-2 py-0.5 rounded-md">
+                          Completed
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Crew Assignments workload block (center) */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-5 shadow-[0_10px_30px_rgba(108,92,231,0.04)] flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-extrabold text-sm text-[#0B111E]">Crew Assignments</h3>
+                    <button className="text-[10px] font-bold text-[#6C5CE7]">View all</button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {[
+                      { name: 'Prem Sagar', val: 87, role: 'Team Contributor', color: 'bg-[#6C5CE7]' },
+                      { name: 'Sushant', val: 83, role: 'videographer', color: 'bg-[#5b4cd1]' },
+                      { name: 'Vinayak', val: 54, role: 'team contributor', color: 'bg-emerald-500' },
+                      { name: 'Sahil Dhonde', val: 43, role: 'Team Contributor', color: 'bg-pink-500' }
+                    ].map((item, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between text-[11px] font-bold">
+                          <span className="text-[#0B111E]">{item.name} <span className="font-semibold text-zinc-400">({item.role})</span></span>
+                          <span className="text-[#6C5CE7]">{item.val} Events</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                          <div className={`h-full ${item.color}`} style={{ width: `${(item.val / 100) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Load Trend wave trend vector graph (right) */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-5 shadow-[0_10px_30px_rgba(108,92,231,0.04)] flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-extrabold text-sm text-[#0B111E]">Load Trend <span className="font-medium text-xs text-zinc-400">(This Year)</span></h3>
+                    <select className="text-[10px] font-bold text-[#4F5E74] border-none bg-transparent outline-none">
+                      <option>2026</option>
+                    </select>
+                  </div>
+
+                  {/* Draw a clean, single-line wave trend vector curve */}
+                  <div className="relative w-full h-32 mt-2">
+                    <svg className="w-full h-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
+                      {/* Gradient fill */}
+                      <defs>
+                        <linearGradient id="waveGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#6C5CE7" stopOpacity="0.2" />
+                          <stop offset="100%" stopColor="#6C5CE7" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path 
+                        d="M 0 50 C 50 45, 75 80, 100 80 C 130 80, 150 75, 180 75 C 210 75, 230 10, 260 10 C 280 10, 300 20, 300 20 L 300 100 L 0 100 Z" 
+                        fill="url(#waveGrad)" 
+                      />
+                      <path 
+                        d="M 0 50 C 50 45, 75 80, 100 80 C 130 80, 150 75, 180 75 C 210 75, 230 10, 260 10 C 280 10, 300 20, 300 20" 
+                        fill="none" 
+                        stroke="#6C5CE7" 
+                        strokeWidth="2.5" 
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                  
+                  {/* Month labels */}
+                  <div className="flex justify-between text-[9px] font-bold text-[#4F5E74] mt-2">
+                    <span>Jan</span>
+                    <span>Mar</span>
+                    <span>May</span>
+                    <span>Jul</span>
+                    <span>Sep</span>
+                    <span>Nov</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Bottom Row Grids */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+              
+              {/* Recent Activity Card Block */}
+              <div className="lg:col-span-2 bg-white border border-[#6C5CE7]/8 rounded-[24px] p-5 shadow-[0_10px_30px_rgba(108,92,231,0.04)]">
+                <h3 className="font-extrabold text-sm text-[#0B111E] mb-4">Recent Activity</h3>
+                <div className="space-y-4">
+                  {[
+                    { text: "New wedding project created for Sofia's Last Wedding", loc: 'Dhaka', time: '2 hours ago' },
+                    { text: 'Crew schedule updated for 20 Jun (Sangeet Day 2)', loc: 'Alibaug', time: '5 hours ago' },
+                    { text: 'Active backup confirmed inside external HDD-C03-OL-ML-F', loc: 'Offline Storage', time: 'Yesterday' }
+                  ].map((act, idx) => (
+                    <div key={idx} className="flex items-start gap-3 border-b border-zinc-50 pb-3 last:border-0 last:pb-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#6C5CE7] mt-1.5 shrink-0" />
+                      <div>
+                        <span className="text-[11px] font-bold text-[#0B111E] block">{act.text}</span>
+                        <span className="text-[9px] text-[#4F5E74] font-semibold block mt-0.5">Location: {act.loc} • {act.time}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Task Overview Circular Radial Chart */}
+              <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-5 shadow-[0_10px_30px_rgba(108,92,231,0.04)]">
+                <h3 className="font-extrabold text-sm text-[#0B111E] mb-2">Task Overview</h3>
+                
+                <div className="flex items-center justify-around gap-4 mt-4">
+                  
+                  {/* SVG Circular Donut Chart */}
+                  <div className="relative w-24 h-24 flex items-center justify-center shrink-0">
+                    <svg className="w-full h-full transform -rotate-90">
+                      <circle cx="48" cy="48" r="38" stroke="#F1F3F9" strokeWidth="8" fill="transparent" />
+                      <circle cx="48" cy="48" r="38" stroke="#6C5CE7" strokeWidth="8" fill="transparent" strokeDasharray="238" strokeDashoffset="209" strokeLinecap="round" />
+                    </svg>
+                    <span className="absolute font-black text-sm text-[#0B111E]">12%</span>
+                  </div>
+
+                  {/* Legends list */}
+                  <div className="space-y-1.5 text-[10px] font-bold text-[#4F5E74]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#6C5CE7]" />
+                      <span>Completed: <span className="text-[#0B111E]">12%</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      <span>Pending: <span className="text-[#0B111E]">80%</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                      <span>Overdue: <span className="text-[#0B111E]">8%</span></span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 4: CALENDAR TAB (Tablet Mockup view)
+           ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'calendar' && (
+          <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 lg:p-8 shadow-[0_10px_30px_rgba(108,92,231,0.04)]">
+            <p className="text-center py-20 text-[#4F5E74] font-semibold text-xs">
+              Ops calendar planner view is loading. Select List Register or Projects to plan.
+            </p>
+          </div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 5: TRASH RECOVERY
+           ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'trash' && (
+          <div className="bg-white border border-[#6C5CE7]/8 rounded-[24px] p-6 shadow-[0_10px_30px_rgba(108,92,231,0.04)]">
+            <h3 className="font-extrabold text-sm text-[#0B111E] border-b border-[#6C5CE7]/10 pb-3 mb-4">
+              Trash Recovery Buffer
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-zinc-100 bg-zinc-50 text-[9px] uppercase font-bold text-[#4F5E74] tracking-wider">
+                    <th className="px-6 py-3">Client Coupling Name</th>
+                    <th className="px-6 py-3">Primary Venue</th>
+                    <th className="px-6 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50 text-[#0B111E]">
+                  {projects.filter(p => p.is_archived).length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-6 py-10 text-center text-[#4F5E74] font-medium">
+                        Trash buffer is empty.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-900/60 text-xs text-zinc-300">
-                    {filteredAssignments.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-zinc-500 font-semibold">
-                          No crew assignments found matching filters.
+                  ) : (
+                    projects.filter(p => p.is_archived).map(proj => (
+                      <tr key={proj.id} className="hover:bg-zinc-50/50">
+                        <td className="px-6 py-4 font-bold">{proj.client_name}</td>
+                        <td className="px-6 py-4 text-[#4F5E74] font-semibold">{proj.main_venue}</td>
+                        <td className="px-6 py-4 text-right flex justify-end gap-2">
+                          <button
+                            onClick={() => handleRestore(proj.id)}
+                            className="bg-[#6C5CE7]/6 hover:bg-[#6C5CE7]/10 text-[#6C5CE7] text-[10px] font-bold px-3 py-1.5 rounded-lg border border-[#6C5CE7]/10 transition flex items-center gap-1"
+                          >
+                            <RotateCcw className="w-3 h-3" /> Restore
+                          </button>
+                          <button
+                            onClick={() => handlePermanentDelete(proj.id)}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-rose-100 transition flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Permanent Delete
+                          </button>
                         </td>
                       </tr>
-                    ) : (
-                      filteredAssignments.map(assign => {
-                        const project = projects.find(p => p.id === assign.project_id);
-                        return (
-                          <tr key={assign.id} className="hover:bg-zinc-900/20 transition duration-150">
-                            <td className="px-6 py-4">
-                              <div className="font-bold text-white text-sm">{project?.client_name}</div>
-                              <div className="text-[10px] text-zinc-500 flex items-center gap-1 mt-0.5">
-                                <MapPin className="w-3 h-3 text-[#6C5CE7]" />
-                                {project?.main_venue}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="font-medium text-zinc-200 bg-zinc-900 px-2.5 py-1 rounded-lg border border-zinc-800">
-                                {assign.sub_event_name}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-[11px] font-semibold text-zinc-400">
-                                {assign.required_role}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="font-semibold text-zinc-300">{assign.sub_event_date}</div>
-                              <div className="text-[10px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
-                                <Clock className="w-3 h-3" />
-                                {assign.start_time} - {assign.end_time}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <select
-                                value={assign.assigned_member_id || ''}
-                                onChange={e => handleAssignMember(assign.id, e.target.value || null)}
-                                className="bg-[#05070B] border border-zinc-850 px-3 py-1.5 text-xs rounded-xl text-zinc-200 focus:outline-none focus:border-[#6C5CE7] cursor-pointer max-w-[160px]"
-                              >
-                                <option value="">Pending Allocation</option>
-                                {teamMembers
-                                  .filter(m => m.active_status && m.primary_role === assign.required_role)
-                                  .map(member => (
-                                    <option key={member.id} value={member.id}>{member.name}</option>
-                                  ))
-                                }
-                              </select>
-                            </td>
-                            <td className="px-6 py-4">
-                              <button 
-                                onClick={() => handleSoftDeleteProject(assign.project_id)}
-                                className="p-2 hover:bg-rose-950/40 text-rose-500 hover:text-rose-400 rounded-xl transition duration-150"
-                                title="Soft Archive Project"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </motion.div>
-          )}
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
-          {/* TABLET MOCKUP CALENDAR BOARD TAB */}
-          {activeTab === 'calendar' && (
+      </main>
+
+      {/* ─────────────────────────────────────────────────────────────
+          COMPREHENSIVE ADD-PROJECT POPUP MODAL (Screenshot 2 Matching)
+         ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isNewProjectModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            
+            {/* Darkened backdrop overlay */}
             <motion.div 
-              key="calendar"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsNewProjectModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+
+            {/* Modal Frame Window */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-[32px] w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 lg:p-8 shadow-2xl relative z-10 border border-[#6C5CE7]/8 text-[#0B111E]"
             >
               
-              {/* Left Panel: Full Month Grid */}
-              <div className="lg:col-span-2 bg-[#121824]/40 border border-zinc-900 rounded-2xl p-5 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-4">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-[#6C5CE7]" />
-                    Event Calendar Grid
-                  </h3>
-                  <span className="text-[11px] font-bold text-zinc-500">Monday - Sunday Matrix</span>
+              {/* Header block with close X */}
+              <div className="flex justify-between items-center border-b border-zinc-100 pb-4 mb-6">
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0B111E] tracking-tight">Create Wedding Project</h3>
+                  <p className="text-[10px] text-[#4F5E74] font-semibold mt-0.5">Set client profile parameters and dynamic program event placements.</p>
                 </div>
-                
-                {/* Days Matrix Header */}
-                <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">
-                  <div>Mon</div>
-                  <div>Tue</div>
-                  <div>Wed</div>
-                  <div>Thu</div>
-                  <div>Fri</div>
-                  <div>Sat</div>
-                  <div>Sun</div>
-                </div>
-
-                {/* Days Cells */}
-                <div className="grid grid-cols-7 gap-2">
-                  {getDaysInMonth().map((dayStr, idx) => {
-                    if (!dayStr) {
-                      return <div key={`empty-${idx}`} className="aspect-square bg-zinc-950/20 border border-transparent rounded-xl" />;
-                    }
-
-                    const isSelected = selectedDate === dayStr;
-                    const dateNum = new Date(dayStr).getDate();
-                    const dayEvents = assignments.filter(a => a.sub_event_date === dayStr);
-
-                    return (
-                      <button
-                        key={dayStr}
-                        onClick={() => setSelectedDate(dayStr)}
-                        className={`aspect-square p-2 border rounded-xl flex flex-col justify-between items-start transition duration-150 ${
-                          isSelected 
-                            ? 'bg-[#6C5CE7]/15 border-[#6C5CE7]' 
-                            : 'bg-[#05070B]/50 border-zinc-900/60 hover:border-zinc-800'
-                        }`}
-                      >
-                        <span className={`text-xs font-bold ${isSelected ? 'text-[#6C5CE7]' : 'text-zinc-400'}`}>
-                          {dateNum}
-                        </span>
-                        
-                        {/* Sub-event Indicator Dots */}
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {dayEvents.slice(0, 3).map(event => (
-                            <span 
-                              key={event.id}
-                              className={`w-1.5 h-1.5 rounded-full ${getSubEventColorDot(event.sub_event_name)}`}
-                              title={event.sub_event_name}
-                            />
-                          ))}
-                          {dayEvents.length > 3 && (
-                            <span className="text-[8px] text-zinc-500 font-bold leading-none">+{dayEvents.length - 3}</span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                <button 
+                  onClick={() => setIsNewProjectModalOpen(false)}
+                  className="p-1 rounded-full hover:bg-zinc-100 text-[#4F5E74] hover:text-[#0B111E] transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              {/* Right Panel: Focus Pipeline Area */}
-              <div className="bg-[#121824]/40 border border-zinc-900 rounded-2xl p-5 shadow-2xl flex flex-col">
-                <div className="border-b border-zinc-900 pb-4 mb-4">
-                  <h3 className="text-sm font-bold text-white">Daily Focus Pipeline</h3>
-                  <div className="text-[11px] text-[#6C5CE7] font-semibold mt-0.5">
-                    Date: {selectedDate}
+              <form onSubmit={handleSaveProjectConfig} className="space-y-6">
+                
+                {/* Coupling Name oversized input field */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">
+                    Client Coupling Name / Couple Profile
+                  </label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Enter Client Coupling Name (e.g. Sharma & Malhotra)"
+                    value={couplingName}
+                    onChange={e => setCouplingName(e.target.value)}
+                    className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-3 rounded-2xl text-xs font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
+                  />
+                </div>
+
+                {/* Primary project global inputs */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Main Event Date</label>
+                    <input 
+                      type="date"
+                      required
+                      value={projectMainDate}
+                      onChange={e => setProjectMainDate(e.target.value)}
+                      className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Main Venue / Central Location</label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. Palace Grounds, Bangalore"
+                      value={projectMainVenue}
+                      onChange={e => setProjectMainVenue(e.target.value)}
+                      className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
+                    />
                   </div>
                 </div>
 
-                <div className="flex-1 space-y-4">
-                  {(() => {
-                    const dayAssignments = assignments.filter(a => a.sub_event_date === selectedDate);
-                    if (dayAssignments.length === 0) {
-                      return (
-                        <div className="h-full flex flex-col items-center justify-center text-center text-zinc-600 py-12">
-                          <Info className="w-8 h-8 text-zinc-700 mb-2" />
-                          <span className="text-xs font-semibold">No operations scheduled on this date.</span>
+                {/* Dynamic Sub-Event form clones list */}
+                <div className="space-y-4 pt-4 border-t border-zinc-150">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black text-[#6C5CE7] uppercase tracking-wider">
+                      Wedding Sub-Events & Requirements
+                    </span>
+                  </div>
+
+                  {eventBlocks.map((block, index) => (
+                    <div 
+                      key={block.id}
+                      className="bg-zinc-50/40 border border-zinc-100 rounded-3xl p-5 space-y-4 relative"
+                    >
+                      {/* Event Index Badge */}
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="bg-[#6C5CE7]/6 text-[#6C5CE7] font-black text-[9px] px-3 py-1 rounded-full border border-[#6C5CE7]/8">
+                          Event #{index + 1}
+                        </span>
+                        
+                        {eventBlocks.length > 1 && (
+                          <button 
+                            type="button"
+                            onClick={() => removeEventBlock(block.id)}
+                            className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 4-column balanced inputs grid row */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        
+                        {/* Col 1: Wedding Program Type selector */}
+                        <div className="space-y-1.5">
+                          <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Wedding Program Type</label>
+                          <select 
+                            value={block.subEventName}
+                            onChange={e => updateEventBlock(block.id, { subEventName: e.target.value })}
+                            className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2.5 rounded-xl text-xs font-semibold text-[#0B111E] focus:outline-none focus:border-[#6C5CE7]"
+                          >
+                            <option value="Wedding">Wedding Ceremony</option>
+                            <option value="Pre-wedding">Pre-wedding Shoot</option>
+                            <option value="Haldi">Haldi program</option>
+                            <option value="Sangeet">Sangeet / Cocktails</option>
+                            <option value="Reception">Reception Ceremony</option>
+                            <option value="Engagement">Engagement Ring</option>
+                            <option value="Nikah">Nikah Ceremony</option>
+                            <option value="Haldi / Sangeet">Haldi / Sangeet</option>
+                            <option value="Bidai / Home Rituals">Bidai / Home Rituals</option>
+                          </select>
                         </div>
-                      );
-                    }
 
-                    return dayAssignments.map(assign => {
-                      const project = projects.find(p => p.id === assign.project_id);
-                      const crewMember = teamMembers.find(m => m.id === assign.assigned_member_id);
+                        {/* Col 2: Program Date calendar input */}
+                        <div className="space-y-1.5">
+                          <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Program Date</label>
+                          <input 
+                            type="date"
+                            value={block.subEventDate}
+                            onChange={e => updateEventBlock(block.id, { subEventDate: e.target.value })}
+                            className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2 rounded-xl text-xs font-semibold text-[#0B111E] focus:outline-none"
+                          />
+                        </div>
 
-                      return (
-                        <div 
-                          key={assign.id}
-                          className="bg-[#05070B]/50 border border-zinc-900 rounded-xl p-4 flex flex-col gap-3 shadow-md hover:border-zinc-800 transition duration-150"
-                        >
-                          <div className="flex justify-between items-start">
+                        {/* Col 3: Venue location and nested Map link */}
+                        <div className="space-y-2">
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Venue coordinates / Location</label>
+                            <input 
+                              type="text"
+                              placeholder="e.g. Royal Lawn, Mumbai"
+                              value={block.venueLocation}
+                              onChange={e => updateEventBlock(block.id, { venueLocation: e.target.value })}
+                              className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2 rounded-xl text-xs font-medium text-[#0B111E]"
+                            />
+                          </div>
+                          <input 
+                            type="text"
+                            placeholder="Map Link (e.g. https://maps.google.com)"
+                            value={block.mapLink}
+                            onChange={e => updateEventBlock(block.id, { mapLink: e.target.value })}
+                            className="w-full bg-white border border-[#6C5CE7]/8 px-3 py-1.5 rounded-lg text-[10px] font-medium text-zinc-500"
+                          />
+                        </div>
+
+                        {/* Col 4: Dual inputs split evenly for roll call & dismissal */}
+                        <div className="space-y-1.5">
+                          <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">Timings</label>
+                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <span className="text-[9px] font-bold text-[#6C5CE7] uppercase tracking-wider">
-                                {project?.client_name}
-                              </span>
-                              <h4 className="text-xs font-bold text-white mt-0.5">{assign.sub_event_name}</h4>
+                              <span className="text-[8px] text-[#4F5E74] font-semibold block mb-0.5">Crew Roll Call</span>
+                              <input 
+                                type="time"
+                                value={block.startTime}
+                                onChange={e => updateEventBlock(block.id, { startTime: e.target.value })}
+                                className="w-full bg-white border border-[#6C5CE7]/10 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-[#0B111E]"
+                              />
                             </div>
-                            <span className={`w-2.5 h-2.5 rounded-full ${getSubEventColorDot(assign.sub_event_name)}`} />
-                          </div>
-
-                          <div className="text-[10px] text-zinc-400 space-y-1">
-                            <div className="flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                              {assign.start_time} - {assign.end_time}
+                            <div>
+                              <span className="text-[8px] text-[#4F5E74] font-semibold block mb-0.5">Dismissal Est.</span>
+                              <input 
+                                type="time"
+                                value={block.endTime}
+                                onChange={e => updateEventBlock(block.id, { endTime: e.target.value })}
+                                className="w-full bg-white border border-[#6C5CE7]/10 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-[#0B111E]"
+                              />
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <MapPin className="w-3.5 h-3.5 text-zinc-500" />
-                              {project?.main_venue}
-                            </div>
-                          </div>
-
-                          {/* Crew Allocation status in calendar right panel */}
-                          <div className="border-t border-zinc-900/60 pt-3 flex items-center justify-between">
-                            <span className="text-[10px] font-semibold text-zinc-500">Crew Member:</span>
-                            {crewMember ? (
-                              <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                                <CheckCircle className="w-3 h-3" />
-                                {crewMember.name}
-                              </span>
-                            ) : (
-                              <span className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" />
-                                Pending
-                              </span>
-                            )}
                           </div>
                         </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-            </motion.div>
-          )}
 
-          {/* TRASH RECOVERY TAB */}
-          {activeTab === 'trash' && (
-            <motion.div 
-              key="trash"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="bg-[#121824]/40 border border-zinc-900 rounded-2xl p-5 shadow-2xl"
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-zinc-800/80 bg-zinc-900/30 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                      <th className="px-6 py-4">Client Name</th>
-                      <th className="px-6 py-4">Event Date</th>
-                      <th className="px-6 py-4">Venue</th>
-                      <th className="px-6 py-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-900/60 text-xs text-zinc-300">
-                    {projects.filter(p => p.is_archived).length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-6 py-12 text-center text-zinc-500 font-semibold">
-                          Trash bin is currently empty.
-                        </td>
-                      </tr>
-                    ) : (
-                      projects.filter(p => p.is_archived).map(project => (
-                        <tr key={project.id} className="hover:bg-zinc-900/20 transition duration-150">
-                          <td className="px-6 py-4 font-bold text-white">{project.client_name}</td>
-                          <td className="px-6 py-4 text-zinc-300">{project.main_date}</td>
-                          <td className="px-6 py-4 text-zinc-450">{project.main_venue}</td>
-                          <td className="px-6 py-4 text-right flex justify-end gap-2">
-                            <button
-                              onClick={() => handleRestoreProject(project.id)}
-                              className="bg-zinc-900 hover:bg-zinc-800 text-zinc-200 text-xs font-bold px-3 py-1.5 rounded-lg border border-zinc-850 transition flex items-center gap-1"
-                              title="Restore Project"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" /> Restore
-                            </button>
-                            <button
-                              onClick={() => handlePermanentDeleteProject(project.id)}
-                              className="bg-rose-950/40 text-rose-500 hover:bg-rose-950 hover:text-rose-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-rose-900/40 transition flex items-center gap-1"
-                              title="Delete Permanently"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" /> Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </motion.div>
-          )}
+                      </div>
 
-        </AnimatePresence>
-      )}
+                      {/* Role Chips Placement matrix section */}
+                      <div className="space-y-2 pt-2">
+                        <span className="text-[9px] font-black text-[#4F5E74] uppercase tracking-wider block">
+                          Role placements for this sub-event
+                        </span>
+                        
+                        <div className="flex flex-wrap gap-1.5">
+                          {ROLE_CHIPS.map(chip => {
+                            const isActive = block.roles.includes(chip);
+                            return (
+                              <button
+                                key={chip}
+                                type="button"
+                                onClick={() => toggleRoleInBlock(block.id, chip)}
+                                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
+                                  isActive 
+                                    ? 'bg-[#6C5CE7] border-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/10' 
+                                    : 'bg-white border-zinc-200 text-[#4F5E74] hover:border-zinc-350'
+                                }`}
+                              >
+                                {chip}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-      {/* 4. MODALS & CREATION FLOWS */}
+                    </div>
+                  ))}
 
-      {/* FILTER BOTTOM-SHEET MODAL (MOBILE) */}
-      <AnimatePresence>
-        {isFilterModalOpen && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsFilterModalOpen(false)}
-              className="fixed inset-0 bg-black z-40 lg:hidden"
-            />
-            <motion.div 
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 inset-x-0 bg-[#121824] border-t border-zinc-800 rounded-t-3xl p-6 z-50 lg:hidden"
-            >
-              <div className="flex justify-between items-center border-b border-zinc-900 pb-3 mb-4">
-                <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                  <Filter className="w-4 h-4 text-[#6C5CE7]" />
-                  Ledger Filters
-                </h4>
-                <button onClick={() => setIsFilterModalOpen(false)} className="text-zinc-500 hover:text-zinc-200">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Required Role</label>
-                  <select 
-                    value={roleFilter}
-                    onChange={e => setRoleFilter(e.target.value)}
-                    className="bg-[#05070B] border border-zinc-800 px-3 py-2.5 text-xs rounded-xl text-zinc-300 focus:outline-none w-full"
+                  {/* Add Sub-Event block triggering button */}
+                  <button
+                    type="button"
+                    onClick={addEventBlock}
+                    className="w-full border border-dashed border-[#6C5CE7]/40 hover:border-[#6C5CE7] bg-white text-[#6C5CE7] text-xs font-bold py-3.5 rounded-2xl transition flex items-center justify-center gap-1.5"
                   >
-                    <option value="all">All Roles</option>
-                    <option value="Lead Photographer">Lead Photographer</option>
-                    <option value="Second Photographer">Second Photographer</option>
-                    <option value="Cinematographer">Cinematographer</option>
-                    <option value="Drone Pilot">Drone Pilot</option>
-                    <option value="Editor">Editor</option>
-                  </select>
+                    <Plus className="w-4 h-4" /> Add Wedding Event Block
+                  </button>
                 </div>
 
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Allocation Status</label>
-                  <select 
-                    value={statusFilter}
-                    onChange={e => setStatusFilter(e.target.value)}
-                    className="bg-[#05070B] border border-zinc-800 px-3 py-2.5 text-xs rounded-xl text-zinc-300 focus:outline-none w-full"
+                {/* Submit and Cancel Actions */}
+                <div className="flex justify-end gap-3 pt-6 border-t border-zinc-100">
+                  <button 
+                    type="button"
+                    onClick={() => setIsNewProjectModalOpen(false)}
+                    className="bg-transparent border border-zinc-200 text-[#4F5E74] text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-zinc-50 transition"
                   >
-                    <option value="all">All Status</option>
-                    <option value="assigned">Crew Assigned</option>
-                    <option value="pending">Pending</option>
-                  </select>
+                    Cancel
+                  </button>
+                  
+                  <button 
+                    type="submit"
+                    className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-6 py-2.5 rounded-xl transition shadow-lg shadow-[#6C5CE7]/15"
+                  >
+                    Save Project Config
+                  </button>
                 </div>
 
-                <button 
-                  onClick={() => setIsFilterModalOpen(false)}
-                  className="bg-[#6C5CE7] hover:bg-[#6C5CE7]/90 text-white text-xs font-bold py-3 rounded-xl w-full mt-4 transition"
-                >
-                  Apply Filters
-                </button>
-              </div>
+              </form>
+
             </motion.div>
-          </>
+          </div>
         )}
       </AnimatePresence>
-
-      {/* NEW PROJECT MODAL */}
-      {isNewProjectModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#121824] border border-zinc-850 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-zinc-900 pb-3.5 mb-4">
-              <h3 className="text-sm font-bold text-white">Create New Project</h3>
-              <button onClick={() => setIsNewProjectModalOpen(false)} className="text-zinc-500 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={handleAddProject} className="space-y-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Client Name</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Sahil & Priya"
-                  value={newProject.clientName}
-                  onChange={e => setNewProject(p => ({ ...p, clientName: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Main Event Date</label>
-                <input 
-                  type="date" 
-                  value={newProject.mainDate}
-                  onChange={e => setNewProject(p => ({ ...p, mainDate: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Main Venue Location</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Palace Grounds, Bangalore"
-                  value={newProject.mainVenue}
-                  onChange={e => setNewProject(p => ({ ...p, mainVenue: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button 
-                  type="button" 
-                  onClick={() => setIsNewProjectModalOpen(false)}
-                  className="bg-transparent border border-zinc-800 text-zinc-400 text-xs font-bold px-4 py-2 rounded-xl hover:bg-zinc-900 transition"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="bg-[#6C5CE7] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#6C5CE7]/90 transition"
-                >
-                  Save Project
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* NEW MEMBER MODAL */}
-      {isNewMemberModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#121824] border border-zinc-850 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-zinc-900 pb-3.5 mb-4">
-              <h3 className="text-sm font-bold text-white">Register Crew Member</h3>
-              <button onClick={() => setIsNewMemberModalOpen(false)} className="text-zinc-500 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={handleAddMember} className="space-y-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Full Name</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Amit Sharma"
-                  value={newMember.name}
-                  onChange={e => setNewMember(p => ({ ...p, name: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Primary Role</label>
-                <select 
-                  value={newMember.role}
-                  onChange={e => setNewMember(p => ({ ...p, role: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                >
-                  <option value="Lead Photographer">Lead Photographer</option>
-                  <option value="Second Photographer">Second Photographer</option>
-                  <option value="Cinematographer">Cinematographer</option>
-                  <option value="Drone Pilot">Drone Pilot</option>
-                  <option value="Editor">Editor</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Phone Number (WhatsBoost alert destination)</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. 919876543210"
-                  value={newMember.phone}
-                  onChange={e => setNewMember(p => ({ ...p, phone: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Email Address</label>
-                <input 
-                  type="email" 
-                  placeholder="e.g. amit@studio.com"
-                  value={newMember.email}
-                  onChange={e => setNewMember(p => ({ ...p, email: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button 
-                  type="button" 
-                  onClick={() => setIsNewMemberModalOpen(false)}
-                  className="bg-transparent border border-zinc-800 text-zinc-400 text-xs font-bold px-4 py-2 rounded-xl hover:bg-zinc-900 transition"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="bg-[#6C5CE7] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#6C5CE7]/90 transition"
-                >
-                  Register Crew
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* NEW ASSIGNMENT / EVENT SCHEDULE MODAL */}
-      {isNewAssignmentModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#121824] border border-zinc-850 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-zinc-900 pb-3.5 mb-4">
-              <h3 className="text-sm font-bold text-white">Create Sub-Event Assignment</h3>
-              <button onClick={() => setIsNewAssignmentModalOpen(false)} className="text-zinc-500 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form onSubmit={handleAddAssignment} className="space-y-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Select Project</label>
-                <select 
-                  value={newAssignment.projectId}
-                  onChange={e => setNewAssignment(p => ({ ...p, projectId: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                >
-                  <option value="">Choose Project...</option>
-                  {projects.filter(p => !p.is_archived).map(p => (
-                    <option key={p.id} value={p.id}>{p.client_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Event Name</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Wedding, Sangeet, Haldi"
-                  value={newAssignment.subEventName}
-                  onChange={e => setNewAssignment(p => ({ ...p, subEventName: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Event Date</label>
-                <input 
-                  type="date" 
-                  value={newAssignment.subEventDate}
-                  onChange={e => setNewAssignment(p => ({ ...p, subEventDate: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Start Time</label>
-                  <input 
-                    type="time" 
-                    value={newAssignment.startTime}
-                    onChange={e => setNewAssignment(p => ({ ...p, startTime: e.target.value }))}
-                    className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">End Time</label>
-                  <input 
-                    type="time" 
-                    value={newAssignment.endTime}
-                    onChange={e => setNewAssignment(p => ({ ...p, endTime: e.target.value }))}
-                    className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Required Role</label>
-                <select 
-                  value={newAssignment.requiredRole}
-                  onChange={e => setNewAssignment(p => ({ ...p, requiredRole: e.target.value }))}
-                  className="bg-[#05070B] border border-zinc-800 px-3.5 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-[#6C5CE7] w-full"
-                >
-                  <option value="Lead Photographer">Lead Photographer</option>
-                  <option value="Second Photographer">Second Photographer</option>
-                  <option value="Cinematographer">Cinematographer</option>
-                  <option value="Drone Pilot">Drone Pilot</option>
-                  <option value="Editor">Editor</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button 
-                  type="button" 
-                  onClick={() => setIsNewAssignmentModalOpen(false)}
-                  className="bg-transparent border border-zinc-800 text-zinc-400 text-xs font-bold px-4 py-2 rounded-xl hover:bg-zinc-900 transition"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="bg-[#6C5CE7] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#6C5CE7]/90 transition"
-                >
-                  Save Assignment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Floating action button to quickly add sub event */}
-      {activeTab === 'ledger' && (
-        <button
-          onClick={() => setIsNewAssignmentModalOpen(true)}
-          className="fixed bottom-6 right-6 lg:bottom-8 lg:right-8 bg-[#6C5CE7] text-white p-4 rounded-full shadow-2xl hover:scale-110 active:scale-95 transition duration-150 z-30"
-          title="Create Sub-Event"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-      )}
 
     </div>
   );
 }
-
-// Simple Toast / Message Helper
-const showToast = (message: string, type: 'info' | 'success' | 'error') => {
-  console.log(`[Toast] (${type}): ${message}`);
-};
