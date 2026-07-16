@@ -803,6 +803,7 @@ export default function QuotationMakerPage() {
   const [editingTextElementId, setEditingTextElementId] = useState<string | null>(null);
   const [uploadTarget, setUploadTarget] = useState<{ pageIndex: number; elementId: string } | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [showCompactSidebar, setShowCompactSidebar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Undo/Redo tracking buffers
@@ -2737,345 +2738,134 @@ export default function QuotationMakerPage() {
       {/* 2. FILMIFY STUDIO CANVAS EDITOR VIEW */}
       {view === 'editor' && (
         <>
-          {/* LEFT SIDEBAR PANEL: SETTINGS & CONTROLS */}
-          <div className="w-80 bg-zinc-900 border-r border-zinc-800 flex flex-col justify-between flex-shrink-0 text-zinc-300">
-            
-            {/* Sidebar Header */}
-            <div className="p-5 border-b border-zinc-800">
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  onClick={() => {
-                    setView('dashboard');
-                    setActiveQuotationId(null);
-                    setClientName('');
-                    setCoupleNames('');
-                    setRegularPrice(100000);
-                    setOfferPrice(80000);
-                    setSavings(20000);
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[11px] font-bold text-zinc-400 hover:text-white transition-colors"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Dashboard</span>
-                </button>
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Canvas Editor</span>
-              </div>
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-5 h-5 text-[#D4AF37]" />
-                <h1 className="text-lg font-bold tracking-tight text-white font-serif">Quotation Engine</h1>
-              </div>
-              <p className="text-xs text-zinc-500">Design premium digital canvas documents for clients.</p>
-            </div>
 
-        {/* Workspace Form inputs */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin">
+      {/* CANVAS WORKSPACE: FULL-WIDTH INLINE EDITING */}
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+
+        {/* FLOATING CANVA-STYLE INSPECTOR TOOLBAR */}
+        <div className="h-14 border-b border-[#E8E2D9] bg-[#FDFBF7] flex items-center justify-between px-4 flex-shrink-0 z-30 shadow-sm transition-all duration-200">
           
-          {/* Saved Quotations List */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-              <Database className="w-3.5 h-3.5" />
-              Saved Quotations ({quotations.length})
-            </label>
-            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-              {quotations.map(q => (
-                <button
-                  key={q.id}
-                  onClick={() => loadQuotation(q)}
-                  className={`w-full text-left p-2.5 rounded-lg text-xs transition flex flex-col gap-0.5 border ${
-                    activeQuotationId === q.id 
-                      ? 'bg-[#606248]/30 border-[#606248] text-white' 
-                      : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-800 text-zinc-400'
-                  }`}
-                >
-                  <span className="font-semibold truncate">{q.client_name}</span>
-                  <span className="text-[10px] text-zinc-500 flex items-center justify-between">
-                    <span>{q.couple_names || 'No names'}</span>
-                    <span>{new Date(q.updated_at).toLocaleDateString()}</span>
-                  </span>
-                </button>
-              ))}
-              {quotations.length === 0 && (
-                <p className="text-[11px] text-zinc-600 italic py-1">No saved quotations found.</p>
-              )}
-              <button 
-                onClick={resetToNew} 
-                className="w-full text-center py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs rounded-lg font-medium transition flex items-center justify-center gap-1.5 border border-zinc-700/50"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Create New Quotation
-              </button>
-              <button 
-                onClick={() => {
-                  fetchArchive();
-                  setShowArchiveModal(true);
-                }}
-                className="w-full text-center py-2 mt-1 bg-[#606248]/15 hover:bg-[#606248]/30 text-white text-xs rounded-lg font-medium transition flex items-center justify-center gap-1.5 border border-[#606248]/30"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-[#D4AF37]" />
-                Open Archive Dashboard
-              </button>
-            </div>
-          </div>
+          <div className="flex items-center gap-3">
+            {/* Back to Dashboard */}
+            <button
+              onClick={() => {
+                setView('dashboard');
+                setActiveQuotationId(null);
+                setClientName('');
+                setCoupleNames('');
+                setRegularPrice(100000);
+                setOfferPrice(80000);
+                setSavings(20000);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-[#E8E2D9] hover:bg-[#FAF6F0] rounded-lg text-[11px] font-bold text-zinc-600 hover:text-[#606248] transition-colors"
+              title="Back to Dashboard"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+            </button>
 
-          <hr className="border-zinc-800" />
+            {/* Client Name - Inline Editable */}
+            <input
+              type="text"
+              value={clientName}
+              onChange={e => setClientName(e.target.value)}
+              className="text-xs font-serif font-bold text-zinc-800 bg-transparent border-b border-transparent hover:border-[#E8E2D9] focus:border-[#606248] focus:outline-none px-1.5 py-1 max-w-[180px] transition-colors"
+              placeholder="Client Name"
+            />
 
-          {/* Template & Accent Theme Selection */}
-          <div className="space-y-3.5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#D4AF37] flex items-center gap-2">
-              <Layout className="w-3.5 h-3.5 text-[#D4AF37]" />
-              Template & Accent Theme
-            </h3>
-            
-            {/* Base Layout Template Dropdown */}
-            <div className="space-y-1">
-              <label className="text-[11px] text-zinc-400 font-semibold">Choose Layout Template</label>
+            <div className="w-px h-5 bg-[#E8E2D9]" />
+
+            {/* Template Selector */}
+            <div className="flex items-center gap-1.5">
+              <Layout className="w-3.5 h-3.5 text-[#8A7E56]" />
               <select
                 value={selectedTemplateId}
                 onChange={e => {
                   const val = e.target.value;
                   setSelectedTemplateId(val);
-                  showToast(`Switched starting layout template to ${val === 'editorial' ? 'Filmify Editorial' : 'Minimalist Clean'}.`, 'success');
+                  showToast(`Switched to ${val === 'editorial' ? 'Editorial' : val === 'minimalist' ? 'Minimalist' : 'Emerald & Gold'}.`, 'success');
                 }}
-                className="w-full bg-zinc-850 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#606248] transition cursor-pointer font-sans"
+                className="bg-transparent text-[11px] font-semibold text-zinc-600 border-none outline-none cursor-pointer py-1 focus:ring-0"
               >
-                <option value="editorial">Filmify Premium Editorial (Monogram & Palace)</option>
-                <option value="minimalist">Minimalist Clean Proposal (Modern & Spaced)</option>
+                <option value="editorial">Editorial</option>
+                <option value="minimalist">Minimalist</option>
+                <option value="emerald_gold">Emerald & Gold</option>
               </select>
             </div>
 
-            {/* Accent Theme Selection */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] text-zinc-400 font-semibold">Select Accent Theme</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button 
-                  onClick={() => { setAccentColor('#5D5B3F'); setAccentHoverColor('#4D4B34'); }}
-                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
-                    accentColor === '#5D5B3F' ? 'bg-[#5D5B3F]/20 border-[#5D5B3F]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
-                  }`}
-                >
-                  <span className="h-3 w-3 rounded-full bg-[#5D5B3F] inline-block shrink-0"></span>
-                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Olive Garden</span>
-                </button>
-                <button 
-                  onClick={() => { setAccentColor('#8D7249'); setAccentHoverColor('#735C3A'); }}
-                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
-                    accentColor === '#8D7249' ? 'bg-[#8D7249]/20 border-[#8D7249]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
-                  }`}
-                >
-                  <span className="h-3 w-3 rounded-full bg-[#8D7249] inline-block shrink-0"></span>
-                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Royal Gold</span>
-                </button>
-                <button 
-                  onClick={() => { setAccentColor('#8C4E4E'); setAccentHoverColor('#703D3D'); }}
-                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
-                    accentColor === '#8C4E4E' ? 'bg-[#8C4E4E]/20 border-[#8C4E4E]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
-                  }`}
-                >
-                  <span className="h-3 w-3 rounded-full bg-[#8C4E4E] inline-block shrink-0"></span>
-                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Crimson Blush</span>
-                </button>
-                <button 
-                  onClick={() => { setAccentColor('#1E1E1E'); setAccentHoverColor('#0A0A0A'); }}
-                  className={`border p-2 rounded-lg flex items-center space-x-2 transition ${
-                    accentColor === '#1E1E1E' ? 'bg-[#1E1E1E]/20 border-[#1E1E1E]' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-850'
-                  }`}
-                >
-                  <span className="h-3 w-3 rounded-full bg-[#1E1E1E] inline-block shrink-0"></span>
-                  <span className="text-[10px] font-semibold text-zinc-300 font-sans">Obsidian Black</span>
-                </button>
-              </div>
-            </div>
-          </div>
+            <div className="w-px h-5 bg-[#E8E2D9]" />
 
-          <hr className="border-zinc-800" />
-
-          {/* AI Template Importer */}
-          <div className="space-y-3.5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#D4AF37] flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-              AI Design Template Importer
-            </h3>
-            <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Upload a Canva PDF export or high-resolution template image. Our AI Vision model will extract the layouts, dimensions, typography, and lock the design structure while exposing dynamic placeholders.
-            </p>
-            <div className="relative border border-dashed border-zinc-700 hover:border-[#606248] rounded-xl p-4 transition bg-zinc-950/40 text-center cursor-pointer group">
-              {isImportingTemplate ? (
-                <div className="flex flex-col items-center justify-center py-2.5 gap-2">
-                  <RefreshCw className="w-6 h-6 animate-spin text-[#D4AF37]" />
-                  <span className="text-[11px] text-zinc-400 font-medium">AI Vision analyzing design...</span>
-                </div>
-              ) : (
-                <label className="cursor-pointer flex flex-col items-center justify-center py-1 gap-1">
-                  <Upload className="w-6 h-6 text-zinc-500 group-hover:text-[#D4AF37] transition font-bold" />
-                  <span className="text-[11px] text-zinc-400 font-semibold group-hover:text-white transition mt-1.5">Upload Template Capture</span>
-                  <span className="text-[9px] text-zinc-600">Supports PDF, PNG, JPG</span>
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={handleTemplateImport}
-                    className="hidden"
-                  />
-                </label>
-              )}
-            </div>
-          </div>
-
-          <hr className="border-zinc-800" />
-
-          {/* Client Settings */}
-          <div className="space-y-3.5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-              <Layout className="w-3.5 h-3.5" />
-              Client Info & Meta
-            </h3>
-            
-            <div className="space-y-1">
-              <label className="text-[11px] text-zinc-400">Save Title / Client Name</label>
-              <input
-                type="text"
-                value={clientName}
-                onChange={e => setClientName(e.target.value)}
-                className="w-full bg-zinc-850 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#606248] transition"
-                placeholder="e.g. Sushant x Shweta Studio Draft"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] text-zinc-400">Couple Names (Page 1 Header)</label>
-              <input
-                type="text"
-                value={coupleNames}
-                onChange={e => setCoupleNames(e.target.value)}
-                className="w-full bg-zinc-850 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#606248] transition"
-                placeholder="e.g. SUSHANT x SHWETA"
-              />
-            </div>
-          </div>
-
-          <hr className="border-zinc-800" />
-
-          {/* Preset Packages */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#D4AF37] flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-              1-Click Package Injection
-            </h3>
-            <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Select a pre-designed photography tier package to instantly load functions, pricing, and deliverables.
-            </p>
-            <div className="space-y-2 pt-1">
-              {presets.map(preset => (
+            {/* Accent Color Swatches */}
+            <div className="flex items-center gap-1">
+              {[{c:'#5D5B3F',n:'Olive'},{c:'#8D7249',n:'Gold'},{c:'#8C4E4E',n:'Crimson'},{c:'#1E1E1E',n:'Black'}].map(({c,n}) => (
                 <button
-                  key={preset.id}
-                  onClick={() => injectPresetPackage(preset)}
-                  className="w-full bg-zinc-800 hover:bg-[#606248]/25 hover:border-[#606248] border border-zinc-700/60 p-3 rounded-xl transition text-left group flex items-center justify-between"
-                >
-                  <div>
-                    <h4 className="text-xs font-semibold text-white group-hover:text-[#D4AF37] transition">{preset.package_name}</h4>
-                    <span className="text-[10px] text-zinc-500">
-                      Offer: Rs {preset.data_payload.pricing?.offer_price.toLocaleString()}/-
-                    </span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-white transition transform group-hover:translate-x-0.5" />
-                </button>
+                  key={c}
+                  onClick={() => { setAccentColor(c); }}
+                  title={n}
+                  className={`w-3.5 h-3.5 rounded-full border transition transform hover:scale-115 ${
+                    accentColor === c ? 'ring-2 ring-[#606248] ring-offset-1 ring-offset-[#FAF6F0]' : 'border-black/10'
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
               ))}
             </div>
-          </div>
 
-          <hr className="border-zinc-800" />
+            <div className="w-px h-5 bg-[#E8E2D9]" />
 
-          {/* Pricing Controls */}
-          <div className="space-y-3.5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-              <Sliders className="w-3.5 h-3.5" />
-              Finance Controller
-            </h3>
-            
-            <div className="space-y-1">
-              <label className="text-[11px] text-zinc-400">Regular Price (Rs)</label>
-              <input
-                type="number"
-                value={regularPrice}
-                onChange={e => setRegularPrice(Number(e.target.value))}
-                className="w-full bg-zinc-850 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#606248] transition"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] text-zinc-400">Special Offer Price (Rs)</label>
+            {/* Pricing Quick-Edit */}
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <DollarSign className="w-3.5 h-3.5 text-[#8A7E56]" />
               <input
                 type="number"
                 value={offerPrice}
                 onChange={e => setOfferPrice(Number(e.target.value))}
-                className="w-full bg-zinc-850 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#606248] transition"
+                className="w-16 bg-transparent border-b border-transparent hover:border-[#E8E2D9] focus:border-[#606248] focus:outline-none text-[11px] font-semibold text-zinc-600 text-center transition-colors"
+                title="Offer Price"
+              />
+              <span className="text-zinc-400">/</span>
+              <input
+                type="number"
+                value={regularPrice}
+                onChange={e => setRegularPrice(Number(e.target.value))}
+                className="w-16 bg-transparent border-b border-transparent hover:border-[#E8E2D9] focus:border-[#606248] focus:outline-none text-[11px] text-zinc-500 text-center transition-colors"
+                title="Regular Price"
               />
             </div>
-            
-            <div className={`p-3 rounded-lg flex flex-col gap-0.5 border ${
-              flashSavings 
-                ? 'bg-amber-950/40 border-[#D4AF37] text-white animate-pulse' 
-                : 'bg-zinc-850 border-zinc-800 text-zinc-400'
-            }`}>
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Auto-Calculated Savings</span>
-              <span className="text-sm font-bold text-[#D4AF37]">Rs {savings.toLocaleString()}/-</span>
-            </div>
-          </div>
 
-        </div>
+            <div className="w-px h-5 bg-[#E8E2D9]" />
 
-        {/* Save button footer */}
-        <div className="p-5 border-t border-zinc-800 bg-zinc-950/40">
-          <button
-            onClick={saveQuotation}
-            disabled={isSaving}
-            className="w-full bg-[#606248] hover:bg-[#4d4e3a] text-white font-medium text-xs py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-black/35 disabled:opacity-50"
-          >
-            {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Save State to Database
-          </button>
-        </div>
-
-      </div>
-
-      {/* CENTER WORKSPACE: THE DRAG-SELECT EDITING CANVAS */}
-      <div className="flex-1 flex flex-col overflow-hidden relative">
-
-        {/* FLOATING CANVA-STYLE INSPECTOR TOOLBAR */}
-        <div className="h-16 border-b border-[#E8E2D9] bg-[#FDFBF7] flex items-center justify-between px-6 flex-shrink-0 z-30 shadow-sm transition-all duration-200">
-          
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs font-semibold bg-[#606248]/15 text-[#606248] px-2.5 py-1.5 rounded-lg border border-[#606248]/10 font-serif">
-              Page {activePageIndex + 1} of {renderedPages.length}
+            {/* Page Navigation */}
+            <span className="text-[10px] font-semibold bg-[#606248]/15 text-[#606248] px-2 py-1 rounded-md border border-[#606248]/10 font-serif">
+              P{activePageIndex + 1}/{renderedPages.length}
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button 
                 onClick={() => setActivePageIndex(prev => Math.max(0, prev - 1))}
                 disabled={activePageIndex === 0}
-                className="p-2 hover:bg-[#FAF6F0] rounded-lg border border-[#E8E2D9] text-[#606248] disabled:opacity-30 transition"
+                className="p-1.5 hover:bg-[#FAF6F0] rounded-md border border-[#E8E2D9] text-[#606248] disabled:opacity-30 transition"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button 
                 onClick={() => setActivePageIndex(prev => Math.min(renderedPages.length - 1, prev + 1))}
                 disabled={activePageIndex === renderedPages.length - 1}
-                className="p-2 hover:bg-[#FAF6F0] rounded-lg border border-[#E8E2D9] text-[#606248] disabled:opacity-30 transition"
+                className="p-1.5 hover:bg-[#FAF6F0] rounded-md border border-[#E8E2D9] text-[#606248] disabled:opacity-30 transition"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
           {/* Element Inspector Context Bar */}
           {activeElement && activeElement.type === 'text' ? (
-            <div className="flex items-center gap-4 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl px-4 py-1.5 shadow-sm animate-fade-in animate-duration-150">
+            <div className="flex items-center gap-3 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl px-3 py-1 shadow-sm animate-fade-in animate-duration-150">
               
               {/* Font Family selector */}
-              <div className="flex items-center gap-1.5">
-                <Type className="w-3.5 h-3.5 text-[#606248]" />
+              <div className="flex items-center gap-1">
+                <Type className="w-3 h-3 text-[#606248]" />
                 <select
                   value={activeElement.fontFamily || 'Inter'}
                   onChange={e => updateSelectedElement('fontFamily', e.target.value)}
-                  className="bg-transparent text-xs font-medium text-zinc-800 border-none outline-none cursor-pointer py-1 font-serif focus:ring-0"
+                  className="bg-transparent text-[10px] font-medium text-zinc-800 border-none outline-none cursor-pointer py-0.5 font-serif focus:ring-0"
                 >
                   {FONTS_LIST.map(font => (
                     <option key={font.name} value={font.name}>{font.name}</option>
@@ -3083,123 +2873,111 @@ export default function QuotationMakerPage() {
                 </select>
               </div>
 
-              <div className="w-px h-5 bg-[#E8E2D9]" />
+              <div className="w-px h-4 bg-[#E8E2D9]" />
 
               {/* Font Size control */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => updateSelectedElement('fontSize', Math.max(8, (activeElement.fontSize || 12) - 1))}
-                  className="p-1 hover:bg-zinc-200/50 rounded text-zinc-650 text-xs font-bold"
-                >
-                  -
-                </button>
-                <input
-                  type="number"
-                  value={activeElement.fontSize || 12}
-                  onChange={e => updateSelectedElement('fontSize', Number(e.target.value))}
-                  className="w-9 text-center bg-transparent border-none text-xs font-semibold focus:outline-none"
-                />
-                <button
-                  onClick={() => updateSelectedElement('fontSize', Math.min(120, (activeElement.fontSize || 12) + 1))}
-                  className="p-1 hover:bg-zinc-200/50 rounded text-zinc-650 text-xs font-bold"
-                >
-                  +
-                </button>
+              <div className="flex items-center gap-0.5">
+                <button onClick={() => updateSelectedElement('fontSize', Math.max(8, (activeElement.fontSize || 12) - 1))} className="p-0.5 hover:bg-zinc-200/50 rounded text-zinc-650 text-[10px] font-bold">-</button>
+                <input type="number" value={activeElement.fontSize || 12} onChange={e => updateSelectedElement('fontSize', Number(e.target.value))} className="w-7 text-center bg-transparent border-none text-[10px] font-semibold focus:outline-none" />
+                <button onClick={() => updateSelectedElement('fontSize', Math.min(120, (activeElement.fontSize || 12) + 1))} className="p-0.5 hover:bg-zinc-200/50 rounded text-zinc-650 text-[10px] font-bold">+</button>
               </div>
 
-              <div className="w-px h-5 bg-[#E8E2D9]" />
+              <div className="w-px h-4 bg-[#E8E2D9]" />
 
               {/* Text Align */}
-              <div className="flex items-center gap-1 bg-white/60 border border-[#E8E2D9]/40 rounded-lg p-0.5">
-                <button
-                  onClick={() => updateSelectedElement('textAlign', 'left')}
-                  className={`p-1.5 rounded transition ${activeElement.textAlign === 'left' ? 'bg-[#606248] text-white' : 'text-zinc-600 hover:bg-zinc-200/50'}`}
-                >
-                  <AlignLeft className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => updateSelectedElement('textAlign', 'center')}
-                  className={`p-1.5 rounded transition ${activeElement.textAlign === 'center' ? 'bg-[#606248] text-white' : 'text-zinc-600 hover:bg-zinc-200/50'}`}
-                >
-                  <AlignCenter className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => updateSelectedElement('textAlign', 'right')}
-                  className={`p-1.5 rounded transition ${activeElement.textAlign === 'right' ? 'bg-[#606248] text-white' : 'text-zinc-600 hover:bg-zinc-200/50'}`}
-                >
-                  <AlignRight className="w-3.5 h-3.5" />
-                </button>
+              <div className="flex items-center gap-0.5 bg-white/60 border border-[#E8E2D9]/40 rounded-md p-0.5">
+                <button onClick={() => updateSelectedElement('textAlign', 'left')} className={`p-1 rounded transition ${activeElement.textAlign === 'left' ? 'bg-[#606248] text-white' : 'text-zinc-600 hover:bg-zinc-200/50'}`}><AlignLeft className="w-3 h-3" /></button>
+                <button onClick={() => updateSelectedElement('textAlign', 'center')} className={`p-1 rounded transition ${activeElement.textAlign === 'center' ? 'bg-[#606248] text-white' : 'text-zinc-600 hover:bg-zinc-200/50'}`}><AlignCenter className="w-3 h-3" /></button>
+                <button onClick={() => updateSelectedElement('textAlign', 'right')} className={`p-1 rounded transition ${activeElement.textAlign === 'right' ? 'bg-[#606248] text-white' : 'text-zinc-600 hover:bg-zinc-200/50'}`}><AlignRight className="w-3 h-3" /></button>
               </div>
 
-              <div className="w-px h-5 bg-[#E8E2D9]" />
+              <div className="w-px h-4 bg-[#E8E2D9]" />
 
               {/* Bold Toggle */}
-              <button
-                onClick={() => updateSelectedElement('fontWeight', activeElement.fontWeight === 'bold' ? 'normal' : 'bold')}
-                className={`p-1.5 rounded transition border ${activeElement.fontWeight === 'bold' ? 'bg-[#606248] border-[#606248] text-white' : 'border-[#E8E2D9] text-zinc-600 hover:bg-zinc-200/50'}`}
-              >
-                <Bold className="w-3.5 h-3.5" />
-              </button>
+              <button onClick={() => updateSelectedElement('fontWeight', activeElement.fontWeight === 'bold' ? 'normal' : 'bold')} className={`p-1 rounded transition border ${activeElement.fontWeight === 'bold' ? 'bg-[#606248] border-[#606248] text-white' : 'border-[#E8E2D9] text-zinc-600 hover:bg-zinc-200/50'}`}><Bold className="w-3 h-3" /></button>
 
-              <div className="w-px h-5 bg-[#E8E2D9]" />
+              <div className="w-px h-4 bg-[#E8E2D9]" />
 
-              {/* Hex Brand Palette color selector */}
-              <div className="flex items-center gap-1.5">
+              {/* Brand Palette colors */}
+              <div className="flex items-center gap-1">
                 {CORPORATE_BRAND_PALETTE.map(brandColor => (
                   <button
                     key={brandColor.hex}
                     onClick={() => updateSelectedElement('color', brandColor.hex)}
                     style={{ backgroundColor: brandColor.hex }}
                     title={brandColor.name}
-                    className={`w-4 h-4 rounded-full border border-black/10 transition transform hover:scale-115 ${
-                      activeElement.color?.toLowerCase() === brandColor.hex.toLowerCase() 
-                        ? 'ring-2 ring-[#606248] ring-offset-1 ring-offset-[#FAF6F0]' 
-                        : ''
+                    className={`w-3.5 h-3.5 rounded-full border border-black/10 transition transform hover:scale-115 ${
+                      activeElement.color?.toLowerCase() === brandColor.hex.toLowerCase() ? 'ring-1.5 ring-[#606248] ring-offset-1 ring-offset-[#FAF6F0]' : ''
                     }`}
                   />
                 ))}
-                
-                {/* Custom Color Input */}
-                <input
-                  type="color"
-                  value={activeElement.color || '#000000'}
-                  onChange={e => updateSelectedElement('color', e.target.value)}
-                  className="w-4 h-4 rounded-full border-none outline-none cursor-pointer p-0 overflow-hidden"
-                  title="Custom Color"
-                />
+                <input type="color" value={activeElement.color || '#000000'} onChange={e => updateSelectedElement('color', e.target.value)} className="w-3.5 h-3.5 rounded-full border-none outline-none cursor-pointer p-0 overflow-hidden" title="Custom Color" />
               </div>
 
             </div>
+          ) : activeElement && activeElement.type === 'image' ? (
+            <div className="flex items-center gap-2 bg-[#FAF6F0] border border-[#E8E2D9] rounded-xl px-3 py-1 shadow-sm text-[11px] text-[#8A7E56] animate-fade-in animate-duration-150">
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span className="font-medium">Image Selected</span>
+              <div className="w-px h-4 bg-[#E8E2D9]" />
+              <button onClick={() => { setUploadTarget({ pageIndex: activePageIndex, elementId: activeElement.id }); fileInputRef.current?.click(); }} className="flex items-center gap-1 text-[#606248] hover:text-[#4d4e3a] font-semibold transition">
+                <Upload className="w-3 h-3" /> Swap
+              </button>
+            </div>
           ) : (
-            <div className="text-xs text-[#8A7E56] font-medium italic flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              Click any element on the template paper below to change layout parameters
+            <div className="text-[11px] text-[#8A7E56] font-medium italic flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3" />
+              Click any element to edit
             </div>
           )}
 
           {/* Right Header Operations */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Save Button */}
+            <button
+              onClick={saveQuotation}
+              disabled={isSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E8E2D9] hover:bg-[#FAF6F0] text-[#606248] text-[11px] font-semibold rounded-lg transition shadow-sm disabled:opacity-50"
+            >
+              {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+
+            {/* Export PDF */}
             <button
               onClick={exportToPdf}
               disabled={isExporting}
-              className="px-4 py-2 bg-[#606248] hover:bg-[#4d4e3a] text-white text-xs font-semibold rounded-xl transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+              className="px-3 py-1.5 bg-[#606248] hover:bg-[#4d4e3a] text-white text-[11px] font-semibold rounded-lg transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
             >
-              {isExporting ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <FileDown className="w-3.5 h-3.5" />
-              )}
+              {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
               {isExporting ? 'Exporting...' : 'Export PDF'}
             </button>
+
+            {/* Reset */}
             <button
-              onClick={() => {
-                resetToNew();
-                showToast('Reset elements configuration to default.', 'info');
-              }}
-              className="p-2 border border-[#E8E2D9] rounded-xl hover:bg-[#FAF6F0] text-zinc-600 transition"
+              onClick={() => { resetToNew(); showToast('Workspace reset to template.', 'info'); }}
+              className="p-1.5 border border-[#E8E2D9] rounded-lg hover:bg-[#FAF6F0] text-zinc-600 transition"
               title="Reset configuration"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Archive */}
+            <button
+              onClick={() => { fetchArchive(); setShowArchiveModal(true); }}
+              className="p-1.5 border border-[#E8E2D9] rounded-lg hover:bg-[#FAF6F0] text-zinc-600 transition"
+              title="Open Archive"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Advanced Controls Sidebar Toggle */}
+            <button
+              onClick={() => setShowCompactSidebar(!showCompactSidebar)}
+              className={`p-1.5 border rounded-lg transition ${showCompactSidebar ? 'bg-[#606248] text-white border-[#606248]' : 'border-[#E8E2D9] hover:bg-[#FAF6F0] text-zinc-600'}`}
+              title="Advanced Controls Panel"
+            >
+              <Sliders className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -3210,6 +2988,44 @@ export default function QuotationMakerPage() {
           ref={workspaceRef}
           className="flex-1 overflow-hidden flex flex-col items-center justify-center bg-[#F3EFEA] relative"
           onClick={() => setSelectedElement(null)}
+          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+          onDrop={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+            if (files.length === 0) return;
+            
+            for (const file of files) {
+              const fileExt = file.name.split('.').pop();
+              const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+              const filePath = `custom-assets/${fileName}`;
+              
+              try {
+                const { error: uploadError } = await supabase.storage.from('quotations').upload(filePath, file);
+                const { data } = uploadError 
+                  ? { data: { publicUrl: URL.createObjectURL(file) } }
+                  : supabase.storage.from('quotations').getPublicUrl(filePath);
+                
+                const newImageElement: CanvasElement = {
+                  id: `img-drop-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  type: 'image',
+                  content: data?.publicUrl || URL.createObjectURL(file),
+                  x: 15, y: 15, width: 70, height: 50
+                };
+                
+                pushToHistory(pages);
+                setPages(prevPages => prevPages.map((page, idx) => {
+                  if (idx === activePageIndex) {
+                    return { ...page, elements: [...page.elements, newImageElement] };
+                  }
+                  return page;
+                }));
+                showToast('Image added to canvas from drop', 'success');
+              } catch (err: any) {
+                showToast('Failed to add image: ' + (err.message || 'Unknown error'), 'error');
+              }
+            }
+          }}
         >
           
           {/* THE DIGITAL MATTE COVER PAPER PAGE (RESPONSIVE SCALED A4) */}
@@ -4257,6 +4073,110 @@ export default function QuotationMakerPage() {
             </div>
 
           </div>
+
+          {/* FLOATING COMPACT SIDEBAR PANEL - Advanced Controls */}
+          {showCompactSidebar && (
+            <div 
+              className="absolute top-4 left-4 w-72 bg-zinc-950/95 backdrop-blur-xl border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in animate-duration-150"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Panel Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+                  <span className="text-[11px] font-bold text-white tracking-wide">Advanced Controls</span>
+                </div>
+                <button onClick={() => setShowCompactSidebar(false)} className="text-zinc-500 hover:text-white transition text-xs">✕</button>
+              </div>
+              
+              <div className="p-4 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto scrollbar-thin">
+                {/* Saved Quotations */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                    <Database className="w-3 h-3" /> Saved ({quotations.length})
+                  </label>
+                  <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                    {quotations.slice(0, 5).map(q => (
+                      <button
+                        key={q.id}
+                        onClick={() => { loadQuotation(q); setShowCompactSidebar(false); }}
+                        className={`w-full text-left p-2 rounded-lg text-[10px] transition flex justify-between border ${
+                          activeQuotationId === q.id ? 'bg-[#606248]/30 border-[#606248] text-white' : 'bg-zinc-800/40 border-zinc-800 hover:bg-zinc-800 text-zinc-400'
+                        }`}
+                      >
+                        <span className="font-semibold truncate">{q.client_name}</span>
+                        <span className="text-zinc-500">{new Date(q.updated_at).toLocaleDateString()}</span>
+                      </button>
+                    ))}
+                    <button onClick={resetToNew} className="w-full text-center py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] rounded-lg font-medium transition flex items-center justify-center gap-1">
+                      <Plus className="w-3 h-3" /> New Quotation
+                    </button>
+                  </div>
+                </div>
+
+                <hr className="border-zinc-800" />
+
+                {/* Couple Names */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">Couple Names</label>
+                  <input
+                    type="text"
+                    value={coupleNames}
+                    onChange={e => setCoupleNames(e.target.value.toUpperCase())}
+                    className="w-full bg-zinc-850 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] text-white focus:outline-none focus:border-[#606248] transition"
+                    placeholder="SUSHANT x SHWETA"
+                  />
+                </div>
+
+                <hr className="border-zinc-800" />
+
+                {/* 1-Click Package Injection */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-[#D4AF37] flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" /> Quick Packages
+                  </label>
+                  <div className="space-y-1.5">
+                    {presets.map(preset => (
+                      <button
+                        key={preset.id}
+                        onClick={() => { injectPresetPackage(preset); setShowCompactSidebar(false); }}
+                        className="w-full bg-zinc-800 hover:bg-[#606248]/25 hover:border-[#606248] border border-zinc-700/60 p-2 rounded-lg transition text-left group flex items-center justify-between"
+                      >
+                        <div>
+                          <h4 className="text-[10px] font-semibold text-white group-hover:text-[#D4AF37] transition">{preset.package_name}</h4>
+                          <span className="text-[9px] text-zinc-500">Rs {preset.data_payload.pricing?.offer_price.toLocaleString()}/-</span>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-white transition" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <hr className="border-zinc-800" />
+
+                {/* AI Template Import */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-[#D4AF37] flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" /> AI Template Import
+                  </label>
+                  <div className="relative border border-dashed border-zinc-700 hover:border-[#606248] rounded-xl p-3 transition bg-zinc-950/40 text-center cursor-pointer group">
+                    {isImportingTemplate ? (
+                      <div className="flex flex-col items-center justify-center py-1 gap-1.5">
+                        <RefreshCw className="w-4 h-4 animate-spin text-[#D4AF37]" />
+                        <span className="text-[9px] text-zinc-400">AI Vision analyzing...</span>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer flex flex-col items-center justify-center gap-1">
+                        <Upload className="w-4 h-4 text-zinc-500 group-hover:text-[#D4AF37] transition" />
+                        <span className="text-[9px] text-zinc-400 font-semibold group-hover:text-white transition">Upload Template (PDF/PNG/JPG)</span>
+                        <input type="file" accept="image/*,application/pdf" onChange={handleTemplateImport} className="hidden" />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* PAGE DOT INDICATORS */}
           <div className="flex items-center gap-2.5 mt-6 z-10">
