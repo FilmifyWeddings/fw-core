@@ -14,5 +14,12 @@ jobs:
         key: ${{ secrets.VPS_SSH_KEY }}
         script: |
           cd /var/www/fw-core
+          echo "=== DIAGNOSTICS ==="
+          pwd
+          git status
+          git log -n 3
+          pm2 status
+          pm2 show fw-core || pm2 show all
+          echo "=== END DIAGNOSTICS ==="
           chmod +x deploy.sh
           ./deploy.sh
