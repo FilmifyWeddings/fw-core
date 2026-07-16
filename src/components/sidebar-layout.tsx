@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Database, Send, Download, Megaphone, Layers, 
   Settings, HelpCircle, Sun, Moon, Menu, ChevronDown, ChevronRight, 
   LogOut, Search, MessageSquare, FileSpreadsheet, Check, Shield, GitBranch,
-  FileText
+  FileText, Users
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -141,6 +141,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/quotations'
     },
     {
+      name: 'Team Manager',
+      icon: Users,
+      path: '/team-manager'
+    },
+    {
       name: 'Single Send',
       icon: Send,
       path: '/single-send'
@@ -155,11 +160,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: Megaphone,
       path: '/broadcast-campaigns'
     },
-    // {
-    //   name: 'Workflows',
-    //   icon: GitBranch,
-    //   path: '/dashboard/workflows'
-    // }
   ];
 
   if (['/login', '/home', '/admin/sushant', '/admin/dashboard'].includes(pathname)) {

@@ -261,4 +261,62 @@ export interface QuotationPreset {
   updated_at: string;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Operations Team Manager Types
+// ─────────────────────────────────────────────────────────────
+
+export interface FWProject {
+  id: string;
+  user_id: string;
+  client_name: string;
+  main_date: string;
+  main_venue: string;
+  quotation_files?: string[];
+  itinerary_doc_id?: string;
+  is_archived: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FWTeamMember {
+  id: string;
+  user_id: string;
+  name: string;
+  primary_role: string;
+  phone_number: string;
+  email: string;
+  active_status: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FWAssignment {
+  id: string;
+  user_id: string;
+  project_id: string;
+  sub_event_name: string;
+  sub_event_date: string;
+  start_time: string;
+  end_time: string;
+  required_role: string;
+  assigned_member_id: string | null;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+  // Join property for frontend rendering convenience
+  fw_team_members?: FWTeamMember | null;
+}
+
+export interface FWWhatsAppLog {
+  id: string;
+  user_id: string;
+  assignment_id: string;
+  recipient_phone: string;
+  message_payload: Record<string, any>;
+  status: string;
+  response_payload?: Record<string, any>;
+  created_at?: string;
+}
+
+
 
