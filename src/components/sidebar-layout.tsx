@@ -197,7 +197,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/50 dark:hover:bg-zinc-900/40 transition-all group"
             >
               <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
-              <span>Back to Suite</span>
+              <span>Back to Suite Workspace</span>
             </Link>
           </div>
 
@@ -324,7 +324,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800 h-14 flex items-center px-4">
           <Link href="/" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 min-h-[44px]">
             <ArrowLeft className="w-4 h-4" />
-            <span className="text-xs font-bold">Suite</span>
+            <span className="text-xs font-bold">Suite Workspace</span>
           </Link>
           <div className="flex-1 text-center">
             <span className="text-xs font-bold text-zinc-900 dark:text-white">{suiteApp.title}</span>

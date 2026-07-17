@@ -50,7 +50,7 @@ function SuiteCard({ app, index }: { app: SuiteAppConfig; index: number }) {
       <Link href={app.href} className="block group">
         <div
           className={`relative bg-white border ${styles.border} rounded-[24px] p-6 transition-all duration-500 ease-out hover:border-zinc-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(108,92,231,0.04),0_1px_3px_rgba(108,92,231,0.02)] cursor-pointer overflow-hidden`}
-          style={{ boxShadow: '0_2px_12px_rgba(0,0,0,0.03)' }}
+          style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}
         >
           {/* Subtle gradient overlay on hover */}
           <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-zinc-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
