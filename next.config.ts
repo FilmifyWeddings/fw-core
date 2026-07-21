@@ -3,9 +3,18 @@ import type { NextConfig } from "next";
 const nextConfig: any = {
   allowedDevOrigins: ['*.loca.lt', 'loca.lt', '*.lhr.life', 'lhr.life', '*.ngrok-free.dev', 'ngrok-free.dev'],
   
+  headers: async () => [
+    {
+      source: '/:path*',
+      headers: [
+        { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0' },
+        { key: 'Pragma', value: 'no-cache' },
+        { key: 'Expires', value: '0' },
+      ],
+    },
+  ],
+
   // Baileys must run server-side only (Node.js runtime, not Edge/browser)
-  // serverExternalPackages tells Next.js NOT to bundle these for SSR —
-  // they will be required at runtime from node_modules instead
   serverExternalPackages: [
     '@whiskeysockets/baileys',
     'bufferutil',
@@ -14,11 +23,7 @@ const nextConfig: any = {
     '@hapi/boom',
   ],
 
-
-  // Turbopack config (Next.js 16+ default bundler)
-  // Mirrors the serverExternalPackages behavior for Turbopack
   turbopack: {},
 };
 
 export default nextConfig;
-
