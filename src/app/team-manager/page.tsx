@@ -35,6 +35,8 @@ export default function TeamManagerPage() {
 
   // Modals & Popovers State
   const [isAddProjectOpen, setIsAddProjectOpen] = useState<boolean>(false);
+  const [editingProject, setEditingProject] = useState<FWProject | null>(null);
+  const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState<boolean>(false);
   const [activeAssignmentForMember, setActiveAssignmentForMember] = useState<{
     assignmentId?: string;
@@ -237,7 +239,7 @@ export default function TeamManagerPage() {
   };
 
   // Save New Project and Sub-Events to Supabase with Enhanced Diagnostics & Fallbacks
-  const handleSaveProject = async (couplingName: string, eventBlocks: EventBlockData[]): Promise<boolean> => {
+  const handleSaveProject = async (couplingName: string, eventBlocks: EventBlockData[], existingProjectId?: string): Promise<boolean> => {
     console.log('[TeamManager] Starting handleSaveProject for couplingName:', couplingName, 'with blocks count:', eventBlocks.length);
 
     try {
@@ -262,29 +264,42 @@ export default function TeamManagerPage() {
 
       console.log('[TeamManager] Inserting project payload:', projectPayload);
 
-      // 1. Insert Project into fw_projects
-      const { data: newProjArray, error: projErr } = await supabase
-        .from('fw_projects')
-        .insert([projectPayload])
-        .select();
+      // 1. Insert or Update Project into fw_projects
+      let newProj: any = null;
 
-      if (projErr || !newProjArray || newProjArray.length === 0) {
-        console.error('[TeamManager] Project insert failed:', {
-          message: projErr?.message,
-          details: projErr?.details,
-          hint: projErr?.hint,
-          code: projErr?.code,
-        });
+      if (existingProjectId) {
+        console.log('[TeamManager] Updating existing project:', existingProjectId);
+        const { data: updatedArr, error: updateErr } = await supabase
+          .from('fw_projects')
+          .update(projectPayload)
+          .eq('id', existingProjectId)
+          .select();
 
-        const detailText = projErr?.message || projErr?.details || ("Code: " + (projErr?.code || "UNKNOWN"));
-        alert("Could not create project in Supabase:\n\n" + detailText);
-        
-        // Return false so modal doesn't close or clear user input data!
-        return false;
+        if (updateErr || !updatedArr || updatedArr.length === 0) {
+          console.error('[TeamManager] Project update failed:', updateErr);
+          alert("Could not update project in Supabase: " + (updateErr?.message || 'Update failed'));
+          return false;
+        }
+        newProj = updatedArr[0];
+
+        // Clear existing sub-events & assignments to re-create updated configuration
+        await supabase.from('fw_sub_events').delete().eq('project_id', existingProjectId);
+        await supabase.from('fw_assignments').delete().eq('project_id', existingProjectId);
+      } else {
+        const { data: newProjArray, error: projErr } = await supabase
+          .from('fw_projects')
+          .insert([projectPayload])
+          .select();
+
+        if (projErr || !newProjArray || newProjArray.length === 0) {
+          console.error('[TeamManager] Project insert failed:', projErr);
+          const detailText = projErr?.message || projErr?.details || ("Code: " + (projErr?.code || "UNKNOWN"));
+          alert("Could not create project in Supabase:\n\n" + detailText);
+          return false;
+        }
+        newProj = newProjArray[0];
       }
-
-      const newProj = newProjArray[0];
-      console.log('[TeamManager] Project created successfully with ID:', newProj.id);
+      console.log('[TeamManager] Project saved successfully with ID:', newProj.id);
 
       // 2. Insert Sub-Events & Assignments
       for (let i = 0; i < eventBlocks.length; i++) {
@@ -602,7 +617,7 @@ export default function TeamManagerPage() {
             </button>
 
             <button 
-              onClick={() => setIsAddProjectOpen(true)}
+              onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
               className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30"
             >
               <Plus className="w-4 h-4" />
@@ -652,7 +667,7 @@ export default function TeamManagerPage() {
                           <button 
                             title="Edit Project"
                             onClick={() => {
-                              // Open modal or project edit action
+                              setEditingProject(project);
                               setIsAddProjectOpen(true);
                             }}
                             className="w-8 h-8 rounded-xl bg-zinc-50 hover:bg-[#6C5CE7]/10 border border-zinc-200/80 flex items-center justify-center text-[#4F5E74] hover:text-[#6C5CE7] transition shadow-sm shrink-0"
@@ -683,13 +698,13 @@ export default function TeamManagerPage() {
                                 {/* Bullet Node Dot */}
                                 <div className="absolute -left-[17px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#6C5CE7] ring-4 ring-white shadow-sm" />
 
-                                {/* Event Header Title & Date with Enhanced Indigo/Black Contrast */}
+                                {/* Event Header Title & Date with Enhanced Typography */}
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-extrabold text-sm text-[#0F172A] tracking-tight">
+                                  <span className="font-extrabold text-base text-[#312E81] tracking-tight">
                                     {subEvent.event_title}
                                   </span>
-                                  <span className="text-xs text-[#4F5E74] font-bold">|</span>
-                                  <span className="font-bold text-xs text-black">
+                                  <span className="text-sm text-[#4F5E74] font-bold">|</span>
+                                  <span className="font-bold text-base text-black">
                                     {dateFormatted}
                                   </span>
                                 </div>
@@ -712,8 +727,8 @@ export default function TeamManagerPage() {
                                   </div>
                                 )}
 
-                                {/* CIRCULAR AVATAR MATRIX CREW ASSIGNMENTS (IMAGE 2 EXACT REPLICA) */}
-                                <div className="flex items-center gap-4 flex-wrap pt-2 pb-1">
+                                {/* 3-LAYER VERTICAL AVATAR & CREW DISPLAY STACK */}
+                                <div className="flex items-center gap-5 flex-wrap pt-2 pb-1">
                                   {subEvent.fw_assignments?.map((assignment) => {
                                     const isAssigned = assignment.assigned_member_id !== null;
                                     const memberObj = assignment.fw_team_members;
@@ -725,11 +740,15 @@ export default function TeamManagerPage() {
 
                                     return (
                                       <div key={assignment.id} className="relative">
-                                        {/* CIRCULAR AVATAR SLOT ITEM */}
+                                        {/* 3-LAYER VERTICAL DISPLAY NODE */}
                                         <div 
-                                          onClick={() => setActiveDropdownId(isDropdownOpen ? null : dropdownKey)}
-                                          className="flex flex-col items-center group cursor-pointer"
+                                          onClick={() => {
+                                            setActiveDropdownId(isDropdownOpen ? null : dropdownKey);
+                                            setMemberSearchQuery('');
+                                          }}
+                                          className="flex flex-col items-center group cursor-pointer min-w-[54px]"
                                         >
+                                          {/* LAYER 1 (TOP): AVATAR PHOTO OR DASHED RING */}
                                           {isAssigned ? (
                                             memberObj?.avatar_url ? (
                                               // eslint-disable-next-next/no-img-element
@@ -749,15 +768,22 @@ export default function TeamManagerPage() {
                                             </div>
                                           )}
 
-                                          {/* CENTERED LABEL BELOW AVATAR */}
-                                          <span className={`font-extrabold text-[11px] tracking-tight block text-center mt-1 truncate max-w-[64px] ${
-                                            isAssigned ? 'text-slate-900' : 'text-slate-800'
+                                          {/* LAYER 2 (MIDDLE): ROLE LABEL */}
+                                          <span className={`font-semibold text-[11px] block text-center mt-1.5 leading-none ${
+                                            isAssigned ? 'text-indigo-600 font-bold' : 'text-slate-800 font-extrabold'
                                           }`}>
-                                            {isAssigned ? memberName.split(' ')[0] : role}
+                                            {role}
                                           </span>
+
+                                          {/* LAYER 3 (BOTTOM): ASSIGNED MEMBER FULL NAME */}
+                                          {isAssigned && (
+                                            <span className="font-extrabold text-xs text-black block text-center mt-1 leading-tight truncate max-w-[72px]">
+                                              {memberName}
+                                            </span>
+                                          )}
                                         </div>
 
-                                        {/* 3D CURVED CREW ALLOCATION DROPDOWN POPOVER */}
+                                        {/* 3D CURVED DROPDOWN POPOVER WITH SEARCH BAR */}
                                         {isDropdownOpen && (
                                           <>
                                             <div 
@@ -769,8 +795,20 @@ export default function TeamManagerPage() {
                                               animate={{ opacity: 1, scale: 1, y: 0 }}
                                               exit={{ opacity: 0, scale: 0.92, y: 8 }}
                                               transition={{ type: 'spring', damping: 20, stiffness: 350 }}
-                                              className="absolute top-full left-0 mt-2 z-50 w-64 bg-white border border-[#6C5CE7]/15 rounded-[18px] shadow-2xl p-2.5 space-y-1.5"
+                                              className="absolute top-full left-0 mt-2 z-50 w-64 bg-white border border-[#6C5CE7]/15 rounded-[18px] shadow-2xl p-3 space-y-2"
                                             >
+                                              {/* SEARCH INPUT BAR */}
+                                              <div className="relative">
+                                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                <input
+                                                  type="text"
+                                                  placeholder="Search member or role..."
+                                                  value={memberSearchQuery}
+                                                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                                  className="w-full bg-slate-50 border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30 text-slate-900 placeholder:text-slate-400"
+                                                />
+                                              </div>
+
                                               {/* TOP PINNED ACTION ROW */}
                                               <button
                                                 type="button"
@@ -792,7 +830,7 @@ export default function TeamManagerPage() {
 
                                               <div className="h-px bg-zinc-100 my-1" />
 
-                                              {/* MEMBER SELECTION LIST */}
+                                              {/* MEMBER SELECTION LIST WITH FILTERING */}
                                               <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
                                                 {/* UNASSIGN OPTION */}
                                                 <button
@@ -808,33 +846,42 @@ export default function TeamManagerPage() {
                                                   {!isAssigned && <Check className="w-3.5 h-3.5" />}
                                                 </button>
 
-                                                {teamMembers.map((m) => {
-                                                  const isSelected = assignment.assigned_member_id === m.id;
-                                                  return (
-                                                    <button
-                                                      key={m.id}
-                                                      type="button"
-                                                      onClick={() => handleAssignMember(assignment.id, m.id)}
-                                                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
-                                                        isSelected
-                                                          ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
-                                                          : 'text-[#0B111E] hover:bg-zinc-50'
-                                                      }`}
-                                                    >
-                                                      <div className="flex items-center gap-2">
-                                                        {m.avatar_url ? (
-                                                          // eslint-disable-next-next/no-img-element
-                                                          <img src={m.avatar_url} alt={m.name} className="w-5 h-5 rounded-full object-cover shrink-0" />
-                                                        ) : (
-                                                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                                                        )}
-                                                        <span>{m.name}</span>
-                                                        <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
-                                                      </div>
-                                                      {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
-                                                    </button>
-                                                  );
-                                                })}
+                                                {teamMembers
+                                                  .filter(m => {
+                                                    if (!memberSearchQuery.trim()) return true;
+                                                    const q = memberSearchQuery.toLowerCase();
+                                                    return (
+                                                      m.name.toLowerCase().includes(q) ||
+                                                      m.primary_role.toLowerCase().includes(q)
+                                                    );
+                                                  })
+                                                  .map((m) => {
+                                                    const isSelected = assignment.assigned_member_id === m.id;
+                                                    return (
+                                                      <button
+                                                        key={m.id}
+                                                        type="button"
+                                                        onClick={() => handleAssignMember(assignment.id, m.id)}
+                                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
+                                                          isSelected
+                                                            ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
+                                                            : 'text-[#0B111E] hover:bg-zinc-50'
+                                                        }`}
+                                                      >
+                                                        <div className="flex items-center gap-2">
+                                                          {m.avatar_url ? (
+                                                            // eslint-disable-next-next/no-img-element
+                                                            <img src={m.avatar_url} alt={m.name} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                                                          ) : (
+                                                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                                          )}
+                                                          <span>{m.name}</span>
+                                                          <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
+                                                        </div>
+                                                        {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
+                                                      </button>
+                                                    );
+                                                  })}
                                               </div>
                                             </motion.div>
                                           </>
@@ -957,7 +1004,11 @@ export default function TeamManagerPage() {
       {/* 1. Add Project Modal */}
       <AddProjectModal
         isOpen={isAddProjectOpen}
-        onClose={() => setIsAddProjectOpen(false)}
+        onClose={() => {
+          setIsAddProjectOpen(false);
+          setEditingProject(null);
+        }}
+        projectToEdit={editingProject}
         onSave={handleSaveProject}
       />
 

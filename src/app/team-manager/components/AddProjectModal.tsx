@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, User, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import EventBlock, { EventBlockData } from './EventBlock';
+import { FWProject } from '@/types';
 
 const DEFAULT_BLOCK: EventBlockData = {
   id: '',
@@ -20,10 +21,11 @@ const DEFAULT_BLOCK: EventBlockData = {
 interface AddProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (couplingName: string, blocks: EventBlockData[]) => Promise<boolean | void> | void;
+  projectToEdit?: FWProject | null;
+  onSave: (couplingName: string, blocks: EventBlockData[], projectId?: string) => Promise<boolean | void> | void;
 }
 
-export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectModalProps) {
+export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave }: AddProjectModalProps) {
   const [couplingName, setCouplingName] = useState('');
   const [eventBlocks, setEventBlocks] = useState<EventBlockData[]>([
     { ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) },
@@ -33,6 +35,32 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Pre-populate state when projectToEdit changes
+  useEffect(() => {
+    if (projectToEdit && isOpen) {
+      setCouplingName(projectToEdit.client_name || '');
+      if (projectToEdit.fw_sub_events && projectToEdit.fw_sub_events.length > 0) {
+        const blocks: EventBlockData[] = projectToEdit.fw_sub_events.map(se => ({
+          id: se.id || Math.random().toString(36).slice(2),
+          subEventNames: se.event_title ? [se.event_title] : ['Wedding Ceremony'],
+          subEventDate: se.event_date || '',
+          venueLocation: se.venue_name || '',
+          mapLink: se.venue_map_link || '',
+          startTime: se.roll_call_time || '10:00',
+          endTime: se.dismissal_estimate_time || '18:00',
+          roles: se.fw_assignments?.map(a => a.required_role) || ['TP', 'Ass'],
+          notes: se.operational_notes || '',
+        }));
+        setEventBlocks(blocks);
+      } else {
+        setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+      }
+    } else if (isOpen) {
+      setCouplingName('');
+      setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+    }
+  }, [projectToEdit, isOpen]);
+
   const handleSubmit = async () => {
     if (!couplingName.trim()) {
       setErrorMessage('Please enter a valid Client Coupling Name / Couple Profile.');
@@ -41,11 +69,12 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const result = await onSave(couplingName, eventBlocks);
+      const result = await onSave(couplingName, eventBlocks, projectToEdit?.id);
       if (result !== false) {
         // Successful save -> reset and close
         setCouplingName('');
         setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+        onClose();
       }
     } catch (err: any) {
       console.error('[AddProjectModal] Submit error:', err);
@@ -141,8 +170,12 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
                     <Sparkles className="w-4.5 h-4.5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-extrabold text-[#0B111E] tracking-tight">Create Wedding Project</h3>
-                    <p className="text-[10px] text-[#4F5E74] font-semibold mt-0.5">Configure client profile and program event blocks.</p>
+                    <h3 className="text-sm font-extrabold text-[#0B111E] tracking-tight">
+                      {projectToEdit ? 'Edit Wedding Project' : 'Create Wedding Project'}
+                    </h3>
+                    <p className="text-[10px] text-[#4F5E74] font-semibold mt-0.5">
+                      {projectToEdit ? `Updating configuration for ${projectToEdit.client_name}` : 'Configure client profile and program event blocks.'}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -158,7 +191,7 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
                 <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-xs text-rose-700 font-bold shrink-0">
                   <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <span className="block font-extrabold">Database Insertion Warning</span>
+                    <span className="block font-extrabold">Database Operation Warning</span>
                     <span className="font-semibold text-[11px] opacity-90">{errorMessage}</span>
                   </div>
                   <button 
@@ -256,7 +289,7 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
                       Saving to Supabase...
                     </>
                   ) : (
-                    'Save Project Config'
+                    projectToEdit ? 'Update Project Config' : 'Save Project Config'
                   )}
                 </button>
               </div>
