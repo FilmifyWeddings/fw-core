@@ -92,7 +92,7 @@ export default function TeamSettingsModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative z-10 w-full max-w-2xl bg-white rounded-[24px] border border-[#6C5CE7]/10 shadow-[0_30px_70px_rgba(0,0,0,0.25),0_12px_30px_rgba(108,92,231,0.08)] overflow-hidden flex flex-col max-h-[85vh]"
+            className="relative z-10 max-w-5xl w-full h-[85vh] rounded-3xl bg-white/95 backdrop-blur-xl border border-[#6C5CE7]/15 shadow-2xl overflow-hidden flex flex-col p-2sm p-6"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 shrink-0">

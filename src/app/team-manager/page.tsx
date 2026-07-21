@@ -24,6 +24,17 @@ const customStyle = `
   }
 `;
 
+
+// Helper to extract 2-letter uppercase initials (e.g. "Sushant Nawale" -> "SN")
+const getInitials = (name: string): string => {
+  if (!name) return 'TM';
+  const parts = name.trim().replace(/\.\.\./g, '').split(/\s+/);
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return parts[0].slice(0, 2).toUpperCase();
+};
+
 export default function TeamManagerPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   
@@ -626,32 +637,32 @@ export default function TeamManagerPage() {
               />
             </div>
 
-            <button 
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-sm text-slate-700 font-bold text-xs transition-all cursor-pointer"
-            >
-              <Settings className="w-4 h-4 text-indigo-600"/>
-              <span>Settings</span>
-            </button>
-
             <button
               onClick={() => {
                 setActiveAssignmentForMember(null);
                 setIsAddMemberOpen(true);
               }}
-              className="bg-white border border-[#6C5CE7]/20 hover:border-[#6C5CE7] text-[#6C5CE7] text-xs font-bold px-4 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-sm"
+              className="bg-white border border-[#6C5CE7]/20 hover:border-[#6C5CE7] text-[#6C5CE7] text-xs font-bold px-4 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-sm shrink-0"
             >
               <UserPlus className="w-4 h-4" />
-              Directory Member
+              + Add Team Member
             </button>
 
             <button 
               onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-              className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30"
+              className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30 shrink-0"
             >
               <Plus className="w-4 h-4" />
               Add Project
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-3 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-sm text-indigo-600 hover:bg-indigo-50/50 transition-all cursor-pointer shrink-0"
+              title="Team & Operations Settings"
+            >
+              <Settings className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -673,7 +684,7 @@ export default function TeamManagerPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                 {filteredProjects.map((project) => {
                   const firstDate = project.fw_sub_events?.[0]?.event_date || project.main_date;
                   const countdownText = getCountdownBadge(firstDate);
@@ -757,8 +768,8 @@ export default function TeamManagerPage() {
                                   </div>
                                 )}
 
-                                {/* 3-LAYER VERTICAL AVATAR & CREW DISPLAY STACK (EXACT URGENT SPECIFICATION) */}
-                                <div className="flex items-center gap-5 flex-wrap pt-2 pb-1">
+                                {/* 3-LAYER VERTICAL AVATAR & CREW DISPLAY STACK (UNIFORM CSS GRID & ALPHABET INITIALS) */}
+                                <div className="grid grid-cols-3 sm:grid-cols-4 gap-y-5 gap-x-3 items-start justify-items-center pt-2 pb-1">
                                   {subEvent.fw_assignments?.map((assignment) => {
                                     const isAssigned = assignment.assigned_member_id !== null;
                                     const memberObj = assignment.fw_team_members;
@@ -767,29 +778,32 @@ export default function TeamManagerPage() {
                                     const role = assignment.required_role;
                                     const dropdownKey = assignment.id;
                                     const isDropdownOpen = activeDropdownId === dropdownKey;
-                                    const avatarSrc = memberObj?.avatar_url || (cleanName ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName)}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(role)}`);
+                                    const initials = getInitials(cleanName || role);
 
                                     return (
-                                      <div key={assignment.id} className="relative">
+                                      <div key={assignment.id} className="relative w-full flex justify-center">
                                         {/* 3-LAYER VERTICAL DISPLAY NODE */}
                                         <div 
                                           onClick={() => {
                                             setActiveDropdownId(isDropdownOpen ? null : dropdownKey);
                                             setMemberSearchQuery('');
                                           }}
-                                          className="flex flex-col items-center group cursor-pointer min-w-[70px]"
+                                          className="flex flex-col items-center group cursor-pointer w-full text-center"
                                         >
-                                          {/* LAYER 1 (TOP): AVATAR PHOTO WITH HIGH-QUALITY FALLBACK */}
+                                          {/* LAYER 1 (TOP): AVATAR PHOTO OR TACTILE 3D INITIALS CIRCLE */}
                                           {isAssigned ? (
-                                            // eslint-disable-next-next/no-img-element
-                                            <img 
-                                              src={avatarSrc} 
-                                              alt={cleanName} 
-                                              className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
-                                              onError={(e) => {
-                                                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName || role)}`;
-                                              }}
-                                            />
+                                            memberObj?.avatar_url ? (
+                                              // eslint-disable-next-next/no-img-element
+                                              <img 
+                                                src={memberObj.avatar_url} 
+                                                alt={cleanName} 
+                                                className="w-12 h-12 rounded-full object-cover shadow-md border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
+                                              />
+                                            ) : (
+                                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-sm flex items-center justify-center shadow-md border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
+                                                {initials}
+                                              </div>
+                                            )
                                           ) : (
                                             <div className="w-12 h-12 rounded-full border-2 border-dashed border-indigo-300 bg-indigo-50/50 flex items-center justify-center text-indigo-500 shadow-sm group-hover:border-indigo-500 group-hover:bg-indigo-100/50 transition shrink-0">
                                               <Plus className="w-5 h-5" />
@@ -900,15 +914,18 @@ export default function TeamManagerPage() {
                                                         }`}
                                                       >
                                                         <div className="flex items-center gap-2.5">
-                                                          {/* eslint-disable-next-next/no-img-element */}
-                                                          <img 
-                                                            src={mAvatarSrc} 
-                                                            alt={cleanMName} 
-                                                            className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
-                                                            onError={(e) => {
-                                                              (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanMName)}`;
-                                                            }}
-                                                          />
+                                                          {m.avatar_url ? (
+                                                            // eslint-disable-next-next/no-img-element
+                                                            <img 
+                                                              src={m.avatar_url} 
+                                                              alt={cleanMName} 
+                                                              className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
+                                                            />
+                                                          ) : (
+                                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ring-1 ring-indigo-200">
+                                                              {getInitials(cleanMName)}
+                                                            </div>
+                                                          )}
                                                           <span className="break-words max-w-[120px] text-left">{cleanMName}</span>
                                                           <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
                                                         </div>
