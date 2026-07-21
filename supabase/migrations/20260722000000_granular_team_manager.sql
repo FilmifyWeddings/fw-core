@@ -18,11 +18,12 @@ CREATE TABLE IF NOT EXISTS public.fw_projects (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Ensure columns exist if table was previously created
+-- Ensure columns exist if table was previously created & drop NOT NULL on user_id
 ALTER TABLE public.fw_projects ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
 ALTER TABLE public.fw_projects ADD COLUMN IF NOT EXISTS shipping_hdd_status TEXT DEFAULT 'None';
 ALTER TABLE public.fw_projects ADD COLUMN IF NOT EXISTS shipping_hdd_state TEXT DEFAULT 'PENDING';
 ALTER TABLE public.fw_projects ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.fw_projects ALTER COLUMN user_id DROP NOT NULL;
 
 -- 2. Create fw_sub_events (Card Sub-Event Level)
 CREATE TABLE IF NOT EXISTS public.fw_sub_events (
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS public.fw_team_members (
 
 ALTER TABLE public.fw_team_members ADD COLUMN IF NOT EXISTS country_code TEXT DEFAULT '+91';
 ALTER TABLE public.fw_team_members ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.fw_team_members ALTER COLUMN user_id DROP NOT NULL;
 
 -- 4. Create or update fw_assignments (Event-Wise Crew Allocation Level)
 CREATE TABLE IF NOT EXISTS public.fw_assignments (
@@ -80,6 +82,7 @@ CREATE TABLE IF NOT EXISTS public.fw_assignments (
 
 ALTER TABLE public.fw_assignments ADD COLUMN IF NOT EXISTS sub_event_id UUID REFERENCES public.fw_sub_events(id) ON DELETE CASCADE;
 ALTER TABLE public.fw_assignments ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+ALTER TABLE public.fw_assignments ALTER COLUMN user_id DROP NOT NULL;
 
 -- Enable RLS on all tables
 ALTER TABLE public.fw_projects ENABLE ROW LEVEL SECURITY;

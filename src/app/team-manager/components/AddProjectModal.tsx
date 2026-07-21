@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, User, Sparkles } from 'lucide-react';
+import { X, Plus, User, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import EventBlock, { EventBlockData } from './EventBlock';
 
 const DEFAULT_BLOCK: EventBlockData = {
@@ -20,7 +20,7 @@ const DEFAULT_BLOCK: EventBlockData = {
 interface AddProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (couplingName: string, blocks: EventBlockData[]) => void;
+  onSave: (couplingName: string, blocks: EventBlockData[]) => Promise<boolean | void> | void;
 }
 
 export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectModalProps) {
@@ -30,12 +30,29 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
   ]);
   const [customPrograms, setCustomPrograms] = useState<string[]>([]);
   const [customRoles, setCustomRoles] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = () => {
-    if (!couplingName.trim()) return;
-    onSave(couplingName, eventBlocks);
-    setCouplingName('');
-    setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+  const handleSubmit = async () => {
+    if (!couplingName.trim()) {
+      setErrorMessage('Please enter a valid Client Coupling Name / Couple Profile.');
+      return;
+    }
+    setErrorMessage(null);
+    setIsSubmitting(true);
+    try {
+      const result = await onSave(couplingName, eventBlocks);
+      if (result !== false) {
+        // Successful save -> reset and close
+        setCouplingName('');
+        setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+      }
+    } catch (err: any) {
+      console.error('[AddProjectModal] Submit error:', err);
+      setErrorMessage(err?.message || 'An unexpected error occurred while saving.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const addEventBlock = () => {
@@ -136,6 +153,23 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
                 </button>
               </div>
 
+              {/* ─── ERROR BANNER IF INSERTION FAILS ─── */}
+              {errorMessage && (
+                <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-xs text-rose-700 font-bold shrink-0">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span className="block font-extrabold">Database Insertion Warning</span>
+                    <span className="font-semibold text-[11px] opacity-90">{errorMessage}</span>
+                  </div>
+                  <button 
+                    onClick={() => setErrorMessage(null)} 
+                    className="text-rose-400 hover:text-rose-700"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* ─── SCROLLABLE BODY ─── */}
               <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
 
@@ -150,7 +184,10 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
                     required
                     placeholder="e.g. Sharma & Malhotra"
                     value={couplingName}
-                    onChange={(e) => setCouplingName(e.target.value)}
+                    onChange={(e) => {
+                      setCouplingName(e.target.value);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
                     className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-5 py-4 rounded-2xl text-base font-bold focus:outline-none focus:border-[#6C5CE7] focus:ring-2 focus:ring-[#6C5CE7]/10 transition text-[#0B111E] placeholder:text-zinc-400"
                   />
                 </div>
@@ -202,16 +239,25 @@ export default function AddProjectModal({ isOpen, onClose, onSave }: AddProjectM
                 <button
                   type="button"
                   onClick={onClose}
-                  className="bg-transparent border border-zinc-200 text-[#4F5E74] text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-zinc-50 transition"
+                  disabled={isSubmitting}
+                  className="bg-transparent border border-zinc-200 text-[#4F5E74] text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-zinc-50 transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-6 py-2.5 rounded-xl transition shadow-lg shadow-[#6C5CE7]/15 hover:shadow-[#6C5CE7]/25"
+                  disabled={isSubmitting}
+                  className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-6 py-2.5 rounded-xl transition shadow-lg shadow-[#6C5CE7]/15 hover:shadow-[#6C5CE7]/25 flex items-center gap-2 disabled:opacity-50"
                 >
-                  Save Project Config
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving to Supabase...
+                    </>
+                  ) : (
+                    'Save Project Config'
+                  )}
                 </button>
               </div>
             </motion.div>

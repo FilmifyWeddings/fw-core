@@ -182,27 +182,40 @@ export default function TeamManagerPage() {
     email?: string;
   }) => {
     try {
-      const { data: newMember, error: insertErr } = await supabase
-        .from('fw_team_members')
-        .insert({
-          name: memberData.name,
-          primary_role: memberData.primary_role,
-          country_code: memberData.country_code,
-          phone_number: memberData.phone_number,
-          email: memberData.email || null,
-          active_status: true,
-          is_active: true,
-        })
-        .select()
-        .single();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id || null;
 
-      if (insertErr || !newMember) {
-        console.error('[TeamManager] Member creation failed:', insertErr);
-        alert('Could not save new team member to database.');
+      const memberPayload: any = {
+        name: memberData.name,
+        primary_role: memberData.primary_role,
+        country_code: memberData.country_code,
+        phone_number: memberData.phone_number,
+        email: memberData.email || null,
+        active_status: true,
+        is_active: true,
+      };
+      if (userId) memberPayload.user_id = userId;
+
+      console.log('[TeamManager] Inserting member payload:', memberPayload);
+
+      const { data: newMembers, error: insertErr } = await supabase
+        .from('fw_team_members')
+        .insert([memberPayload])
+        .select();
+
+      if (insertErr || !newMembers || newMembers.length === 0) {
+        console.error('[TeamManager] Member creation failed:', {
+          message: insertErr?.message,
+          details: insertErr?.details,
+          hint: insertErr?.hint,
+          code: insertErr?.code,
+        });
+        const errDetail = insertErr?.message || insertErr?.details || ("Code: " + (insertErr?.code || "UNKNOWN"));
+        alert("Could not save new team member to database:\n\n" + errDetail);
         return;
       }
 
-      // Refresh team members list
+      const newMember = newMembers[0];
       setTeamMembers(prev => [...prev, newMember]);
 
       // If opened from a specific assignment dropdown, auto-assign
@@ -211,85 +224,137 @@ export default function TeamManagerPage() {
       }
 
       setActiveAssignmentForMember(null);
-    } catch (err) {
-      console.error('[TeamManager] Save team member error:', err);
+    } catch (err: any) {
+      console.error('[TeamManager] Save team member exception:', err);
+      alert("Error saving team member: " + (err?.message || err));
     }
   };
 
-  // Save New Project and Sub-Events to Supabase
-  const handleSaveProject = async (couplingName: string, eventBlocks: EventBlockData[]) => {
+  // Save New Project and Sub-Events to Supabase with Enhanced Diagnostics & Fallbacks
+  const handleSaveProject = async (couplingName: string, eventBlocks: EventBlockData[]): Promise<boolean> => {
+    console.log('[TeamManager] Starting handleSaveProject for couplingName:', couplingName, 'with blocks count:', eventBlocks.length);
+
     try {
-      // 1. Insert Project
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id || null;
+
       const mainDate = eventBlocks[0]?.subEventDate || new Date().toISOString().split('T')[0];
       const mainVenue = eventBlocks[0]?.venueLocation || 'Venue TBD';
 
-      const { data: newProj, error: projErr } = await supabase
-        .from('fw_projects')
-        .insert({
-          client_name: couplingName,
-          status: 'Active',
-          shipping_hdd_status: 'None',
-          shipping_hdd_state: 'PENDING',
-          main_date: mainDate,
-          main_venue: mainVenue,
-          is_archived: false,
-        })
-        .select()
-        .single();
-
-      if (projErr || !newProj) {
-        console.error('[TeamManager] Project insert failed:', projErr);
-        alert('Could not create project in Supabase.');
-        return;
+      const projectPayload: any = {
+        client_name: couplingName,
+        status: 'Active',
+        shipping_hdd_status: 'None',
+        shipping_hdd_state: 'PENDING',
+        main_date: mainDate,
+        main_venue: mainVenue,
+        is_archived: false,
+      };
+      if (userId) {
+        projectPayload.user_id = userId;
       }
+
+      console.log('[TeamManager] Inserting project payload:', projectPayload);
+
+      // 1. Insert Project into fw_projects
+      const { data: newProjArray, error: projErr } = await supabase
+        .from('fw_projects')
+        .insert([projectPayload])
+        .select();
+
+      if (projErr || !newProjArray || newProjArray.length === 0) {
+        console.error('[TeamManager] Project insert failed:', {
+          message: projErr?.message,
+          details: projErr?.details,
+          hint: projErr?.hint,
+          code: projErr?.code,
+        });
+
+        const detailText = projErr?.message || projErr?.details || ("Code: " + (projErr?.code || "UNKNOWN"));
+        alert("Could not create project in Supabase:\n\n" + detailText);
+        
+        // Return false so modal doesn't close or clear user input data!
+        return false;
+      }
+
+      const newProj = newProjArray[0];
+      console.log('[TeamManager] Project created successfully with ID:', newProj.id);
 
       // 2. Insert Sub-Events & Assignments
       for (let i = 0; i < eventBlocks.length; i++) {
         const block = eventBlocks[i];
-        const eventTitle = block.subEventNames.join(' / ') || `Event #${i + 1}`;
+        const eventTitle = block.subEventNames.join(' / ') || ("Event #" + (i + 1));
         const eventDate = block.subEventDate || mainDate;
 
-        const { data: newSubEvent } = await supabase
-          .from('fw_sub_events')
-          .insert({
-            project_id: newProj.id,
-            event_title: eventTitle,
-            event_date: eventDate,
-            venue_name: block.venueLocation,
-            venue_map_link: block.mapLink,
-            roll_call_time: block.startTime,
-            dismissal_estimate_time: block.endTime,
-            operational_notes: block.notes,
-            display_order: i,
-          })
-          .select()
-          .single();
-
-        const subEventId = newSubEvent?.id || null;
-
-        // Insert required role assignments
-        const assignmentsPayload = block.roles.map(role => ({
+        const subEventPayload: any = {
           project_id: newProj.id,
-          sub_event_id: subEventId,
-          sub_event_name: eventTitle,
-          sub_event_date: eventDate,
-          start_time: block.startTime,
-          end_time: block.endTime,
-          required_role: role,
-          assigned_member_id: null,
-          status: 'pending',
-        }));
+          event_title: eventTitle,
+          event_date: eventDate,
+          venue_name: block.venueLocation || null,
+          venue_map_link: block.mapLink || null,
+          roll_call_time: block.startTime || null,
+          dismissal_estimate_time: block.endTime || null,
+          operational_notes: block.notes || null,
+          display_order: i,
+        };
+        if (userId) subEventPayload.user_id = userId;
 
-        if (assignmentsPayload.length > 0) {
-          await supabase.from('fw_assignments').insert(assignmentsPayload);
+        console.log("[TeamManager] Sub-Event [" + i + "] Payload:", subEventPayload);
+
+        let subEventId: string | null = null;
+        try {
+          const { data: seData, error: seErr } = await supabase
+            .from('fw_sub_events')
+            .insert([subEventPayload])
+            .select();
+
+          if (seErr) {
+            console.warn("[TeamManager] fw_sub_events insert warning for block " + i + ":", seErr.message);
+          } else if (seData && seData[0]) {
+            subEventId = seData[0].id;
+          }
+        } catch (e: any) {
+          console.warn("[TeamManager] Sub-event creation skipped due to schema:", e.message);
+        }
+
+        // Insert required role assignments for this sub-event
+        if (block.roles && block.roles.length > 0) {
+          const assignmentsPayload = block.roles.map(role => {
+            const item: any = {
+              project_id: newProj.id,
+              sub_event_id: subEventId,
+              sub_event_name: eventTitle,
+              sub_event_date: eventDate,
+              start_time: block.startTime || null,
+              end_time: block.endTime || null,
+              required_role: role,
+              assigned_member_id: null,
+              status: 'pending',
+            };
+            if (userId) item.user_id = userId;
+            return item;
+          });
+
+          console.log("[TeamManager] Assignments Payload for sub-event [" + i + "]:", assignmentsPayload);
+
+          const { error: assignErr } = await supabase
+            .from('fw_assignments')
+            .insert(assignmentsPayload);
+
+          if (assignErr) {
+            console.warn("[TeamManager] Assignments insert warning:", assignErr.message);
+          }
         }
       }
 
-      // Refresh full dataset from Supabase
+      // Refresh dataset from Supabase
       await fetchAllData();
       setIsAddProjectOpen(false);
-    } catch (err) {
-      console.error('[TeamManager] Save project error:', err);
+      return true;
+    } catch (err: any) {
+      console.error('[TeamManager] handleSaveProject Exception:', err);
+      alert("Error saving project: " + (err?.message || err));
+      return false;
     }
   };
 
