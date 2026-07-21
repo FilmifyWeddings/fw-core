@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS public.fw_team_members (
 
 ALTER TABLE public.fw_team_members ADD COLUMN IF NOT EXISTS country_code TEXT DEFAULT '+91';
 ALTER TABLE public.fw_team_members ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.fw_team_members ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE public.fw_team_members ALTER COLUMN user_id DROP NOT NULL;
 
 -- 4. Create or update fw_assignments (Event-Wise Crew Allocation Level)

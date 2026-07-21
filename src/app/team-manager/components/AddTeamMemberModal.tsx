@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, UserPlus, Sparkles, User, Briefcase, Phone, Mail } from 'lucide-react';
+import { X, UserPlus, Sparkles, User, Briefcase, Phone, Mail, Camera, Loader2 } from 'lucide-react';
 import CountryFlagPhoneInput from './CountryFlagPhoneInput';
+import { supabase } from '@/lib/supabase';
 
 interface AddTeamMemberModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ interface AddTeamMemberModalProps {
     country_code: string;
     phone_number: string;
     email?: string;
+    avatar_url?: string;
   }) => Promise<void> | void;
 }
 
@@ -34,6 +36,8 @@ export default function AddTeamMemberModal({
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [isCompressing, setIsCompressing] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -41,6 +45,85 @@ export default function AddTeamMemberModal({
       setPrimaryRole(initialRole);
     }
   }, [initialRole]);
+
+  // Client-Side Image Compression Engine (Max 200x200px, JPEG 0.6 quality, ~15-30KB)
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsCompressing(true);
+    try {
+      const compressedDataUrl = await compressImageToDataUrl(file);
+      setAvatarUrl(compressedDataUrl);
+
+      // Attempt background upload to Supabase Storage 'team-avatars' bucket if configured
+      try {
+        const fileExt = 'jpg';
+        const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExt}`;
+        const blob = await (await fetch(compressedDataUrl)).blob();
+
+        const { data: uploadData, error: uploadErr } = await supabase
+          .storage
+          .from('team-avatars')
+          .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+        if (!uploadErr && uploadData) {
+          const { data: publicUrlData } = supabase.storage.from('team-avatars').getPublicUrl(fileName);
+          if (publicUrlData?.publicUrl) {
+            setAvatarUrl(publicUrlData.publicUrl);
+          }
+        }
+      } catch (storageErr) {
+        console.warn('[AddTeamMemberModal] Storage bucket fallback to dataURL:', storageErr);
+      }
+    } catch (err) {
+      console.error('[AddTeamMemberModal] Compression failed:', err);
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  const compressImageToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const maxSize = 200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxSize) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+            resolve(dataUrl);
+          } else {
+            reject(new Error('Canvas error'));
+          }
+        };
+        img.onerror = (e) => reject(e);
+        img.src = event.target?.result as string;
+      };
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,10 +137,12 @@ export default function AddTeamMemberModal({
         country_code: countryCode,
         phone_number: phoneNumber.trim(),
         email: email.trim() || undefined,
+        avatar_url: avatarUrl || undefined,
       });
       setName('');
       setPhoneNumber('');
       setEmail('');
+      setAvatarUrl('');
       onClose();
     } finally {
       setLoading(false);
@@ -107,6 +192,38 @@ export default function AddTeamMemberModal({
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Photo Upload Picker with Avatar Preview */}
+              <div className="flex items-center gap-4 bg-[#F8F9FD] p-3 rounded-2xl border border-[#6C5CE7]/10">
+                <div className="relative w-14 h-14 rounded-full bg-[#6C5CE7]/10 border-2 border-white ring-2 ring-[#6C5CE7]/30 flex items-center justify-center overflow-hidden shrink-0">
+                  {avatarUrl ? (
+                    // eslint-disable-next-next/no-img-element
+                    <img src={avatarUrl} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-6 h-6 text-[#6C5CE7]" />
+                  )}
+                  {isCompressing && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">
+                    Profile Photo (Compressed &lt; 30KB)
+                  </label>
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#6C5CE7]/20 text-[#6C5CE7] hover:bg-[#6C5CE7]/5 text-xs font-bold transition shadow-sm">
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>{avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleImageSelect}
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+              </div>
+
               {/* Member Name */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider flex items-center gap-1.5">
@@ -180,10 +297,17 @@ export default function AddTeamMemberModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="px-6 py-2.5 rounded-xl bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold shadow-lg shadow-[#6C5CE7]/20 transition disabled:opacity-50"
+                  disabled={loading || isCompressing}
+                  className="px-6 py-2.5 rounded-xl bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold shadow-lg shadow-[#6C5CE7]/20 transition disabled:opacity-50 flex items-center gap-2"
                 >
-                  {loading ? 'Saving...' : 'Save & Allocate'}
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save & Allocate'
+                  )}
                 </button>
               </div>
             </form>

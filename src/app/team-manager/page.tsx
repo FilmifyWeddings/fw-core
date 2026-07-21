@@ -6,7 +6,7 @@ import {
   Users, Calendar, List, Plus, Trash2, RotateCcw, Check, X, 
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
-  Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3,
+  Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil,
   HardDrive, UserPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -58,6 +58,12 @@ export default function TeamManagerPage() {
     setLoading(true);
     setError(null);
     try {
+      // Ensure storage bucket exists
+      try {
+        await supabase.storage.createBucket('team-avatars', { public: true });
+      } catch (e) {
+        // Bucket initialized or skipped
+      }
       // 1. Fetch Team Members
       const { data: membersData, error: membersErr } = await supabase
         .from('fw_team_members')
@@ -642,34 +648,17 @@ export default function TeamManagerPage() {
                             {project.client_name}
                           </h3>
 
-                          {/* 4 MICRO-ACTION BUTTONS (TOP RIGHT) */}
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button 
-                              title="Sort / Alignment"
-                              className="w-7 h-7 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-150 flex items-center justify-center text-[#4F5E74] hover:text-[#0B111E] transition"
-                            >
-                              <SlidersHorizontal className="w-3.5 h-3.5" />
-                            </button>
-                            <button 
-                              title="Tasks Checklist"
-                              className="w-7 h-7 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-150 flex items-center justify-center text-[#4F5E74] hover:text-[#0B111E] transition"
-                            >
-                              <CheckSquare className="w-3.5 h-3.5" />
-                            </button>
-                            <button 
-                              title="Drive / Files"
-                              className="w-7 h-7 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-150 flex items-center justify-center text-emerald-600 transition"
-                            >
-                              <Folder className="w-3.5 h-3.5" />
-                            </button>
-                            <button 
-                              title="Edit Project"
-                              onClick={() => handleToggleArchiveProject(project.id, true)}
-                              className="w-7 h-7 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-150 flex items-center justify-center text-[#4F5E74] hover:text-rose-600 transition"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          {/* SINGLE CLEAN PENCIL EDIT BUTTON (TOP RIGHT) */}
+                          <button 
+                            title="Edit Project"
+                            onClick={() => {
+                              // Open modal or project edit action
+                              setIsAddProjectOpen(true);
+                            }}
+                            className="w-8 h-8 rounded-xl bg-zinc-50 hover:bg-[#6C5CE7]/10 border border-zinc-200/80 flex items-center justify-center text-[#4F5E74] hover:text-[#6C5CE7] transition shadow-sm shrink-0"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
                         </div>
 
                         {/* COUNTDOWN BADGE PILL BELOW TITLE */}
@@ -694,13 +683,13 @@ export default function TeamManagerPage() {
                                 {/* Bullet Node Dot */}
                                 <div className="absolute -left-[17px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#6C5CE7] ring-4 ring-white shadow-sm" />
 
-                                {/* Event Header Title & Date */}
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-extrabold text-xs text-[#0B111E]">
+                                {/* Event Header Title & Date with Enhanced Indigo/Black Contrast */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-extrabold text-sm text-[#0F172A] tracking-tight">
                                     {subEvent.event_title}
                                   </span>
                                   <span className="text-xs text-[#4F5E74] font-bold">|</span>
-                                  <span className="font-bold text-xs text-[#4F5E74]">
+                                  <span className="font-bold text-xs text-black">
                                     {dateFormatted}
                                   </span>
                                 </div>
@@ -723,32 +712,50 @@ export default function TeamManagerPage() {
                                   </div>
                                 )}
 
-                                {/* CREW ALLOCATION CAPSULE PILLS */}
-                                <div className="flex items-center gap-2 flex-wrap pt-1">
+                                {/* CIRCULAR AVATAR MATRIX CREW ASSIGNMENTS (IMAGE 2 EXACT REPLICA) */}
+                                <div className="flex items-center gap-4 flex-wrap pt-2 pb-1">
                                   {subEvent.fw_assignments?.map((assignment) => {
                                     const isAssigned = assignment.assigned_member_id !== null;
-                                    const memberName = assignment.fw_team_members?.name || '';
+                                    const memberObj = assignment.fw_team_members;
+                                    const memberName = memberObj?.name || '';
                                     const role = assignment.required_role;
                                     const dropdownKey = assignment.id;
                                     const isDropdownOpen = activeDropdownId === dropdownKey;
+                                    const initials = memberName ? memberName.slice(0, 2).toUpperCase() : role;
 
                                     return (
                                       <div key={assignment.id} className="relative">
-                                        {/* CAPSULE CHIP BUTTON */}
-                                        <button
-                                          type="button"
+                                        {/* CIRCULAR AVATAR SLOT ITEM */}
+                                        <div 
                                           onClick={() => setActiveDropdownId(isDropdownOpen ? null : dropdownKey)}
-                                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all shadow-sm ${
-                                            isAssigned
-                                              ? 'bg-[#DCFCE7] text-[#15803D] border border-emerald-200/60 hover:bg-emerald-200/80'
-                                              : 'bg-[#FEE2E2] text-[#EF4444] border border-rose-200/60 hover:bg-rose-200/80'
-                                          }`}
+                                          className="flex flex-col items-center group cursor-pointer"
                                         >
-                                          <span className={`w-1.5 h-1.5 rounded-full ${isAssigned ? 'bg-[#15803D]' : 'bg-[#EF4444] animate-pulse'}`} />
-                                          <span>
-                                            {isAssigned ? `${role}: ${memberName}` : `• ${role}`}
+                                          {isAssigned ? (
+                                            memberObj?.avatar_url ? (
+                                              // eslint-disable-next-next/no-img-element
+                                              <img 
+                                                src={memberObj.avatar_url} 
+                                                alt={memberName} 
+                                                className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition" 
+                                              />
+                                            ) : (
+                                              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition">
+                                                {initials}
+                                              </div>
+                                            )
+                                          ) : (
+                                            <div className="w-12 h-12 rounded-full border-2 border-dashed border-indigo-300 bg-indigo-50/50 flex items-center justify-center text-indigo-500 shadow-sm group-hover:border-indigo-500 group-hover:bg-indigo-100/50 transition">
+                                              <Plus className="w-5 h-5" />
+                                            </div>
+                                          )}
+
+                                          {/* CENTERED LABEL BELOW AVATAR */}
+                                          <span className={`font-extrabold text-[11px] tracking-tight block text-center mt-1 truncate max-w-[64px] ${
+                                            isAssigned ? 'text-slate-900' : 'text-slate-800'
+                                          }`}>
+                                            {isAssigned ? memberName.split(' ')[0] : role}
                                           </span>
-                                        </button>
+                                        </div>
 
                                         {/* 3D CURVED CREW ALLOCATION DROPDOWN POPOVER */}
                                         {isDropdownOpen && (
@@ -815,7 +822,12 @@ export default function TeamManagerPage() {
                                                       }`}
                                                     >
                                                       <div className="flex items-center gap-2">
-                                                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                                        {m.avatar_url ? (
+                                                          // eslint-disable-next-next/no-img-element
+                                                          <img src={m.avatar_url} alt={m.name} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                                                        ) : (
+                                                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                                        )}
                                                         <span>{m.name}</span>
                                                         <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
                                                       </div>
@@ -835,17 +847,6 @@ export default function TeamManagerPage() {
                             );
                           })}
                         </div>
-                      </div>
-
-                      {/* CARD FOOTER: SHIPPING HDD TRACKING & PENDING STATE */}
-                      <div className="pt-4 border-t border-zinc-100 flex items-center justify-between text-xs font-bold text-[#4F5E74]">
-                        <div className="flex items-center gap-1.5 text-zinc-600">
-                          <HardDrive className="w-3.5 h-3.5 text-[#6C5CE7]" />
-                          <span>Shipping HDD: <strong className="text-[#0B111E]">{project.shipping_hdd_status || 'None'}</strong></span>
-                        </div>
-                        <span className="px-3 py-1 rounded-full bg-zinc-800 text-white text-[10px] font-black tracking-wider uppercase">
-                          {project.shipping_hdd_state || 'PENDING'}
-                        </span>
                       </div>
                     </div>
                   );

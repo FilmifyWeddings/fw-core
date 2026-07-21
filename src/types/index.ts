@@ -308,6 +308,7 @@ export interface FWTeamMember {
   country_code?: string;
   phone_number: string;
   email?: string;
+  avatar_url?: string;
   active_status?: boolean;
   is_active?: boolean;
   created_at?: string;
