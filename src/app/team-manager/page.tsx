@@ -626,6 +626,15 @@ export default function TeamManagerPage() {
               />
             </div>
 
+            <button 
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-sm text-slate-700 font-bold text-xs transition-all cursor-pointer"
+            >
+              <Settings className="w-4 h-4 text-indigo-600"/>
+              <span>Settings</span>
+            </button>
+
             <button
               onClick={() => {
                 setActiveAssignmentForMember(null);
@@ -748,16 +757,17 @@ export default function TeamManagerPage() {
                                   </div>
                                 )}
 
-                                {/* 3-LAYER VERTICAL AVATAR & CREW DISPLAY STACK */}
+                                {/* 3-LAYER VERTICAL AVATAR & CREW DISPLAY STACK (EXACT URGENT SPECIFICATION) */}
                                 <div className="flex items-center gap-5 flex-wrap pt-2 pb-1">
                                   {subEvent.fw_assignments?.map((assignment) => {
                                     const isAssigned = assignment.assigned_member_id !== null;
                                     const memberObj = assignment.fw_team_members;
-                                    const memberName = memberObj?.name || '';
+                                    const rawName = memberObj?.name || '';
+                                    const cleanName = rawName.replace(/\.\.\./g, '').trim();
                                     const role = assignment.required_role;
                                     const dropdownKey = assignment.id;
                                     const isDropdownOpen = activeDropdownId === dropdownKey;
-                                    const initials = memberName ? memberName.slice(0, 2).toUpperCase() : role;
+                                    const avatarSrc = memberObj?.avatar_url || (cleanName ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName)}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(role)}`);
 
                                     return (
                                       <div key={assignment.id} className="relative">
@@ -767,44 +777,41 @@ export default function TeamManagerPage() {
                                             setActiveDropdownId(isDropdownOpen ? null : dropdownKey);
                                             setMemberSearchQuery('');
                                           }}
-                                          className="flex flex-col items-center group cursor-pointer min-w-[54px]"
+                                          className="flex flex-col items-center group cursor-pointer min-w-[70px]"
                                         >
-                                          {/* LAYER 1 (TOP): AVATAR PHOTO OR DASHED RING */}
+                                          {/* LAYER 1 (TOP): AVATAR PHOTO WITH HIGH-QUALITY FALLBACK */}
                                           {isAssigned ? (
-                                            memberObj?.avatar_url ? (
-                                              // eslint-disable-next-next/no-img-element
-                                              <img 
-                                                src={memberObj.avatar_url} 
-                                                alt={memberName} 
-                                                className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition" 
-                                              />
-                                            ) : (
-                                              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition">
-                                                {initials}
-                                              </div>
-                                            )
+                                            // eslint-disable-next-next/no-img-element
+                                            <img 
+                                              src={avatarSrc} 
+                                              alt={cleanName} 
+                                              className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
+                                              onError={(e) => {
+                                                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName || role)}`;
+                                              }}
+                                            />
                                           ) : (
-                                            <div className="w-12 h-12 rounded-full border-2 border-dashed border-indigo-300 bg-indigo-50/50 flex items-center justify-center text-indigo-500 shadow-sm group-hover:border-indigo-500 group-hover:bg-indigo-100/50 transition">
+                                            <div className="w-12 h-12 rounded-full border-2 border-dashed border-indigo-300 bg-indigo-50/50 flex items-center justify-center text-indigo-500 shadow-sm group-hover:border-indigo-500 group-hover:bg-indigo-100/50 transition shrink-0">
                                               <Plus className="w-5 h-5" />
                                             </div>
                                           )}
 
-                                          {/* LAYER 2 (MIDDLE): ROLE LABEL */}
-                                          <span className={`font-semibold text-[11px] block text-center mt-1.5 leading-none ${
-                                            isAssigned ? 'text-indigo-600 font-bold' : 'text-slate-800 font-extrabold'
+                                          {/* LAYER 2 (MIDDLE): ROLE LABEL (BOLD INDIGO-700 TEXT-XS) */}
+                                          <span className={`font-bold text-indigo-700 text-xs tracking-wide block text-center mt-1.5 leading-none ${
+                                            !isAssigned && 'text-slate-800 font-extrabold'
                                           }`}>
                                             {role}
                                           </span>
 
-                                          {/* LAYER 3 (BOTTOM): ASSIGNED MEMBER FULL NAME */}
+                                          {/* LAYER 3 (BOTTOM): ASSIGNED MEMBER FULL NAME (BREAK-WORDS & OVERRIDE DB TRUNCATION) */}
                                           {isAssigned && (
-                                            <span className="font-extrabold text-xs text-black block text-center mt-1 leading-tight truncate max-w-[72px]">
-                                              {memberName}
+                                            <span className="text-xs font-extrabold text-slate-900 text-center leading-tight break-words max-w-[80px] mt-1 block">
+                                              {cleanName}
                                             </span>
                                           )}
                                         </div>
 
-                                        {/* 3D CURVED DROPDOWN POPOVER WITH SEARCH BAR */}
+                                        {/* 3D CURVED CREW ALLOCATION DROPDOWN POPOVER WITH ENHANCED AVATARS & SEARCH */}
                                         {isDropdownOpen && (
                                           <>
                                             <div 
@@ -851,7 +858,7 @@ export default function TeamManagerPage() {
 
                                               <div className="h-px bg-zinc-100 my-1" />
 
-                                              {/* MEMBER SELECTION LIST WITH FILTERING */}
+                                              {/* MEMBER SELECTION LIST WITH ENHANCED CIRCULAR AVATARS & CLEAN NAMES */}
                                               <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
                                                 {/* UNASSIGN OPTION */}
                                                 <button
@@ -869,15 +876,18 @@ export default function TeamManagerPage() {
 
                                                 {teamMembers
                                                   .filter(m => {
+                                                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
                                                     if (!memberSearchQuery.trim()) return true;
                                                     const q = memberSearchQuery.toLowerCase();
                                                     return (
-                                                      m.name.toLowerCase().includes(q) ||
+                                                      cleanMName.toLowerCase().includes(q) ||
                                                       m.primary_role.toLowerCase().includes(q)
                                                     );
                                                   })
                                                   .map((m) => {
                                                     const isSelected = assignment.assigned_member_id === m.id;
+                                                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                                                    const mAvatarSrc = m.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanMName)}`;
                                                     return (
                                                       <button
                                                         key={m.id}
@@ -889,14 +899,17 @@ export default function TeamManagerPage() {
                                                             : 'text-[#0B111E] hover:bg-zinc-50'
                                                         }`}
                                                       >
-                                                        <div className="flex items-center gap-2">
-                                                          {m.avatar_url ? (
-                                                            // eslint-disable-next-next/no-img-element
-                                                            <img src={m.avatar_url} alt={m.name} className="w-5 h-5 rounded-full object-cover shrink-0" />
-                                                          ) : (
-                                                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                                                          )}
-                                                          <span>{m.name}</span>
+                                                        <div className="flex items-center gap-2.5">
+                                                          {/* eslint-disable-next-next/no-img-element */}
+                                                          <img 
+                                                            src={mAvatarSrc} 
+                                                            alt={cleanMName} 
+                                                            className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
+                                                            onError={(e) => {
+                                                              (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanMName)}`;
+                                                            }}
+                                                          />
+                                                          <span className="break-words max-w-[120px] text-left">{cleanMName}</span>
                                                           <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
                                                         </div>
                                                         {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
