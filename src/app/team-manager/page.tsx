@@ -6,7 +6,7 @@ import {
   Users, Calendar, List, Plus, Trash2, RotateCcw, Check, X, 
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
-  Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil,
+  Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
   HardDrive, UserPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -38,6 +38,10 @@ export default function TeamManagerPage() {
   const [editingProject, setEditingProject] = useState<FWProject | null>(null);
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [eventTypesList, setEventTypesList] = useState<string[]>([
+    "Pre-wedding", "Haldi", "Sangeet", "Wedding Ceremony", "Reception"
+  ]);
   const [activeAssignmentForMember, setActiveAssignmentForMember] = useState<{
     assignmentId?: string;
     role?: string;
@@ -182,6 +186,20 @@ export default function TeamManagerPage() {
   };
 
   // Create New Team Member and Optional Assignment Link
+  
+  const handleDeleteTeamMember = async (id: string) => {
+    try {
+      const { error } = await supabase.from('fw_team_members').delete().eq('id', id);
+      if (error) {
+        alert('Could not delete team member: ' + error.message);
+        return;
+      }
+      setTeamMembers(prev => prev.filter(m => m.id !== id));
+    } catch (e: any) {
+      console.error('Delete member error:', e);
+    }
+  };
+
   const handleSaveTeamMember = async (memberData: {
     name: string;
     primary_role: string;
