@@ -262,48 +262,73 @@ export interface QuotationPreset {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Operations Team Manager Types
+// Operations Team Manager Types (Granular Relational Model)
 // ─────────────────────────────────────────────────────────────
 
 export interface FWProject {
   id: string;
-  user_id: string;
+  user_id?: string | null;
   client_name: string;
-  main_date: string;
-  main_venue: string;
+  status?: string;
+  shipping_hdd_status?: string;
+  shipping_hdd_state?: string;
+  main_date?: string;
+  main_venue?: string;
   quotation_files?: string[];
   itinerary_doc_id?: string;
-  is_archived: boolean;
+  is_archived?: boolean;
   created_at?: string;
   updated_at?: string;
+  fw_sub_events?: FWSubEvent[];
+}
+
+export interface FWSubEvent {
+  id: string;
+  user_id?: string | null;
+  project_id: string;
+  event_title: string;
+  event_date: string;
+  venue_name?: string;
+  venue_map_link?: string;
+  roll_call_time?: string;
+  dismissal_estimate_time?: string;
+  shift_hours_slot?: string;
+  operational_notes?: string;
+  display_order?: number;
+  created_at?: string;
+  updated_at?: string;
+  fw_assignments?: FWAssignment[];
 }
 
 export interface FWTeamMember {
   id: string;
-  user_id: string;
+  user_id?: string | null;
   name: string;
   primary_role: string;
+  country_code?: string;
   phone_number: string;
-  email: string;
-  active_status: boolean;
+  email?: string;
+  active_status?: boolean;
+  is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
 
 export interface FWAssignment {
   id: string;
-  user_id: string;
+  user_id?: string | null;
   project_id: string;
-  sub_event_name: string;
-  sub_event_date: string;
-  start_time: string;
-  end_time: string;
+  sub_event_id?: string | null;
+  sub_event_name?: string;
+  sub_event_date?: string;
+  start_time?: string;
+  end_time?: string;
   required_role: string;
-  assigned_member_id: string | null;
+  assigned_member_id?: string | null;
+  status?: string;
   notes?: string;
   created_at?: string;
   updated_at?: string;
-  // Join property for frontend rendering convenience
   fw_team_members?: FWTeamMember | null;
 }
 
