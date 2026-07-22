@@ -10,6 +10,7 @@ import {
   HardDrive, UserPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import AddProjectModal from './components/AddProjectModal';
@@ -73,6 +74,7 @@ export default function TeamManagerPage() {
   const [editingProject, setEditingProject] = useState<FWProject | null>(null);
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState<boolean>(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [eventTypesList, setEventTypesList] = useState<string[]>([
     "Pre-wedding", "Haldi", "Sangeet", "Wedding Ceremony", "Reception"
@@ -691,7 +693,7 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── TAB VIEW: CLIENT-CENTRIC HORIZONTAL SUB-EVENT CARDS WITH 5 URGENT BUG FIXES ─── */}
+        {/* ─── TAB VIEW: MODERN GRADIENT CARDS & REACT PORTAL POPOVER (IMAGE_9A6C98.PNG EXACT REPLICA) ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
             
@@ -711,15 +713,14 @@ export default function TeamManagerPage() {
               <div className="space-y-8">
                 {filteredProjects.map((project) => {
                   return (
-                    /* 2. DISTINCT MASTER CLIENT CHASSIS (SOLID WHITE CHASSIS & RICH SLATE BORDERS) */
+                    /* MASTER CLIENT CONTAINER CHASSIS */
                     <div 
                       key={project.id}
-                      className="bg-white border-2 border-slate-300 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8 relative overflow-visible"
+                      className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8"
                     >
                       {/* MASTER CLIENT CARD HEADER */}
                       <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
                         <div className="flex items-center gap-3">
-                          {/* 2. HIGH-CONTRAST DARK VIOLET/INDIGO CLIENT NAME TYPOGRAPHY */}
                           <h3 className="text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
                             {project.client_name}
                           </h3>
@@ -728,7 +729,7 @@ export default function TeamManagerPage() {
                           </span>
                         </div>
 
-                        {/* SINGLE PENCIL EDIT BUTTON (TOP RIGHT) */}
+                        {/* SINGLE PENCIL EDIT BUTTON */}
                         <button 
                           title="Edit Project"
                           onClick={() => {
@@ -741,9 +742,9 @@ export default function TeamManagerPage() {
                         </button>
                       </div>
 
-                      {/* HORIZONTAL SUB-EVENT ROW CARDS STACK */}
-                      <div className="space-y-3.5 relative overflow-visible">
-                        {project.fw_sub_events?.map((subEvent) => {
+                      {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
+                      <div className="space-y-4">
+                        {project.fw_sub_events?.map((subEvent, sIdx) => {
                           const eventDate = new Date(subEvent.event_date);
                           const dayName = isNaN(eventDate.getTime()) 
                             ? 'DAY' 
@@ -754,36 +755,58 @@ export default function TeamManagerPage() {
                           const dayNumber = isNaN(eventDate.getTime()) 
                             ? '00' 
                             : eventDate.getDate().toString().padStart(2, '0');
-                          const yearStr = isNaN(eventDate.getTime()) 
-                            ? '2026' 
-                            : eventDate.getFullYear().toString();
+
+                          // Alternating Vibrant Gradients (Purple-Indigo vs Amber-Orange)
+                          const gradientBg = sIdx % 2 === 0
+                            ? 'bg-gradient-to-b from-indigo-600 via-purple-600 to-indigo-800'
+                            : 'bg-gradient-to-b from-amber-500 via-orange-500 to-amber-600';
 
                           return (
-                            /* 1. STRICT RESPONSIVE GRID LAYOUT CONTAINER (PREVENT COLLISIONS AT 100% ZOOM) */
+                            /* MODERN GRADIENT SUB-EVENT CARD (IMAGE_9A6C98.PNG EXACT REPLICA) */
                             <div 
                               key={subEvent.id}
-                              className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-center p-4.5 bg-slate-50/70 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all border-l-4 border-l-purple-700 w-full relative overflow-visible z-10"
+                              className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-stretch overflow-hidden"
                             >
-                              {/* LEFT COLUMN (xl:col-span-5): DATE, TIME, VENUE & SUB-EVENT TITLE */}
-                              <div className="xl:col-span-5 flex flex-col md:flex-row md:items-center gap-3.5 min-w-0">
-                                {/* DATE CALLOUT BLOCK */}
-                                <div className="flex items-center gap-3 pr-4 border-b md:border-b-0 md:border-r border-slate-200/80 pb-3 md:pb-0 shrink-0 min-w-[105px]">
-                                  <div className="flex flex-col items-center justify-center text-center">
-                                    <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase leading-none">
-                                      {dayName}
-                                    </span>
-                                    <span className="text-xl font-black text-slate-900 tracking-tight leading-none mt-1">
-                                      {monthAbbr} {dayNumber}
-                                    </span>
-                                    <span className="text-[10px] font-semibold text-slate-400 mt-0.5">
-                                      {yearStr}
-                                    </span>
-                                  </div>
+                              {/* 1. LEFT VERTICAL GRADIENT DATE BLOCK */}
+                              <div className={`${gradientBg} w-full md:w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
+                                <div>
+                                  <span className="text-[11px] font-extrabold text-white/90 uppercase tracking-widest block">
+                                    {dayName}
+                                  </span>
+                                  <span className="text-2xl font-black text-white leading-none my-1 block">
+                                    {dayNumber}
+                                  </span>
+                                  <span className="text-xs font-extrabold text-white/80 uppercase tracking-wider block">
+                                    {monthAbbr}
+                                  </span>
                                 </div>
 
-                                {/* DETAILS: TIME, VENUE & TITLE */}
-                                <div className="flex-1 space-y-1 min-w-0">
-                                  {/* Time (12-Hour AM/PM) & Venue */}
+                                {/* 3D Translucent Glass Calendar Badge */}
+                                <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
+                                  <Calendar className="w-4 h-4" />
+                                </div>
+                              </div>
+
+                              {/* MAIN RIGHT CONTENT BODY (2-LAYER STACKED LAYOUT) */}
+                              <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
+                                {/* TOP ROW: TITLE, TIME, VENUE & BADGE */}
+                                <div>
+                                  <div className="flex items-start justify-between gap-3 mb-1.5">
+                                    <h4 className="font-black text-slate-900 text-sm md:text-base tracking-tight">
+                                      {subEvent.event_title}
+                                    </h4>
+
+                                    {/* Status Badge (NEW / UPCOMING) */}
+                                    <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 ${
+                                      sIdx % 2 === 0
+                                        ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    }`}>
+                                      {sIdx % 2 === 0 ? 'NEW' : 'UPCOMING'}
+                                    </span>
+                                  </div>
+
+                                  {/* Time & Venue Row */}
                                   <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
                                     {subEvent.roll_call_time && (
                                       <div className="flex items-center gap-1.5 text-slate-700">
@@ -794,6 +817,11 @@ export default function TeamManagerPage() {
                                         </span>
                                       </div>
                                     )}
+                                    
+                                    {subEvent.roll_call_time && subEvent.venue_name && (
+                                      <span className="text-slate-300 font-normal">|</span>
+                                    )}
+
                                     {subEvent.venue_name && (
                                       <div className="relative group/venue">
                                         <a
@@ -803,202 +831,220 @@ export default function TeamManagerPage() {
                                           className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
                                         >
                                           <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                                          <span className="truncate max-w-[180px]">{subEvent.venue_name}</span>
+                                          <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
                                         </a>
-                                        {/* Micro Hover Popover Card */}
-                                        <div className="absolute left-0 top-full mt-1 hidden group-hover/venue:flex items-center gap-2 bg-slate-900 text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl z-50 pointer-events-none whitespace-nowrap border border-slate-700">
-                                          <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                                          <span>{subEvent.venue_name} (Click to open map ↗)</span>
-                                        </div>
                                       </div>
                                     )}
                                   </div>
-
-                                  {/* Sub-Event Title (Dark Violet/Purple Shade #1E1B4B) */}
-                                  <h4 className="font-black text-base leading-tight tracking-tight" style={{ color: '#1E1B4B' }}>
-                                    {subEvent.event_title}
-                                  </h4>
                                 </div>
-                              </div>
 
-                              {/* RIGHT COLUMN (xl:col-span-7): CREW ASSIGNMENT AVATARS */}
-                              <div className="xl:col-span-7 flex flex-wrap items-start justify-start xl:justify-end gap-x-4 gap-y-3 shrink-0 overflow-visible py-1">
-                                {subEvent.fw_assignments?.map((assignment) => {
-                                  const isAssigned = assignment.assigned_member_id !== null;
-                                  const memberObj = assignment.fw_team_members;
-                                  const rawName = memberObj?.name || '';
-                                  const cleanName = rawName.replace(/\.\.\./g, '').trim();
-                                  const role = assignment.required_role;
-                                  const dropdownKey = assignment.id;
-                                  const isDropdownOpen = activeDropdownId === dropdownKey;
-                                  const initials = getInitials(cleanName || role);
+                                {/* SUBTLE HORIZONTAL DIVIDER */}
+                                <div className="border-t border-slate-100 my-1.5" />
 
-                                  return (
-                                    <div key={assignment.id} className="relative overflow-visible">
-                                      {/* 3-LAYER VERTICAL NODE */}
-                                      <div
-                                        onClick={() => {
-                                          setActiveDropdownId(isDropdownOpen ? null : dropdownKey);
-                                          setMemberSearchQuery('');
-                                        }}
-                                        className="flex flex-col items-center group cursor-pointer min-w-[64px]"
-                                        title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
-                                      >
-                                        {/* 3. LAYER 1 (TOP): AVATAR PHOTO / INITIALS CIRCLE / CLEAN RED UNASSIGNED */}
-                                        {isAssigned ? (
-                                          memberObj?.avatar_url ? (
-                                            // eslint-disable-next-next/no-img-element
-                                            <img 
-                                              src={memberObj.avatar_url} 
-                                              alt={cleanName} 
-                                              className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
-                                              onError={(e) => {
-                                                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName || role)}`;
-                                              }}
-                                            />
-                                          ) : (
-                                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
-                                              {initials}
-                                            </div>
-                                          )
-                                        ) : (
-                                          /* CLEAN RED UNASSIGNED CIRCLE (ONLY RED '+' ICON INSIDE) */
-                                          <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                            <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
-                                          </div>
-                                        )}
+                                {/* BOTTOM ROW: HORIZONTAL CREW AVATAR MATRIX */}
+                                <div className="flex items-center gap-4 flex-wrap">
+                                  {subEvent.fw_assignments?.map((assignment) => {
+                                    const isAssigned = assignment.assigned_member_id !== null;
+                                    const memberObj = assignment.fw_team_members;
+                                    const rawName = memberObj?.name || '';
+                                    const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                                    const role = assignment.required_role;
+                                    const dropdownKey = assignment.id;
+                                    const isDropdownOpen = activeDropdownId === dropdownKey;
+                                    
+                                    // Extract tiny role badge code (e.g. D1, A, P, B or CV, DO)
+                                    const roleBadge = role ? (role.length <= 2 ? role.toUpperCase() : role.slice(0, 2).toUpperCase()) : 'TM';
+                                    const dicebearFallback = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
 
-                                        {/* LAYER 2 (MIDDLE): ROLE LABEL */}
-                                        <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
-                                          isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
-                                        }`}>
-                                          {role}
-                                        </span>
+                                    return (
+                                      <div key={assignment.id} className="relative flex flex-col items-center">
+                                        {/* AVATAR NODE TRIGGER */}
+                                        <div
+                                          onClick={(e) => {
+                                            const rect = e.currentTarget.getBoundingClientRect();
+                                            if (activeDropdownId === dropdownKey) {
+                                              setActiveDropdownId(null);
+                                              setDropdownPos(null);
+                                            } else {
+                                              setActiveDropdownId(dropdownKey);
+                                              setMemberSearchQuery('');
+                                              setDropdownPos({
+                                                top: rect.bottom + 6,
+                                                left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
+                                              });
+                                            }
+                                          }}
+                                          className="relative flex flex-col items-center group cursor-pointer"
+                                          title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
+                                        >
+                                          {isAssigned ? (
+                                            <>
+                                              {/* Tiny Role Badge Pill Overlapping Top-Left */}
+                                              <div className="absolute -top-1 -left-1 w-5 h-5 rounded-full bg-indigo-600 text-white font-black text-[9px] flex items-center justify-center ring-2 ring-white shadow-xs z-10">
+                                                {roleBadge}
+                                              </div>
 
-                                        {/* 5. LAYER 3 (BOTTOM): VERTICAL 2-LINE FULL NAME WRAPPING */}
-                                        {isAssigned && (
-                                          <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[11px] leading-tight max-w-[85px] mt-0.5">
-                                            {cleanName.split(/\s+/).map((word, wIdx) => (
-                                              <span key={wIdx} className="block leading-none">{word}</span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      {/* 4. HIGH Z-INDEX DROPDOWN POPOVER PREVENTING OVERLAP & CLIPPING BUGS */}
-                                      {isDropdownOpen && (
-                                        <>
-                                          <div 
-                                            className="fixed inset-0 z-40" 
-                                            onClick={() => setActiveDropdownId(null)} 
-                                          />
-                                          <motion.div
-                                            initial={{ opacity: 0, scale: 0.92, y: 8 }}
-                                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                                            exit={{ opacity: 0, scale: 0.92, y: 8 }}
-                                            transition={{ type: 'spring', damping: 20, stiffness: 350 }}
-                                            className="absolute top-full right-0 mt-2 z-[9999] w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2"
-                                          >
-                                            {/* SEARCH INPUT BAR */}
-                                            <div className="relative">
-                                              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                              <input
-                                                type="text"
-                                                placeholder="Search member or role..."
-                                                value={memberSearchQuery}
-                                                onChange={(e) => setMemberSearchQuery(e.target.value)}
-                                                className="w-full bg-slate-50 border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30 text-slate-900 placeholder:text-slate-400"
+                                              {/* 2. PROFILE PHOTO WITH NATIVE UNOPTIMIZED TAG & FALLBACK */}
+                                              {/* eslint-disable-next-next/no-img-element */}
+                                              <img 
+                                                src={memberObj?.avatar_url || dicebearFallback} 
+                                                alt={cleanName} 
+                                                className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-xs ring-1 ring-slate-200 group-hover:scale-105 transition shrink-0" 
+                                                onError={(e) => {
+                                                  (e.target as HTMLImageElement).src = dicebearFallback;
+                                                }}
                                               />
-                                            </div>
 
-                                            {/* TOP PINNED ACTION ROW */}
-                                            <button
-                                              type="button"
+                                              {/* Member Full Name Centered Below */}
+                                              <span className="text-[11px] font-extrabold text-slate-800 mt-1 text-center truncate max-w-[70px]">
+                                                {cleanName.split(/\s+/)[0]}
+                                              </span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              {/* UNASSIGNED NODE (DASHED SQUARE/CIRCLE RING) */}
+                                              <div className="w-10 h-10 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 group-hover:border-indigo-400 group-hover:bg-indigo-50/50 transition">
+                                                <Plus className="w-4 h-4 text-slate-500" />
+                                              </div>
+                                              <span className="text-[10px] font-black text-slate-400 mt-1 uppercase tracking-wider">
+                                                {roleBadge}
+                                              </span>
+                                            </>
+                                          )}
+                                        </div>
+
+                                        {/* 3. REACT PORTAL POPOVER (100% GUARANTEED NO CLIPPING OR OVERLAP) */}
+                                        {isDropdownOpen && dropdownPos && typeof window !== 'undefined' && createPortal(
+                                          <>
+                                            <div 
+                                              className="fixed inset-0 z-[99998]" 
                                               onClick={() => {
                                                 setActiveDropdownId(null);
-                                                setActiveAssignmentForMember({
-                                                  assignmentId: assignment.id,
-                                                  role: assignment.required_role,
-                                                  subEventId: subEvent.id,
-                                                  projectId: project.id,
-                                                });
-                                                setIsAddMemberOpen(true);
+                                                setDropdownPos(null);
+                                              }} 
+                                            />
+                                            <motion.div
+                                              initial={{ opacity: 0, scale: 0.92, y: -4 }}
+                                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                                              exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                                              transition={{ type: 'spring', damping: 20, stiffness: 350 }}
+                                              style={{
+                                                position: 'fixed',
+                                                top: `${dropdownPos.top}px`,
+                                                left: `${dropdownPos.left}px`,
+                                                zIndex: 99999,
                                               }}
-                                              className="w-full flex items-center justify-center gap-2 bg-[#F0EDFF] hover:bg-[#E5E0FF] text-[#6C5CE7] text-xs font-bold py-2 rounded-xl transition"
+                                              className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left"
                                             >
-                                              <Plus className="w-3.5 h-3.5" />
-                                              + Add New Team Member
-                                            </button>
+                                              {/* SEARCH INPUT BAR */}
+                                              <div className="relative">
+                                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                <input
+                                                  type="text"
+                                                  placeholder="Search member or role..."
+                                                  value={memberSearchQuery}
+                                                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                                  className="w-full bg-slate-50 border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30 text-slate-900 placeholder:text-slate-400"
+                                                />
+                                              </div>
 
-                                            <div className="h-px bg-zinc-100 my-1" />
-
-                                            {/* MEMBER SELECTION LIST WITH ENHANCED CIRCULAR AVATARS & CLEAN NAMES */}
-                                            <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
-                                              {/* UNASSIGN OPTION */}
+                                              {/* TOP PINNED ACTION ROW */}
                                               <button
                                                 type="button"
-                                                onClick={() => handleAssignMember(assignment.id, null)}
-                                                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
-                                                  !isAssigned
-                                                    ? 'bg-rose-50 text-rose-600'
-                                                    : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
-                                                }`}
+                                                onClick={() => {
+                                                  setActiveDropdownId(null);
+                                                  setDropdownPos(null);
+                                                  setActiveAssignmentForMember({
+                                                    assignmentId: assignment.id,
+                                                    role: assignment.required_role,
+                                                    subEventId: subEvent.id,
+                                                    projectId: project.id,
+                                                  });
+                                                  setIsAddMemberOpen(true);
+                                                }}
+                                                className="w-full flex items-center justify-center gap-2 bg-[#F0EDFF] hover:bg-[#E5E0FF] text-[#6C5CE7] text-xs font-bold py-2 rounded-xl transition"
                                               >
-                                                <span>• Unassign / Pending</span>
-                                                {!isAssigned && <Check className="w-3.5 h-3.5" />}
+                                                <Plus className="w-3.5 h-3.5" />
+                                                + Add New Team Member
                                               </button>
 
-                                              {teamMembers
-                                                .filter(m => {
-                                                  const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
-                                                  if (!memberSearchQuery.trim()) return true;
-                                                  const q = memberSearchQuery.toLowerCase();
-                                                  return (
-                                                    cleanMName.toLowerCase().includes(q) ||
-                                                    m.primary_role.toLowerCase().includes(q)
-                                                  );
-                                                })
-                                                .map((m) => {
-                                                  const isSelected = assignment.assigned_member_id === m.id;
-                                                  const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
-                                                  return (
-                                                    <button
-                                                      key={m.id}
-                                                      type="button"
-                                                      onClick={() => handleAssignMember(assignment.id, m.id)}
-                                                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
-                                                        isSelected
-                                                          ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
-                                                          : 'text-[#0B111E] hover:bg-zinc-50'
-                                                      }`}
-                                                    >
-                                                      <div className="flex items-center gap-2.5">
-                                                        {m.avatar_url ? (
-                                                          // eslint-disable-next-next/no-img-element
-                                                          <img 
-                                                            src={m.avatar_url} 
-                                                            alt={cleanMName} 
-                                                            className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
-                                                          />
-                                                        ) : (
-                                                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ring-1 ring-indigo-200">
-                                                            {getInitials(cleanMName)}
-                                                          </div>
-                                                        )}
-                                                        <span className="break-words max-w-[120px] text-left">{cleanMName}</span>
-                                                        <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
-                                                      </div>
-                                                      {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
-                                                    </button>
-                                                  );
-                                                })}
-                                            </div>
-                                          </motion.div>
-                                        </>
-                                      )}
-                                    </div>
-                                  );
-                                })}
+                                              <div className="h-px bg-zinc-100 my-1" />
+
+                                              {/* MEMBER SELECTION LIST */}
+                                              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+                                                {/* UNASSIGN OPTION */}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    handleAssignMember(assignment.id, null);
+                                                    setDropdownPos(null);
+                                                  }}
+                                                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
+                                                    !isAssigned
+                                                      ? 'bg-rose-50 text-rose-600'
+                                                      : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
+                                                  }`}
+                                                >
+                                                  <span>• Unassign / Pending</span>
+                                                  {!isAssigned && <Check className="w-3.5 h-3.5" />}
+                                                </button>
+
+                                                {teamMembers
+                                                  .filter(m => {
+                                                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                                                    if (!memberSearchQuery.trim()) return true;
+                                                    const q = memberSearchQuery.toLowerCase();
+                                                    return (
+                                                      cleanMName.toLowerCase().includes(q) ||
+                                                      m.primary_role.toLowerCase().includes(q)
+                                                    );
+                                                  })
+                                                  .map((m) => {
+                                                    const isSelected = assignment.assigned_member_id === m.id;
+                                                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                                                    return (
+                                                      <button
+                                                        key={m.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                          handleAssignMember(assignment.id, m.id);
+                                                          setDropdownPos(null);
+                                                        }}
+                                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
+                                                          isSelected
+                                                            ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
+                                                            : 'text-[#0B111E] hover:bg-zinc-50'
+                                                        }`}
+                                                      >
+                                                        <div className="flex items-center gap-2.5">
+                                                          {m.avatar_url ? (
+                                                            // eslint-disable-next-next/no-img-element
+                                                            <img 
+                                                              src={m.avatar_url} 
+                                                              alt={cleanMName} 
+                                                              className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
+                                                            />
+                                                          ) : (
+                                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ring-1 ring-indigo-200">
+                                                              {getInitials(cleanMName)}
+                                                            </div>
+                                                          )}
+                                                          <span className="break-words max-w-[120px] text-left">{cleanMName}</span>
+                                                          <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
+                                                        </div>
+                                                        {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
+                                                      </button>
+                                                    );
+                                                  })}
+                                              </div>
+                                            </motion.div>
+                                          </>,
+                                          document.body
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             </div>
                           );
