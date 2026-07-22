@@ -35,6 +35,30 @@ const getInitials = (name: string): string => {
   return parts[0].slice(0, 2).toUpperCase();
 };
 
+
+// 12-Hour AM/PM Time Formatting Utility
+const format12HourTime = (timeStr?: string): string => {
+  if (!timeStr) return '';
+  if (/am|pm/i.test(timeStr)) return timeStr;
+  const parts = timeStr.trim().split(':');
+  if (parts.length < 2) return timeStr;
+  let hours = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hours)) return timeStr;
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  const formattedHours = hours.toString().padStart(2, '0');
+  return `${formattedHours}:${minutes} ${ampm}`;
+};
+
+const clientGradients = [
+  'bg-gradient-to-br from-indigo-50/80 via-purple-50/40 to-white border border-indigo-100/90 shadow-md shadow-indigo-100/20',
+  'bg-gradient-to-br from-blue-50/80 via-slate-50/40 to-white border border-blue-100/90 shadow-md shadow-blue-100/20',
+  'bg-gradient-to-br from-violet-50/80 via-fuchsia-50/30 to-white border border-violet-100/90 shadow-md shadow-violet-100/20',
+  'bg-gradient-to-br from-purple-50/80 via-indigo-50/40 to-white border border-purple-100/90 shadow-md shadow-purple-100/20',
+];
+
 export default function TeamManagerPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   
@@ -667,7 +691,7 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── TAB VIEW: CLIENT-CENTRIC HORIZONTAL SUB-EVENT CARDS (SCREENSHOT MATCHED 100%) ─── */}
+        {/* ─── TAB VIEW: CLIENT-CENTRIC HORIZONTAL SUB-EVENT CARDS WITH 7 CUSTOMIZATIONS ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
             
@@ -685,11 +709,13 @@ export default function TeamManagerPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {filteredProjects.map((project) => {
+                {filteredProjects.map((project, pIdx) => {
+                  const gradientClass = clientGradients[pIdx % clientGradients.length];
+
                   return (
                     <div 
                       key={project.id}
-                      className="bg-slate-50/60 rounded-3xl border border-slate-200/80 p-6 space-y-4 shadow-sm"
+                      className={`${gradientClass} rounded-3xl p-6 space-y-4 mb-8`}
                     >
                       {/* MASTER CLIENT CARD HEADER */}
                       <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
@@ -697,7 +723,7 @@ export default function TeamManagerPage() {
                           <h3 className="text-xl font-black text-slate-900 tracking-tight">
                             {project.client_name}
                           </h3>
-                          <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-extrabold tracking-wide border border-indigo-200">
+                          <span className="px-3 py-1 rounded-full bg-indigo-100/80 text-indigo-900 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
                             {project.fw_sub_events?.length || 0} Sub-Events
                           </span>
                         </div>
@@ -716,64 +742,85 @@ export default function TeamManagerPage() {
                       </div>
 
                       {/* HORIZONTAL SUB-EVENT ROW CARDS STACK */}
-                      <div className="space-y-3">
+                      <div className="space-y-3.5">
                         {project.fw_sub_events?.map((subEvent) => {
                           const eventDate = new Date(subEvent.event_date);
                           const dayName = isNaN(eventDate.getTime()) 
                             ? 'DAY' 
-                            : eventDate.toLocaleDateString('en-US', { weekday: 'short' });
+                            : eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                          const monthAbbr = isNaN(eventDate.getTime()) 
+                            ? 'MMM' 
+                            : eventDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
                           const dayNumber = isNaN(eventDate.getTime()) 
                             ? '00' 
                             : eventDate.getDate().toString().padStart(2, '0');
+                          const yearStr = isNaN(eventDate.getTime()) 
+                            ? '2026' 
+                            : eventDate.getFullYear().toString();
 
                           return (
                             <div 
                               key={subEvent.id}
-                              className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 border-l-indigo-600"
+                              className="bg-white/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 border-l-purple-700"
                             >
-                              {/* 1. LEFT DATE CALLOUT BLOCK */}
-                              <div className="flex items-center gap-3 pr-4 border-b md:border-b-0 md:border-r border-slate-200/80 pb-3 md:pb-0 shrink-0 min-w-[75px]">
+                              {/* 2. LEFT DATE CALLOUT BLOCK WITH MONTH, BIG DATE & SMALL YEAR */}
+                              <div className="flex items-center gap-3 pr-4 border-b md:border-b-0 md:border-r border-slate-200/80 pb-3 md:pb-0 shrink-0 min-w-[105px]">
                                 <div className="flex flex-col items-center justify-center text-center">
-                                  <span className="text-xs font-bold text-amber-700 uppercase tracking-wider leading-none">
+                                  <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase leading-none">
                                     {dayName}
                                   </span>
-                                  <span className="text-2xl font-black text-slate-900 leading-tight mt-0.5">
-                                    {dayNumber}
+                                  <span className="text-xl font-black text-slate-900 tracking-tight leading-none mt-1">
+                                    {monthAbbr} {dayNumber}
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-slate-400 mt-0.5">
+                                    {yearStr}
                                   </span>
                                 </div>
                               </div>
 
-                              {/* 2. CENTER EVENT DETAILS MATRIX */}
+                              {/* CENTER EVENT DETAILS MATRIX */}
                               <div className="flex-1 space-y-1.5 min-w-0">
-                                {/* Time & Location Row */}
+                                {/* 4 & 6. Time (12-Hour AM/PM) & Venue (Hover Popover + Click Map Link) */}
                                 <div className="flex items-center gap-4 text-xs font-bold text-slate-500 flex-wrap">
                                   {subEvent.roll_call_time && (
                                     <div className="flex items-center gap-1.5 text-slate-700">
                                       <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                      <span>{subEvent.roll_call_time} {subEvent.dismissal_estimate_time ? `- ${subEvent.dismissal_estimate_time}` : ''}</span>
+                                      <span>
+                                        {format12HourTime(subEvent.roll_call_time)}
+                                        {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                      </span>
                                     </div>
                                   )}
                                   {subEvent.venue_name && (
-                                    <div className="flex items-center gap-1.5 text-indigo-600">
-                                      <MapPin className="w-3.5 h-3.5 shrink-0" />
-                                      <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
+                                    <div className="relative group/venue">
+                                      <a
+                                        href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
+                                      >
+                                        <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                                        <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
+                                      </a>
+                                      {/* Micro Hover Popover Card */}
+                                      <div className="absolute left-0 top-full mt-1 hidden group-hover/venue:flex items-center gap-2 bg-slate-900 text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl z-50 pointer-events-none whitespace-nowrap border border-slate-700">
+                                        <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                        <span>{subEvent.venue_name} (Click to open map ↗)</span>
+                                      </div>
                                     </div>
                                   )}
                                 </div>
 
-                                {/* Event Title */}
+                                {/* 7. Sub-Event Title (Distinct Dark Purple-950 Shade, No Active Badge) */}
                                 <div className="flex items-center gap-2.5 flex-wrap">
-                                  <h4 className="font-extrabold text-base text-slate-900 tracking-tight">
+                                  <h4 className="font-black text-purple-950 text-base tracking-tight" style={{ color: '#2E1065' }}>
                                     {subEvent.event_title}
                                   </h4>
-                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                                    Active
-                                  </span>
                                 </div>
                               </div>
 
-                              {/* 3. RIGHT CREW ASSIGNMENT AVATARS (RED UNASSIGNED ACCENT) */}
-                              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                              {/* 3. RIGHT CREW ASSIGNMENT AVATARS (3-LAYER VERTICAL CREW STACK & RED UNASSIGNED ACCENT) */}
+                              <div className="flex items-center gap-4 flex-wrap shrink-0">
                                 {subEvent.fw_assignments?.map((assignment) => {
                                   const isAssigned = assignment.assigned_member_id !== null;
                                   const memberObj = assignment.fw_team_members;
@@ -787,34 +834,51 @@ export default function TeamManagerPage() {
 
                                   return (
                                     <div key={assignment.id} className="relative">
-                                      {/* AVATAR / UNASSIGNED RED ACCENT NODE */}
+                                      {/* 3-LAYER VERTICAL NODE */}
                                       <div
                                         onClick={() => {
                                           setActiveDropdownId(isDropdownOpen ? null : dropdownKey);
                                           setMemberSearchQuery('');
                                         }}
-                                        className="flex flex-col items-center group cursor-pointer"
+                                        className="flex flex-col items-center group cursor-pointer min-w-[64px]"
                                         title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
                                       >
+                                        {/* LAYER 1 (TOP): AVATAR PHOTO / INITIALS CIRCLE / RED UNASSIGNED */}
                                         {isAssigned ? (
                                           memberObj?.avatar_url ? (
                                             // eslint-disable-next-next/no-img-element
                                             <img 
                                               src={memberObj.avatar_url} 
                                               alt={cleanName} 
-                                              className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-emerald-500 ring-2 ring-emerald-100 group-hover:scale-105 transition shrink-0" 
+                                              className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
+                                              onError={(e) => {
+                                                // Fallback on load error: replace broken img src with SVG data URL
+                                                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName || role)}`;
+                                              }}
                                             />
                                           ) : (
-                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
+                                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
                                               {initials}
                                             </div>
                                           )
                                         ) : (
-                                          /* UNASSIGNED CREW (RED ACCENT HIGHLIGHT) */
-                                          <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black text-[10px] flex flex-col items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                          /* UNASSIGNED CREW (RED DASHED ACCENT) */
+                                          <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black text-xs flex flex-col items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
                                             <span>+</span>
-                                            <span className="text-[8px] leading-none font-black">{roleCode}</span>
+                                            <span className="text-[9px] leading-none font-black">{roleCode}</span>
                                           </div>
+                                        )}
+
+                                        {/* LAYER 2 (MIDDLE): ROLE LABEL */}
+                                        <span className="font-bold text-indigo-600 text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none">
+                                          {role}
+                                        </span>
+
+                                        {/* LAYER 3 (BOTTOM): ASSIGNED MEMBER FULL NAME */}
+                                        {isAssigned && (
+                                          <span className="font-extrabold text-slate-900 text-xs text-center leading-tight break-words max-w-[80px] mt-0.5 block">
+                                            {cleanName}
+                                          </span>
                                         )}
                                       </div>
 
