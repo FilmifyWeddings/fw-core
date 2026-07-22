@@ -693,7 +693,7 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── TAB VIEW: MODERN GRADIENT CARDS & REACT PORTAL POPOVER (IMAGE_9A6C98.PNG EXACT REPLICA) ─── */}
+        {/* ─── TAB VIEW: CLIENT-CONSISTENT GRADIENT CARDS & 3-LAYER CREW STACK (IMAGE_A46926.PNG SPEC) ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
             
@@ -711,7 +711,16 @@ export default function TeamManagerPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {filteredProjects.map((project) => {
+                {filteredProjects.map((project, pIdx) => {
+                  // 1. CLIENT-CONSISTENT GRADIENT PALETTES (SAME GRADIENT PER MASTER CLIENT)
+                  const clientGradients = [
+                    'bg-gradient-to-b from-purple-700 via-indigo-700 to-indigo-900', // Deep Royal Purple
+                    'bg-gradient-to-b from-amber-500 via-orange-600 to-amber-700',   // Vibrant Sunrise Amber
+                    'bg-gradient-to-b from-emerald-600 via-teal-700 to-emerald-900', // Ocean Emerald
+                    'bg-gradient-to-b from-blue-600 via-indigo-600 to-slate-900',    // Cyber Blue
+                  ];
+                  const projectGradient = clientGradients[pIdx % clientGradients.length];
+
                   return (
                     /* MASTER CLIENT CONTAINER CHASSIS */
                     <div 
@@ -744,7 +753,7 @@ export default function TeamManagerPage() {
 
                       {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
                       <div className="space-y-4">
-                        {project.fw_sub_events?.map((subEvent, sIdx) => {
+                        {project.fw_sub_events?.map((subEvent) => {
                           const eventDate = new Date(subEvent.event_date);
                           const dayName = isNaN(eventDate.getTime()) 
                             ? 'DAY' 
@@ -755,55 +764,51 @@ export default function TeamManagerPage() {
                           const dayNumber = isNaN(eventDate.getTime()) 
                             ? '00' 
                             : eventDate.getDate().toString().padStart(2, '0');
-
-                          // Alternating Vibrant Gradients (Purple-Indigo vs Amber-Orange)
-                          const gradientBg = sIdx % 2 === 0
-                            ? 'bg-gradient-to-b from-indigo-600 via-purple-600 to-indigo-800'
-                            : 'bg-gradient-to-b from-amber-500 via-orange-500 to-amber-600';
+                          const yearStr = isNaN(eventDate.getTime()) 
+                            ? '2026' 
+                            : eventDate.getFullYear().toString();
 
                           return (
-                            /* MODERN GRADIENT SUB-EVENT CARD (IMAGE_9A6C98.PNG EXACT REPLICA) */
+                            /* MODERN GRADIENT SUB-EVENT CARD */
                             <div 
                               key={subEvent.id}
                               className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-stretch overflow-hidden"
                             >
-                              {/* 1. LEFT VERTICAL GRADIENT DATE BLOCK */}
-                              <div className={`${gradientBg} w-full md:w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
+                              {/* 1 & 2. LEFT VERTICAL GRADIENT DATE BLOCK (CLIENT-CONSISTENT + DAY -> DATE -> MONTH -> YEAR) */}
+                              <div className={`${projectGradient} w-full md:w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
                                 <div>
-                                  <span className="text-[11px] font-extrabold text-white/90 uppercase tracking-widest block">
+                                  {/* Day Abbreviation */}
+                                  <span className="text-xs font-bold text-white/80 uppercase tracking-wider block">
                                     {dayName}
                                   </span>
+                                  {/* Big Date Number */}
                                   <span className="text-2xl font-black text-white leading-none my-1 block">
                                     {dayNumber}
                                   </span>
-                                  <span className="text-xs font-extrabold text-white/80 uppercase tracking-wider block">
+                                  {/* Month Abbreviation */}
+                                  <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider block">
                                     {monthAbbr}
+                                  </span>
+                                  {/* Year String */}
+                                  <span className="text-[10px] font-semibold text-white/70 tracking-widest mt-0.5 block">
+                                    {yearStr}
                                   </span>
                                 </div>
 
                                 {/* 3D Translucent Glass Calendar Badge */}
-                                <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
-                                  <Calendar className="w-4 h-4" />
+                                <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
+                                  <Calendar className="w-3.5 h-3.5" />
                                 </div>
                               </div>
 
-                              {/* MAIN RIGHT CONTENT BODY (2-LAYER STACKED LAYOUT) */}
+                              {/* MAIN RIGHT CONTENT BODY */}
                               <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
-                                {/* TOP ROW: TITLE, TIME, VENUE & BADGE */}
+                                {/* TOP ROW: TITLE, TIME & VENUE (REMOVED NEW/UPCOMING BADGES) */}
                                 <div>
-                                  <div className="flex items-start justify-between gap-3 mb-1.5">
-                                    <h4 className="font-black text-slate-900 text-sm md:text-base tracking-tight">
+                                  <div className="flex items-start justify-between gap-3 mb-1">
+                                    <h4 className="font-black text-slate-900 text-sm md:text-base tracking-tight" style={{ color: '#1E1B4B' }}>
                                       {subEvent.event_title}
                                     </h4>
-
-                                    {/* Status Badge (NEW / UPCOMING) */}
-                                    <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 ${
-                                      sIdx % 2 === 0
-                                        ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                                        : 'bg-amber-100 text-amber-800 border border-amber-200'
-                                    }`}>
-                                      {sIdx % 2 === 0 ? 'NEW' : 'UPCOMING'}
-                                    </span>
                                   </div>
 
                                   {/* Time & Venue Row */}
@@ -838,11 +843,19 @@ export default function TeamManagerPage() {
                                   </div>
                                 </div>
 
+                                {/* 5. DYNAMIC SUB-EVENT OPERATIONAL NOTES BANNER */}
+                                {subEvent.operational_notes && (
+                                  <div className="bg-amber-50/80 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2 my-1">
+                                    <FileText className="w-4 h-4 text-amber-600 shrink-0" />
+                                    <span>{subEvent.operational_notes}</span>
+                                  </div>
+                                )}
+
                                 {/* SUBTLE HORIZONTAL DIVIDER */}
                                 <div className="border-t border-slate-100 my-1.5" />
 
-                                {/* BOTTOM ROW: HORIZONTAL CREW AVATAR MATRIX */}
-                                <div className="flex items-center gap-4 flex-wrap">
+                                {/* 3. BOTTOM ROW: CLEAN 3-LAYER CREW STACK (NO TOP OVERLAPPING ROLE BUBBLE) */}
+                                <div className="flex items-start gap-4 flex-wrap">
                                   {subEvent.fw_assignments?.map((assignment) => {
                                     const isAssigned = assignment.assigned_member_id !== null;
                                     const memberObj = assignment.fw_team_members;
@@ -851,13 +864,10 @@ export default function TeamManagerPage() {
                                     const role = assignment.required_role;
                                     const dropdownKey = assignment.id;
                                     const isDropdownOpen = activeDropdownId === dropdownKey;
-                                    
-                                    // Extract tiny role badge code (e.g. D1, A, P, B or CV, DO)
-                                    const roleBadge = role ? (role.length <= 2 ? role.toUpperCase() : role.slice(0, 2).toUpperCase()) : 'TM';
                                     const dicebearFallback = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
 
                                     return (
-                                      <div key={assignment.id} className="relative flex flex-col items-center">
+                                      <div key={assignment.id} className="relative flex flex-col items-center min-w-[64px]">
                                         {/* AVATAR NODE TRIGGER */}
                                         <div
                                           onClick={(e) => {
@@ -874,46 +884,51 @@ export default function TeamManagerPage() {
                                               });
                                             }
                                           }}
-                                          className="relative flex flex-col items-center group cursor-pointer"
+                                          className="flex flex-col items-center group cursor-pointer"
                                           title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
                                         >
+                                          {/* LAYER 1 (TOP): CLEAN CIRCULAR PROFILE PHOTO / INITIALS / RED UNASSIGNED */}
                                           {isAssigned ? (
-                                            <>
-                                              {/* Tiny Role Badge Pill Overlapping Top-Left */}
-                                              <div className="absolute -top-1 -left-1 w-5 h-5 rounded-full bg-indigo-600 text-white font-black text-[9px] flex items-center justify-center ring-2 ring-white shadow-xs z-10">
-                                                {roleBadge}
-                                              </div>
-
-                                              {/* 2. PROFILE PHOTO WITH NATIVE UNOPTIMIZED TAG & FALLBACK */}
-                                              {/* eslint-disable-next-next/no-img-element */}
+                                            memberObj?.avatar_url ? (
+                                              // eslint-disable-next-next/no-img-element
                                               <img 
-                                                src={memberObj?.avatar_url || dicebearFallback} 
+                                                src={memberObj.avatar_url} 
                                                 alt={cleanName} 
-                                                className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-xs ring-1 ring-slate-200 group-hover:scale-105 transition shrink-0" 
+                                                className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
                                                 onError={(e) => {
                                                   (e.target as HTMLImageElement).src = dicebearFallback;
                                                 }}
                                               />
-
-                                              {/* Member Full Name Centered Below */}
-                                              <span className="text-[11px] font-extrabold text-slate-800 mt-1 text-center truncate max-w-[70px]">
-                                                {cleanName.split(/\s+/)[0]}
-                                              </span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              {/* UNASSIGNED NODE (DASHED SQUARE/CIRCLE RING) */}
-                                              <div className="w-10 h-10 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 group-hover:border-indigo-400 group-hover:bg-indigo-50/50 transition">
-                                                <Plus className="w-4 h-4 text-slate-500" />
+                                            ) : (
+                                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
+                                                {getInitials(cleanName || role)}
                                               </div>
-                                              <span className="text-[10px] font-black text-slate-400 mt-1 uppercase tracking-wider">
-                                                {roleBadge}
-                                              </span>
-                                            </>
+                                            )
+                                          ) : (
+                                            /* CLEAN RED UNASSIGNED CIRCLE (ONLY RED '+' ICON INSIDE) */
+                                            <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                              <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
+                                            </div>
+                                          )}
+
+                                          {/* LAYER 2 (MIDDLE): ROLE LABEL (BOLD INDIGO IF ASSIGNED, BOLD RED IF UNASSIGNED) */}
+                                          <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
+                                            isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                          }`}>
+                                            {role}
+                                          </span>
+
+                                          {/* LAYER 3 (BOTTOM): VERTICAL 2-LINE FULL NAME WRAPPING */}
+                                          {isAssigned && (
+                                            <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[85px] mt-0.5">
+                                              {cleanName.split(/\s+/).map((word, wIdx) => (
+                                                <span key={wIdx} className="block leading-none">{word}</span>
+                                              ))}
+                                            </div>
                                           )}
                                         </div>
 
-                                        {/* 3. REACT PORTAL POPOVER (100% GUARANTEED NO CLIPPING OR OVERLAP) */}
+                                        {/* REACT PORTAL POPOVER (100% GUARANTEED NO CLIPPING OR OVERLAP) */}
                                         {isDropdownOpen && dropdownPos && typeof window !== 'undefined' && createPortal(
                                           <>
                                             <div 
