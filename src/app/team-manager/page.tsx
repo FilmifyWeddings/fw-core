@@ -270,6 +270,7 @@ export default function TeamManagerPage() {
     country_code: string;
     phone_number: string;
     email?: string;
+    avatar_url?: string;
   }) => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -281,6 +282,7 @@ export default function TeamManagerPage() {
         country_code: memberData.country_code,
         phone_number: memberData.phone_number,
         email: memberData.email || null,
+        avatar_url: memberData.avatar_url || null,
         active_status: true,
         is_active: true,
       };
