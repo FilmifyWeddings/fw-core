@@ -101,6 +101,7 @@ export default function TeamManagerPage() {
   const [editingProject, setEditingProject] = useState<FWProject | null>(null);
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState<boolean>(false);
+  const [editingMember, setEditingMember] = useState<FWTeamMember | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [eventTypesList, setEventTypesList] = useState<string[]>([
@@ -366,9 +367,7 @@ export default function TeamManagerPage() {
         }
         newProj = updatedArr[0];
 
-        // Clear existing sub-events & assignments to re-create updated configuration
-        await supabase.from('fw_sub_events').delete().eq('project_id', existingProjectId);
-        await supabase.from('fw_assignments').delete().eq('project_id', existingProjectId);
+// Preserving existing sub-events & assignments without deletion
       } else {
         const { data: newProjArray, error: projErr } = await supabase
           .from('fw_projects')
@@ -1063,8 +1062,10 @@ export default function TeamManagerPage() {
         isOpen={isAddMemberOpen}
         onClose={() => {
           setIsAddMemberOpen(false);
+          setEditingMember(null);
           setActiveAssignmentForMember(null);
         }}
+        memberToEdit={editingMember}
         initialRole={activeAssignmentForMember?.role || 'Ass'}
         onSave={handleSaveTeamMember}
       />
@@ -1076,7 +1077,13 @@ export default function TeamManagerPage() {
         teamMembers={teamMembers}
         onUpdateEventTypes={(newTypes) => setEventTypesList(newTypes)}
         onUpdateTeamMembers={fetchAllData}
+        onAddMemberClick={() => {
+          setEditingMember(null);
+          setActiveAssignmentForMember(null);
+          setIsAddMemberOpen(true);
+        }}
         onEditMember={(member) => {
+          setEditingMember(member);
           setActiveAssignmentForMember(null);
           setIsAddMemberOpen(true);
         }}

@@ -7,6 +7,7 @@ import CountryFlagPhoneInput from './CountryFlagPhoneInput';
 import { supabase } from '@/lib/supabase';
 
 interface AddTeamMemberModalProps {
+  memberToEdit?: any | null;
   isOpen: boolean;
   onClose: () => void;
   initialRole?: string;
@@ -26,6 +27,7 @@ const COMMON_ROLES = [
 ];
 
 export default function AddTeamMemberModal({
+  memberToEdit,
   isOpen,
   onClose,
   initialRole = 'Ass',
@@ -41,10 +43,22 @@ export default function AddTeamMemberModal({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (initialRole) {
+    if (memberToEdit && isOpen) {
+      setName(memberToEdit.name || '');
+      setPrimaryRole(memberToEdit.primary_role || initialRole);
+      setCountryCode(memberToEdit.country_code || '+91');
+      setPhoneNumber(memberToEdit.phone_number || '');
+      setEmail(memberToEdit.email || '');
+      setAvatarUrl(memberToEdit.avatar_url || '');
+    } else if (isOpen) {
+      setName('');
       setPrimaryRole(initialRole);
+      setCountryCode('+91');
+      setPhoneNumber('');
+      setEmail('');
+      setAvatarUrl('');
     }
-  }, [initialRole]);
+  }, [memberToEdit, isOpen, initialRole]);
 
   // Client-Side Image Compression Engine (Max 200x200px, JPEG 0.6 quality, ~15-30KB)
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
