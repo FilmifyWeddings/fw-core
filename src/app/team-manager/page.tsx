@@ -691,7 +691,7 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── TAB VIEW: CLIENT-CENTRIC HORIZONTAL SUB-EVENT CARDS WITH 5 OVERFLOW & STYLING FIXES ─── */}
+        {/* ─── TAB VIEW: CLIENT-CENTRIC HORIZONTAL SUB-EVENT CARDS WITH 5 URGENT BUG FIXES ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
             
@@ -711,19 +711,19 @@ export default function TeamManagerPage() {
               <div className="space-y-8">
                 {filteredProjects.map((project) => {
                   return (
-                    /* 1. DARKER MASTER CLIENT CARDS (SOLID WHITE CHASSIS & RICH BORDERS) */
+                    /* 2. DISTINCT MASTER CLIENT CHASSIS (SOLID WHITE CHASSIS & RICH SLATE BORDERS) */
                     <div 
                       key={project.id}
-                      className="bg-white border-2 border-slate-200/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8 relative overflow-visible"
+                      className="bg-white border-2 border-slate-300 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8 relative overflow-visible"
                     >
                       {/* MASTER CLIENT CARD HEADER */}
                       <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
                         <div className="flex items-center gap-3">
-                          {/* 5. HIGH-CONTRAST CLIENT NAME TYPOGRAPHY */}
-                          <h3 className="text-2xl font-black text-indigo-950 tracking-tight">
+                          {/* 2. HIGH-CONTRAST DARK VIOLET/INDIGO CLIENT NAME TYPOGRAPHY */}
+                          <h3 className="text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
                             {project.client_name}
                           </h3>
-                          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-900 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
+                          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
                             {project.fw_sub_events?.length || 0} Sub-Events
                           </span>
                         </div>
@@ -759,69 +759,70 @@ export default function TeamManagerPage() {
                             : eventDate.getFullYear().toString();
 
                           return (
-                            /* 2 & 4. RESPONSIVE ZOOM & OVERFLOW VISIBLE WRAPPER */
+                            /* 1. STRICT RESPONSIVE GRID LAYOUT CONTAINER (PREVENT COLLISIONS AT 100% ZOOM) */
                             <div 
                               key={subEvent.id}
-                              className="bg-slate-50/70 rounded-2xl border border-slate-200/90 p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-l-4 border-l-purple-700 w-full relative overflow-visible z-10"
+                              className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-center p-4.5 bg-slate-50/70 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all border-l-4 border-l-purple-700 w-full relative overflow-visible z-10"
                             >
-                              {/* 2. LEFT DATE CALLOUT BLOCK WITH MONTH, BIG DATE & SMALL YEAR */}
-                              <div className="flex items-center gap-3 pr-4 border-b xl:border-b-0 xl:border-r border-slate-200/80 pb-3 xl:pb-0 shrink-0 min-w-[105px]">
-                                <div className="flex flex-col items-center justify-center text-center">
-                                  <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase leading-none">
-                                    {dayName}
-                                  </span>
-                                  <span className="text-xl font-black text-slate-900 tracking-tight leading-none mt-1">
-                                    {monthAbbr} {dayNumber}
-                                  </span>
-                                  <span className="text-[10px] font-semibold text-slate-400 mt-0.5">
-                                    {yearStr}
-                                  </span>
+                              {/* LEFT COLUMN (xl:col-span-5): DATE, TIME, VENUE & SUB-EVENT TITLE */}
+                              <div className="xl:col-span-5 flex flex-col md:flex-row md:items-center gap-3.5 min-w-0">
+                                {/* DATE CALLOUT BLOCK */}
+                                <div className="flex items-center gap-3 pr-4 border-b md:border-b-0 md:border-r border-slate-200/80 pb-3 md:pb-0 shrink-0 min-w-[105px]">
+                                  <div className="flex flex-col items-center justify-center text-center">
+                                    <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase leading-none">
+                                      {dayName}
+                                    </span>
+                                    <span className="text-xl font-black text-slate-900 tracking-tight leading-none mt-1">
+                                      {monthAbbr} {dayNumber}
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-slate-400 mt-0.5">
+                                      {yearStr}
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
 
-                              {/* CENTER EVENT DETAILS MATRIX */}
-                              <div className="flex-1 space-y-1.5 min-w-0">
-                                {/* Time (12-Hour AM/PM) & Venue (Hover Popover + Click Map Link) */}
-                                <div className="flex items-center gap-4 text-xs font-bold text-slate-500 flex-wrap">
-                                  {subEvent.roll_call_time && (
-                                    <div className="flex items-center gap-1.5 text-slate-700">
-                                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                      <span>
-                                        {format12HourTime(subEvent.roll_call_time)}
-                                        {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
-                                      </span>
-                                    </div>
-                                  )}
-                                  {subEvent.venue_name && (
-                                    <div className="relative group/venue">
-                                      <a
-                                        href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
-                                      >
-                                        <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                                        <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
-                                      </a>
-                                      {/* Micro Hover Popover Card */}
-                                      <div className="absolute left-0 top-full mt-1 hidden group-hover/venue:flex items-center gap-2 bg-slate-900 text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl z-50 pointer-events-none whitespace-nowrap border border-slate-700">
-                                        <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                                        <span>{subEvent.venue_name} (Click to open map ↗)</span>
+                                {/* DETAILS: TIME, VENUE & TITLE */}
+                                <div className="flex-1 space-y-1 min-w-0">
+                                  {/* Time (12-Hour AM/PM) & Venue */}
+                                  <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
+                                    {subEvent.roll_call_time && (
+                                      <div className="flex items-center gap-1.5 text-slate-700">
+                                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        <span>
+                                          {format12HourTime(subEvent.roll_call_time)}
+                                          {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                        </span>
                                       </div>
-                                    </div>
-                                  )}
-                                </div>
+                                    )}
+                                    {subEvent.venue_name && (
+                                      <div className="relative group/venue">
+                                        <a
+                                          href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
+                                        >
+                                          <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                                          <span className="truncate max-w-[180px]">{subEvent.venue_name}</span>
+                                        </a>
+                                        {/* Micro Hover Popover Card */}
+                                        <div className="absolute left-0 top-full mt-1 hidden group-hover/venue:flex items-center gap-2 bg-slate-900 text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl z-50 pointer-events-none whitespace-nowrap border border-slate-700">
+                                          <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                          <span>{subEvent.venue_name} (Click to open map ↗)</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
 
-                                {/* Sub-Event Title */}
-                                <div className="flex items-center gap-2.5 flex-wrap">
-                                  <h4 className="font-black text-purple-950 text-base tracking-tight" style={{ color: '#2E1065' }}>
+                                  {/* Sub-Event Title (Dark Violet/Purple Shade #1E1B4B) */}
+                                  <h4 className="font-black text-base leading-tight tracking-tight" style={{ color: '#1E1B4B' }}>
                                     {subEvent.event_title}
                                   </h4>
                                 </div>
                               </div>
 
-                              {/* 2 & 3. RIGHT CREW ASSIGNMENT AVATARS (CLEAN RED UNASSIGNED CIRCLE WITH ROLE BELOW) */}
-                              <div className="flex flex-wrap items-center gap-4 shrink-0 max-w-full overflow-visible py-1">
+                              {/* RIGHT COLUMN (xl:col-span-7): CREW ASSIGNMENT AVATARS */}
+                              <div className="xl:col-span-7 flex flex-wrap items-start justify-start xl:justify-end gap-x-4 gap-y-3 shrink-0 overflow-visible py-1">
                                 {subEvent.fw_assignments?.map((assignment) => {
                                   const isAssigned = assignment.assigned_member_id !== null;
                                   const memberObj = assignment.fw_team_members;
@@ -843,7 +844,7 @@ export default function TeamManagerPage() {
                                         className="flex flex-col items-center group cursor-pointer min-w-[64px]"
                                         title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
                                       >
-                                        {/* LAYER 1 (TOP): AVATAR PHOTO / INITIALS CIRCLE / CLEAN RED UNASSIGNED */}
+                                        {/* 3. LAYER 1 (TOP): AVATAR PHOTO / INITIALS CIRCLE / CLEAN RED UNASSIGNED */}
                                         {isAssigned ? (
                                           memberObj?.avatar_url ? (
                                             // eslint-disable-next-next/no-img-element
@@ -861,28 +862,30 @@ export default function TeamManagerPage() {
                                             </div>
                                           )
                                         ) : (
-                                          /* 3. CLEAN RED UNASSIGNED CIRCLE (ONLY RED '+' ICON INSIDE) */
+                                          /* CLEAN RED UNASSIGNED CIRCLE (ONLY RED '+' ICON INSIDE) */
                                           <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
                                             <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
                                           </div>
                                         )}
 
-                                        {/* LAYER 2 (MIDDLE): ROLE LABEL (BOLD RED IF UNASSIGNED, BOLD INDIGO IF ASSIGNED) */}
+                                        {/* LAYER 2 (MIDDLE): ROLE LABEL */}
                                         <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
                                           isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
                                         }`}>
                                           {role}
                                         </span>
 
-                                        {/* LAYER 3 (BOTTOM): ASSIGNED MEMBER FULL NAME */}
+                                        {/* 5. LAYER 3 (BOTTOM): VERTICAL 2-LINE FULL NAME WRAPPING */}
                                         {isAssigned && (
-                                          <span className="font-extrabold text-slate-900 text-xs text-center leading-tight break-words max-w-[80px] mt-0.5 block">
-                                            {cleanName}
-                                          </span>
+                                          <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[11px] leading-tight max-w-[85px] mt-0.5">
+                                            {cleanName.split(/\s+/).map((word, wIdx) => (
+                                              <span key={wIdx} className="block leading-none">{word}</span>
+                                            ))}
+                                          </div>
                                         )}
                                       </div>
 
-                                      {/* 4. HIGH Z-INDEX DROPDOWN POPOVER PREVENTING CLIPPING */}
+                                      {/* 4. HIGH Z-INDEX DROPDOWN POPOVER PREVENTING OVERLAP & CLIPPING BUGS */}
                                       {isDropdownOpen && (
                                         <>
                                           <div 
@@ -894,7 +897,7 @@ export default function TeamManagerPage() {
                                             animate={{ opacity: 1, scale: 1, y: 0 }}
                                             exit={{ opacity: 0, scale: 0.92, y: 8 }}
                                             transition={{ type: 'spring', damping: 20, stiffness: 350 }}
-                                            className="absolute top-full right-0 mt-2 z-[9999] w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-3 space-y-2"
+                                            className="absolute top-full right-0 mt-2 z-[9999] w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2"
                                           >
                                             {/* SEARCH INPUT BAR */}
                                             <div className="relative">
