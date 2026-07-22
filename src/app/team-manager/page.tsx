@@ -19,7 +19,7 @@ import { EventBlockData } from './components/EventBlock';
 // Semantic Theme CSS styles injected directly for strict color matching
 const customStyle = `
   body {
-    background-color: #F8F9FD !important;
+    background-color: #F1F5F9 !important;
     color: #0B111E !important;
   }
 `;
@@ -633,7 +633,7 @@ export default function TeamManagerPage() {
       {/* ─────────────────────────────────────────────────────────────
           MAIN CONTENT WORKSPACE AREA
          ───────────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-10 max-h-screen">
+      <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-10 max-h-screen bg-slate-100">
         
         {/* Top Header Block */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -691,7 +691,7 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── TAB VIEW: CLIENT-CENTRIC HORIZONTAL SUB-EVENT CARDS WITH 7 CUSTOMIZATIONS ─── */}
+        {/* ─── TAB VIEW: CLIENT-CENTRIC HORIZONTAL SUB-EVENT CARDS WITH 5 OVERFLOW & STYLING FIXES ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
             
@@ -700,7 +700,7 @@ export default function TeamManagerPage() {
                 <Loader2 className="w-8 h-8 text-[#6C5CE7] animate-spin" />
               </div>
             ) : filteredProjects.length === 0 ? (
-              <div className="text-center py-20 bg-white rounded-[24px] border border-[#6C5CE7]/8 p-8">
+              <div className="text-center py-20 bg-white rounded-[24px] border border-[#6C5CE7]/8 p-8 shadow-sm">
                 <Users className="w-12 h-12 text-[#6C5CE7]/40 mx-auto mb-3" />
                 <h4 className="font-bold text-sm text-[#0B111E]">No Active Projects Found</h4>
                 <p className="text-xs text-[#4F5E74] font-semibold mt-1 max-w-sm mx-auto">
@@ -709,21 +709,21 @@ export default function TeamManagerPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {filteredProjects.map((project, pIdx) => {
-                  const gradientClass = clientGradients[pIdx % clientGradients.length];
-
+                {filteredProjects.map((project) => {
                   return (
+                    /* 1. DARKER MASTER CLIENT CARDS (SOLID WHITE CHASSIS & RICH BORDERS) */
                     <div 
                       key={project.id}
-                      className={`${gradientClass} rounded-3xl p-6 space-y-4 mb-8`}
+                      className="bg-white border-2 border-slate-200/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8 relative overflow-visible"
                     >
                       {/* MASTER CLIENT CARD HEADER */}
                       <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
                         <div className="flex items-center gap-3">
-                          <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                          {/* 5. HIGH-CONTRAST CLIENT NAME TYPOGRAPHY */}
+                          <h3 className="text-2xl font-black text-indigo-950 tracking-tight">
                             {project.client_name}
                           </h3>
-                          <span className="px-3 py-1 rounded-full bg-indigo-100/80 text-indigo-900 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
+                          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-900 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
                             {project.fw_sub_events?.length || 0} Sub-Events
                           </span>
                         </div>
@@ -735,14 +735,14 @@ export default function TeamManagerPage() {
                             setEditingProject(project);
                             setIsAddProjectOpen(true);
                           }}
-                          className="w-9 h-9 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
+                          className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
                       </div>
 
                       {/* HORIZONTAL SUB-EVENT ROW CARDS STACK */}
-                      <div className="space-y-3.5">
+                      <div className="space-y-3.5 relative overflow-visible">
                         {project.fw_sub_events?.map((subEvent) => {
                           const eventDate = new Date(subEvent.event_date);
                           const dayName = isNaN(eventDate.getTime()) 
@@ -759,12 +759,13 @@ export default function TeamManagerPage() {
                             : eventDate.getFullYear().toString();
 
                           return (
+                            /* 2 & 4. RESPONSIVE ZOOM & OVERFLOW VISIBLE WRAPPER */
                             <div 
                               key={subEvent.id}
-                              className="bg-white/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 border-l-purple-700"
+                              className="bg-slate-50/70 rounded-2xl border border-slate-200/90 p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-l-4 border-l-purple-700 w-full relative overflow-visible z-10"
                             >
                               {/* 2. LEFT DATE CALLOUT BLOCK WITH MONTH, BIG DATE & SMALL YEAR */}
-                              <div className="flex items-center gap-3 pr-4 border-b md:border-b-0 md:border-r border-slate-200/80 pb-3 md:pb-0 shrink-0 min-w-[105px]">
+                              <div className="flex items-center gap-3 pr-4 border-b xl:border-b-0 xl:border-r border-slate-200/80 pb-3 xl:pb-0 shrink-0 min-w-[105px]">
                                 <div className="flex flex-col items-center justify-center text-center">
                                   <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase leading-none">
                                     {dayName}
@@ -780,7 +781,7 @@ export default function TeamManagerPage() {
 
                               {/* CENTER EVENT DETAILS MATRIX */}
                               <div className="flex-1 space-y-1.5 min-w-0">
-                                {/* 4 & 6. Time (12-Hour AM/PM) & Venue (Hover Popover + Click Map Link) */}
+                                {/* Time (12-Hour AM/PM) & Venue (Hover Popover + Click Map Link) */}
                                 <div className="flex items-center gap-4 text-xs font-bold text-slate-500 flex-wrap">
                                   {subEvent.roll_call_time && (
                                     <div className="flex items-center gap-1.5 text-slate-700">
@@ -811,7 +812,7 @@ export default function TeamManagerPage() {
                                   )}
                                 </div>
 
-                                {/* 7. Sub-Event Title (Distinct Dark Purple-950 Shade, No Active Badge) */}
+                                {/* Sub-Event Title */}
                                 <div className="flex items-center gap-2.5 flex-wrap">
                                   <h4 className="font-black text-purple-950 text-base tracking-tight" style={{ color: '#2E1065' }}>
                                     {subEvent.event_title}
@@ -819,8 +820,8 @@ export default function TeamManagerPage() {
                                 </div>
                               </div>
 
-                              {/* 3. RIGHT CREW ASSIGNMENT AVATARS (3-LAYER VERTICAL CREW STACK & RED UNASSIGNED ACCENT) */}
-                              <div className="flex items-center gap-4 flex-wrap shrink-0">
+                              {/* 2 & 3. RIGHT CREW ASSIGNMENT AVATARS (CLEAN RED UNASSIGNED CIRCLE WITH ROLE BELOW) */}
+                              <div className="flex flex-wrap items-center gap-4 shrink-0 max-w-full overflow-visible py-1">
                                 {subEvent.fw_assignments?.map((assignment) => {
                                   const isAssigned = assignment.assigned_member_id !== null;
                                   const memberObj = assignment.fw_team_members;
@@ -830,10 +831,9 @@ export default function TeamManagerPage() {
                                   const dropdownKey = assignment.id;
                                   const isDropdownOpen = activeDropdownId === dropdownKey;
                                   const initials = getInitials(cleanName || role);
-                                  const roleCode = role ? (role.length <= 3 ? role.toUpperCase() : role.slice(0, 2).toUpperCase()) : 'TM';
 
                                   return (
-                                    <div key={assignment.id} className="relative">
+                                    <div key={assignment.id} className="relative overflow-visible">
                                       {/* 3-LAYER VERTICAL NODE */}
                                       <div
                                         onClick={() => {
@@ -843,7 +843,7 @@ export default function TeamManagerPage() {
                                         className="flex flex-col items-center group cursor-pointer min-w-[64px]"
                                         title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
                                       >
-                                        {/* LAYER 1 (TOP): AVATAR PHOTO / INITIALS CIRCLE / RED UNASSIGNED */}
+                                        {/* LAYER 1 (TOP): AVATAR PHOTO / INITIALS CIRCLE / CLEAN RED UNASSIGNED */}
                                         {isAssigned ? (
                                           memberObj?.avatar_url ? (
                                             // eslint-disable-next-next/no-img-element
@@ -852,7 +852,6 @@ export default function TeamManagerPage() {
                                               alt={cleanName} 
                                               className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
                                               onError={(e) => {
-                                                // Fallback on load error: replace broken img src with SVG data URL
                                                 (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanName || role)}`;
                                               }}
                                             />
@@ -862,15 +861,16 @@ export default function TeamManagerPage() {
                                             </div>
                                           )
                                         ) : (
-                                          /* UNASSIGNED CREW (RED DASHED ACCENT) */
-                                          <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black text-xs flex flex-col items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                            <span>+</span>
-                                            <span className="text-[9px] leading-none font-black">{roleCode}</span>
+                                          /* 3. CLEAN RED UNASSIGNED CIRCLE (ONLY RED '+' ICON INSIDE) */
+                                          <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                            <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
                                           </div>
                                         )}
 
-                                        {/* LAYER 2 (MIDDLE): ROLE LABEL */}
-                                        <span className="font-bold text-indigo-600 text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none">
+                                        {/* LAYER 2 (MIDDLE): ROLE LABEL (BOLD RED IF UNASSIGNED, BOLD INDIGO IF ASSIGNED) */}
+                                        <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
+                                          isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                        }`}>
                                           {role}
                                         </span>
 
@@ -882,7 +882,7 @@ export default function TeamManagerPage() {
                                         )}
                                       </div>
 
-                                      {/* 3D CURVED CREW ALLOCATION DROPDOWN POPOVER WITH ENHANCED AVATARS & CLEAN NAMES */}
+                                      {/* 4. HIGH Z-INDEX DROPDOWN POPOVER PREVENTING CLIPPING */}
                                       {isDropdownOpen && (
                                         <>
                                           <div 
@@ -894,7 +894,7 @@ export default function TeamManagerPage() {
                                             animate={{ opacity: 1, scale: 1, y: 0 }}
                                             exit={{ opacity: 0, scale: 0.92, y: 8 }}
                                             transition={{ type: 'spring', damping: 20, stiffness: 350 }}
-                                            className="absolute top-full right-0 mt-2 z-50 w-64 bg-white border border-[#6C5CE7]/15 rounded-[18px] shadow-2xl p-3 space-y-2"
+                                            className="absolute top-full right-0 mt-2 z-[9999] w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-3 space-y-2"
                                           >
                                             {/* SEARCH INPUT BAR */}
                                             <div className="relative">
