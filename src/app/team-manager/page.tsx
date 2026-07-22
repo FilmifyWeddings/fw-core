@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import AddProjectModal from './components/AddProjectModal';
 import AddTeamMemberModal from './components/AddTeamMemberModal';
+import TeamSettingsModal from './components/TeamSettingsModal';
 import { EventBlockData } from './components/EventBlock';
 
 // Semantic Theme CSS styles injected directly for strict color matching
@@ -1064,6 +1065,25 @@ export default function TeamManagerPage() {
         }}
         initialRole={activeAssignmentForMember?.role || 'Ass'}
         onSave={handleSaveTeamMember}
+      />
+      {/* 3. Global Operations & Team Settings Modal (z-[99999]) */}
+      <TeamSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        eventTypes={eventTypesList}
+        teamMembers={teamMembers}
+        onUpdateEventTypes={(newTypes) => setEventTypesList(newTypes)}
+        onUpdateTeamMembers={fetchAllData}
+        onEditMember={(member) => {
+          setActiveAssignmentForMember(null);
+          setIsAddMemberOpen(true);
+        }}
+        onDeleteMember={async (id) => {
+          if (confirm('Are you sure you want to remove this team member?')) {
+            await supabase.from('fw_team_members').delete().eq('id', id);
+            fetchAllData();
+          }
+        }}
       />
     </div>
   );
