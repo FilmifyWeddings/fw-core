@@ -101,7 +101,7 @@ export default function TeamManagerPage() {
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState<boolean>(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [eventTypesList, setEventTypesList] = useState<string[]>([
     "Pre-wedding", "Haldi", "Sangeet", "Wedding Ceremony", "Reception"
   ]);
@@ -511,157 +511,9 @@ export default function TeamManagerPage() {
       <style>{customStyle}</style>
 
       {/* ─────────────────────────────────────────────────────────────
-          LEFT WORKSPACE SIDEBAR NAVIGATION (Light Mode Premium)
-         ───────────────────────────────────────────────────────────── */}
-      <aside className="w-64 bg-white border-r border-[#6C5CE7]/8 flex flex-col justify-between py-6 px-4 shrink-0 shadow-[4px_0_24px_rgba(108,92,231,0.01)]">
-        <div className="space-y-8">
-          
-          {/* Logo Branding */}
-          <div className="flex items-center gap-3 px-2">
-            <div className="w-9 h-9 rounded-xl bg-[#6C5CE7] flex items-center justify-center text-white shadow-lg shadow-[#6C5CE7]/20">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-sm tracking-tight block">Filmify</span>
-              <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider">Studio Workstation</span>
-            </div>
-          </div>
-
-          {/* Nav Links Grid */}
-          <nav className="space-y-1">
-            <button 
-              onClick={() => setActiveTab('overview')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'overview' 
-                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
-                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
-              }`}
-            >
-              <Grid className="w-4 h-4" /> Overview
-            </button>
-            
-            <button 
-              onClick={() => setActiveTab('projects')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'projects' 
-                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
-                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Users className="w-4 h-4" /> Projects
-              </div>
-              <span className="bg-[#6C5CE7]/10 text-[#6C5CE7] text-[10px] font-bold px-2 py-0.5 rounded-md">
-                {projects.filter(p => !p.is_archived).length}
-              </span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('list')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'list' 
-                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
-                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
-              }`}
-            >
-              <List className="w-4 h-4" /> List Register
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('calendar')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'calendar' 
-                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
-                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
-              }`}
-            >
-              <Calendar className="w-4 h-4" /> Calendar
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('trash')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'trash' 
-                  ? 'bg-[#6C5CE7]/6 text-[#6C5CE7]' 
-                  : 'text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50'
-              }`}
-            >
-              <Trash2 className="w-4 h-4" /> Trash Recovery
-            </button>
-
-            {/* Divider */}
-            <div className="h-px bg-zinc-150/60 my-4" />
-            
-            <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block px-3 mb-2">
-              Studio Suite
-            </span>
-
-            <Link 
-              href="/"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
-            >
-              <Grid className="w-4 h-4" /> Suite Home
-            </Link>
-
-            <Link 
-              href="/leads"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
-            >
-              <Database className="w-4 h-4 text-emerald-500" /> Leads Manager
-            </Link>
-
-            <Link 
-              href="/quotations"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
-            >
-              <FileText className="w-4 h-4 text-amber-500" /> Quotation Maker
-            </Link>
-
-            <Link 
-              href="/dashboard/integrations"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-[#4F5E74] hover:text-[#0B111E] hover:bg-zinc-50 transition-all"
-            >
-              <Layers className="w-4 h-4 text-[#6C5CE7]" /> Integrations
-            </Link>
-          </nav>
-        </div>
-
-        {/* Footer info & toggle switches */}
-        <div className="space-y-4 pt-6 border-t border-zinc-100">
-          <div className="space-y-1 px-2">
-            <span className="text-[10px] font-bold text-[#4F5E74] uppercase tracking-wider block">Operational Alerts</span>
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-[11px] font-semibold text-zinc-500">WhatsBoost Logs</span>
-              <button 
-                onClick={() => setInstantAlerts(!instantAlerts)}
-                className={`w-8 h-4.5 rounded-full p-0.5 transition-colors focus:outline-none ${
-                  instantAlerts ? 'bg-[#6C5CE7]' : 'bg-zinc-200'
-                }`}
-              >
-                <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform transform ${
-                  instantAlerts ? 'translate-x-3.5' : 'translate-x-0'
-                }`} />
-              </button>
-            </div>
-          </div>
-
-          {/* User profile capsule */}
-          <div className="flex items-center gap-3 bg-zinc-50 p-2.5 rounded-2xl border border-zinc-100">
-            <div className="w-8 h-8 rounded-xl bg-[#6C5CE7]/10 flex items-center justify-center text-[#6C5CE7] font-bold text-xs">
-              SA
-            </div>
-            <div>
-              <span className="font-bold text-[11px] block leading-tight">Studio Admin</span>
-              <span className="text-[9px] text-[#4F5E74] font-semibold block mt-0.5">Owner Profile</span>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* ─────────────────────────────────────────────────────────────
           MAIN CONTENT WORKSPACE AREA
          ───────────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-10 max-h-screen bg-slate-100">
+      <main className="w-full min-h-screen px-6 py-8 lg:px-10 bg-slate-100">
         
         {/* Top Header Block */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -709,12 +561,12 @@ export default function TeamManagerPage() {
             </button>
 
             <button 
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-3 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-sm text-indigo-600 hover:bg-indigo-50/50 transition-all cursor-pointer shrink-0"
+              type="button" 
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-xs text-indigo-600 transition-all cursor-pointer relative z-20 shrink-0"
               title="Team & Operations Settings"
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-5 h-5"/>
             </button>
           </div>
         </div>

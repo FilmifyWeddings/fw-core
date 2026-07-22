@@ -159,6 +159,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/quotations'
     },
     {
+      name: 'Integrations',
+      icon: Layers,
+      path: '/dashboard/integrations'
+    },
+    {
       name: 'Team Manager',
       icon: Users,
       path: '/team-manager'
