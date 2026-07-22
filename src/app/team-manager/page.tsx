@@ -18,6 +18,32 @@ import AddTeamMemberModal from './components/AddTeamMemberModal';
 import { EventBlockData } from './components/EventBlock';
 
 // Semantic Theme CSS styles injected directly for strict color matching
+
+// 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
+const getGradientByProjectId = (id: string) => {
+  if (!id) return 'bg-gradient-to-b from-purple-700 via-indigo-700 to-indigo-900';
+  const hash = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const gradients = [
+    'bg-gradient-to-b from-purple-700 via-indigo-700 to-indigo-900', // Deep Royal Purple
+    'bg-gradient-to-b from-amber-500 via-orange-600 to-amber-700',   // Vibrant Sunrise Amber
+    'bg-gradient-to-b from-emerald-600 via-teal-700 to-emerald-900', // Ocean Emerald
+    'bg-gradient-to-b from-blue-600 via-indigo-600 to-slate-900',    // Cyber Blue
+  ];
+  return gradients[hash % gradients.length];
+};
+
+// 2. Clean Maximum 2-Line Name Justification (No 4-line stacks)
+const formatMemberName2Lines = (fullName: string) => {
+  if (!fullName) return { line1: '', line2: '' };
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return { line1: parts[0], line2: '' };
+  }
+  const line1 = parts[0];
+  const line2 = parts.slice(1).join(' ');
+  return { line1, line2 };
+};
+
 const customStyle = `
   body {
     background-color: #F1F5F9 !important;
@@ -693,7 +719,7 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── TAB VIEW: CLIENT-CONSISTENT GRADIENT CARDS & 3-LAYER CREW STACK (IMAGE_A46926.PNG SPEC) ─── */}
+        {/* ─── TAB VIEW: 6 CRITICAL LOGIC & UI LAYOUT FIXES ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
             
@@ -711,15 +737,9 @@ export default function TeamManagerPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {filteredProjects.map((project, pIdx) => {
-                  // 1. CLIENT-CONSISTENT GRADIENT PALETTES (SAME GRADIENT PER MASTER CLIENT)
-                  const clientGradients = [
-                    'bg-gradient-to-b from-purple-700 via-indigo-700 to-indigo-900', // Deep Royal Purple
-                    'bg-gradient-to-b from-amber-500 via-orange-600 to-amber-700',   // Vibrant Sunrise Amber
-                    'bg-gradient-to-b from-emerald-600 via-teal-700 to-emerald-900', // Ocean Emerald
-                    'bg-gradient-to-b from-blue-600 via-indigo-600 to-slate-900',    // Cyber Blue
-                  ];
-                  const projectGradient = clientGradients[pIdx % clientGradients.length];
+                {filteredProjects.map((project) => {
+                  // 1. DETERMINISTIC CLIENT GRADIENT CONSISTENCY (ID-BASED HASH)
+                  const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
                   return (
                     /* MASTER CLIENT CONTAINER CHASSIS */
@@ -774,7 +794,7 @@ export default function TeamManagerPage() {
                               key={subEvent.id}
                               className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-stretch overflow-hidden"
                             >
-                              {/* 1 & 2. LEFT VERTICAL GRADIENT DATE BLOCK (CLIENT-CONSISTENT + DAY -> DATE -> MONTH -> YEAR) */}
+                              {/* 1. LEFT VERTICAL GRADIENT DATE BLOCK (DETERMINISTIC ID-BASED GRADIENT) */}
                               <div className={`${projectGradient} w-full md:w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
                                 <div>
                                   {/* Day Abbreviation */}
@@ -803,7 +823,7 @@ export default function TeamManagerPage() {
 
                               {/* MAIN RIGHT CONTENT BODY */}
                               <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
-                                {/* TOP ROW: TITLE, TIME & VENUE (REMOVED NEW/UPCOMING BADGES) */}
+                                {/* TOP ROW: TITLE, TIME & VENUE */}
                                 <div>
                                   <div className="flex items-start justify-between gap-3 mb-1">
                                     <h4 className="font-black text-slate-900 text-sm md:text-base tracking-tight" style={{ color: '#1E1B4B' }}>
@@ -843,7 +863,7 @@ export default function TeamManagerPage() {
                                   </div>
                                 </div>
 
-                                {/* 5. DYNAMIC SUB-EVENT OPERATIONAL NOTES BANNER */}
+                                {/* DYNAMIC SUB-EVENT OPERATIONAL NOTES BANNER */}
                                 {subEvent.operational_notes && (
                                   <div className="bg-amber-50/80 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2 my-1">
                                     <FileText className="w-4 h-4 text-amber-600 shrink-0" />
@@ -854,7 +874,7 @@ export default function TeamManagerPage() {
                                 {/* SUBTLE HORIZONTAL DIVIDER */}
                                 <div className="border-t border-slate-100 my-1.5" />
 
-                                {/* 3. BOTTOM ROW: CLEAN 3-LAYER CREW STACK (NO TOP OVERLAPPING ROLE BUBBLE) */}
+                                {/* 4. STRICT FIXED ROLE POSITIONING (NO SORT RE-ORDERING) & 2. CLEAN MAX 2-LINE NAME */}
                                 <div className="flex items-start gap-4 flex-wrap">
                                   {subEvent.fw_assignments?.map((assignment) => {
                                     const isAssigned = assignment.assigned_member_id !== null;
@@ -866,8 +886,10 @@ export default function TeamManagerPage() {
                                     const isDropdownOpen = activeDropdownId === dropdownKey;
                                     const dicebearFallback = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
 
+                                    const { line1, line2 } = formatMemberName2Lines(cleanName);
+
                                     return (
-                                      <div key={assignment.id} className="relative flex flex-col items-center min-w-[64px]">
+                                      <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
                                         {/* AVATAR NODE TRIGGER */}
                                         <div
                                           onClick={(e) => {
@@ -918,12 +940,11 @@ export default function TeamManagerPage() {
                                             {role}
                                           </span>
 
-                                          {/* LAYER 3 (BOTTOM): VERTICAL 2-LINE FULL NAME WRAPPING */}
+                                          {/* 2. LAYER 3 (BOTTOM): CLEAN MAXIMUM 2-LINE NAME JUSTIFICATION */}
                                           {isAssigned && (
-                                            <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[85px] mt-0.5">
-                                              {cleanName.split(/\s+/).map((word, wIdx) => (
-                                                <span key={wIdx} className="block leading-none">{word}</span>
-                                              ))}
+                                            <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
+                                              <span className="block leading-none truncate max-w-[90px]">{line1}</span>
+                                              {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
                                             </div>
                                           )}
                                         </div>
