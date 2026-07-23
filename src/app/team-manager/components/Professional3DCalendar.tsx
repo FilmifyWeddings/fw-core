@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { FWProject, FWSubEvent } from '@/types';
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, MapPin, 
-  X, Sparkles, UserCheck, AlertCircle, Users 
+  X, Sparkles, Plus
 } from 'lucide-react';
 
 interface Professional3DCalendarProps {
@@ -13,6 +13,7 @@ interface Professional3DCalendarProps {
   selectedRoleFilter: string;
   format12HourTime: (time?: string) => string;
   getGradientByProjectId: (id: string) => string;
+  onRoleClick?: (assignmentId: string, rect: DOMRect) => void;
 }
 
 interface CalendarSubEventItem {
@@ -20,12 +21,27 @@ interface CalendarSubEventItem {
   project: FWProject;
 }
 
+const getInitials = (name: string) => {
+  if (!name) return 'CR';
+  const parts = name.split(' ').filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const formatMemberName2Lines = (fullName: string) => {
+  if (!fullName) return { line1: '', line2: '' };
+  const parts = fullName.split(' ').filter(Boolean);
+  if (parts.length === 1) return { line1: parts[0], line2: '' };
+  return { line1: parts[0], line2: parts.slice(1).join(' ') };
+};
+
 export default function Professional3DCalendar({
   projects,
   searchQuery,
   selectedRoleFilter,
   format12HourTime,
   getGradientByProjectId,
+  onRoleClick,
 }: Professional3DCalendarProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDayInspector, setSelectedDayInspector] = useState<{
@@ -34,11 +50,10 @@ export default function Professional3DCalendar({
     items: CalendarSubEventItem[];
   } | null>(null);
 
-  // Month navigation helpers
   const year = currentDate.getFullYear();
-  const month = currentDate.getMonth(); // 0-indexed
+  const month = currentDate.getMonth();
 
-  const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 = Sun
+  const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   const prevMonth = () => {
@@ -53,7 +68,6 @@ export default function Professional3DCalendar({
     setCurrentDate(new Date());
   };
 
-  // Build map of YYYY-MM-DD -> CalendarSubEventItem[]
   const eventsByDate: { [dateStr: string]: CalendarSubEventItem[] } = {};
 
   projects.forEach((project) => {
@@ -71,7 +85,6 @@ export default function Professional3DCalendar({
         if (!hasRole) return;
       }
 
-      // Parse YYYY-MM-DD
       const d = new Date(se.event_date);
       if (isNaN(d.getTime())) return;
 
@@ -107,11 +120,10 @@ export default function Professional3DCalendar({
             </div>
           </div>
 
-          {/* Month Navigation & Today Button */}
           <div className="flex items-center gap-2">
             <button
               onClick={goToToday}
-              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200/80 transition shadow-2xs"
+              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200/80 transition shadow-2xs cursor-pointer"
             >
               Today
             </button>
@@ -137,7 +149,6 @@ export default function Professional3DCalendar({
 
         {/* CALENDAR GRID */}
         <div>
-          {/* Days of Week Header */}
           <div className="grid grid-cols-7 gap-2 text-center mb-3">
             {daysOfWeek.map((day, idx) => (
               <div
@@ -151,9 +162,7 @@ export default function Professional3DCalendar({
             ))}
           </div>
 
-          {/* Date Cells Grid */}
           <div className="grid grid-cols-7 gap-2 sm:gap-3">
-            {/* Empty Offset Cells */}
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
               <div
                 key={`empty-${i}`}
@@ -161,11 +170,9 @@ export default function Professional3DCalendar({
               />
             ))}
 
-            {/* Actual Days of Month */}
             {Array.from({ length: daysInMonth }).map((_, dayIdx) => {
               const dayNum = dayIdx + 1;
               const dateObj = new Date(year, month, dayNum);
-              // Format YYYY-MM-DD
               const yearPad = dateObj.getFullYear();
               const monthPad = (dateObj.getMonth() + 1).toString().padStart(2, '0');
               const dayPad = dayNum.toString().padStart(2, '0');
@@ -199,7 +206,6 @@ export default function Professional3DCalendar({
                       : 'bg-slate-50/50 border-slate-200/60 hover:bg-white'
                   }`}
                 >
-                  {/* CELL TOP BAR: DATE NUMBER & BADGES */}
                   <div className="flex items-center justify-between">
                     <span
                       className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black transition ${
@@ -218,7 +224,6 @@ export default function Professional3DCalendar({
                     )}
                   </div>
 
-                  {/* CELL MIDDLE/BOTTOM: SUB-EVENT PILLS */}
                   <div className="space-y-1.5 mt-2 overflow-hidden">
                     {items.slice(0, 2).map(({ subEvent, project }, idx) => {
                       const grad = getGradientByProjectId(project.id || project.client_name);
@@ -253,7 +258,6 @@ export default function Professional3DCalendar({
       {selectedDayInspector && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl border-2 border-indigo-200 shadow-2xl max-w-2xl w-full p-6 space-y-5 relative max-h-[90vh] overflow-y-auto">
-            {/* MODAL HEADER */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-md">
@@ -275,10 +279,8 @@ export default function Professional3DCalendar({
               </button>
             </div>
 
-            {/* EVENTS BREAKDOWN LIST */}
             <div className="space-y-4">
               {selectedDayInspector.items.map(({ subEvent, project }) => {
-                const grad = getGradientByProjectId(project.id || project.client_name);
                 const assignments = subEvent.fw_assignments || [];
 
                 return (
@@ -286,7 +288,6 @@ export default function Professional3DCalendar({
                     key={subEvent.id}
                     className="bg-slate-50/80 rounded-2xl border border-slate-200/90 p-4 space-y-3 shadow-xs"
                   >
-                    {/* CLIENT & EVENT BAR */}
                     <div className="flex items-center justify-between gap-3 border-b border-slate-200/60 pb-2.5">
                       <div className="flex items-center gap-2">
                         <span className="px-3 py-1 rounded-full bg-indigo-900 text-white text-xs font-black">
@@ -297,7 +298,6 @@ export default function Professional3DCalendar({
                         </h4>
                       </div>
 
-                      {/* Time */}
                       {subEvent.roll_call_time && (
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
                           <Clock className="w-3.5 h-3.5 text-indigo-600" />
@@ -311,7 +311,6 @@ export default function Professional3DCalendar({
                       )}
                     </div>
 
-                    {/* Venue */}
                     {subEvent.venue_name && (
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
                         <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -319,32 +318,71 @@ export default function Professional3DCalendar({
                       </div>
                     )}
 
-                    {/* CREW ALLOCATIONS */}
+                    {/* CIRCULAR ROLE BADGES WITH CLICK ASSIGNMENT */}
                     <div>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                        Assigned Crew Roster
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2">
+                        Assigned Crew Roster (Click Badge to Assign)
                       </span>
                       {assignments.length === 0 ? (
                         <span className="text-xs text-slate-400 italic">No roles configured for this event.</span>
                       ) : (
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-start gap-4 flex-wrap pt-1">
                           {assignments.map((assignment) => {
-                            const member = assignment.fw_team_members;
-                            const isAssigned = !!assignment.assigned_member_id;
+                            const isAssigned = assignment.assigned_member_id !== null;
+                            const memberObj = assignment.fw_team_members;
+                            const rawName = memberObj?.name || '';
+                            const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                            const role = assignment.required_role;
+                            const dicebearFallback = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
+                            const { line1, line2 } = formatMemberName2Lines(cleanName);
 
                             return (
                               <div
                                 key={assignment.id}
-                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
-                                  isAssigned
-                                    ? 'bg-emerald-50 text-emerald-950 border-emerald-200'
-                                    : 'bg-rose-50 text-rose-800 border-rose-200'
-                                }`}
+                                onClick={(e) => onRoleClick && onRoleClick(assignment.id, e.currentTarget.getBoundingClientRect())}
+                                className="relative flex flex-col items-center min-w-[68px] group cursor-pointer"
+                                title={isAssigned ? `${cleanName} (${role}) - Click to change` : `Unassigned: ${role} - Click to assign`}
                               >
-                                <span className="font-semibold">{assignment.required_role}:</span>
-                                <span className={isAssigned ? 'font-black text-emerald-900' : 'font-bold italic text-rose-600'}>
-                                  {member?.name || 'Unassigned'}
+                                {isAssigned ? (
+                                  memberObj?.avatar_url ? (
+                                    // eslint-disable-next-next/no-img-element
+                                    <img
+                                      src={memberObj.avatar_url}
+                                      alt={cleanName}
+                                      className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-500 group-hover:scale-105 transition shrink-0"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = dicebearFallback;
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-emerald-500 group-hover:scale-105 transition shrink-0">
+                                      {getInitials(cleanName || role)}
+                                    </div>
+                                  )
+                                ) : (
+                                  <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-2xs group-hover:bg-red-100 group-hover:scale-105 transition-all cursor-pointer shrink-0">
+                                    <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
+                                  </div>
+                                )}
+
+                                <span
+                                  className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
+                                    isAssigned ? 'text-emerald-700 font-black' : 'text-red-600 font-extrabold'
+                                  }`}
+                                >
+                                  {role}
                                 </span>
+
+                                {isAssigned ? (
+                                  <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
+                                    <span className="block leading-none truncate max-w-[90px]">{line1}</span>
+                                    {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-red-600 italic block mt-0.5">
+                                    Unassigned
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
@@ -356,7 +394,6 @@ export default function Professional3DCalendar({
               })}
             </div>
 
-            {/* MODAL FOOTER */}
             <div className="pt-2 text-right">
               <button
                 onClick={() => setSelectedDayInspector(null)}

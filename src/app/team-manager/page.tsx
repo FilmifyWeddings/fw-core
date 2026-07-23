@@ -1,4 +1,5 @@
 'use client';
+import OperationsAnalyticsTab from './components/OperationsAnalyticsTab';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
