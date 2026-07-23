@@ -16,6 +16,8 @@ import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import AddProjectModal from './components/AddProjectModal';
 import AddTeamMemberModal from './components/AddTeamMemberModal';
 import TeamSettingsModal from './components/TeamSettingsModal';
+import MonthListView from './components/MonthListView';
+import Professional3DCalendar from './components/Professional3DCalendar';
 import { EventBlockData } from './components/EventBlock';
 
 // Semantic Theme CSS styles injected directly for strict color matching
@@ -623,6 +625,76 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
+        {/* ─── VIEW MODE NAVIGATION SWITCHER BAR ─── */}
+        <div className="flex items-center justify-between gap-4 mb-8 bg-white/90 backdrop-blur-md p-2 rounded-2xl border border-slate-200 shadow-xs flex-wrap">
+          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+            <button
+              onClick={() => setActiveTab('projects')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                activeTab === 'projects'
+                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Grid className="w-4 h-4" />
+              Cards View (Client-Wise)
+            </button>
+
+            <button
+              onClick={() => setActiveTab('list')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                activeTab === 'list'
+                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <List className="w-4 h-4" />
+              Month-Wise List View
+            </button>
+
+            <button
+              onClick={() => setActiveTab('calendar')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                activeTab === 'calendar'
+                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              3D Professional Calendar
+            </button>
+
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                activeTab === 'overview'
+                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              Overview Stats
+            </button>
+          </div>
+
+          <button
+            onClick={() => setActiveTab('trash')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+              activeTab === 'trash'
+                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
+            }`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Trash
+            {projects.filter(p => p.is_archived).length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black">
+                {projects.filter(p => p.is_archived).length}
+              </span>
+            )}
+          </button>
+        </div>
+
         {/* ─── TAB VIEW: 6 CRITICAL LOGIC & UI LAYOUT FIXES ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
@@ -1030,40 +1102,26 @@ export default function TeamManagerPage() {
           </div>
         )}
 
-        {/* ─── TAB VIEW: LIST REGISTER ─── */}
+        {/* ─── TAB VIEW: LIST REGISTER (MONTH-WISE) ─── */}
         {activeTab === 'list' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-[24px] border border-[#6C5CE7]/8 shadow-sm space-y-4">
-              <h3 className="font-extrabold text-sm text-[#0B111E]">Chronological Sub-Event List Register</h3>
-              <div className="space-y-3">
-                {projects.flatMap(p => p.fw_sub_events || []).map((se) => (
-                  <div key={se.id} className="flex items-center justify-between p-3.5 bg-[#F8F9FD] rounded-2xl border border-zinc-100 text-xs font-bold">
-                    <div className="flex items-center gap-3">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#6C5CE7]" />
-                      <span className="text-[#0B111E]">{se.event_title}</span>
-                      <span className="text-[#4F5E74]">({se.event_date})</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {se.fw_assignments?.map(a => (
-                        <span key={a.id} className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${a.assigned_member_id ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>
-                          {a.required_role}: {a.fw_team_members?.name || 'Unassigned'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <MonthListView
+            projects={projects}
+            searchQuery={searchQuery}
+            selectedRoleFilter={selectedRoleFilter}
+            format12HourTime={format12HourTime}
+            getGradientByProjectId={getGradientByProjectId}
+          />
         )}
 
-        {/* ─── TAB VIEW: CALENDAR VIEW ─── */}
+        {/* ─── TAB VIEW: 3D PROFESSIONAL CALENDAR ─── */}
         {activeTab === 'calendar' && (
-          <div className="bg-white p-8 rounded-[24px] border border-[#6C5CE7]/8 shadow-sm text-center py-20">
-            <Calendar className="w-12 h-12 text-[#6C5CE7] mx-auto mb-3" />
-            <h4 className="font-extrabold text-sm text-[#0B111E]">Operations Calendar Board</h4>
-            <p className="text-xs text-[#4F5E74] font-semibold mt-1">Calendar schedule synchronized with active Supabase sub-events.</p>
-          </div>
+          <Professional3DCalendar
+            projects={projects}
+            searchQuery={searchQuery}
+            selectedRoleFilter={selectedRoleFilter}
+            format12HourTime={format12HourTime}
+            getGradientByProjectId={getGradientByProjectId}
+          />
         )}
 
         {/* ─── TAB VIEW: TRASH RECOVERY ─── */}

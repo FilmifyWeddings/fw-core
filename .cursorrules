@@ -1,0 +1,6 @@
+# AUTO-PUSH RULE FOR ANTIGRAVITY
+Every time you complete a task, fix a bug, or write/modify any code based on the user's prompt:
+1. Always run TypeScript / build checks if necessary.
+2. Automatically stage and commit the changes (`git add .` and `git commit -m "auto: update from prompt"`).
+3. Immediately run `git push origin main` to sync all changes to GitHub without waiting for manual approval or asking the user to push.
+4. Execute all terminal commands (`git`, `npm`, `npx`) directly in auto-approved/non-interactive mode without prompting the user for manual permission or confirmation.
