@@ -1154,6 +1154,146 @@ export default function TeamManagerPage() {
           GLOBAL POPUP MODALS
          ───────────────────────────────────────────────────────────── */}
       
+      
+      {/* GLOBAL REACT PORTAL POPOVER FOR TEAM MEMBER ASSIGNMENT (WORKS ACROSS CARDS & LIST VIEW) */}
+      {activeDropdownId && dropdownPos && typeof window !== 'undefined' && (() => {
+        const activeAssignment = projects
+          .flatMap(p => p.fw_sub_events || [])
+          .flatMap(se => se.fw_assignments || [])
+          .find(a => a.id === activeDropdownId);
+
+        if (!activeAssignment) return null;
+        const isAssigned = activeAssignment.assigned_member_id !== null;
+
+        return createPortal(
+          <>
+            <div 
+              className="fixed inset-0 z-[99998]" 
+              onClick={() => {
+                setActiveDropdownId(null);
+                setDropdownPos(null);
+              }} 
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: -4 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 350 }}
+              style={{
+                position: 'fixed',
+                top: `${dropdownPos.top}px`,
+                left: `${dropdownPos.left}px`,
+                zIndex: 99999,
+              }}
+              className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left"
+            >
+              {/* SEARCH INPUT BAR */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search member or role..."
+                  value={memberSearchQuery}
+                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30 text-slate-900 placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* TOP PINNED ACTION ROW */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDropdownId(null);
+                  setDropdownPos(null);
+                  setActiveAssignmentForMember({
+                    assignmentId: activeAssignment.id,
+                    role: activeAssignment.required_role,
+                    subEventId: activeAssignment.sub_event_id || undefined,
+                    projectId: activeAssignment.project_id || undefined,
+                  });
+                  setIsAddMemberOpen(true);
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-[#F0EDFF] hover:bg-[#E5E0FF] text-[#6C5CE7] text-xs font-bold py-2 rounded-xl transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                + Add New Team Member
+              </button>
+
+              <div className="h-px bg-zinc-100 my-1" />
+
+              {/* MEMBER SELECTION LIST */}
+              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+                {/* UNASSIGN OPTION */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAssignMember(activeAssignment.id, null);
+                    setDropdownPos(null);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    !isAssigned
+                      ? 'bg-rose-50 text-rose-600'
+                      : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
+                  }`}
+                >
+                  <span>• Unassign / Pending</span>
+                  {!isAssigned && <Check className="w-3.5 h-3.5" />}
+                </button>
+
+                {teamMembers
+                  .filter(m => {
+                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                    if (!memberSearchQuery.trim()) return true;
+                    const q = memberSearchQuery.toLowerCase();
+                    return (
+                      cleanMName.toLowerCase().includes(q) ||
+                      m.primary_role.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((m) => {
+                    const isSelected = activeAssignment.assigned_member_id === m.id;
+                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          handleAssignMember(activeAssignment.id, m.id);
+                          setDropdownPos(null);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
+                            : 'text-[#0B111E] hover:bg-zinc-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {m.avatar_url ? (
+                            // eslint-disable-next-next/no-img-element
+                            <img 
+                              src={m.avatar_url} 
+                              alt={cleanMName} 
+                              className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ring-1 ring-indigo-200">
+                              {getInitials(cleanMName)}
+                            </div>
+                          )}
+                          <span className="break-words max-w-[120px] text-left">{cleanMName}</span>
+                          <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
+                      </button>
+                    );
+                  })}
+              </div>
+            </motion.div>
+          </>,
+          document.body
+        );
+      })()}
+
       {/* 1. Add Project Modal */}
       <AddProjectModal
         isOpen={isAddProjectOpen}

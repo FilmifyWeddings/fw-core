@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { FWProject, FWSubEvent } from '@/types';
-import { Calendar, Clock, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, Clock, MapPin, ChevronDown, ChevronUp, FileText, Plus } from 'lucide-react';
 
 interface MonthListViewProps {
   projects: FWProject[];
@@ -10,15 +10,30 @@ interface MonthListViewProps {
   selectedRoleFilter: string;
   format12HourTime: (time?: string) => string;
   getGradientByProjectId: (id: string) => string;
+  onRoleClick?: (assignmentId: string, rect: DOMRect) => void;
 }
 
 interface FlattenedSubEvent {
   subEvent: FWSubEvent;
   project: FWProject;
   dateObj: Date;
-  monthKey: string; // e.g. "July 2026"
+  monthKey: string;
   sortTimestamp: number;
 }
+
+const getInitials = (name: string) => {
+  if (!name) return 'CR';
+  const parts = name.split(' ').filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const formatMemberName2Lines = (fullName: string) => {
+  if (!fullName) return { line1: '', line2: '' };
+  const parts = fullName.split(' ').filter(Boolean);
+  if (parts.length === 1) return { line1: parts[0], line2: '' };
+  return { line1: parts[0], line2: parts.slice(1).join(' ') };
+};
 
 export default function MonthListView({
   projects,
@@ -26,6 +41,7 @@ export default function MonthListView({
   selectedRoleFilter,
   format12HourTime,
   getGradientByProjectId,
+  onRoleClick,
 }: MonthListViewProps) {
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
 
@@ -35,7 +51,6 @@ export default function MonthListView({
   projects.forEach((project) => {
     if (project.is_archived) return;
 
-    // Filter by client name if searchQuery exists
     const q = searchQuery.trim().toLowerCase();
     const matchClientName = !q || project.client_name.toLowerCase().includes(q);
 
@@ -43,7 +58,6 @@ export default function MonthListView({
       const matchSubTitle = !q || se.event_title.toLowerCase().includes(q);
       if (!matchClientName && !matchSubTitle) return;
 
-      // Role filter check
       if (selectedRoleFilter !== 'All') {
         const hasRole = se.fw_assignments?.some((a) => a.required_role === selectedRoleFilter);
         if (!hasRole) return;
@@ -67,10 +81,8 @@ export default function MonthListView({
     });
   });
 
-  // Sort sub-events chronologically
   allSubEvents.sort((a, b) => a.sortTimestamp - b.sortTimestamp);
 
-  // Group by Month Key maintaining chronological month order
   const monthGroups: { [monthKey: string]: FlattenedSubEvent[] } = {};
   const monthOrder: string[] = [];
 
@@ -140,7 +152,7 @@ export default function MonthListView({
 
             {/* SUB-EVENTS LIST BODY */}
             {!isCollapsed && (
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-5">
                 {items.map(({ subEvent, project, dateObj }) => {
                   const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
@@ -164,46 +176,49 @@ export default function MonthListView({
                   return (
                     <div
                       key={subEvent.id}
-                      className="bg-slate-50/70 hover:bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-300 shadow-xs hover:shadow-md transition-all p-4 flex flex-col lg:flex-row items-stretch gap-4"
+                      className="bg-white rounded-2xl border-2 border-slate-200/90 hover:border-indigo-300 shadow-sm hover:shadow-md transition-all p-5 flex flex-col lg:flex-row items-stretch gap-5"
                     >
                       {/* DATE BADGE COLUMN */}
                       <div
-                        className={`${projectGradient} w-full lg:w-32 rounded-xl p-3 shrink-0 flex lg:flex-col items-center justify-between text-center text-white`}
+                        className={`${projectGradient} w-full lg:w-32 rounded-xl p-3.5 shrink-0 flex lg:flex-col items-center justify-between text-center text-white`}
                       >
                         <div className="flex lg:flex-col items-center gap-2 lg:gap-0">
                           <span className="text-xs font-bold text-white/80 uppercase tracking-wider">
                             {dayName}
                           </span>
-                          <span className="text-2xl lg:text-3xl font-black text-white leading-none my-0.5">
+                          <span className="text-2xl lg:text-3xl font-black text-white leading-none my-1">
                             {dayNumber}
                           </span>
                           <span className="text-xs font-black text-white/90 uppercase tracking-wider">
                             {monthAbbr} {yearStr}
                           </span>
                         </div>
-                        <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20">
+                        <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
                           {assignedCount}/{totalSlots} Crew
                         </div>
                       </div>
 
                       {/* MAIN CONTENT AREA */}
-                      <div className="flex-1 space-y-3">
+                      <div className="flex-1 space-y-3.5">
                         {/* HEADER: CLIENT NAME & SUB EVENT TITLE */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black tracking-wide border border-indigo-200">
-                              Client: {project.client_name}
-                            </span>
-                            <h4 className="text-base font-black text-slate-900 tracking-tight">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            {/* 3. PROMINENT CLIENT NAME BADGE */}
+                            <div className="px-3.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/90 text-indigo-950 font-black text-sm md:text-base shadow-2xs flex items-center gap-2">
+                              <span className="text-indigo-600 font-extrabold text-xs uppercase tracking-wider">Client:</span>
+                              <span className="text-slate-900 font-black">{project.client_name}</span>
+                            </div>
+
+                            <h4 className="text-base md:text-lg font-black text-slate-900 tracking-tight">
                               {subEvent.event_title}
                             </h4>
                           </div>
 
-                          {/* Time & Venue */}
+                          {/* 4. DISPLAY LOCATION & TIME */}
                           <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
                             {subEvent.roll_call_time && (
-                              <div className="flex items-center gap-1.5 text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                                <Clock className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <div className="flex items-center gap-1.5 text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <Clock className="w-4 h-4 text-indigo-600 shrink-0" />
                                 <span>
                                   {format12HourTime(subEvent.roll_call_time)}
                                   {subEvent.dismissal_estimate_time
@@ -213,47 +228,97 @@ export default function MonthListView({
                               </div>
                             )}
                             {subEvent.venue_name && (
-                              <div className="flex items-center gap-1.5 text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
-                              </div>
+                              <a
+                                href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition hover:border-indigo-300"
+                              >
+                                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
+                              </a>
                             )}
                           </div>
                         </div>
 
-                        {/* CREW ALLOCATION CHIPS GRID */}
+                        {/* 4. DISPLAY OPERATIONAL NOTES */}
+                        {subEvent.operational_notes && (
+                          <div className="bg-amber-50/90 border-l-4 border-amber-400 p-3 rounded-r-xl text-xs text-amber-950 font-semibold flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>📝 Notes: {subEvent.operational_notes}</span>
+                          </div>
+                        )}
+
+                        {/* 1, 2, 5. CIRCULAR ROLE BADGES (CARD VIEW STYLE) & COLOR CODING & DIRECT ASSIGNMENT */}
                         <div>
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                            Assigned Crew Roster
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2">
+                            Assigned Crew Roster (Click Badge to Assign)
                           </span>
                           {assignments.length === 0 ? (
                             <span className="text-xs text-slate-400 italic">No roles configured for this event.</span>
                           ) : (
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-start gap-4 flex-wrap pt-1">
                               {assignments.map((assignment) => {
-                                const member = assignment.fw_team_members;
-                                const isAssigned = !!assignment.assigned_member_id;
+                                const isAssigned = assignment.assigned_member_id !== null;
+                                const memberObj = assignment.fw_team_members;
+                                const rawName = memberObj?.name || '';
+                                const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                                const role = assignment.required_role;
+                                const dicebearFallback = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
+                                const { line1, line2 } = formatMemberName2Lines(cleanName);
 
                                 return (
                                   <div
                                     key={assignment.id}
-                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition ${
-                                      isAssigned
-                                        ? 'bg-emerald-50 text-emerald-950 border-emerald-200/90 shadow-2xs'
-                                        : 'bg-rose-50 text-rose-800 border-rose-200/90 shadow-2xs'
-                                    }`}
+                                    onClick={(e) => onRoleClick && onRoleClick(assignment.id, e.currentTarget.getBoundingClientRect())}
+                                    className="relative flex flex-col items-center min-w-[68px] group cursor-pointer"
+                                    title={isAssigned ? `${cleanName} (${role}) - Click to change` : `Unassigned: ${role} - Click to assign`}
                                   >
-                                    <div
-                                      className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black text-white ${
-                                        isAssigned ? 'bg-emerald-600' : 'bg-rose-500'
+                                    {/* LAYER 1: CIRCULAR AVATAR / RED DASHED UNASSIGNED CIRCLE */}
+                                    {isAssigned ? (
+                                      memberObj?.avatar_url ? (
+                                        /* 5. GREEN BORDER 🟢 FOR ASSIGNED ROLES */
+                                        // eslint-disable-next-next/no-img-element
+                                        <img
+                                          src={memberObj.avatar_url}
+                                          alt={cleanName}
+                                          className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-500 group-hover:scale-105 transition shrink-0"
+                                          onError={(e) => {
+                                            (e.target as HTMLImageElement).src = dicebearFallback;
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-emerald-500 group-hover:scale-105 transition shrink-0">
+                                          {getInitials(cleanName || role)}
+                                        </div>
+                                      )
+                                    ) : (
+                                      /* 5. RED BORDER 🔴 FOR UNASSIGNED ROLES */
+                                      <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-2xs group-hover:bg-red-100 group-hover:scale-105 transition-all cursor-pointer shrink-0">
+                                        <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
+                                      </div>
+                                    )}
+
+                                    {/* LAYER 2: ROLE LABEL (GREEN IF ASSIGNED 🟢, RED IF UNASSIGNED 🔴) */}
+                                    <span
+                                      className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
+                                        isAssigned ? 'text-emerald-700 font-black' : 'text-red-600 font-extrabold'
                                       }`}
                                     >
-                                      {assignment.required_role?.slice(0, 2).toUpperCase() || 'CR'}
-                                    </div>
-                                    <span>{assignment.required_role}:</span>
-                                    <span className={isAssigned ? 'font-black text-emerald-900' : 'font-bold italic text-rose-600'}>
-                                      {member?.name || 'Unassigned'}
+                                      {role}
                                     </span>
+
+                                    {/* LAYER 3: MEMBER NAME OR UNASSIGNED BADGE */}
+                                    {isAssigned ? (
+                                      <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
+                                        <span className="block leading-none truncate max-w-[90px]">{line1}</span>
+                                        {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-red-600 italic block mt-0.5">
+                                        Unassigned
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })}
