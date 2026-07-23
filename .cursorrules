@@ -1,6 +1,11 @@
-# AUTO-PUSH RULE FOR ANTIGRAVITY
-Every time you complete a task, fix a bug, or write/modify any code based on the user's prompt:
-1. Always run TypeScript / build checks if necessary.
-2. Automatically stage and commit the changes (`git add .` and `git commit -m "auto: update from prompt"`).
-3. Immediately run `git push origin main` to sync all changes to GitHub without waiting for manual approval or asking the user to push.
-4. Execute all terminal commands (`git`, `npm`, `npx`) directly in auto-approved/non-interactive mode without prompting the user for manual permission or confirmation.
+# AUTO-PUSH RULE FOR ANTIGRAVITY / DEEPMIND AGENT
+
+Strictly follow this workflow for every single task, prompt, or code modification:
+
+1. Always apply and test the requested code changes.
+2. Immediately after completing the changes, automatically stage, commit, and push the code to GitHub without waiting for manual confirmation or asking permission.
+3. Use the following exact commands internally:
+   - git add .
+   - git commit -m "auto: update from prompt"
+   - git push origin main
+4. Do NOT skip the push step under any circumstances. Always confirm with "GitHub Sync Complete" after finishing a task.
