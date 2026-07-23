@@ -5,7 +5,7 @@ import { FWProject, FWTeamMember, FWSubEvent, FWAssignment } from '@/types';
 import { 
   BarChart3, TrendingUp, Users, Calendar, Award, CheckCircle2, 
   AlertTriangle, DollarSign, X, Phone, Mail, MapPin, Clock, 
-  FileText, Sparkles, PieChart, Activity, Briefcase, Camera, Film, Disc
+  FileText, Sparkles, PieChart, Activity, Briefcase, Camera, Film, Disc, Filter
 } from 'lucide-react';
 
 interface OperationsAnalyticsTabProps {
@@ -36,25 +36,33 @@ export default function OperationsAnalyticsTab({
     upcomingCount: number;
   } | null>(null);
 
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>('All');
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Active non-archived projects
   const activeProjects = projects.filter((p) => !p.is_archived);
-  const allSubEvents = activeProjects.flatMap((p) => (p.fw_sub_events || []).map((se) => ({ subEvent: se, project: p })));
+  
+  const allSubEvents = activeProjects.flatMap((p) => 
+    (p.fw_sub_events || [])
+      .filter((se) => {
+        if (selectedMonthFilter === 'All') return true;
+        const d = new Date(se.event_date);
+        return !isNaN(d.getTime()) && d.getMonth() === parseInt(selectedMonthFilter, 10);
+      })
+      .map((se) => ({ subEvent: se, project: p }))
+  );
+
   const allAssignments = allSubEvents.flatMap(({ subEvent, project }) => 
     (subEvent.fw_assignments || []).map((a) => ({ assignment: a, subEvent, project }))
   );
 
-  // A. EVENT & SUB-EVENT CATEGORY BREAKDOWN
   const categories = [
     { key: 'Wedding', name: 'Wedding Ceremonies', icon: Sparkles, color: 'from-amber-500 to-orange-600', keywords: ['wedding', 'phera', 'marriage', 'vow'] },
     { key: 'Pre-wedding', name: 'Pre-Wedding Shoots', icon: Camera, color: 'from-indigo-500 to-purple-600', keywords: ['pre-wedding', 'engagement', 'save the date', 'ring'] },
     { key: 'Sangeet', name: 'Sangeet & Cocktail', icon: Disc, color: 'from-fuchsia-500 to-pink-600', keywords: ['sangeet', 'cocktail', 'party', 'dance'] },
     { key: 'Haldi', name: 'Haldi & Mehendi', icon: Film, color: 'from-yellow-400 to-amber-500', keywords: ['haldi', 'mehendi', 'myaap', 'chooda'] },
-    { key: 'Corporate', name: 'Corporate & Commercial', icon: Briefcase, color: 'from-emerald-500 to-teal-600', keywords: ['corporate', 'commercial', 'portfolio', 'birthday'] },
+    { key: 'Corporate', name: 'Corporate & Other', icon: Briefcase, color: 'from-emerald-500 to-teal-600', keywords: ['corporate', 'commercial', 'portfolio', 'birthday'] },
   ];
 
   const categoryStats = categories.map((cat) => {
@@ -67,18 +75,30 @@ export default function OperationsAnalyticsTab({
 
   const totalShootsCount = allSubEvents.length;
 
-  // Monthly Volume for 2026 Chart
-  const monthsList = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const monthlyShoots = monthsList.map((m, idx) => {
-    const count = allSubEvents.filter(({ subEvent }) => {
-      const d = new Date(subEvent.event_date);
-      return !isNaN(d.getTime()) && d.getMonth() === idx;
+  const monthsList = [
+    { label: 'Jan', val: '0' },
+    { label: 'Feb', val: '1' },
+    { label: 'Mar', val: '2' },
+    { label: 'Apr', val: '3' },
+    { label: 'May', val: '4' },
+    { label: 'Jun', val: '5' },
+    { label: 'Jul', val: '6' },
+    { label: 'Aug', val: '7' },
+    { label: 'Sep', val: '8' },
+    { label: 'Oct', val: '9' },
+    { label: 'Nov', val: '10' },
+    { label: 'Dec', val: '11' },
+  ];
+
+  const monthlyShoots = monthsList.map((m) => {
+    const count = activeProjects.flatMap(p => p.fw_sub_events || []).filter((se) => {
+      const d = new Date(se.event_date);
+      return !isNaN(d.getTime()) && d.getMonth() === parseInt(m.val, 10);
     }).length;
-    return { month: m, count };
+    return { month: m.label, val: m.val, count };
   });
   const maxMonthlyCount = Math.max(...monthlyShoots.map((m) => m.count), 1);
 
-  // B. TEAM MEMBER ANALYTICS
   const memberAnalyticsList = teamMembers.map((member) => {
     const memberAssignments = allAssignments.filter(({ assignment }) => assignment.assigned_member_id === member.id);
     
@@ -118,10 +138,8 @@ export default function OperationsAnalyticsTab({
     };
   });
 
-  // Sort members by total shoots assigned
   memberAnalyticsList.sort((a, b) => b.totalShoots - a.totalShoots);
 
-  // C. CAPACITY & ALLOCATION METRICS
   const totalSlots = allAssignments.length;
   const assignedSlots = allAssignments.filter(({ assignment }) => assignment.assigned_member_id !== null).length;
   const unassignedSlots = totalSlots - assignedSlots;
@@ -129,11 +147,38 @@ export default function OperationsAnalyticsTab({
 
   return (
     <div className="space-y-8">
+      {/* FILTER & TOP EXECUTIVE CONTROL BAR */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black">
+            <Filter className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-base font-black text-slate-900">Operations Analytics & Dynamic Filters</h4>
+            <p className="text-xs text-slate-500 font-bold">Filter operations breakdown by specific month or entire year</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-bold text-slate-600">Month Filter:</label>
+          <select
+            value={selectedMonthFilter}
+            onChange={(e) => setSelectedMonthFilter(e.target.value)}
+            className="px-4 py-2 bg-slate-50 border border-slate-300 rounded-2xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="All">All Months (Year 2026)</option>
+            {monthsList.map((m) => (
+              <option key={m.val} value={m.val}>{m.label} 2026</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* SECTION 1: TOP EXECUTIVE KPIs SUMMARY CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-700/50 shadow-xl relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-indigo-200 uppercase tracking-wider">Total Scheduled Events</span>
+            <span className="text-xs font-black text-indigo-200 uppercase tracking-wider">Scheduled Events</span>
             <Calendar className="w-5 h-5 text-indigo-300" />
           </div>
           <h3 className="text-3xl font-black text-white mt-2">{totalShootsCount}</h3>
@@ -151,7 +196,7 @@ export default function OperationsAnalyticsTab({
           <h3 className="text-3xl font-black text-slate-900 mt-2">{teamMembers.length}</h3>
           <div className="flex items-center gap-2 mt-2 text-[11px] font-bold text-emerald-600">
             <Award className="w-4 h-4 text-emerald-500" />
-            <span>100% Operational Status</span>
+            <span>100% Operational Roster</span>
           </div>
         </div>
 
@@ -180,8 +225,6 @@ export default function OperationsAnalyticsTab({
 
       {/* SECTION 2: 3D MONTH-BY-MONTH SHOOT VOLUME & CATEGORY BREAKDOWN */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* MONTHLY BAR GRAPH CHART (8 COLS) */}
         <div className="lg:col-span-8 bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-6">
           <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
             <div className="flex items-center gap-3">
@@ -190,7 +233,7 @@ export default function OperationsAnalyticsTab({
               </div>
               <div>
                 <h4 className="text-lg font-black text-slate-900">2026 Monthly Shoot Volume</h4>
-                <p className="text-xs text-slate-500 font-bold">Chronological distribution of wedding shoots throughout the year</p>
+                <p className="text-xs text-slate-500 font-bold">Click any month bar to filter stats</p>
               </div>
             </div>
 
@@ -199,34 +242,41 @@ export default function OperationsAnalyticsTab({
             </span>
           </div>
 
-          {/* 3D Bar Graph Visualization */}
           <div className="h-64 flex items-end justify-between gap-2 pt-8 px-2 border-b border-slate-200">
-            {monthlyShoots.map(({ month, count }) => {
+            {monthlyShoots.map(({ month, val, count }) => {
               const heightPercent = Math.round((count / maxMonthlyCount) * 100);
+              const isSelected = selectedMonthFilter === val;
 
               return (
-                <div key={month} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
-                  {/* Tooltip on hover */}
+                <div
+                  key={month}
+                  onClick={() => setSelectedMonthFilter(isSelected ? 'All' : val)}
+                  className="flex-1 flex flex-col items-center gap-2 group h-full justify-end cursor-pointer"
+                >
                   <span className="opacity-0 group-hover:opacity-100 transition text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-md shadow-lg pointer-events-none whitespace-nowrap">
                     {count} {count === 1 ? 'Shoot' : 'Shoots'}
                   </span>
 
-                  {/* 3D Gradient Bar */}
                   <div
                     style={{ height: `${Math.max(heightPercent, 8)}%` }}
-                    className="w-full max-w-[36px] bg-gradient-to-t from-indigo-700 via-indigo-500 to-purple-400 rounded-t-xl group-hover:from-indigo-800 group-hover:to-purple-500 transition-all duration-300 shadow-md group-hover:shadow-indigo-500/30 flex items-start justify-center pt-1"
+                    className={`w-full max-w-[36px] rounded-t-xl transition-all duration-300 shadow-md flex items-start justify-center pt-1 ${
+                      isSelected
+                        ? 'bg-gradient-to-t from-amber-500 via-orange-500 to-amber-400 ring-2 ring-amber-400'
+                        : 'bg-gradient-to-t from-indigo-700 via-indigo-500 to-purple-400 group-hover:from-indigo-800 group-hover:to-purple-500'
+                    }`}
                   >
                     {count > 0 && <span className="text-[10px] font-black text-white">{count}</span>}
                   </div>
 
-                  <span className="text-xs font-extrabold text-slate-600 mt-2">{month}</span>
+                  <span className={`text-xs font-extrabold mt-2 ${isSelected ? 'text-amber-600 font-black' : 'text-slate-600'}`}>
+                    {month}
+                  </span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* CATEGORY BREAKDOWN CARDS (4 COLS) */}
         <div className="lg:col-span-4 bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-5">
           <div className="flex items-center gap-3 border-b border-slate-200/80 pb-4">
             <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center font-black">
@@ -234,7 +284,7 @@ export default function OperationsAnalyticsTab({
             </div>
             <div>
               <h4 className="text-lg font-black text-slate-900">Category Breakdown</h4>
-              <p className="text-xs text-slate-500 font-bold">Shoots by sub-event type</p>
+              <p className="text-xs text-slate-500 font-bold">Shoots by sub-event category</p>
             </div>
           </div>
 
@@ -244,7 +294,7 @@ export default function OperationsAnalyticsTab({
               const percent = totalShootsCount > 0 ? Math.round((cat.count / totalShootsCount) * 100) : 0;
 
               return (
-                <div key={cat.key} className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl space-y-2">
+                <div key={cat.key} className="bg-slate-50 border-2 border-slate-200 p-3.5 rounded-2xl space-y-2 hover:border-indigo-300 transition">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${cat.color} text-white flex items-center justify-center shadow-xs`}>
@@ -255,7 +305,6 @@ export default function OperationsAnalyticsTab({
                     <span className="text-xs font-black text-slate-900">{cat.count} Shoots</span>
                   </div>
 
-                  {/* Progress Bar */}
                   <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                     <div className={`bg-gradient-to-r ${cat.color} h-full rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
                   </div>
@@ -282,7 +331,6 @@ export default function OperationsAnalyticsTab({
           </div>
         </div>
 
-        {/* Member Analytics Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {memberAnalyticsList.map(({ member, totalShoots, completedCount, upcomingCount, roleCounts, shoots }) => {
             return (
@@ -291,7 +339,6 @@ export default function OperationsAnalyticsTab({
                 onClick={() => setSelectedMember({ member, shoots, roleCounts, completedCount, upcomingCount })}
                 className="bg-slate-50/80 hover:bg-white border-2 border-slate-200/90 hover:border-indigo-400 rounded-3xl p-5 transition-all duration-200 shadow-xs hover:shadow-lg cursor-pointer space-y-4 group"
               >
-                {/* MEMBER HEADER */}
                 <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
                   <div className="flex items-center gap-3 min-w-0">
                     {member.avatar_url ? (
@@ -324,7 +371,6 @@ export default function OperationsAnalyticsTab({
                   </div>
                 </div>
 
-                {/* ROLE DISTRIBUTION BADGES */}
                 <div className="space-y-1.5">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Role Assignments</span>
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -340,7 +386,6 @@ export default function OperationsAnalyticsTab({
                   </div>
                 </div>
 
-                {/* FOOTER STATS BAR */}
                 <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs font-bold text-slate-600">
                   <span className="text-emerald-600 font-extrabold">{completedCount} Completed</span>
                   <span className="text-indigo-600 font-extrabold">{upcomingCount} Upcoming</span>
@@ -355,7 +400,6 @@ export default function OperationsAnalyticsTab({
       {selectedMember && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl border-2 border-indigo-200 shadow-2xl max-w-3xl w-full p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto">
-            {/* HEADER */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-5">
               <div className="flex items-center gap-4">
                 {selectedMember.member.avatar_url ? (
@@ -398,7 +442,6 @@ export default function OperationsAnalyticsTab({
               </button>
             </div>
 
-            {/* PERFORMANCE & PAY SUMMARY CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-indigo-50/70 border border-indigo-200 p-4 rounded-2xl">
                 <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider block">Total Shoots Assigned</span>
@@ -416,7 +459,6 @@ export default function OperationsAnalyticsTab({
               </div>
             </div>
 
-            {/* FULL ASSIGNED SHOOTS TIMELINE */}
             <div className="space-y-3">
               <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider block">
                 Assigned Shoot Timeline ({selectedMember.shoots.length})
@@ -429,8 +471,6 @@ export default function OperationsAnalyticsTab({
               ) : (
                 <div className="space-y-3">
                   {selectedMember.shoots.map(({ subEvent, project, assignment, dateObj }) => {
-                    const projectGradient = getGradientByProjectId(project.id || project.client_name);
-
                     return (
                       <div
                         key={assignment.id}
@@ -455,7 +495,6 @@ export default function OperationsAnalyticsTab({
                           </div>
                         </div>
 
-                        {/* Location & Time */}
                         <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
                           {subEvent.roll_call_time && (
                             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
@@ -477,7 +516,6 @@ export default function OperationsAnalyticsTab({
                           )}
                         </div>
 
-                        {/* Notes */}
                         {subEvent.operational_notes && (
                           <div className="bg-amber-50 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2">
                             <FileText className="w-4 h-4 text-amber-600 shrink-0" />
@@ -491,7 +529,6 @@ export default function OperationsAnalyticsTab({
               )}
             </div>
 
-            {/* FOOTER */}
             <div className="pt-2 text-right border-t border-slate-100">
               <button
                 onClick={() => setSelectedMember(null)}
