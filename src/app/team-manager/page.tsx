@@ -573,7 +573,7 @@ export default function TeamManagerPage() {
             <h2 className="text-xl font-bold text-[#0B111E] tracking-tight flex items-center gap-2">
               Welcome back, Studio Admin 👋
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-xs">
-                v2.4-avatar-settings
+                v3.0-avatar-settings
               </span>
             </h2>
             <p className="text-xs text-[#4F5E74] font-semibold mt-0.5">
