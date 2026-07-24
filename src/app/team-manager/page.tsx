@@ -660,15 +660,19 @@ export default function TeamManagerPage() {
               >
                 <ArrowLeft className="w-4 h-4" />
               </Link>
-              <div>
-                {/* TEAM MANAGER LABEL - 3D STYLE */}
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500 mb-0.5" style={{
-                  textShadow: '0 1px 0 #a5b4fc, 0 2px 4px rgba(99,102,241,0.18)'
-                }}>Team Manager</p>
-                {/* DYNAMIC GREETING WITH 3D LABEL ABOVE */}
-                <h2 className="text-base sm:text-xl font-black text-[#0B111E] tracking-tight leading-tight">
-                  {greetingInfo.text}, {studioName} {greetingInfo.emoji}
-                </h2>
+
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/25 shrink-0">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight leading-none">
+                    Team Manager
+                  </h1>
+                  <p className="text-xs font-bold text-[#4F5E74] mt-1 leading-none">
+                    {greetingInfo.text}, {studioName} {greetingInfo.emoji}
+                  </p>
+                </div>
               </div>
             </div>
 
