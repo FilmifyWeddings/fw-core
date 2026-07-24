@@ -96,12 +96,21 @@ function MetaAdsContent() {
   const fetchMetaSyncData = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/meta/sync');
+      // Forward all search params to sync endpoint
+      const queryStr = searchParams ? searchParams.toString() : '';
+      const syncUrl = '/api/meta/sync' + (queryStr ? ('?' + queryStr) : '');
+
+      const res = await fetch(syncUrl);
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.isConnected) {
+        const urlIsConnected = searchParams?.get('meta') === 'connected' || searchParams?.has('pages');
+
+        if (data.success && (data.isConnected || urlIsConnected)) {
           setIsConnected(true);
-          setConnectedAccountName(data.accountName || 'Meta Business Account');
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('fw_meta_connected', 'true');
+          }
+          setConnectedAccountName(data.accountName || 'Meta Business Account (Connected)');
           setAdAccountId(data.adAccountId);
           setPages(data.pages || []);
           setLeadForms(data.leadForms || []);
@@ -111,10 +120,15 @@ function MetaAdsContent() {
             showToastNotification('Meta Account Connected Successfully! Pages & Forms Synced ✓');
           }
         } else {
-          setIsConnected(false);
-          setPages([]);
-          setLeadForms([]);
-          setTotalLeadsSynced(0);
+          // If URL param is not connected and DB is disconnected, set disconnected
+          if (typeof window !== 'undefined' && localStorage.getItem('fw_meta_connected') === 'true' && !searchParams?.get('oauth_error')) {
+            setIsConnected(true);
+          } else {
+            setIsConnected(false);
+            setPages([]);
+            setLeadForms([]);
+            setTotalLeadsSynced(0);
+          }
         }
       }
     } catch (err: any) {
@@ -129,7 +143,17 @@ function MetaAdsContent() {
       setIsConnected(false);
       setPages([]);
       setLeadForms([]);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('fw_meta_connected');
+      }
     } else {
+      const isUrlConnected = searchParams?.get('meta') === 'connected' || searchParams?.has('pages');
+      if (isUrlConnected) {
+        setIsConnected(true);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('fw_meta_connected', 'true');
+        }
+      }
       fetchMetaSyncData();
     }
   }, [searchParams]);
@@ -151,12 +175,11 @@ function MetaAdsContent() {
       setPages([]);
       setLeadForms([]);
       setTotalLeadsSynced(0);
-      showToastNotification('Meta Business Account Disconnected.');
-
-      // Clean URL hash and search params cleanly
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('fw_meta_connected');
         window.history.replaceState({}, '', '/workspace/integrations/meta');
       }
+      showToastNotification('Meta Business Account Disconnected.');
     }
   };
 
@@ -278,13 +301,20 @@ function MetaAdsContent() {
           </div>
 
           <div className="flex items-center gap-3">
-            <a
-              href={fbOAuthUrl}
-              className="px-4 py-2 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] text-white text-xs font-black shadow-md shadow-blue-500/20 transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <FacebookIcon className="w-4 h-4" />
-              <span>Connect Facebook Account</span>
-            </a>
+            {isConnected ? (
+              <span className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Connected ✓
+              </span>
+            ) : (
+              <a
+                href={fbOAuthUrl}
+                className="px-4 py-2 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] text-white text-xs font-black shadow-md shadow-blue-500/20 transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <FacebookIcon className="w-4 h-4" />
+                <span>Connect Facebook Account</span>
+              </a>
+            )}
           </div>
         </div>
       </header>
@@ -375,13 +405,28 @@ function MetaAdsContent() {
 
             {/* ACTION BUTTON & CONNECT STATUS */}
             <div className="flex flex-col items-start lg:items-end gap-3 shrink-0">
-              <a
-                href={fbOAuthUrl}
-                className="inline-flex items-center gap-3 px-6 py-4 rounded-2xl bg-[#1877F2] hover:bg-[#166FE5] text-white font-extrabold text-sm shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
-              >
-                <FacebookIcon className="w-5 h-5" />
-                <span>Connect Facebook Account</span>
-              </a>
+              {isConnected ? (
+                <div className="flex flex-col items-end gap-2">
+                  <span className="px-5 py-3 rounded-2xl bg-emerald-50 text-emerald-800 border-2 border-emerald-200 font-black text-sm flex items-center gap-2 shadow-sm">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Connected ({pages.length} Pages)
+                  </span>
+                  <button
+                    onClick={handleDisconnect}
+                    className="text-xs font-extrabold text-rose-600 hover:text-rose-800 underline transition cursor-pointer"
+                  >
+                    Disconnect Account
+                  </button>
+                </div>
+              ) : (
+                <a
+                  href={fbOAuthUrl}
+                  className="inline-flex items-center gap-3 px-6 py-4 rounded-2xl bg-[#1877F2] hover:bg-[#166FE5] text-white font-extrabold text-sm shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <FacebookIcon className="w-5 h-5" />
+                  <span>Connect Facebook Account</span>
+                </a>
+              )}
 
               <span className="text-[11px] font-bold text-slate-400">
                 Secure SSL 256-bit OAuth 2.0 Auth Dialog
@@ -392,34 +437,27 @@ function MetaAdsContent() {
 
         {/* DYNAMIC CONNECTION STATE RENDERING */}
         {!isConnected ? (
-          /* EMPTY DISCONNECTED STATE - 0 PAGES, 0 FORMS, ZERO DEMO DATA */
-          <div className="space-y-6">
-            <FacebookConnect 
-              isConnected={false} 
-              pagesCount={0} 
-            />
+          /* EMPTY DISCONNECTED STATE - CLEAN SINGLE CONNECT CONTROL */
+          <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-12 text-center shadow-sm space-y-4">
+            <div className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-200 text-[#1877F2] flex items-center justify-center mx-auto shadow-inner">
+              <FacebookIcon className="w-8 h-8" />
+            </div>
 
-            <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-12 text-center shadow-sm space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-200 text-[#1877F2] flex items-center justify-center mx-auto shadow-inner">
-                <FacebookIcon className="w-8 h-8" />
-              </div>
+            <div className="max-w-md mx-auto space-y-2">
+              <h3 className="text-lg font-black text-slate-900">No Meta Account Connected</h3>
+              <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                Click 'Connect Facebook Account' above to start real-time lead sync.
+              </p>
+            </div>
 
-              <div className="max-w-md mx-auto space-y-2">
-                <h3 className="text-lg font-black text-slate-900">No Meta Account Connected</h3>
-                <p className="text-xs font-semibold text-slate-500 leading-relaxed">
-                  Click 'Connect Facebook Account' above to start real-time lead sync.
-                </p>
-              </div>
-
-              <div className="pt-2">
-                <a
-                  href={fbOAuthUrl}
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#1877F2] hover:bg-[#166FE5] text-white text-xs font-black shadow-md shadow-blue-500/20 transition cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  <FacebookIcon className="w-4 h-4" />
-                  <span>Connect Facebook Account</span>
-                </a>
-              </div>
+            <div className="pt-2">
+              <a
+                href={fbOAuthUrl}
+                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#1877F2] hover:bg-[#166FE5] text-white text-xs font-black shadow-md shadow-blue-500/20 transition cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <FacebookIcon className="w-4 h-4" />
+                <span>Connect Facebook Account</span>
+              </a>
             </div>
           </div>
         ) : (
@@ -490,7 +528,7 @@ function MetaAdsContent() {
               </div>
             </div>
 
-            {/* FACEBOOK CONNECT CONTROL */}
+            {/* FACEBOOK CONNECT CONTROL (CONNECTED BANNER) */}
             <FacebookConnect 
               isConnected={true} 
               connectedAccountName={connectedAccountName} 

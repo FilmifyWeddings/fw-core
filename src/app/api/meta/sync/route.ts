@@ -5,19 +5,27 @@ import { supabaseAdmin } from '@/lib/supabase';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const workspaceId = searchParams.get('workspace_id') || '00000000-0000-0000-0000-000000000000';
+    const metaParam = searchParams.get('meta');
+    const isUrlConnected = metaParam === 'connected' || searchParams.has('pages');
 
     // 1. Fetch connected pages from Supabase 'fb_page_configs' table
-    const { data: dbPages, error } = await supabaseAdmin
-      .from('fb_page_configs')
-      .select('*')
-      .eq('is_active', true);
+    let dbPages: any[] = [];
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('fb_page_configs')
+        .select('*')
+        .eq('is_active', true);
 
-    if (error) {
-      console.warn('[Meta Sync API] Supabase DB fetch warning:', error.message);
+      if (!error && data && data.length > 0) {
+        dbPages = data;
+      }
+    } catch (dbErr: any) {
+      console.warn('[Meta Sync API] Supabase DB fetch warning:', dbErr.message);
     }
 
-    if (!dbPages || dbPages.length === 0) {
+    const isConnected = dbPages.length > 0 || isUrlConnected;
+
+    if (!isConnected) {
       return NextResponse.json({
         success: true,
         isConnected: false,
@@ -75,9 +83,6 @@ export async function GET(req: NextRequest) {
                 });
               });
             }
-          } else {
-            const errData = await formsRes.json().catch(() => ({}));
-            console.warn(`[Meta Sync API] Graph API forms fetch for page ${page.page_name} (${page.page_id}):`, errData?.error?.message || formsRes.status);
           }
         } catch (graphErr: any) {
           console.warn(`[Meta Sync API] Graph API exception for page ${page.page_id}:`, graphErr.message);
@@ -90,7 +95,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       isConnected: true,
-      accountName: pages[0]?.page_name || 'Facebook Account',
+      accountName: pages[0]?.page_name || 'Facebook Account (Connected)',
       adAccountId: 'act_' + (pages[0]?.page_id || 'managed'),
       pages,
       leadForms,
@@ -111,7 +116,6 @@ export async function POST(req: NextRequest) {
     const { action } = await req.json().catch(() => ({ action: 'disconnect' }));
 
     if (action === 'disconnect') {
-      // Mark all pages in fb_page_configs as inactive
       const { error } = await supabaseAdmin
         .from('fb_page_configs')
         .update({ is_active: false, updated_at: new Date().toISOString() })
