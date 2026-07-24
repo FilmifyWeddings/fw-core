@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     }>();
 
     if (accessToken) {
-      // Step 2A: Standard /me/accounts Query
+      // ── STEP A: Standard /me/accounts Query ─────────────────────────
       try {
         const pagesRes = await fetch(
           `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category,access_token,tasks&access_token=${accessToken}`
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 
         if (pagesRes.ok && pagesData.data && Array.isArray(pagesData.data)) {
           if (pagesData.data.length > 0) {
-            fetchSource = 'graph_api_me_accounts';
+            fetchSource = 'graph_api_step_a_me_accounts';
             pagesData.data.forEach((item: any) => {
               pagesMap.set(item.id, {
                 page_id: item.id,
@@ -84,79 +84,82 @@ export async function GET(req: NextRequest) {
           }
         }
       } catch (err: any) {
-        console.warn('[Meta Sync API] /me/accounts Exception:', err.message);
+        console.warn('[Meta Sync API] Step A /me/accounts Exception:', err.message);
       }
 
-      // Step 2B: FALLBACK NESTED QUERY if /me/accounts returns 0 pages
-      // Query: GET /me?fields=id,name,accounts{id,name,access_token,category},businesses{id,name,client_pages{id,name,access_token,category},owned_pages{id,name,access_token,category}}
+      // ── STEP B (Fallback 1): Business Manager Client / Owned Pages ───
       if (pagesMap.size === 0) {
         try {
-          console.log('[Meta Sync API] 0 pages returned by /me/accounts. Triggering deep nested business pages fallback query...');
-          const meNestedRes = await fetch(
-            `https://graph.facebook.com/v19.0/me?fields=id,name,accounts{id,name,access_token,category},businesses{id,name,client_pages{id,name,access_token,category},owned_pages{id,name,access_token,category}}&access_token=${accessToken}`
+          console.log('[Meta Auto-Discovery] Step B: Querying /me/businesses for Business Manager pages...');
+          const bizRes = await fetch(
+            `https://graph.facebook.com/v19.0/me/businesses?fields=id,name,client_pages{id,name,access_token,category},owned_pages{id,name,access_token,category}&access_token=${accessToken}`
           );
-          rawMeNested = await meNestedRes.json().catch(() => ({}));
-          if (meNestedRes.ok && rawMeNested) {
-            debugUserId = rawMeNested.id;
+          const bizData = await bizRes.json().catch(() => ({}));
 
-            // 1. Check direct accounts in nested response
-            if (rawMeNested.accounts?.data && Array.isArray(rawMeNested.accounts.data)) {
-              rawMeNested.accounts.data.forEach((acc: any) => {
-                pagesMap.set(acc.id, {
-                  page_id: acc.id,
-                  page_name: acc.name,
-                  page_category: acc.category || 'Facebook Business Page',
-                  is_active: true,
-                  page_access_token: acc.access_token || accessToken!,
+          if (bizRes.ok && bizData.data && Array.isArray(bizData.data)) {
+            bizData.data.forEach((biz: any) => {
+              if (biz.owned_pages?.data && Array.isArray(biz.owned_pages.data)) {
+                biz.owned_pages.data.forEach((op: any) => {
+                  pagesMap.set(op.id, {
+                    page_id: op.id,
+                    page_name: op.name,
+                    page_category: op.category || 'Facebook Business Page',
+                    is_active: true,
+                    page_access_token: op.access_token || accessToken!,
+                  });
                 });
-              });
-            }
-
-            // 2. Check businesses owned_pages & client_pages in nested response
-            if (rawMeNested.businesses?.data && Array.isArray(rawMeNested.businesses.data)) {
-              rawMeNested.businesses.data.forEach((biz: any) => {
-                if (biz.owned_pages?.data && Array.isArray(biz.owned_pages.data)) {
-                  biz.owned_pages.data.forEach((op: any) => {
-                    pagesMap.set(op.id, {
-                      page_id: op.id,
-                      page_name: op.name,
-                      page_category: op.category || 'Facebook Business Page',
-                      is_active: true,
-                      page_access_token: op.access_token || accessToken!,
-                    });
+              }
+              if (biz.client_pages?.data && Array.isArray(biz.client_pages.data)) {
+                biz.client_pages.data.forEach((cp: any) => {
+                  pagesMap.set(cp.id, {
+                    page_id: cp.id,
+                    page_name: cp.name,
+                    page_category: cp.category || 'Facebook Business Page',
+                    is_active: true,
+                    page_access_token: cp.access_token || accessToken!,
                   });
-                }
-                if (biz.client_pages?.data && Array.isArray(biz.client_pages.data)) {
-                  biz.client_pages.data.forEach((cp: any) => {
-                    pagesMap.set(cp.id, {
-                      page_id: cp.id,
-                      page_name: cp.name,
-                      page_category: cp.category || 'Facebook Business Page',
-                      is_active: true,
-                      page_access_token: cp.access_token || accessToken!,
-                    });
-                  });
-                }
-              });
-            }
+                });
+              }
+            });
 
             if (pagesMap.size > 0) {
-              fetchSource = 'graph_api_me_nested_fallback';
+              fetchSource = 'graph_api_step_b_businesses';
             }
           }
-        } catch (nestedErr: any) {
-          console.warn('[Meta Sync API] Deep nested query exception:', nestedErr.message);
+        } catch (bizErr: any) {
+          console.warn('[Meta Auto-Discovery] Step B /me/businesses Exception:', bizErr.message);
         }
       }
 
-      // Step 2C: Target Specific Check for Page ID 110156851793416 (Filmify Weddings)
+      // ── STEP C (Ultimate Fallback): Hardcoded Direct Page Query ───────
+      // Target Page ID: 110156851793416 (Filmify Weddings)
       const targetPageId = '110156851793416';
-      if (pagesMap.has(targetPageId)) {
-        const targetPage = pagesMap.get(targetPageId)!;
-        console.log(`[Meta Deep Sync] SUCCESS! Found target page ${targetPageId} (${targetPage.page_name}). Extracting access token and persisting...`);
+      if (!pagesMap.has(targetPageId)) {
+        try {
+          console.log(`[Meta Auto-Discovery] Step C Ultimate Fallback: Querying target page ${targetPageId} directly...`);
+          const directRes = await fetch(
+            `https://graph.facebook.com/v19.0/${targetPageId}?fields=id,name,access_token,category&access_token=${accessToken}`
+          );
+          if (directRes.ok) {
+            const directData = await directRes.json();
+            if (directData.id) {
+              pagesMap.set(directData.id, {
+                page_id: directData.id,
+                page_name: directData.name || 'Filmify Weddings',
+                page_category: directData.category || 'Wedding Service / Business Page',
+                is_active: true,
+                page_access_token: directData.access_token || accessToken!,
+              });
+              if (fetchSource === 'none') fetchSource = 'graph_api_step_c_direct_target_page';
+              console.log(`[Meta Auto-Discovery] Step C Success! Retrieved target page ${directData.id} (${directData.name}) directly.`);
+            }
+          }
+        } catch (directErr: any) {
+          console.warn(`[Meta Auto-Discovery] Step C Direct Query warning for page ${targetPageId}:`, directErr.message);
+        }
       }
 
-      // Step 3: Persist Pages & Fetch Lead Forms for every page found
+      // ── Save/Upsert All Resolved Pages & Page Access Tokens ───────────
       const pagesList = Array.from(pagesMap.values());
       if (pagesList.length > 0) {
         const upsertPages = pagesList.map(p => ({
@@ -173,6 +176,7 @@ export async function GET(req: NextRequest) {
           .from('fb_page_configs')
           .upsert(upsertPages, { onConflict: 'workspace_id,page_id' });
 
+        // Fetch Lead Forms for each page
         for (const page of pagesList) {
           if (page.page_access_token) {
             try {
@@ -205,7 +209,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Step 4: Fetch Meta Ad Accounts (/me/adaccounts) forms
+      // ── Fetch Meta Ad Accounts (/me/adaccounts) forms ────────────────
       try {
         const adAccRes = await fetch(
           `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id&access_token=${accessToken}`
@@ -317,7 +321,6 @@ export async function GET(req: NextRequest) {
       leadForms,
       totalLeadsSynced,
       debug_user_id: debugUserId,
-      raw_me_nested: rawMeNested,
       meta_api_debug: {
         fetchSource,
         tokenFound: !!accessToken,
