@@ -163,31 +163,31 @@ export default function MonthListView({
               key={monthKey}
               className="bg-[#F8F9FD] rounded-3xl border border-slate-200/90 p-4 md:p-6 space-y-4 shadow-sm"
             >
-              {/* MONTH HEADER ACCORDION BAR - SOFT THEME INDIGO HEADER */}
+              {/* MONTH HEADER ACCORDION BAR - MEDIUM DARK INDIGO HEADER */}
               <div
                 onClick={() => toggleMonth(monthKey)}
-                className="flex items-center justify-between bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-indigo-50/90 text-indigo-950 px-5 py-3.5 rounded-2xl border-2 border-indigo-200/80 cursor-pointer hover:border-indigo-400 transition shadow-2xs select-none"
+                className="flex items-center justify-between bg-gradient-to-r from-indigo-900 via-[#1E1B4B] to-indigo-900 text-white px-5 py-3.5 rounded-2xl border border-indigo-700/60 cursor-pointer hover:border-indigo-400 transition shadow-md select-none"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white text-[#6C5CE7] flex items-center justify-center font-black border border-indigo-100 shadow-xs">
-                    <Calendar className="w-5 h-5 text-[#6C5CE7]" />
+                  <div className="w-10 h-10 rounded-xl bg-white/15 text-indigo-200 flex items-center justify-center font-black border border-white/20 shadow-inner">
+                    <Calendar className="w-5 h-5 text-indigo-200" />
                   </div>
                   <div>
-                    <h3 className="text-base md:text-lg font-black text-indigo-950 tracking-tight">
+                    <h3 className="text-base md:text-lg font-black text-white tracking-tight">
                       {monthKey}
                     </h3>
-                    <span className="text-xs font-bold text-indigo-600/80">
+                    <span className="text-xs font-bold text-indigo-200/80">
                       {items.length} Sub-Event{items.length === 1 ? '' : 's'} Total
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-white text-indigo-700 text-xs font-black border border-indigo-200 shadow-2xs">
+                  <span className="px-3 py-1 rounded-full bg-white/15 text-white text-xs font-black border border-white/20 backdrop-blur-sm">
                     {items.length} Events
                   </span>
                   <ChevronDown
-                    className={`w-5 h-5 text-indigo-600 transition-transform duration-200 ${
+                    className={`w-5 h-5 text-indigo-200 transition-transform duration-200 ${
                       isCollapsed ? 'rotate-180' : ''
                     }`}
                   />

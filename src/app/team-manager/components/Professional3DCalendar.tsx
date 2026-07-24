@@ -130,19 +130,19 @@ export default function Professional3DCalendar({
 
   return (
     <div className="space-y-6">
-      {/* 3D CALENDAR CONTAINER CARD */}
-      <div className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-xl shadow-slate-200/50 p-6 md:p-8 space-y-6">
+      {/* CALENDAR CONTAINER CARD */}
+      <div className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-xl shadow-slate-200/50 p-4 md:p-6 space-y-4 overflow-hidden">
         
         {/* TOP HEADER CONTROLS BAR */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-200/80 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
-              <CalendarIcon className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
+              <CalendarIcon className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-2xl font-black tracking-tight text-slate-900">{monthNameYear}</h3>
+              <h3 className="text-lg sm:text-2xl font-black tracking-tight text-slate-900">{monthNameYear}</h3>
               <p className="text-xs text-slate-500 font-bold mt-0.5">
-                Interactive Operations & Operations Planning Board
+                Interactive Operations Planning Board
               </p>
             </div>
           </div>
@@ -174,22 +174,23 @@ export default function Professional3DCalendar({
           </div>
         </div>
 
-        {/* CALENDAR MONTH GRID */}
-        <div className="space-y-2">
+        {/* CALENDAR MONTH GRID - FULLY RESPONSIVE */}
+        <div className="space-y-1 overflow-x-auto">
           {/* DAY NAMES HEADER */}
-          <div className="grid grid-cols-7 gap-2 text-center">
+          <div className="grid grid-cols-7 min-w-[320px] text-center">
             {daysOfWeek.map((day) => (
-              <div key={day} className="py-2 text-xs font-black text-slate-400 uppercase tracking-wider">
-                {day}
+              <div key={day} className="py-1.5 text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-wider text-center">
+                <span className="hidden sm:inline">{day}</span>
+                <span className="inline sm:hidden">{day.charAt(0)}</span>
               </div>
             ))}
           </div>
 
           {/* DATES GRID */}
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 min-w-[320px]">
             {/* Blank leading slots */}
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-              <div key={`blank-${i}`} className="min-h-[100px] md:min-h-[130px] rounded-2xl bg-slate-50/50 border border-slate-100/80" />
+              <div key={`blank-${i}`} className="min-h-[60px] sm:min-h-[90px] md:min-h-[110px] rounded-xl sm:rounded-2xl bg-slate-50/50 border border-slate-100/80" />
             ))}
 
             {/* Month Day Cells */}
@@ -212,7 +213,7 @@ export default function Professional3DCalendar({
                       });
                     }
                   }}
-                  className={`min-h-[100px] md:min-h-[130px] p-2.5 rounded-2xl border-2 transition-all flex flex-col justify-between ${
+                  className={`min-h-[60px] sm:min-h-[90px] md:min-h-[110px] p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl border-2 transition-all flex flex-col ${
                     isToday
                       ? 'border-indigo-600 bg-indigo-50/30 shadow-md ring-2 ring-indigo-500/20'
                       : items.length > 0
@@ -220,38 +221,47 @@ export default function Professional3DCalendar({
                       : 'border-slate-100 bg-white/60'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs md:text-sm font-black ${
-                      isToday ? 'w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs' : 'text-slate-700'
+                  <div className="flex items-start justify-between gap-0.5">
+                    <span className={`text-[10px] sm:text-xs md:text-sm font-black leading-none ${
+                      isToday ? 'w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs text-[9px] sm:text-[11px]' : 'text-slate-700'
                     }`}>
                       {dayNum}
                     </span>
 
                     {items.length > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black border border-indigo-200">
-                        {items.length} Event{items.length === 1 ? '' : 's'}
+                      <span className="hidden sm:inline px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[9px] font-black border border-indigo-200 leading-none">
+                        {items.length}
                       </span>
                     )}
                   </div>
 
-                  {/* EVENTS PILLS PREVIEW */}
-                  <div className="space-y-1 mt-1 flex-1">
+                  {/* EVENTS PILLS PREVIEW - only show on sm+ */}
+                  <div className="space-y-0.5 mt-1 flex-1 hidden sm:block">
                     {items.slice(0, 2).map(({ subEvent, project }, idx) => (
                       <div
                         key={idx}
-                        className="bg-indigo-900 text-white p-1.5 rounded-xl text-[10px] font-extrabold truncate border border-indigo-950 shadow-2xs"
+                        className="bg-indigo-900 text-white p-1 sm:p-1.5 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-extrabold truncate border border-indigo-950 shadow-2xs"
                       >
-                        <span className="text-amber-300 block font-black leading-tight">{project.client_name}</span>
-                        <span className="text-white/90 block font-semibold truncate leading-tight">{subEvent.event_title}</span>
+                        <span className="text-amber-300 block font-black leading-tight truncate">{project.client_name}</span>
+                        <span className="text-white/90 block font-semibold truncate leading-tight hidden sm:block">{subEvent.event_title}</span>
                       </div>
                     ))}
 
                     {items.length > 2 && (
-                      <div className="text-[10px] font-bold text-indigo-600 text-center bg-indigo-50 py-0.5 rounded-lg border border-indigo-100">
-                        +{items.length - 2} more...
+                      <div className="text-[9px] font-bold text-indigo-600 text-center bg-indigo-50 py-0.5 rounded-lg border border-indigo-100">
+                        +{items.length - 2}
                       </div>
                     )}
                   </div>
+
+                  {/* mobile: just dot indicator */}
+                  {items.length > 0 && (
+                    <div className="flex items-center gap-0.5 mt-1 sm:hidden flex-wrap">
+                      {items.slice(0, 3).map((_, idx) => (
+                        <span key={idx} className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

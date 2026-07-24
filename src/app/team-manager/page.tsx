@@ -393,17 +393,95 @@ export default function TeamManagerPage() {
           .eq('id', projectId);
         if (projErr) throw projErr;
 
+        // EDIT MODE: Preserve assignments! Fetch existing sub-events WITH their assignments
         const { data: existingSubEvents } = await supabase
           .from('fw_sub_events')
-          .select('id')
+          .select('id, event_title, roles')
           .eq('project_id', projectId);
 
+        // Fetch existing ASSIGNED members so we can preserve them
+        const existingAssignedMap: Record<string, string | null> = {};
         if (existingSubEvents && existingSubEvents.length > 0) {
           const subEventIds = existingSubEvents.map(se => se.id);
+          const { data: existingAssignments } = await supabase
+            .from('fw_assignments')
+            .select('sub_event_id, required_role, assigned_member_id')
+            .in('sub_event_id', subEventIds)
+            .not('assigned_member_id', 'is', null);
+
+          // Build a map: "subEventTitle|role" -> assigned_member_id
+          if (existingAssignments) {
+            existingAssignments.forEach(a => {
+              const se = existingSubEvents.find(e => e.id === a.sub_event_id);
+              if (se) {
+                const key = `${se.event_title}|${a.required_role}`;
+                existingAssignedMap[key] = a.assigned_member_id;
+              }
+            });
+          }
+
+          // Now delete old assignments and sub_events to re-insert updated ones
           await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
           await supabase.from('fw_sub_events').delete().eq('project_id', projectId);
         }
+
+        // Re-insert sub-events and restore assigned members where they were set
+        if (blocks.length > 0) {
+          for (const block of blocks) {
+            const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
+            const rolesToSave = block.roles || [];
+
+            const subEventPayload: any = {
+              project_id: targetProjectId,
+              event_title: title,
+              event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+              venue_name: block.venueLocation || null,
+              venue_map_link: block.mapLink || null,
+              roll_call_time: block.startTime || '10:00',
+              dismissal_estimate_time: block.endTime || '18:00',
+              operational_notes: block.notes || null,
+              shift_hours_slot: block.shiftSlot || null,
+              roles: rolesToSave,
+            };
+
+            const { data: insertedSubEvent, error: seErr } = await supabase
+              .from('fw_sub_events')
+              .insert([subEventPayload])
+              .select()
+              .single();
+
+            if (seErr) throw seErr;
+
+            if (insertedSubEvent && rolesToSave.length > 0) {
+              const assignmentsPayload = rolesToSave.map(role => {
+                // Restore the previously assigned member if one existed for this role
+                const preservedMember = existingAssignedMap[`${title}|${role}`] || null;
+                return {
+                  project_id: targetProjectId,
+                  sub_event_id: insertedSubEvent.id,
+                  sub_event_name: title,
+                  sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+                  start_time: block.startTime || '10:00',
+                  end_time: block.endTime || '18:00',
+                  required_role: role,
+                  assigned_member_id: preservedMember, // PRESERVE EXISTING ASSIGNMENT!
+                  status: preservedMember ? 'assigned' : 'pending',
+                };
+              });
+
+              const { error: assignErr } = await supabase
+                .from('fw_assignments')
+                .insert(assignmentsPayload);
+
+              if (assignErr) {
+                console.error('[TeamManager] Insert fw_assignments error (edit):', assignErr.message);
+              }
+            }
+          }
+        }
+
       } else {
+        // NEW PROJECT: insert fresh
         const { data: newProj, error: projErr } = await supabase
           .from('fw_projects')
           .insert([{ 
@@ -415,55 +493,54 @@ export default function TeamManagerPage() {
           .single();
         if (projErr) throw projErr;
         targetProjectId = newProj.id;
-      }
 
-      if (targetProjectId && blocks.length > 0) {
-        for (const block of blocks) {
-          const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
-          const rolesToSave = block.roles || [];
-          
-          // STEP 2: Insert sub-event into fw_sub_events (matching roles JSONB column)
-          const subEventPayload: any = {
-            project_id: targetProjectId,
-            event_title: title,
-            event_date: block.subEventDate || new Date().toISOString().split('T')[0],
-            venue_name: block.venueLocation || null,
-            venue_map_link: block.mapLink || null,
-            roll_call_time: block.startTime || '10:00',
-            dismissal_estimate_time: block.endTime || '18:00',
-            operational_notes: block.notes || null,
-            shift_hours_slot: block.shiftSlot || null,
-            roles: rolesToSave,
-          };
+        // Insert new sub-events + unassigned roles
+        if (blocks.length > 0) {
+          for (const block of blocks) {
+            const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
+            const rolesToSave = block.roles || [];
 
-          const { data: insertedSubEvent, error: seErr } = await supabase
-            .from('fw_sub_events')
-            .insert([subEventPayload])
-            .select()
-            .single();
-
-          if (seErr) throw seErr;
-
-          // STEP 3: Insert each selected role placement into fw_assignments table (ALL START UNASSIGNED)
-          if (insertedSubEvent && rolesToSave.length > 0) {
-            const assignmentsPayload = rolesToSave.map(role => ({
+            const subEventPayload: any = {
               project_id: targetProjectId,
-              sub_event_id: insertedSubEvent.id,
-              sub_event_name: title,
-              sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
-              start_time: block.startTime || '10:00',
-              end_time: block.endTime || '18:00',
-              required_role: role,
-              assigned_member_id: null, // ALWAYS UNASSIGNED ON INITIAL CREATION!
-              status: 'pending',
-            }));
+              event_title: title,
+              event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+              venue_name: block.venueLocation || null,
+              venue_map_link: block.mapLink || null,
+              roll_call_time: block.startTime || '10:00',
+              dismissal_estimate_time: block.endTime || '18:00',
+              operational_notes: block.notes || null,
+              shift_hours_slot: block.shiftSlot || null,
+              roles: rolesToSave,
+            };
 
-            const { error: assignErr } = await supabase
-              .from('fw_assignments')
-              .insert(assignmentsPayload);
+            const { data: insertedSubEvent, error: seErr } = await supabase
+              .from('fw_sub_events')
+              .insert([subEventPayload])
+              .select()
+              .single();
 
-            if (assignErr) {
-              console.error('[TeamManager] Insert fw_assignments error:', assignErr.message);
+            if (seErr) throw seErr;
+
+            if (insertedSubEvent && rolesToSave.length > 0) {
+              const assignmentsPayload = rolesToSave.map(role => ({
+                project_id: targetProjectId,
+                sub_event_id: insertedSubEvent.id,
+                sub_event_name: title,
+                sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+                start_time: block.startTime || '10:00',
+                end_time: block.endTime || '18:00',
+                required_role: role,
+                assigned_member_id: null,
+                status: 'pending',
+              }));
+
+              const { error: assignErr } = await supabase
+                .from('fw_assignments')
+                .insert(assignmentsPayload);
+
+              if (assignErr) {
+                console.error('[TeamManager] Insert fw_assignments error (new):', assignErr.message);
+              }
             }
           }
         }
@@ -652,7 +729,7 @@ export default function TeamManagerPage() {
                 }`}
               >
                 <Calendar className="w-4 h-4" />
-                3D Professional Calendar
+                Calendar
               </button>
 
               <button
@@ -1234,7 +1311,7 @@ export default function TeamManagerPage() {
           }`}
         >
           <Calendar className="w-5 h-5" />
-          <span className="text-[10px]">3D Cal</span>
+          <span className="text-[10px]">Calendar</span>
         </button>
 
         <button
