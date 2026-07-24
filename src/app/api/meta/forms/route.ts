@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     let pageAccessToken: string | null = null;
     let userAccessToken: string | null = null;
 
-    // Step 1: Get Page Access Token from fb_page_configs
+    // Step 1: Lookup stored Page Access Token from fb_page_configs
     try {
       const { data: pageConfig } = await supabaseAdmin
         .from('fb_page_configs')
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       console.warn('[Meta Forms API] Page token lookup warning:', err.message);
     }
 
-    // Step 2: Get User Access Token from integration_credentials or profiles
+    // Step 2: Fallback User Token from integration_credentials
     try {
       const { data: credData } = await supabaseAdmin
         .from('integration_credentials')
@@ -42,89 +42,106 @@ export async function GET(req: NextRequest) {
     } catch (err: any) {}
 
     const tokenToUse = pageAccessToken || userAccessToken;
-    const formsMap = new Map<string, any>();
+    const fetchedForms: any[] = [];
 
-    // Step 3: Query Meta Graph API using Page Access Token
+    // Step 3: Direct Loop Query to Meta Graph API with limit=100
     if (tokenToUse) {
       try {
+        console.log(`[Meta Forms API] Fetching leadgen_forms with limit=100 for page ${pageId}...`);
         const formsRes = await fetch(
-          `https://graph.facebook.com/v19.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions&access_token=${tokenToUse}`
+          `https://graph.facebook.com/v19.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=100&access_token=${tokenToUse}`
         );
+
         if (formsRes.ok) {
           const formsData = await formsRes.json();
           if (formsData.data && Array.isArray(formsData.data)) {
+            console.log(`[Meta Forms API] Successfully fetched ${formsData.data.length} real lead forms from Graph API!`);
             formsData.data.forEach((f: any) => {
-              formsMap.set(f.id, {
-                form_id: f.id,
-                name: f.name || 'Filmify Weddings Lead Form',
-                status: (f.status || 'ACTIVE').toUpperCase(),
+              fetchedForms.push({
+                workspace_id: workspaceId,
                 page_id: pageId,
-                page_name: 'Filmify Weddings',
-                ad_account_name: 'Filmify Weddings Ad Account',
-                is_active: true,
-                sync_count: f.leads_count || 0,
-                last_lead_time: f.created_time || 'Active',
-                questions_count: f.questions?.length || 5,
+                form_id: f.id,
+                form_name: f.name || 'Meta Lead Form',
+                status: (f.status || 'ACTIVE').toUpperCase(),
+                leads_count: f.leads_count || 0,
+                created_time: f.created_time || new Date().toISOString(),
+                updated_at: new Date().toISOString(),
               });
             });
           }
+        } else {
+          const errBody = await formsRes.json().catch(() => ({}));
+          console.warn('[Meta Forms API] Graph API error response:', errBody);
         }
       } catch (graphErr: any) {
-        console.warn(`[Meta Forms API] Page forms fetch error for ${pageId}:`, graphErr.message);
+        console.error('[Meta Forms API] Graph API Exception:', graphErr.message);
       }
     }
 
-    // Step 4: Fallback User Access Token Query if formsMap is empty
-    if (formsMap.size === 0 && userAccessToken && userAccessToken !== tokenToUse) {
+    // Step 4: Upsert ALL returned forms directly into Supabase fb_lead_forms table
+    if (fetchedForms.length > 0) {
       try {
-        const fallbackRes = await fetch(
-          `https://graph.facebook.com/v19.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions&access_token=${userAccessToken}`
-        );
-        if (fallbackRes.ok) {
-          const fallbackData = await fallbackRes.json();
-          if (fallbackData.data && Array.isArray(fallbackData.data)) {
-            fallbackData.data.forEach((f: any) => {
-              formsMap.set(f.id, {
-                form_id: f.id,
-                name: f.name || 'Filmify Weddings Lead Form',
-                status: (f.status || 'ACTIVE').toUpperCase(),
-                page_id: pageId,
-                page_name: 'Filmify Weddings',
-                ad_account_name: 'Filmify Weddings Ad Account',
-                is_active: true,
-                sync_count: f.leads_count || 0,
-                last_lead_time: f.created_time || 'Active',
-                questions_count: f.questions?.length || 5,
-              });
-            });
-          }
+        console.log(`[Meta Forms API] Upserting ${fetchedForms.length} real forms into Supabase fb_lead_forms...`);
+        const { error: upsertErr } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .upsert(fetchedForms, { onConflict: 'form_id' });
+
+        if (upsertErr) {
+          console.warn('[Meta Forms API] Supabase fb_lead_forms upsert warning:', upsertErr.message);
         }
-      } catch (err: any) {}
+      } catch (dbErr: any) {
+        console.warn('[Meta Forms API] Database upsert exception:', dbErr.message);
+      }
     }
 
-    // GUARANTEED FORM FALLBACK: Always ensure Filmify Weddings has an active Instant Lead Form
-    if (formsMap.size === 0) {
-      formsMap.set('form_110156851793416_active', {
-        form_id: 'form_110156851793416_active',
-        name: 'Filmify Weddings - Premium Wedding Inquiry Form',
-        status: 'ACTIVE',
-        page_id: pageId,
+    // Step 5: Read directly from fb_lead_forms table in Supabase
+    let finalForms: any[] = [];
+    try {
+      const { data: dbForms } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('*')
+        .eq('page_id', pageId)
+        .order('created_at', { ascending: false });
+
+      if (dbForms && dbForms.length > 0) {
+        finalForms = dbForms.map(f => ({
+          form_id: f.form_id,
+          name: f.form_name,
+          status: (f.status || 'ACTIVE').toUpperCase(),
+          page_id: f.page_id,
+          page_name: 'Filmify Weddings',
+          ad_account_name: 'Filmify Weddings Ad Account',
+          is_active: true,
+          sync_count: f.leads_count || 0,
+          last_lead_time: f.created_time || 'Active',
+          questions_count: 5,
+        }));
+      }
+    } catch (readErr: any) {
+      console.warn('[Meta Forms API] Read from fb_lead_forms warning:', readErr.message);
+    }
+
+    // Fallback to in-memory fetchedForms if DB query returned 0 items
+    if (finalForms.length === 0 && fetchedForms.length > 0) {
+      finalForms = fetchedForms.map(f => ({
+        form_id: f.form_id,
+        name: f.form_name,
+        status: f.status,
+        page_id: f.page_id,
         page_name: 'Filmify Weddings',
         ad_account_name: 'Filmify Weddings Ad Account',
         is_active: true,
-        sync_count: 12,
-        last_lead_time: new Date().toISOString().split('T')[0],
+        sync_count: f.leads_count || 0,
+        last_lead_time: f.created_time || 'Active',
         questions_count: 5,
-      });
+      }));
     }
-
-    const forms = Array.from(formsMap.values());
 
     return NextResponse.json({
       success: true,
       page_id: pageId,
-      forms,
-      total_forms: forms.length,
+      forms: finalForms,
+      total_forms: finalForms.length,
     });
   } catch (error: any) {
     console.error('[Meta Forms API Error]:', error);

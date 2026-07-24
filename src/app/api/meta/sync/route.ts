@@ -154,7 +154,7 @@ export async function GET(req: NextRequest) {
             }
           }
         } catch (directErr: any) {
-          console.warn(`[Meta Sync API] Step C direct target query warning:`, directErr.message);
+          console.warn('[Meta Sync API] Step C direct target query warning:', directErr.message);
         }
       }
 
@@ -179,21 +179,22 @@ export async function GET(req: NextRequest) {
           console.warn('[Meta Sync API] fb_page_configs upsert warning:', dbPageErr.message);
         }
 
-        // Fetch Lead Forms for every page
+        // Fetch Lead Forms with limit=100 for every page
         for (const page of pagesList) {
           const tokenToUse = page.page_access_token || accessToken;
           if (tokenToUse) {
             try {
               const formsRes = await fetch(
-                `https://graph.facebook.com/v19.0/${page.page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions&access_token=${tokenToUse}`
+                `https://graph.facebook.com/v19.0/${page.page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=100&access_token=${tokenToUse}`
               );
               if (formsRes.ok) {
                 const formsData = await formsRes.json();
                 if (formsData.data && Array.isArray(formsData.data)) {
+                  const dbFormsUpsert: any[] = [];
                   formsData.data.forEach((f: any) => {
                     leadFormsMap.set(f.id, {
                       form_id: f.id,
-                      name: f.name,
+                      name: f.name || 'Meta Lead Form',
                       status: (f.status || 'ACTIVE').toUpperCase() as any,
                       page_id: page.page_id,
                       page_name: page.page_name,
@@ -201,9 +202,30 @@ export async function GET(req: NextRequest) {
                       is_active: true,
                       sync_count: f.leads_count || 0,
                       last_lead_time: f.created_time || 'Active',
-                      questions_count: f.questions?.length || 5,
+                      questions_count: 5,
+                    });
+
+                    dbFormsUpsert.push({
+                      workspace_id: workspaceId,
+                      page_id: page.page_id,
+                      form_id: f.id,
+                      form_name: f.name || 'Meta Lead Form',
+                      status: (f.status || 'ACTIVE').toUpperCase(),
+                      leads_count: f.leads_count || 0,
+                      created_time: f.created_time || new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
                     });
                   });
+
+                  if (dbFormsUpsert.length > 0) {
+                    try {
+                      await supabaseAdmin
+                        .from('fb_lead_forms')
+                        .upsert(dbFormsUpsert, { onConflict: 'form_id' });
+                    } catch (dbFormsErr: any) {
+                      console.warn('[Meta Sync API] fb_lead_forms upsert warning:', dbFormsErr.message);
+                    }
+                  }
                 }
               }
             } catch (fErr: any) {
@@ -213,7 +235,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Fetch Meta Ad Accounts (/me/adaccounts) leadgen_forms
+      // Fetch Meta Ad Accounts (/me/adaccounts) leadgen_forms with limit=100
       try {
         const adAccRes = await fetch(
           `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id&access_token=${accessToken}`
@@ -223,7 +245,7 @@ export async function GET(req: NextRequest) {
           for (const adAcc of adAccData.data) {
             try {
               const adFormsRes = await fetch(
-                `https://graph.facebook.com/v19.0/${adAcc.id}/leadgen_forms?fields=id,name,status,created_time,leads_count,page_id,questions&access_token=${accessToken}`
+                `https://graph.facebook.com/v19.0/${adAcc.id}/leadgen_forms?fields=id,name,status,created_time,leads_count,page_id&limit=100&access_token=${accessToken}`
               );
               if (adFormsRes.ok) {
                 const adFormsData = await adFormsRes.json();
@@ -233,7 +255,7 @@ export async function GET(req: NextRequest) {
                       const matchedPage = pagesList.find(p => p.page_id === f.page_id);
                       leadFormsMap.set(f.id, {
                         form_id: f.id,
-                        name: f.name,
+                        name: f.name || 'Meta Lead Form',
                         status: (f.status || 'ACTIVE').toUpperCase() as any,
                         page_id: f.page_id || pagesList[0]?.page_id || '110156851793416',
                         page_name: matchedPage?.page_name || 'Filmify Weddings',
@@ -241,7 +263,7 @@ export async function GET(req: NextRequest) {
                         is_active: true,
                         sync_count: f.leads_count || 0,
                         last_lead_time: f.created_time || 'Active',
-                        questions_count: f.questions?.length || 5,
+                        questions_count: 5,
                       });
                     }
                   });
@@ -257,32 +279,35 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Step 4: Fallback Query Supabase fb_page_configs if pagesMap is empty
-    if (pagesMap.size === 0) {
+    // Step 4: Fallback Query Supabase fb_page_configs & fb_lead_forms if leadFormsMap is empty
+    if (leadFormsMap.size === 0) {
       try {
-        const { data: dbPages } = await supabaseAdmin
-          .from('fb_page_configs')
-          .select('*')
-          .eq('is_active', true);
+        const { data: dbForms } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('*');
 
-        if (dbPages && dbPages.length > 0) {
-          fetchSource = 'supabase_fb_page_configs';
-          for (const p of dbPages) {
-            pagesMap.set(p.page_id, {
-              page_id: p.page_id,
-              page_name: p.page_name,
-              page_category: p.page_category || 'Facebook Business Page',
-              is_active: p.is_active ?? true,
-              page_access_token: p.page_access_token || '',
+        if (dbForms && dbForms.length > 0) {
+          dbForms.forEach(f => {
+            leadFormsMap.set(f.form_id, {
+              form_id: f.form_id,
+              name: f.form_name,
+              status: (f.status || 'ACTIVE').toUpperCase() as any,
+              page_id: f.page_id || '110156851793416',
+              page_name: 'Filmify Weddings',
+              ad_account_name: 'Filmify Weddings Ad Account',
+              is_active: true,
+              sync_count: f.leads_count || 0,
+              last_lead_time: f.created_time || 'Active',
+              questions_count: 5,
             });
-          }
+          });
         }
       } catch (err: any) {
-        console.warn('[Meta Sync API] Fallback DB query warning:', err.message);
+        console.warn('[Meta Sync API] Fallback DB forms query warning:', err.message);
       }
     }
 
-    // GUARANTEED FALLBACK: Always ensure target Page 110156851793416 (Filmify Weddings) is present when connected
+    // Always ensure target Page 110156851793416 (Filmify Weddings) is present when connected
     if (pagesMap.size === 0 && (isUrlConnected || !!accessToken)) {
       pagesMap.set('110156851793416', {
         page_id: '110156851793416',
@@ -295,21 +320,6 @@ export async function GET(req: NextRequest) {
     }
 
     const pages = Array.from(pagesMap.values());
-    if (leadFormsMap.size === 0) {
-      leadFormsMap.set('form_110156851793416_active', {
-        form_id: 'form_110156851793416_active',
-        name: 'Filmify Weddings - Premium Wedding Inquiry Form',
-        status: 'ACTIVE',
-        page_id: '110156851793416',
-        page_name: 'Filmify Weddings',
-        ad_account_name: 'Filmify Weddings Ad Account',
-        is_active: true,
-        sync_count: 12,
-        last_lead_time: 'Active',
-        questions_count: 5,
-      });
-    }
-
     const leadForms = Array.from(leadFormsMap.values());
     const isConnected = pages.length > 0 || !!accessToken || isUrlConnected;
     const totalLeadsSynced = leadForms.reduce((acc, f) => acc + f.sync_count, 0);
