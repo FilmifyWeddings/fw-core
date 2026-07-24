@@ -76,9 +76,9 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Ensure touch targets meet minimum 44px requirement */
+/* Touch targets for standard main buttons */
 @media (max-width: 992px) {
-  button, a, [role="button"] {
+  .touch-target {
     min-height: 44px;
   }
 }

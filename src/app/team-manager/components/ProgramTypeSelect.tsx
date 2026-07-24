@@ -80,13 +80,14 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom, has
           {selected.map((program) => (
             <span
               key={program}
-              className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 text-[11px] font-extrabold px-2.5 py-1 rounded-xl border border-indigo-200/90 shadow-2xs"
+              className="inline-flex items-center gap-1.5 bg-indigo-50/90 text-indigo-700 text-[11px] font-extrabold px-2.5 py-1 rounded-xl border border-indigo-200/90 shadow-2xs shrink-0 max-h-7 leading-none"
             >
               <span>{program}</span>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); removeProgram(program); }}
-                className="w-4 h-4 min-w-[16px] max-w-[16px] min-h-[16px] max-h-[16px] rounded-full bg-rose-500 hover:bg-rose-600 text-white inline-flex items-center justify-center transition shrink-0 p-0 border-0 cursor-pointer shadow-2xs"
+                style={{ width: 16, height: 16, minWidth: 16, minHeight: 16, padding: 0 }}
+                className="rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition shrink-0 p-0 border-0 cursor-pointer shadow-2xs"
                 title="Remove event type"
               >
                 <X className="w-2.5 h-2.5 stroke-[3] text-white shrink-0" />
