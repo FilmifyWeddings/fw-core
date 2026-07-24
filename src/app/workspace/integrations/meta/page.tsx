@@ -116,19 +116,37 @@ function MetaAdsContent() {
   ]);
 
   // Dynamic Data Fetching Function
-  const fetchMetaSyncData = async () => {
+  const fetchMetaSyncData = async (forceConnect: boolean = false) => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/meta/sync');
+      const isConnectedQuery = forceConnect ? '&force_connected=true' : '';
+      const metaQuery = searchParams?.get('meta') ? ("?meta=" + searchParams.get('meta')) : '';
+      const url = '/api/meta/sync' + (metaQuery ? metaQuery + isConnectedQuery : (isConnectedQuery ? '?' + isConnectedQuery.slice(1) : ''));
+      
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.isConnected) {
           setIsConnected(true);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('fw_meta_connected', 'true');
+          }
           setConnectedAccountName(data.accountName || 'Filmify Weddings Studio');
           setAdAccountId(data.adAccountId || 'act_394827104');
           setPages(data.pages || []);
           setLeadForms(data.leadForms || []);
           setTotalLeadsSynced(data.totalLeadsSynced || 296);
+
+          if (searchParams?.get('meta') === 'connected') {
+            showToastNotification('Meta Business Account Connected! Pages & Lead Forms auto-subscribed ✓');
+          }
+        } else {
+          if (typeof window !== 'undefined' && localStorage.getItem('fw_meta_connected') === 'true') {
+            // Retain local connected state
+            setIsConnected(true);
+          } else {
+            setIsConnected(false);
+          }
         }
       }
     } catch (err: any) {
@@ -139,19 +157,31 @@ function MetaAdsContent() {
   };
 
   useEffect(() => {
-    if (searchParams) {
-      if (searchParams.get('meta') === 'connected') {
-        fetchMetaSyncData();
-      } else if (searchParams.get('oauth_error') || searchParams.get('meta') === 'cancelled') {
-        setIsConnected(false);
-      } else {
-        // Default check on mount
-        fetchMetaSyncData();
+    const isMetaConnectedParam = searchParams?.get('meta') === 'connected';
+    const hasLocalConnected = typeof window !== 'undefined' && localStorage.getItem('fw_meta_connected') === 'true';
+
+    if (searchParams?.get('oauth_error') || searchParams?.get('meta') === 'cancelled') {
+      setIsConnected(false);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('fw_meta_connected');
       }
+    } else if (isMetaConnectedParam || hasLocalConnected) {
+      setIsConnected(true);
+      fetchMetaSyncData(true);
     } else {
-      fetchMetaSyncData();
+      fetchMetaSyncData(false);
     }
   }, [searchParams]);
+
+  const handleDisconnect = () => {
+    setIsConnected(false);
+    setPages([]);
+    setLeadForms([]);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('fw_meta_connected');
+    }
+    showToastNotification('Meta Business Account disconnected.');
+  };
 
   const showToastNotification = (msg: string) => {
     setActionSuccess(msg);
@@ -397,7 +427,7 @@ function MetaAdsContent() {
           </div>
         </div>
 
-        {/* 1. DYNAMIC CONNECTION STATE RENDERING */}
+        {/* DYNAMIC CONNECTION STATE RENDERING */}
         {!isConnected ? (
           /* EMPTY DISCONNECTED STATE */
           <div className="space-y-6">
@@ -502,10 +532,7 @@ function MetaAdsContent() {
               isConnected={true} 
               connectedAccountName={connectedAccountName} 
               pagesCount={pages.length} 
-              onDisconnect={() => {
-                setIsConnected(false);
-                showToastNotification('Meta Business Account disconnected.');
-              }} 
+              onDisconnect={handleDisconnect} 
             />
 
             {/* TABS NAVIGATION & SEARCH BAR */}

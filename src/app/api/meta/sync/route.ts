@@ -4,7 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const workspaceId = searchParams.get('workspace_id') || '00000000-0000-0000-0000-000000000000';
+    const metaParam = searchParams.get('meta');
+    const isForceConnected = searchParams.get('force_connected') === 'true' || metaParam === 'connected';
 
     // 1. Fetch connected pages from Supabase 'fb_page_configs' table
     let dbPages: any[] = [];
@@ -41,6 +42,8 @@ export async function GET(req: NextRequest) {
       last_lead_time?: string;
       questions_count: number;
     }> = [];
+
+    const isConnected = dbPages.length > 0 || isForceConnected;
 
     if (dbPages.length > 0) {
       pages = dbPages.map(p => ({
@@ -84,77 +87,79 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback if no Graph API forms were fetched or DB empty
-    if (pages.length === 0) {
-      pages = [
-        {
-          page_id: 'mock_page_101',
-          page_name: 'Filmify Weddings Main Page',
-          page_category: 'Wedding Photography Studio',
-          is_active: true,
-          page_access_token: 'mock_page_token_101',
-        },
-        {
-          page_id: 'mock_page_102',
-          page_name: 'Studio Light & Cinema',
-          page_category: 'Cinematography & Reels',
-          is_active: true,
-          page_access_token: 'mock_page_token_102',
-        },
-      ];
-    }
+    // If connected (either via DB or OAuth redirect), ensure connected pages and forms are populated
+    if (isConnected) {
+      if (pages.length === 0) {
+        pages = [
+          {
+            page_id: 'mock_page_101',
+            page_name: 'Filmify Weddings Main Page',
+            page_category: 'Wedding Photography Studio',
+            is_active: true,
+            page_access_token: 'mock_page_token_101',
+          },
+          {
+            page_id: 'mock_page_102',
+            page_name: 'Studio Light & Cinema',
+            page_category: 'Cinematography & Reels',
+            is_active: true,
+            page_access_token: 'mock_page_token_102',
+          },
+        ];
+      }
 
-    if (leadForms.length === 0) {
-      leadForms = [
-        {
-          form_id: 'form_wedding_2026',
-          name: 'Filmify Weddings - Premium Booking Form 2026',
-          status: 'ACTIVE',
-          page_id: pages[0]?.page_id || 'mock_page_101',
-          page_name: pages[0]?.page_name || 'Filmify Weddings Main Page',
-          ad_account_name: 'act_394827104 - Filmify Ad Account',
-          is_active: true,
-          sync_count: 142,
-          last_lead_time: '12 mins ago',
-          questions_count: 5,
-        },
-        {
-          form_id: 'form_destination_2026',
-          name: 'Destination Wedding Shoot Campaign (Udaipur & Goa)',
-          status: 'ACTIVE',
-          page_id: pages[0]?.page_id || 'mock_page_101',
-          page_name: pages[0]?.page_name || 'Filmify Weddings Main Page',
-          ad_account_name: 'act_394827104 - Filmify Ad Account',
-          is_active: true,
-          sync_count: 89,
-          last_lead_time: '1 hour ago',
-          questions_count: 6,
-        },
-        {
-          form_id: 'form_haldi_sangeet',
-          name: 'Haldi & Sangeet Instant Lead Inquiry Form',
-          status: 'ACTIVE',
-          page_id: pages[1]?.page_id || 'mock_page_102',
-          page_name: pages[1]?.page_name || 'Studio Light & Cinema',
-          ad_account_name: 'act_394827104 - Filmify Ad Account',
-          is_active: true,
-          sync_count: 47,
-          last_lead_time: '3 hours ago',
-          questions_count: 4,
-        },
-      ];
+      if (leadForms.length === 0) {
+        leadForms = [
+          {
+            form_id: 'form_wedding_2026',
+            name: 'Filmify Weddings - Premium Booking Form 2026',
+            status: 'ACTIVE',
+            page_id: pages[0]?.page_id || 'mock_page_101',
+            page_name: pages[0]?.page_name || 'Filmify Weddings Main Page',
+            ad_account_name: 'act_394827104 - Filmify Ad Account',
+            is_active: true,
+            sync_count: 142,
+            last_lead_time: '12 mins ago',
+            questions_count: 5,
+          },
+          {
+            form_id: 'form_destination_2026',
+            name: 'Destination Wedding Shoot Campaign (Udaipur & Goa)',
+            status: 'ACTIVE',
+            page_id: pages[0]?.page_id || 'mock_page_101',
+            page_name: pages[0]?.page_name || 'Filmify Weddings Main Page',
+            ad_account_name: 'act_394827104 - Filmify Ad Account',
+            is_active: true,
+            sync_count: 89,
+            last_lead_time: '1 hour ago',
+            questions_count: 6,
+          },
+          {
+            form_id: 'form_haldi_sangeet',
+            name: 'Haldi & Sangeet Instant Lead Inquiry Form',
+            status: 'ACTIVE',
+            page_id: pages[1]?.page_id || 'mock_page_102',
+            page_name: pages[1]?.page_name || 'Studio Light & Cinema',
+            ad_account_name: 'act_394827104 - Filmify Ad Account',
+            is_active: true,
+            sync_count: 47,
+            last_lead_time: '3 hours ago',
+            questions_count: 4,
+          },
+        ];
+      }
     }
 
     const totalLeadsSynced = leadForms.reduce((acc, f) => acc + f.sync_count, 0);
 
     return NextResponse.json({
       success: true,
-      isConnected: true,
+      isConnected,
       accountName: pages[0]?.page_name || 'Filmify Weddings Studio',
       adAccountId: 'act_394827104',
-      pages,
-      leadForms,
-      totalLeadsSynced,
+      pages: isConnected ? pages : [],
+      leadForms: isConnected ? leadForms : [],
+      totalLeadsSynced: isConnected ? totalLeadsSynced : 0,
     });
   } catch (error: any) {
     console.error('[Meta Sync API Error]:', error);
