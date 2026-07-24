@@ -69,10 +69,11 @@ function MetaAdsContent() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  // Real Pages & Lead Forms state (NO MOCK DEMO DATA)
+  // REAL Pages & Lead Forms state (NO HARDCODED DATA)
   const [pages, setPages] = useState<ConnectedPage[]>([]);
   const [leadForms, setLeadForms] = useState<LeadForm[]>([]);
   const [totalLeadsSynced, setTotalLeadsSynced] = useState<number>(0);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   // Check URL query parameters for OAuth Error or Connection status
   const oauthError = searchParams ? searchParams.get('oauth_error') : null;
@@ -92,17 +93,18 @@ function MetaAdsContent() {
 
   const [syncedLogs, setSyncedLogs] = useState<SyncedLeadLog[]>([]);
 
-  // Fetch Real Meta Connected Pages & Forms
+  // Fetch Real Meta Graph API Connected Pages & Forms
   const fetchMetaSyncData = async () => {
     setIsSyncing(true);
     try {
-      // Forward all search params to sync endpoint
       const queryStr = searchParams ? searchParams.toString() : '';
       const syncUrl = '/api/meta/sync' + (queryStr ? ('?' + queryStr) : '');
 
       const res = await fetch(syncUrl);
       if (res.ok) {
         const data = await res.json();
+        setDebugInfo(data.debug);
+
         const urlIsConnected = searchParams?.get('meta') === 'connected' || searchParams?.has('pages');
 
         if (data.success && (data.isConnected || urlIsConnected)) {
@@ -110,17 +112,20 @@ function MetaAdsContent() {
           if (typeof window !== 'undefined') {
             localStorage.setItem('fw_meta_connected', 'true');
           }
-          setConnectedAccountName(data.accountName || 'Meta Business Account (Connected)');
+          setConnectedAccountName(data.accountName || 'Meta Business Account');
           setAdAccountId(data.adAccountId);
           setPages(data.pages || []);
           setLeadForms(data.leadForms || []);
           setTotalLeadsSynced(data.totalLeadsSynced || 0);
 
+          if ((data.pages || []).length === 0) {
+            console.warn('[Meta Integration] 0 Facebook Pages returned from Meta API. Verify user selected and granted pages_show_list permissions during Facebook OAuth login.');
+          }
+
           if (searchParams?.get('meta') === 'connected') {
-            showToastNotification('Meta Account Connected Successfully! Pages & Forms Synced ✓');
+            showToastNotification('Meta Account Connected! Real-time Graph API sync complete ✓');
           }
         } else {
-          // If URL param is not connected and DB is disconnected, set disconnected
           if (typeof window !== 'undefined' && localStorage.getItem('fw_meta_connected') === 'true' && !searchParams?.get('oauth_error')) {
             setIsConnected(true);
           } else {
@@ -437,7 +442,7 @@ function MetaAdsContent() {
 
         {/* DYNAMIC CONNECTION STATE RENDERING */}
         {!isConnected ? (
-          /* EMPTY DISCONNECTED STATE - CLEAN SINGLE CONNECT CONTROL */
+          /* EMPTY DISCONNECTED STATE */
           <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-12 text-center shadow-sm space-y-4">
             <div className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-200 text-[#1877F2] flex items-center justify-center mx-auto shadow-inner">
               <FacebookIcon className="w-8 h-8" />
@@ -615,7 +620,7 @@ function MetaAdsContent() {
                     <div className="p-12 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
                       <FileText className="w-8 h-8 text-slate-400 mx-auto" />
                       <p className="font-extrabold text-slate-700 text-sm">No Instant Lead Forms Found</p>
-                      <p className="text-slate-400 text-xs">No active Instant Lead Forms are associated with your connected Facebook Pages yet.</p>
+                      <p className="text-slate-400 text-xs">No active Instant Lead Forms were returned by Meta Graph API for your connected Facebook Pages.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -669,10 +674,21 @@ function MetaAdsContent() {
               {activeTab === 'pages' && (
                 <div className="space-y-4">
                   {pages.length === 0 ? (
-                    <div className="p-12 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
+                    <div className="p-12 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-3">
                       <FacebookIcon className="w-8 h-8 text-slate-400 mx-auto" />
-                      <p className="font-extrabold text-slate-700 text-sm">No Facebook Pages Connected</p>
-                      <p className="text-slate-400 text-xs">No active Facebook Pages were retrieved for this account.</p>
+                      <p className="font-extrabold text-slate-700 text-sm">0 Facebook Pages Returned</p>
+                      <p className="text-slate-500 text-xs max-w-md mx-auto leading-relaxed">
+                        Meta Graph API returned 0 Facebook Pages. Please make sure to check and select your Facebook Pages during the Facebook OAuth popup dialog.
+                      </p>
+                      <div className="pt-2">
+                        <a
+                          href={fbOAuthUrl}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1877F2] text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Re-Authenticate & Select Pages</span>
+                        </a>
+                      </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
