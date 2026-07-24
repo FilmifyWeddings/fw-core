@@ -652,11 +652,11 @@ export default function TeamManagerPage() {
           {/* Top Responsive Header Block */}
           <div className="flex flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              {/* BACK TO DASHBOARD BUTTON */}
+              {/* BACK TO DASHBOARD / WORKSPACE BUTTON */}
               <Link
-                href="/dashboard"
+                href="/workspace"
                 className="flex items-center justify-center w-9 h-9 rounded-xl bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 transition shadow-2xs shrink-0"
-                title="Back to Dashboard"
+                title="Back to Workspace"
               >
                 <ArrowLeft className="w-4 h-4" />
               </Link>
