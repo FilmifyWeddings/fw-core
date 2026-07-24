@@ -24,19 +24,6 @@ const nextConfig: any = {
   ],
 
   turbopack: {},
-
-  redirects: async () => [
-    {
-      source: '/dashboard/integrations',
-      destination: '/workspace/integrations',
-      permanent: false,
-    },
-    {
-      source: '/dashboard/integrations/:path*',
-      destination: '/workspace/integrations/:path*',
-      permanent: false,
-    },
-  ],
 };
 
 export default nextConfig;
