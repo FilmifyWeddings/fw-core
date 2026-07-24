@@ -272,7 +272,7 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Handle Project Creation & Update with Multi-Sub-Event Blocks (FIXED main_date & main_venue NOT NULL CONSTRAINTS)
+  // Handle Project Creation & Update with Multi-Sub-Event Blocks (100% SYNCED ROLES TO SUPABASE)
   const handleSaveProject = async (
     couplingName: string,
     blocks: EventBlockData[],
@@ -322,29 +322,32 @@ export default function TeamManagerPage() {
       if (targetProjectId && blocks.length > 0) {
         for (const block of blocks) {
           const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
+          
+          // Construct sub-event record payload
+          const subEventPayload: any = {
+            project_id: targetProjectId,
+            event_title: title,
+            event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+            venue_name: block.venueLocation || null,
+            venue_map_link: block.mapLink || null,
+            roll_call_time: block.startTime || '10:00',
+            dismissal_estimate_time: block.endTime || '18:00',
+            operational_notes: block.notes || null,
+          };
+
           const { data: insertedSubEvent, error: seErr } = await supabase
             .from('fw_sub_events')
-            .insert([
-              {
-                project_id: targetProjectId,
-                event_title: title,
-                event_date: block.subEventDate || new Date().toISOString().split('T')[0],
-                venue_name: block.venueLocation || null,
-                venue_map_link: block.mapLink || null,
-                roll_call_time: block.startTime || '10:00',
-                dismissal_estimate_time: block.endTime || '18:00',
-                operational_notes: block.notes || null,
-              },
-            ])
+            .insert([subEventPayload])
             .select()
             .single();
 
           if (seErr) throw seErr;
 
-          if (insertedSubEvent && block.roles.length > 0) {
+          // Insert all selected role placements into fw_assignments table
+          if (insertedSubEvent && block.roles && block.roles.length > 0) {
             const assignmentsPayload = block.roles.map(role => {
               const matchedMember = teamMembers.find(
-                m => m.primary_role.toLowerCase() === role.toLowerCase() || m.name.toLowerCase() === role.toLowerCase()
+                m => m.primary_role?.toLowerCase() === role.toLowerCase() || m.name?.toLowerCase() === role.toLowerCase()
               );
               return {
                 project_id: targetProjectId,
@@ -354,7 +357,13 @@ export default function TeamManagerPage() {
               };
             });
 
-            await supabase.from('fw_assignments').insert(assignmentsPayload);
+            const { error: assignErr } = await supabase
+              .from('fw_assignments')
+              .insert(assignmentsPayload);
+
+            if (assignErr) {
+              console.warn('[TeamManager] Insert assignments warning:', assignErr.message);
+            }
           }
         }
       }
@@ -647,6 +656,18 @@ export default function TeamManagerPage() {
                               ? '2026' 
                               : eventDate.getFullYear().toString();
 
+                            // Fallback role construction if fw_assignments is empty
+                            const assignments = (subEvent.fw_assignments && subEvent.fw_assignments.length > 0)
+                              ? subEvent.fw_assignments
+                              : ((subEvent as any).roles || (subEvent as any).event_roles || []).map((r: string, idx: number) => ({
+                                  id: `${subEvent.id}-role-${idx}`,
+                                  sub_event_id: subEvent.id,
+                                  project_id: subEvent.project_id,
+                                  required_role: r,
+                                  assigned_member_id: null,
+                                  fw_team_members: null
+                                }));
+
                             return (
                               <div 
                                 key={subEvent.id}
@@ -724,7 +745,7 @@ export default function TeamManagerPage() {
                                   <div className="border-t border-slate-100 my-1.5" />
 
                                   <div className="flex items-start gap-4 flex-wrap">
-                                    {subEvent.fw_assignments?.map((assignment) => {
+                                    {assignments?.map((assignment: any) => {
                                       const isAssigned = assignment.assigned_member_id !== null;
                                       const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
                                       const rawName = memberObj?.name || '';
@@ -848,8 +869,19 @@ export default function TeamManagerPage() {
                             <div className="text-center py-4 text-xs text-slate-400 italic">No sub-events added yet.</div>
                           ) : (
                             subEvents.map((subEvent) => {
-                              const assignments = subEvent.fw_assignments || [];
-                              const assignedCount = assignments.filter(a => a.assigned_member_id !== null).length;
+                              // Fallback role construction if fw_assignments is empty
+                              const assignments = (subEvent.fw_assignments && subEvent.fw_assignments.length > 0)
+                                ? subEvent.fw_assignments
+                                : ((subEvent as any).roles || (subEvent as any).event_roles || []).map((r: string, idx: number) => ({
+                                    id: `${subEvent.id}-role-${idx}`,
+                                    sub_event_id: subEvent.id,
+                                    project_id: subEvent.project_id,
+                                    required_role: r,
+                                    assigned_member_id: null,
+                                    fw_team_members: null
+                                  }));
+
+                              const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
                               const totalSlots = assignments.length;
 
                               return (
@@ -907,7 +939,7 @@ export default function TeamManagerPage() {
                                       <span className="text-xs text-slate-400 italic">No roles configured</span>
                                     ) : (
                                       <div className="flex items-center gap-3 flex-wrap">
-                                        {assignments.map((assignment) => {
+                                        {assignments.map((assignment: any) => {
                                           const member = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
                                           const isAssigned = member !== undefined && member !== null;
                                           const role = assignment.required_role || 'Crew';

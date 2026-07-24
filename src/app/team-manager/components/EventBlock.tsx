@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Copy, Trash2, MapPin, Link as LinkIcon, MessageSquare } from 'lucide-react';
+import { Copy, Trash2, MapPin, Link as LinkIcon, MessageSquare, Clock, Calendar, Users, Layers, Sparkles } from 'lucide-react';
 import ProgramTypeSelect from './ProgramTypeSelect';
 import CalendarPicker from './CalendarPicker';
 import SmartTimePicker from './SmartTimePicker';
@@ -70,10 +70,11 @@ export default function EventBlock({
       {/* CLEAN MINIMAL SUB-EVENT CARD HEADER */}
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
         <div className="flex items-center gap-2.5">
-          <span className="bg-indigo-50 text-[#6C5CE7] font-bold text-xs px-3 py-1 rounded-xl border border-indigo-100">
+          <span className="bg-indigo-50 text-[#6C5CE7] font-bold text-xs px-3 py-1 rounded-xl border border-indigo-100 flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5" />
             Event #{index + 1}
           </span>
-          <span className="text-xs font-bold text-[#0B111E] truncate max-w-[200px] sm:max-w-[300px]">
+          <span className="text-xs font-black text-[#0B111E] truncate max-w-[200px] sm:max-w-[300px]">
             {blockTitle}
           </span>
         </div>
@@ -137,8 +138,10 @@ export default function EventBlock({
 
       {/* 3. Venue Coordinates / Location (Optional) */}
       <div className="space-y-2">
-        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block">
-          Venue Coordinates / Location <span className="text-slate-400 font-normal lowercase">(optional)</span>
+        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5 text-slate-500" />
+          <span>Venue Coordinates / Location</span>
+          <span className="text-slate-400 font-normal lowercase">(optional)</span>
         </label>
         <div className="relative">
           <MapPin className="w-3.5 h-3.5 text-[#4F5E74] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -171,8 +174,10 @@ export default function EventBlock({
 
       {/* 5. Operational Notes / Comments (Optional) */}
       <div className="space-y-1">
-        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block">
-          Operational Notes & Instructions <span className="text-slate-400 font-normal lowercase">(optional)</span>
+        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block flex items-center gap-1.5">
+          <MessageSquare className="w-3.5 h-3.5 text-slate-500" />
+          <span>Operational Notes & Instructions</span>
+          <span className="text-slate-400 font-normal lowercase">(optional)</span>
         </label>
         <div className="relative">
           <MessageSquare className="w-3.5 h-3.5 text-[#4F5E74] absolute left-3 top-3" />
