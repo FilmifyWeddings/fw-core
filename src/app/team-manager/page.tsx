@@ -635,16 +635,26 @@ export default function TeamManagerPage() {
         <div className="sticky top-0 z-30 bg-slate-100/95 backdrop-blur-md pb-4 pt-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 border-b border-slate-200/60 shadow-2xs space-y-4">
           {/* Top Responsive Header Block */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight flex items-center gap-2 flex-wrap">
-                Welcome back, Studio Admin 👋
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-2xs">
-                  v3.0-mobile-app
-                </span>
-              </h2>
-              <p className="text-xs text-[#4F5E74] font-bold mt-0.5">
-                Here&apos;s what&apos;s happening with your wedding operations today.
-              </p>
+            <div className="flex items-center gap-3">
+              {/* BACK TO DASHBOARD BUTTON */}
+              <Link
+                href="/dashboard"
+                className="flex items-center justify-center w-9 h-9 rounded-xl bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 transition shadow-2xs shrink-0"
+                title="Back to Dashboard"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Link>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight flex items-center gap-2 flex-wrap">
+                  Welcome back, Studio Admin 👋
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-2xs">
+                    v3.0-mobile-app
+                  </span>
+                </h2>
+                <p className="text-xs text-[#4F5E74] font-bold mt-0.5">
+                  Here&apos;s what&apos;s happening with your wedding operations today.
+                </p>
+              </div>
             </div>
 
             {/* Action controls row - RE-ARCHITECTED FOR CLEAN MOBILE FLEX ALLOCATION */}
@@ -721,18 +731,6 @@ export default function TeamManagerPage() {
               </button>
 
               <button
-                onClick={() => setActiveTab('calendar')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
-                  activeTab === 'calendar'
-                    ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                Calendar
-              </button>
-
-              <button
                 onClick={() => setActiveTab('overview')}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
                   activeTab === 'overview'
@@ -741,7 +739,7 @@ export default function TeamManagerPage() {
                 }`}
               >
                 <TrendingUp className="w-4 h-4" />
-                Overview Stats
+                Overview
               </button>
 
               <button
@@ -1282,57 +1280,91 @@ export default function TeamManagerPage() {
 
       </main>
 
-      {/* ─── MOBILE STICKY BOTTOM FOOTER NAVIGATION BAR ─── */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-2xl px-2 py-1.5 flex items-center justify-around">
-        <button
-          onClick={() => setActiveTab('projects')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
-            activeTab === 'projects' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
-          }`}
-        >
-          <Grid className="w-5 h-5" />
-          <span className="text-[10px]">Cards</span>
-        </button>
+      {/* ─── MOBILE STICKY BOTTOM FOOTER NAVIGATION BAR (FLOATING PILL STYLE) ─── */}
+      <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm">
+        <div className="bg-white/95 backdrop-blur-xl border border-slate-200/80 shadow-2xl shadow-slate-300/40 rounded-[2rem] px-4 py-2.5 flex items-center justify-around relative">
+          {/* TAB 1: Cards */}
+          <button
+            onClick={() => setActiveTab('projects')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
+              activeTab === 'projects' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <div className={`transition-all duration-200 ${
+              activeTab === 'projects' ? 'scale-110' : ''
+            }`}>
+              <Grid className="w-5 h-5" />
+            </div>
+            <span className={`text-[9px] font-black transition-all ${
+              activeTab === 'projects' ? 'text-[#6C5CE7]' : 'text-slate-400'
+            }`}>Cards</span>
+            {activeTab === 'projects' && (
+              <span className="absolute -top-1 left-1/2 -translate-x-[280%] w-1 h-1 rounded-full bg-[#6C5CE7]" />
+            )}
+          </button>
 
-        <button
-          onClick={() => setActiveTab('list')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
-            activeTab === 'list' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
-          }`}
-        >
-          <List className="w-5 h-5" />
-          <span className="text-[10px]">Month</span>
-        </button>
+          {/* TAB 2: Month List */}
+          <button
+            onClick={() => setActiveTab('list')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
+              activeTab === 'list' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <div className={`transition-all duration-200 ${
+              activeTab === 'list' ? 'scale-110' : ''
+            }`}>
+              <List className="w-5 h-5" />
+            </div>
+            <span className={`text-[9px] font-black transition-all ${
+              activeTab === 'list' ? 'text-[#6C5CE7]' : 'text-slate-400'
+            }`}>Month</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('calendar')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
-            activeTab === 'calendar' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
-          }`}
-        >
-          <Calendar className="w-5 h-5" />
-          <span className="text-[10px]">Calendar</span>
-        </button>
+          {/* CENTER FLOATING + CREATE PROJECT BUTTON */}
+          <div className="relative -mt-6 mx-2">
+            <button
+              onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+              className="w-14 h-14 rounded-full bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white flex items-center justify-center shadow-xl shadow-[#6C5CE7]/40 border-4 border-white transition-all active:scale-95 cursor-pointer"
+              title="Create New Project"
+            >
+              <Plus className="w-7 h-7" />
+            </button>
+          </div>
 
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
-            activeTab === 'overview' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
-          }`}
-        >
-          <TrendingUp className="w-5 h-5" />
-          <span className="text-[10px]">Stats</span>
-        </button>
+          {/* TAB 3: Overview */}
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
+              activeTab === 'overview' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <div className={`transition-all duration-200 ${
+              activeTab === 'overview' ? 'scale-110' : ''
+            }`}>
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <span className={`text-[9px] font-black transition-all ${
+              activeTab === 'overview' ? 'text-[#6C5CE7]' : 'text-slate-400'
+            }`}>Overview</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('trash')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
-            activeTab === 'trash' ? 'text-rose-600 font-black' : 'text-slate-500 font-bold'
-          }`}
-        >
-          <Trash2 className="w-5 h-5" />
-          <span className="text-[10px]">Trash</span>
-        </button>
+          {/* TAB 4: Trash */}
+          <button
+            onClick={() => setActiveTab('trash')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
+              activeTab === 'trash' ? 'text-rose-500' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <div className={`transition-all duration-200 ${
+              activeTab === 'trash' ? 'scale-110' : ''
+            }`}>
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <span className={`text-[9px] font-black transition-all ${
+              activeTab === 'trash' ? 'text-rose-500' : 'text-slate-400'
+            }`}>Trash</span>
+          </button>
+        </div>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────

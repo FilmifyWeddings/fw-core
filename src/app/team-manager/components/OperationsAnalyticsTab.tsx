@@ -213,116 +213,111 @@ export default function OperationsAnalyticsTab({
     <div className="space-y-8 animate-in fade-in duration-300">
       
       {/* ─────────────────────────────────────────────────────────────
-          1. TIME & SCOPE FILTERS BAR
+          1. TIME & SCOPE FILTERS BAR - COMPACT RESPONSIVE
          ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border-2 border-slate-200/90 shadow-lg shadow-slate-200/40 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-500/25">
-              <SlidersHorizontal className="w-6 h-6" />
+      <div className="bg-white/95 backdrop-blur-md p-3 sm:p-5 rounded-2xl border border-slate-200/90 shadow-md space-y-3">
+        <div className="flex flex-row items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shrink-0">
+              <SlidersHorizontal className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-900 tracking-tight">Operations Analytics Scope Filters</h3>
-              <p className="text-xs text-slate-500 font-bold">
-                Select Scope: Month View, Year View, or Custom Date Range
-              </p>
+            <div className="min-w-0">
+              <h3 className="text-sm font-black text-slate-900 tracking-tight truncate">Analytics Scope</h3>
+              <p className="text-[10px] text-slate-400 font-bold hidden sm:block">Month · Year · Custom</p>
             </div>
           </div>
 
           {/* Scope Mode Switcher Tabs */}
-          <div className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shrink-0">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
             <button
               onClick={() => setScopeMode('month')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer select-none ${
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer select-none ${
                 scopeMode === 'month'
-                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  ? 'bg-[#6C5CE7] text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Month View
+              Month
             </button>
-
             <button
               onClick={() => setScopeMode('year')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer select-none ${
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer select-none ${
                 scopeMode === 'year'
-                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  ? 'bg-[#6C5CE7] text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Year View
+              Year
             </button>
-
             <button
               onClick={() => setScopeMode('custom')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer select-none ${
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer select-none ${
                 scopeMode === 'custom'
-                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  ? 'bg-[#6C5CE7] text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Custom Date Range
+              Custom
             </button>
           </div>
         </div>
 
         {/* Dynamic Controls depending on scope mode */}
-        <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-slate-700 pt-1">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Select Year:</span>
+        <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-700">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Year:</span>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
-              className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+              className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-extrabold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
             >
-              <option value={2026}>2026</option>
               <option value={2025}>2025</option>
+              <option value={2026}>2026</option>
               <option value={2027}>2027</option>
             </select>
           </div>
 
           {scopeMode === 'month' && (
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Select Month:</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Month:</span>
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+                className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-extrabold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7] max-w-[130px]"
               >
-                <option value="All">All Months in {selectedYear}</option>
+                <option value="All">All {selectedYear}</option>
                 {monthsList.map((m) => (
-                  <option key={m.val} value={m.val}>{m.label} {selectedYear}</option>
+                  <option key={m.val} value={m.val}>{m.label}</option>
                 ))}
               </select>
             </div>
           )}
 
           {scopeMode === 'custom' && (
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500 font-bold text-[10px]">From:</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400 font-bold text-[9px]">From:</span>
                 <input
                   type="date"
                   value={customStartDate}
                   onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+                  className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
                 />
               </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500 font-bold text-[10px]">To:</span>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400 font-bold text-[9px]">To:</span>
                 <input
                   type="date"
                   value={customEndDate}
                   onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+                  className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
                 />
               </div>
             </div>
           )}
 
-          <div className="ml-auto text-indigo-600 font-black text-xs bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
-            Showing {totalShootsCount} Sub-Events in Selected Scope
+          <div className="ml-auto text-indigo-600 font-black text-[10px] bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+            {totalShootsCount} Sub-Events
           </div>
         </div>
       </div>

@@ -247,13 +247,14 @@ export default function MonthListView({
                           {/* HEADER: CLIENT NAME & SUB EVENT TITLE */}
                           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
                             <div className="flex items-center gap-3 flex-wrap">
-                              {/* PROMINENT CLIENT NAME BADGE */}
-                              <div className="px-3.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/90 text-indigo-950 font-black text-sm md:text-base shadow-2xs flex items-center gap-2">
-                                <span className="text-indigo-600 font-extrabold text-xs uppercase tracking-wider">Client:</span>
-                                <span className="text-slate-900 font-black">{project.client_name}</span>
-                              </div>
+                              {/* PROMINENT CLIENT NAME - DIRECT, NO LABEL */}
+                              <span className="text-slate-900 font-black text-sm md:text-base tracking-tight">
+                                {project.client_name}
+                              </span>
 
-                              <h4 className="text-base md:text-lg font-black text-slate-900 tracking-tight">
+                              <span className="text-slate-300 text-sm font-light select-none">·</span>
+
+                              <h4 className="text-sm md:text-base font-bold text-indigo-700 tracking-tight">
                                 {subEvent.event_title}
                               </h4>
                             </div>
