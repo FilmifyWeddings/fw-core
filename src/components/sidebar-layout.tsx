@@ -348,8 +348,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     );
   }
 
-  // Bypass sidebar for launchpad and special routes
-  if (bypassRoutes.includes(pathname)) {
+  // Bypass sidebar for launchpad, team-manager, and special routes
+  if (bypassRoutes.includes(pathname) || pathname.startsWith('/team-manager')) {
     return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
   }
 

@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, User, Sparkles, AlertCircle, Loader2, Save } from 'lucide-react';
+import { X, Plus, User, Sparkles, AlertCircle, Loader2, Save, Trash2, AlertTriangle } from 'lucide-react';
 import EventBlock, { EventBlockData } from './EventBlock';
 import { FWProject } from '@/types';
 
 const DEFAULT_BLOCK: EventBlockData = {
   id: '',
-  subEventNames: [], // Blank by default as requested by user
+  subEventNames: [],
   subEventDate: '',
   venueLocation: '',
   mapLink: '',
@@ -23,9 +23,16 @@ interface AddProjectModalProps {
   onClose: () => void;
   projectToEdit?: FWProject | null;
   onSave: (couplingName: string, blocks: EventBlockData[], projectId?: string) => Promise<boolean | void> | void;
+  onDeleteProject?: (projectId: string) => void;
 }
 
-export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave }: AddProjectModalProps) {
+export default function AddProjectModal({
+  isOpen,
+  onClose,
+  projectToEdit,
+  onSave,
+  onDeleteProject,
+}: AddProjectModalProps) {
   const [couplingName, setCouplingName] = useState('');
   const [eventBlocks, setEventBlocks] = useState<EventBlockData[]>([
     { ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) },
@@ -34,6 +41,7 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
   const [customRoles, setCustomRoles] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (projectToEdit && isOpen) {
@@ -58,6 +66,7 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
       setCouplingName('');
       setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
     }
+    setShowDeleteConfirm(false);
   }, [projectToEdit, isOpen]);
 
   const handleSubmit = async () => {
@@ -82,13 +91,21 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
     }
   };
 
+  const handleDeleteConfirmed = () => {
+    if (projectToEdit && onDeleteProject) {
+      onDeleteProject(projectToEdit.id);
+      setShowDeleteConfirm(false);
+      onClose();
+    }
+  };
+
   const addEventBlock = () => {
     setEventBlocks(prev => [
       ...prev,
       {
         ...DEFAULT_BLOCK,
         id: Math.random().toString(36).slice(2),
-        subEventNames: [], // Blank by default for new block
+        subEventNames: [],
       },
     ]);
   };
@@ -140,7 +157,7 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
           />
 
-          {/* 3D MODAL CHASSIS - CLEAN MINIMAL PROFESSIONAL */}
+          {/* 3D MODAL CHASSIS */}
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -164,13 +181,28 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-9 h-9 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[#4F5E74] flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4.5 h-4.5" />
-              </button>
+              {/* TOP RIGHT ACTIONS: DELETE BUTTON (WHEN EDITING) & CLOSE BUTTON */}
+              <div className="flex items-center gap-2">
+                {projectToEdit && onDeleteProject && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-rose-200"
+                    title="Move Project to Trash"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <span className="hidden sm:inline">Delete Card</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-9 h-9 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[#4F5E74] flex items-center justify-center transition cursor-pointer"
+                >
+                  <X className="w-4.5 h-4.5" />
+                </button>
+              </div>
             </div>
 
             {/* ERROR BANNER */}
@@ -280,6 +312,47 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
                     Save Project Config
                   </>
                 )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* CONFIRMATION MODAL POPUP FOR DELETING PROJECT CARD */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100005] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-150">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4 text-center"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-extrabold text-[#0B111E]">Move Project to Trash?</h3>
+              <p className="text-xs font-semibold text-[#4F5E74]">
+                Are you sure you want to move <span className="font-extrabold text-slate-900">&quot;{couplingName || projectToEdit?.client_name}&quot;</span> to Trash? You can restore it anytime from the Trash tab.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirmed}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition shadow-md shadow-rose-500/20 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                Move to Trash
               </button>
             </div>
           </motion.div>

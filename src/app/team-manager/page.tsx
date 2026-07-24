@@ -8,7 +8,7 @@ import {
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
-  HardDrive, UserPlus
+  HardDrive, UserPlus, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
@@ -20,8 +20,6 @@ import TeamSettingsModal from './components/TeamSettingsModal';
 import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
 import { EventBlockData } from './components/EventBlock';
-
-// Semantic Theme CSS styles injected directly for strict color matching
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
 const getGradientByProjectId = (id: string) => {
@@ -55,7 +53,6 @@ const customStyle = `
   }
 `;
 
-
 // Helper to extract 2-letter uppercase initials (e.g. "Sushant Nawale" -> "SN")
 const getInitials = (name: string): string => {
   if (!name) return 'TM';
@@ -65,7 +62,6 @@ const getInitials = (name: string): string => {
   }
   return parts[0].slice(0, 2).toUpperCase();
 };
-
 
 // 12-Hour AM/PM Time Formatting Utility
 const format12HourTime = (timeStr?: string): string => {
@@ -82,13 +78,6 @@ const format12HourTime = (timeStr?: string): string => {
   const formattedHours = hours.toString().padStart(2, '0');
   return `${formattedHours}:${minutes} ${ampm}`;
 };
-
-const clientGradients = [
-  'bg-gradient-to-br from-indigo-50/80 via-purple-50/40 to-white border border-indigo-100/90 shadow-md shadow-indigo-100/20',
-  'bg-gradient-to-br from-blue-50/80 via-slate-50/40 to-white border border-blue-100/90 shadow-md shadow-blue-100/20',
-  'bg-gradient-to-br from-violet-50/80 via-fuchsia-50/30 to-white border border-violet-100/90 shadow-md shadow-violet-100/20',
-  'bg-gradient-to-br from-purple-50/80 via-indigo-50/40 to-white border border-purple-100/90 shadow-md shadow-purple-100/20',
-];
 
 export default function TeamManagerPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
@@ -117,6 +106,9 @@ export default function TeamManagerPage() {
     projectId?: string;
   } | null>(null);
 
+  // Permanent Delete Confirmation Modal Target State
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<FWProject | null>(null);
+
   // Active Dropdown Target: assignmentId -> boolean
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
 
@@ -132,7 +124,6 @@ export default function TeamManagerPage() {
     setLoading(true);
     setError(null);
     try {
-      // Ensure storage bucket exists
       try {
         await supabase.storage.createBucket('team-avatars', { public: true });
       } catch (e) {
@@ -148,7 +139,7 @@ export default function TeamManagerPage() {
       setTeamMembers(membersData || []);
 
       // 2. Fetch Projects with sub_events & assignments
-      const { data: projectsData, error: projErr } = await supabase
+      const { data: projectsData, error: projectsErr } = await supabase
         .from('fw_projects')
         .select(`
           *,
@@ -162,43 +153,11 @@ export default function TeamManagerPage() {
         `)
         .order('created_at', { ascending: false });
 
-      if (projErr) {
-        console.warn('[TeamManager] Relational join fetch error, trying legacy fallback:', projErr.message);
-        // Legacy fallback: fetch projects and assignments flat
-        const { data: legacyProjs } = await supabase.from('fw_projects').select('*');
-        const { data: legacyAssigns } = await supabase
-          .from('fw_assignments')
-          .select('*, fw_team_members(*)');
-
-        if (legacyProjs) {
-          const mapped: FWProject[] = legacyProjs.map(p => {
-            const pAssigns = (legacyAssigns || []).filter((a: any) => a.project_id === p.id);
-            // Group by sub_event_name
-            const grouped: { [key: string]: FWAssignment[] } = {};
-            pAssigns.forEach((a: any) => {
-              const key = a.sub_event_name || 'Event';
-              if (!grouped[key]) grouped[key] = [];
-              grouped[key].push(a);
-            });
-            const subEvents: FWSubEvent[] = Object.keys(grouped).map((title, idx) => ({
-              id: `se-${p.id}-${idx}`,
-              project_id: p.id,
-              event_title: title,
-              event_date: grouped[title][0]?.sub_event_date || p.main_date || new Date().toISOString(),
-              roll_call_time: grouped[title][0]?.start_time,
-              dismissal_estimate_time: grouped[title][0]?.end_time,
-              fw_assignments: grouped[title],
-            }));
-            return { ...p, fw_sub_events: subEvents };
-          });
-          setProjects(mapped);
-        }
-      } else if (projectsData) {
-        setProjects(projectsData as FWProject[]);
-      }
+      if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
+      setProjects(projectsData || []);
     } catch (err: any) {
-      console.error('[TeamManager] Fetch failed:', err);
-      setError(err.message || 'Failed to load team manager data');
+      console.error('[TeamManager] fetchAllData Exception:', err);
+      setError(err?.message || 'Failed to fetch operations data.');
     } finally {
       setLoading(false);
     }
@@ -208,66 +167,7 @@ export default function TeamManagerPage() {
     fetchAllData();
   }, []);
 
-  // ─────────────────────────────────────────────────────────────
-  // ATOMIC SUPABASE MUTATIONS
-  // ─────────────────────────────────────────────────────────────
-
-  // Assign Team Member to Assignment Slot
-  const handleAssignMember = async (assignmentId: string, memberId: string | null) => {
-    try {
-      const status = memberId ? 'assigned' : 'pending';
-      const { error: updateErr } = await supabase
-        .from('fw_assignments')
-        .update({
-          assigned_member_id: memberId,
-          status: status,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', assignmentId);
-
-      if (updateErr) {
-        console.error('[TeamManager] Failed to update assignment:', updateErr);
-        alert('Failed to save assignment in Supabase.');
-        return;
-      }
-
-      // Optimistic UI state update
-      const selectedMember = teamMembers.find(m => m.id === memberId) || null;
-      setProjects(prevProjects =>
-        prevProjects.map(proj => ({
-          ...proj,
-          fw_sub_events: proj.fw_sub_events?.map(se => ({
-            ...se,
-            fw_assignments: se.fw_assignments?.map(assign =>
-              assign.id === assignmentId
-                ? { ...assign, assigned_member_id: memberId, status: status, fw_team_members: selectedMember }
-                : assign
-            ),
-          })),
-        }))
-      );
-
-      setActiveDropdownId(null);
-    } catch (err) {
-      console.error('[TeamManager] Assignment update error:', err);
-    }
-  };
-
-  // Create New Team Member and Optional Assignment Link
-  
-  const handleDeleteTeamMember = async (id: string) => {
-    try {
-      const { error } = await supabase.from('fw_team_members').delete().eq('id', id);
-      if (error) {
-        alert('Could not delete team member: ' + error.message);
-        return;
-      }
-      setTeamMembers(prev => prev.filter(m => m.id !== id));
-    } catch (e: any) {
-      console.error('Delete member error:', e);
-    }
-  };
-
+  // Handle Team Member Save (Create / Edit)
   const handleSaveTeamMember = async (memberData: {
     name: string;
     primary_role: string;
@@ -277,226 +177,137 @@ export default function TeamManagerPage() {
     avatar_url?: string;
   }) => {
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData?.session?.user?.id || null;
+      if (editingMember) {
+        const { error: updateErr } = await supabase
+          .from('fw_team_members')
+          .update(memberData)
+          .eq('id', editingMember.id);
+        if (updateErr) throw updateErr;
+      } else {
+        const { data: insertedMember, error: insertErr } = await supabase
+          .from('fw_team_members')
+          .insert([memberData])
+          .select()
+          .single();
+        if (insertErr) throw insertErr;
 
-      const memberPayload: any = {
-        name: memberData.name,
-        primary_role: memberData.primary_role,
-        country_code: memberData.country_code,
-        phone_number: memberData.phone_number,
-        email: memberData.email || null,
-        avatar_url: memberData.avatar_url || null,
-        active_status: true,
-        is_active: true,
-      };
-      if (userId) memberPayload.user_id = userId;
-
-      console.log('[TeamManager] Inserting member payload:', memberPayload);
-
-      const { data: newMembers, error: insertErr } = await supabase
-        .from('fw_team_members')
-        .insert([memberPayload])
-        .select();
-
-      if (insertErr || !newMembers || newMembers.length === 0) {
-        console.error('[TeamManager] Member creation failed:', {
-          message: insertErr?.message,
-          details: insertErr?.details,
-          hint: insertErr?.hint,
-          code: insertErr?.code,
-        });
-        const errDetail = insertErr?.message || insertErr?.details || ("Code: " + (insertErr?.code || "UNKNOWN"));
-        alert("Could not save new team member to database:\n\n" + errDetail);
-        return;
+        if (activeAssignmentForMember?.assignmentId && insertedMember) {
+          await supabase
+            .from('fw_assignments')
+            .update({ assigned_member_id: insertedMember.id })
+            .eq('id', activeAssignmentForMember.assignmentId);
+        }
       }
 
-      const newMember = newMembers[0];
-      setTeamMembers(prev => [...prev, newMember]);
-
-      // If opened from a specific assignment dropdown, auto-assign
-      if (activeAssignmentForMember?.assignmentId) {
-        await handleAssignMember(activeAssignmentForMember.assignmentId, newMember.id);
-      }
-
+      await fetchAllData();
+      setIsAddMemberOpen(false);
+      setEditingMember(null);
       setActiveAssignmentForMember(null);
     } catch (err: any) {
-      console.error('[TeamManager] Save team member exception:', err);
-      alert("Error saving team member: " + (err?.message || err));
+      console.error('[TeamManager] Save team member failed:', err);
+      alert('Failed to save team member: ' + err.message);
     }
   };
 
-  // Save New Project and Sub-Events to Supabase with Enhanced Diagnostics & Fallbacks
-  const handleSaveProject = async (couplingName: string, eventBlocks: EventBlockData[], existingProjectId?: string): Promise<boolean> => {
-    console.log('[TeamManager] Starting handleSaveProject for couplingName:', couplingName, 'with blocks count:', eventBlocks.length, 'existingProjectId:', existingProjectId);
-
+  // Handle Assignment Update (Assign / Unassign Team Member to Role)
+  const handleAssignMember = async (assignmentId: string, memberId: string | null) => {
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData?.session?.user?.id || null;
+      setProjects(prev =>
+        prev.map(p => ({
+          ...p,
+          fw_sub_events: p.fw_sub_events?.map(se => ({
+            ...se,
+            fw_assignments: se.fw_assignments?.map(a =>
+              a.id === assignmentId ? { ...a, assigned_member_id: memberId } : a
+            ),
+          })),
+        }))
+      );
 
-      const mainDate = eventBlocks[0]?.subEventDate || new Date().toISOString().split('T')[0];
-      const mainVenue = eventBlocks[0]?.venueLocation || 'Venue TBD';
+      const { error: assignErr } = await supabase
+        .from('fw_assignments')
+        .update({ assigned_member_id: memberId })
+        .eq('id', assignmentId);
 
-      const projectPayload: any = {
-        client_name: couplingName,
-        status: 'Active',
-        shipping_hdd_status: 'None',
-        shipping_hdd_state: 'PENDING',
-        main_date: mainDate,
-        main_venue: mainVenue,
-        is_archived: false,
-        updated_at: new Date().toISOString(),
-      };
-      if (userId) {
-        projectPayload.user_id = userId;
+      if (assignErr) {
+        console.error('[TeamManager] Assignment update error:', assignErr.message);
+        fetchAllData();
       }
+    } catch (err) {
+      console.error('[TeamManager] handleAssignMember Exception:', err);
+      fetchAllData();
+    }
+  };
 
-      let newProj: any = null;
+  // Handle Project Creation & Update with Multi-Sub-Event Blocks
+  const handleSaveProject = async (
+    couplingName: string,
+    blocks: EventBlockData[],
+    projectId?: string
+  ) => {
+    try {
+      let targetProjectId = projectId;
 
-      if (existingProjectId) {
-        console.log('[TeamManager] Updating existing project:', existingProjectId);
-        const { data: updatedArr, error: updateErr } = await supabase
+      if (projectId) {
+        const { error: projErr } = await supabase
           .from('fw_projects')
-          .update(projectPayload)
-          .eq('id', existingProjectId)
-          .select();
+          .update({ client_name: couplingName, updated_at: new Date().toISOString() })
+          .eq('id', projectId);
+        if (projErr) throw projErr;
 
-        if (updateErr || !updatedArr || updatedArr.length === 0) {
-          console.error('[TeamManager] Project update failed:', updateErr);
-          alert("Could not update project in Supabase: " + (updateErr?.message || 'Update failed'));
-          return false;
-        }
-        newProj = updatedArr[0];
-      } else {
-        const { data: newProjArray, error: projErr } = await supabase
-          .from('fw_projects')
-          .insert([projectPayload])
-          .select();
-
-        if (projErr || !newProjArray || newProjArray.length === 0) {
-          console.error('[TeamManager] Project insert failed:', projErr);
-          alert("Could not create project in Supabase: " + (projErr?.message || "Unknown error"));
-          return false;
-        }
-        newProj = newProjArray[0];
-      }
-
-      // Fetch current sub-event IDs from DB to clean up any sub-events deleted in modal
-      let dbSubEvents: any[] = [];
-      if (existingProjectId) {
-        const { data: existingSe } = await supabase
+        const { data: existingSubEvents } = await supabase
           .from('fw_sub_events')
           .select('id')
-          .eq('project_id', existingProjectId);
-        dbSubEvents = existingSe || [];
+          .eq('project_id', projectId);
+
+        if (existingSubEvents && existingSubEvents.length > 0) {
+          const subEventIds = existingSubEvents.map(se => se.id);
+          await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
+          await supabase.from('fw_sub_events').delete().eq('project_id', projectId);
+        }
+      } else {
+        const { data: newProj, error: projErr } = await supabase
+          .from('fw_projects')
+          .insert([{ client_name: couplingName }])
+          .select()
+          .single();
+        if (projErr) throw projErr;
+        targetProjectId = newProj.id;
       }
 
-      const blockSubEventIds = eventBlocks.map(b => b.id).filter(id => id && id.length > 20);
-      const subEventsToDelete = dbSubEvents.filter(se => !blockSubEventIds.includes(se.id));
-
-      for (const seToDelete of subEventsToDelete) {
-        await supabase.from('fw_assignments').delete().eq('sub_event_id', seToDelete.id);
-        await supabase.from('fw_sub_events').delete().eq('id', seToDelete.id);
-      }
-
-      // Process sub-events in place (ZERO DUPLICATES)
-      for (let i = 0; i < eventBlocks.length; i++) {
-        const block = eventBlocks[i];
-        const eventTitle = block.subEventNames.join(' / ') || ("Event #" + (i + 1));
-        const eventDate = block.subEventDate || mainDate;
-
-        const isRealUuid = block.id && block.id.length > 20;
-
-        if (isRealUuid) {
-          // UPDATE EXISTING SUB-EVENT IN PLACE (ZERO DUPLICATE RECORD CREATION!)
-          await supabase
+      if (targetProjectId && blocks.length > 0) {
+        for (const block of blocks) {
+          const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
+          const { data: insertedSubEvent, error: seErr } = await supabase
             .from('fw_sub_events')
-            .update({
-              event_title: eventTitle,
-              event_date: eventDate,
-              venue_name: block.venueLocation || null,
-              venue_map_link: block.mapLink || null,
-              roll_call_time: block.startTime || null,
-              dismissal_estimate_time: block.endTime || null,
-              operational_notes: block.notes || null,
-              display_order: i,
-            })
-            .eq('id', block.id);
+            .insert([
+              {
+                project_id: targetProjectId,
+                event_title: title,
+                event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+                venue_name: block.venueLocation || null,
+                venue_map_link: block.mapLink || null,
+                roll_call_time: block.startTime || '10:00',
+                dismissal_estimate_time: block.endTime || '18:00',
+                operational_notes: block.notes || null,
+              },
+            ])
+            .select()
+            .single();
 
-          // Update details on existing assignments WITHOUT deleting or touching assigned_member_id!
-          await supabase
-            .from('fw_assignments')
-            .update({
-              sub_event_name: eventTitle,
-              sub_event_date: eventDate,
-              start_time: block.startTime || null,
-              end_time: block.endTime || null,
-            })
-            .eq('sub_event_id', block.id);
+          if (seErr) throw seErr;
 
-          // Check if any new required role was added during edit
-          const { data: existingAssigns } = await supabase
-            .from('fw_assignments')
-            .select('*')
-            .eq('sub_event_id', block.id);
-
-          const existingRoles = (existingAssigns || []).map(a => a.required_role);
-          const blockRoles = block.roles || [];
-
-          for (const role of blockRoles) {
-            if (!existingRoles.includes(role)) {
-              const newAssignPayload: any = {
-                project_id: newProj.id,
-                sub_event_id: block.id,
-                sub_event_name: eventTitle,
-                sub_event_date: eventDate,
-                start_time: block.startTime || null,
-                end_time: block.endTime || null,
-                required_role: role,
-                assigned_member_id: null,
-                status: 'pending',
-              };
-              if (userId) newAssignPayload.user_id = userId;
-              await supabase.from('fw_assignments').insert([newAssignPayload]);
-            }
-          }
-        } else {
-          // INSERT NEWLY ADDED SUB-EVENT BLOCK
-          const subEventPayload: any = {
-            project_id: newProj.id,
-            event_title: eventTitle,
-            event_date: eventDate,
-            venue_name: block.venueLocation || null,
-            venue_map_link: block.mapLink || null,
-            roll_call_time: block.startTime || null,
-            dismissal_estimate_time: block.endTime || null,
-            operational_notes: block.notes || null,
-            display_order: i,
-          };
-          if (userId) subEventPayload.user_id = userId;
-
-          const { data: seData } = await supabase
-            .from('fw_sub_events')
-            .insert([subEventPayload])
-            .select();
-
-          const subEventId = seData && seData[0] ? seData[0].id : null;
-
-          if (block.roles && block.roles.length > 0) {
+          if (insertedSubEvent && block.roles.length > 0) {
             const assignmentsPayload = block.roles.map(role => {
-              const item: any = {
-                project_id: newProj.id,
-                sub_event_id: subEventId,
-                sub_event_name: eventTitle,
-                sub_event_date: eventDate,
-                start_time: block.startTime || null,
-                end_time: block.endTime || null,
+              const matchedMember = teamMembers.find(
+                m => m.primary_role.toLowerCase() === role.toLowerCase() || m.name.toLowerCase() === role.toLowerCase()
+              );
+              return {
+                project_id: targetProjectId,
+                sub_event_id: insertedSubEvent.id,
                 required_role: role,
-                assigned_member_id: null,
-                status: 'pending',
+                assigned_member_id: matchedMember ? matchedMember.id : null,
               };
-              if (userId) item.user_id = userId;
-              return item;
             });
 
             await supabase.from('fw_assignments').insert(assignmentsPayload);
@@ -515,7 +326,7 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Toggle Soft-Archive Project (Trash)
+  // Toggle Soft-Archive Project (Move to Trash / Restore)
   const handleToggleArchiveProject = async (projectId: string, isArchived: boolean) => {
     try {
       await supabase
@@ -528,6 +339,24 @@ export default function TeamManagerPage() {
       );
     } catch (err) {
       console.error('[TeamManager] Archive toggle failed:', err);
+    }
+  };
+
+  // Permanent Hard-Delete Project from Supabase DB
+  const handlePermanentDeleteProject = async (projectId: string) => {
+    try {
+      const { data: subEvents } = await supabase.from('fw_sub_events').select('id').eq('project_id', projectId);
+      if (subEvents && subEvents.length > 0) {
+        const subEventIds = subEvents.map(se => se.id);
+        await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
+        await supabase.from('fw_sub_events').delete().eq('project_id', projectId);
+      }
+      await supabase.from('fw_projects').delete().eq('id', projectId);
+
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      setPermanentDeleteTarget(null);
+    } catch (err) {
+      console.error('[TeamManager] Permanent delete failed:', err);
     }
   };
 
@@ -562,37 +391,38 @@ export default function TeamManagerPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F8F9FD] text-[#0B111E] flex font-sans antialiased selection:bg-[#6C5CE7]/15">
+    <div className="min-h-screen bg-[#F8F9FD] text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15">
       <style>{customStyle}</style>
 
       {/* ─────────────────────────────────────────────────────────────
-          MAIN CONTENT WORKSPACE AREA
+          MAIN CONTENT WORKSPACE AREA (100% FULL WIDTH RESPONSIVE)
          ───────────────────────────────────────────────────────────── */}
-      <main className="w-full min-h-screen px-6 py-8 lg:px-10 bg-slate-100">
+      <main className="w-full min-h-screen px-4 sm:px-6 lg:px-8 py-6 bg-slate-100 space-y-6">
         
-        {/* Top Header Block */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        {/* Top Responsive Header Block */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-[#0B111E] tracking-tight flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight flex items-center gap-2 flex-wrap">
               Welcome back, Studio Admin 👋
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-xs">
-                v3.0-avatar-settings
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-2xs">
+                v3.0-mobile-app
               </span>
             </h2>
-            <p className="text-xs text-[#4F5E74] font-semibold mt-0.5">
+            <p className="text-xs text-[#4F5E74] font-bold mt-0.5">
               Here&apos;s what&apos;s happening with your wedding operations today.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative">
+          {/* Action controls row */}
+          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap w-full lg:w-auto justify-start sm:justify-end">
+            <div className="relative w-full sm:w-64">
               <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input 
                 type="text"
                 placeholder="Search clients or sub-events..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2.5 bg-white border border-[#6C5CE7]/10 rounded-2xl text-xs font-bold text-[#0B111E] placeholder:text-[#4F5E74]/60 focus:outline-none focus:border-[#6C5CE7] transition w-64 shadow-sm"
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#6C5CE7]/10 rounded-2xl text-xs font-bold text-[#0B111E] placeholder:text-[#4F5E74]/60 focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
               />
             </div>
 
@@ -601,15 +431,16 @@ export default function TeamManagerPage() {
                 setActiveAssignmentForMember(null);
                 setIsAddMemberOpen(true);
               }}
-              className="bg-white border border-[#6C5CE7]/20 hover:border-[#6C5CE7] text-[#6C5CE7] text-xs font-bold px-4 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-sm shrink-0"
+              className="bg-white border border-[#6C5CE7]/20 hover:border-[#6C5CE7] text-[#6C5CE7] text-xs font-bold px-4 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-2xs shrink-0 cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
-              + Add Team Member
+              <span className="hidden sm:inline">+ Add Team Member</span>
+              <span className="sm:hidden">+ Member</span>
             </button>
 
             <button 
               onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-              className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30 shrink-0"
+              className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30 shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               Add Project
@@ -618,7 +449,7 @@ export default function TeamManagerPage() {
             <button 
               type="button" 
               onClick={() => setIsSettingsModalOpen(true)}
-              className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-xs text-indigo-600 transition-all cursor-pointer relative z-20 shrink-0"
+              className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
               title="Team & Operations Settings"
             >
               <Settings className="w-5 h-5"/>
@@ -626,9 +457,9 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── VIEW MODE NAVIGATION SWITCHER BAR ─── */}
-        <div className="flex items-center justify-between gap-4 mb-8 bg-white/90 backdrop-blur-md p-2 rounded-2xl border border-slate-200 shadow-xs flex-wrap">
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+        {/* ─── VIEW MODE NAVIGATION SWITCHER BAR (RESPONSIVE TOUCH SCROLL) ─── */}
+        <div className="flex items-center justify-between gap-3 bg-white/95 backdrop-blur-md p-2 rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full py-0.5 scrollbar-none">
             <button
               onClick={() => setActiveTab('projects')}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
@@ -676,392 +507,213 @@ export default function TeamManagerPage() {
               <TrendingUp className="w-4 h-4" />
               Overview Stats
             </button>
-          </div>
 
-          <button
-            onClick={() => setActiveTab('trash')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
-              activeTab === 'trash'
-                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'
-            }`}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Trash
-            {projects.filter(p => p.is_archived).length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black">
-                {projects.filter(p => p.is_archived).length}
-              </span>
-            )}
-          </button>
+            <button
+              onClick={() => setActiveTab('trash')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                activeTab === 'trash'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30'
+                  : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50'
+              }`}
+            >
+              <Trash2 className="w-4 h-4" />
+              Trash Buffer ({projects.filter(p => p.is_archived).length})
+            </button>
+          </div>
         </div>
 
-        {/* ─── TAB VIEW: 6 CRITICAL LOGIC & UI LAYOUT FIXES ─── */}
+        {/* ─── TAB VIEW: CARDS VIEW (CLIENT-WISE) ─── */}
         {activeTab === 'projects' && (
-          <div className="space-y-8">
-            
+          <div className="space-y-6">
             {loading ? (
-              <div className="flex items-center justify-center py-24">
+              <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-200 space-y-3">
                 <Loader2 className="w-8 h-8 text-[#6C5CE7] animate-spin" />
+                <span className="text-xs font-bold text-[#4F5E74]">Hydrating Client Operations Workspace...</span>
               </div>
             ) : filteredProjects.length === 0 ? (
-              <div className="text-center py-20 bg-white rounded-[24px] border border-[#6C5CE7]/8 p-8 shadow-sm">
-                <Users className="w-12 h-12 text-[#6C5CE7]/40 mx-auto mb-3" />
-                <h4 className="font-bold text-sm text-[#0B111E]">No Active Projects Found</h4>
-                <p className="text-xs text-[#4F5E74] font-semibold mt-1 max-w-sm mx-auto">
-                  Click the &quot;Add Project&quot; button above to create your first wedding project with custom sub-events and crew allocations.
-                </p>
+              <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 shadow-2xs">
+                <div className="w-16 h-16 rounded-full bg-indigo-50 text-[#6C5CE7] flex items-center justify-center mx-auto">
+                  <Folder className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#0B111E]">No Active Client Projects Found</h3>
+                  <p className="text-xs text-[#4F5E74] font-semibold mt-1">Get started by creating a new wedding project.</p>
+                </div>
+                <button
+                  onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                  className="bg-[#6C5CE7] text-white text-xs font-bold px-5 py-2.5 rounded-2xl inline-flex items-center gap-2 shadow-md shadow-[#6C5CE7]/20 hover:bg-[#5b4cd1] transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Add First Wedding Project
+                </button>
               </div>
             ) : (
-              <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredProjects.map((project) => {
-                  // 1. DETERMINISTIC CLIENT GRADIENT CONSISTENCY (ID-BASED HASH)
-                  const projectGradient = getGradientByProjectId(project.id || project.client_name);
+                  const subEvents = project.fw_sub_events || [];
 
                   return (
-                    /* MASTER CLIENT CONTAINER CHASSIS */
-                    <div 
+                    <div
                       key={project.id}
-                      className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8"
+                      className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 overflow-hidden flex flex-col hover:border-indigo-300 transition duration-200 group"
                     >
-                      {/* MASTER CLIENT CARD HEADER */}
-                      <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
+                      {/* CLIENT CARD HEADER BAR */}
+                      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <h3 className="text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
-                            {project.client_name}
-                          </h3>
-                          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
-                            {project.fw_sub_events?.length || 0} Sub-Events
-                          </span>
+                          <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
+                            {getInitials(project.client_name)}
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+                              {project.client_name}
+                            </h3>
+                            <span className="text-[11px] font-bold text-slate-300">
+                              {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Configured
+                            </span>
+                          </div>
                         </div>
 
-                        {/* SINGLE PENCIL EDIT BUTTON */}
-                        <button 
-                          title="Edit Project"
+                        {/* EDIT PROJECT CARD BUTTON */}
+                        <button
                           onClick={() => {
                             setEditingProject(project);
                             setIsAddProjectOpen(true);
                           }}
-                          className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
+                          className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer"
+                          title="Edit Project Configuration"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
                       </div>
 
-                      {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
-                      <div className="space-y-4">
-                        {project.fw_sub_events?.map((subEvent) => {
-                          const eventDate = new Date(subEvent.event_date);
-                          const dayName = isNaN(eventDate.getTime()) 
-                            ? 'DAY' 
-                            : eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-                          const monthAbbr = isNaN(eventDate.getTime()) 
-                            ? 'MMM' 
-                            : eventDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-                          const dayNumber = isNaN(eventDate.getTime()) 
-                            ? '00' 
-                            : eventDate.getDate().toString().padStart(2, '0');
-                          const yearStr = isNaN(eventDate.getTime()) 
-                            ? '2026' 
-                            : eventDate.getFullYear().toString();
+                      {/* SUB-EVENTS LIST */}
+                      <div className="p-5 space-y-5 flex-1 bg-slate-50/40">
+                        {subEvents.length === 0 ? (
+                          <div className="text-center py-6 text-xs text-slate-400 italic">No sub-events added yet.</div>
+                        ) : (
+                          subEvents.map((subEvent) => {
+                            const assignments = subEvent.fw_assignments || [];
+                            const assignedCount = assignments.filter(a => a.assigned_member_id !== null).length;
+                            const totalSlots = assignments.length;
 
-                          return (
-                            /* MODERN GRADIENT SUB-EVENT CARD */
-                            <div 
-                              key={subEvent.id}
-                              className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-stretch overflow-hidden"
-                            >
-                              {/* 1. LEFT VERTICAL GRADIENT DATE BLOCK (DETERMINISTIC ID-BASED GRADIENT) */}
-                              <div className={`${projectGradient} w-full md:w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
-                                <div>
-                                  {/* Day Abbreviation */}
-                                  <span className="text-xs font-bold text-white/80 uppercase tracking-wider block">
-                                    {dayName}
-                                  </span>
-                                  {/* Big Date Number */}
-                                  <span className="text-2xl font-black text-white leading-none my-1 block">
-                                    {dayNumber}
-                                  </span>
-                                  {/* Month Abbreviation */}
-                                  <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider block">
-                                    {monthAbbr}
-                                  </span>
-                                  {/* Year String */}
-                                  <span className="text-[10px] font-semibold text-white/70 tracking-widest mt-0.5 block">
-                                    {yearStr}
-                                  </span>
-                                </div>
-
-                                {/* 3D Translucent Glass Calendar Badge */}
-                                <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
-                                  <Calendar className="w-3.5 h-3.5" />
-                                </div>
-                              </div>
-
-                              {/* MAIN RIGHT CONTENT BODY */}
-                              <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
-                                {/* TOP ROW: TITLE, TIME & VENUE */}
-                                <div>
-                                  <div className="flex items-start justify-between gap-3 mb-1">
-                                    <h4 className="font-black text-slate-900 text-sm md:text-base tracking-tight" style={{ color: '#1E1B4B' }}>
+                            return (
+                              <div
+                                key={subEvent.id}
+                                className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-2xs"
+                              >
+                                {/* SUB EVENT TITLE & DATE */}
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                  <div>
+                                    <h4 className="font-extrabold text-slate-900 text-xs">
                                       {subEvent.event_title}
                                     </h4>
+                                    <span className="text-[11px] font-bold text-slate-500 block mt-0.5">
+                                      {subEvent.event_date} ({getCountdownBadge(subEvent.event_date)})
+                                    </span>
                                   </div>
 
-                                  {/* Time & Venue Row */}
-                                  <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
-                                    {subEvent.roll_call_time && (
-                                      <div className="flex items-center gap-1.5 text-slate-700">
-                                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                        <span>
-                                          {format12HourTime(subEvent.roll_call_time)}
-                                          {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
-                                        </span>
-                                      </div>
-                                    )}
-                                    
-                                    {subEvent.roll_call_time && subEvent.venue_name && (
-                                      <span className="text-slate-300 font-normal">|</span>
-                                    )}
-
-                                    {subEvent.venue_name && (
-                                      <div className="relative group/venue">
-                                        <a
-                                          href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
-                                        >
-                                          <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                                          <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
-                                        </a>
-                                      </div>
-                                    )}
-                                  </div>
+                                  <span className="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold text-[10px] border border-indigo-100">
+                                    {assignedCount}/{totalSlots} Roles
+                                  </span>
                                 </div>
 
-                                {/* DYNAMIC SUB-EVENT OPERATIONAL NOTES BANNER */}
-                                {subEvent.operational_notes && (
-                                  <div className="bg-amber-50/80 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2 my-1">
-                                    <FileText className="w-4 h-4 text-amber-600 shrink-0" />
-                                    <span>{subEvent.operational_notes}</span>
-                                  </div>
-                                )}
+                                {/* VENUE & TIMING */}
+                                <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
+                                  {subEvent.roll_call_time && (
+                                    <div className="flex items-center gap-1 text-slate-700 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                                      <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                                      <span>
+                                        {format12HourTime(subEvent.roll_call_time)}
+                                        {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                      </span>
+                                    </div>
+                                  )}
 
-                                {/* SUBTLE HORIZONTAL DIVIDER */}
-                                <div className="border-t border-slate-100 my-1.5" />
+                                  {subEvent.venue_name && (
+                                    <div className="flex items-center gap-1 text-emerald-700 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                                      <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span className="truncate max-w-[140px]">{subEvent.venue_name}</span>
+                                    </div>
+                                  )}
+                                </div>
 
-                                {/* 4. STRICT FIXED ROLE POSITIONING (NO SORT RE-ORDERING) & 2. CLEAN MAX 2-LINE NAME */}
-                                <div className="flex items-start gap-4 flex-wrap">
-                                  {subEvent.fw_assignments?.map((assignment) => {
-                                    const isAssigned = assignment.assigned_member_id !== null;
-                                    const memberObj = assignment.fw_team_members;
-                                    const rawName = memberObj?.name || '';
-                                    const cleanName = rawName.replace(/\.\.\./g, '').trim();
-                                    const role = assignment.required_role;
-                                    const dropdownKey = assignment.id;
-                                    const isDropdownOpen = activeDropdownId === dropdownKey;
-                                    const dicebearFallback = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
+                                {/* CREW ALLOCATION ROSTER CHIPS (CIRCULAR AVATARS) */}
+                                <div>
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2">
+                                    Crew Placements
+                                  </span>
+                                  {assignments.length === 0 ? (
+                                    <span className="text-xs text-slate-400 italic">No roles configured</span>
+                                  ) : (
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      {assignments.map((assignment) => {
+                                        const member = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                        const isAssigned = member !== undefined && member !== null;
+                                        const role = assignment.required_role || 'Crew';
+                                        const cleanName = member?.name ? member.name.replace(/\.\.\./g, '').trim() : '';
+                                        const { line1, line2 } = formatMemberName2Lines(cleanName);
+                                        const isDropdownOpen = activeDropdownId === assignment.id;
 
-                                    const { line1, line2 } = formatMemberName2Lines(cleanName);
-
-                                    return (
-                                      <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
-                                        {/* AVATAR NODE TRIGGER */}
-                                        <div
-                                          onClick={(e) => {
-                                            const rect = e.currentTarget.getBoundingClientRect();
-                                            if (activeDropdownId === dropdownKey) {
-                                              setActiveDropdownId(null);
-                                              setDropdownPos(null);
-                                            } else {
-                                              setActiveDropdownId(dropdownKey);
-                                              setMemberSearchQuery('');
+                                        return (
+                                          <div
+                                            key={assignment.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const rect = e.currentTarget.getBoundingClientRect();
                                               setDropdownPos({
                                                 top: rect.bottom + 6,
-                                                left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
+                                                left: Math.min(rect.left, window.innerWidth - 270),
                                               });
-                                            }
-                                          }}
-                                          className="flex flex-col items-center group cursor-pointer"
-                                          title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
-                                        >
-                                          {/* LAYER 1 (TOP): CLEAN CIRCULAR PROFILE PHOTO / INITIALS / RED UNASSIGNED */}
-                                          {isAssigned ? (
-                                            memberObj?.avatar_url ? (
-                                              // eslint-disable-next-next/no-img-element
-                                              <img 
-                                                src={memberObj.avatar_url} 
-                                                alt={cleanName} 
-                                                className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
-                                                onError={(e) => {
-                                                  (e.target as HTMLImageElement).src = dicebearFallback;
-                                                }}
-                                              />
-                                            ) : (
-                                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
-                                                {getInitials(cleanName || role)}
-                                              </div>
-                                            )
-                                          ) : (
-                                            /* CLEAN RED UNASSIGNED CIRCLE (ONLY RED '+' ICON INSIDE) */
-                                            <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                              <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
-                                            </div>
-                                          )}
-
-                                          {/* LAYER 2 (MIDDLE): ROLE LABEL (BOLD INDIGO IF ASSIGNED, BOLD RED IF UNASSIGNED) */}
-                                          <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
-                                            isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
-                                          }`}>
-                                            {role}
-                                          </span>
-
-                                          {/* 2. LAYER 3 (BOTTOM): CLEAN MAXIMUM 2-LINE NAME JUSTIFICATION */}
-                                          {isAssigned && (
-                                            <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
-                                              <span className="block leading-none truncate max-w-[90px]">{line1}</span>
-                                              {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
-                                            </div>
-                                          )}
-                                        </div>
-
-                                        {/* REACT PORTAL POPOVER (100% GUARANTEED NO CLIPPING OR OVERLAP) */}
-                                        {isDropdownOpen && dropdownPos && typeof window !== 'undefined' && createPortal(
-                                          <>
-                                            <div 
-                                              className="fixed inset-0 z-[99998]" 
-                                              onClick={() => {
-                                                setActiveDropdownId(null);
-                                                setDropdownPos(null);
-                                              }} 
-                                            />
-                                            <motion.div
-                                              initial={{ opacity: 0, scale: 0.92, y: -4 }}
-                                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                                              exit={{ opacity: 0, scale: 0.92, y: -4 }}
-                                              transition={{ type: 'spring', damping: 20, stiffness: 350 }}
-                                              style={{
-                                                position: 'fixed',
-                                                top: `${dropdownPos.top}px`,
-                                                left: `${dropdownPos.left}px`,
-                                                zIndex: 99999,
-                                              }}
-                                              className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left"
-                                            >
-                                              {/* SEARCH INPUT BAR */}
-                                              <div className="relative">
-                                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                                <input
-                                                  type="text"
-                                                  placeholder="Search member or role..."
-                                                  value={memberSearchQuery}
-                                                  onChange={(e) => setMemberSearchQuery(e.target.value)}
-                                                  className="w-full bg-slate-50 border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/30 text-slate-900 placeholder:text-slate-400"
-                                                />
-                                              </div>
-
-                                              {/* TOP PINNED ACTION ROW */}
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setActiveDropdownId(null);
-                                                  setDropdownPos(null);
-                                                  setActiveAssignmentForMember({
-                                                    assignmentId: assignment.id,
-                                                    role: assignment.required_role,
-                                                    subEventId: subEvent.id,
-                                                    projectId: project.id,
-                                                  });
-                                                  setIsAddMemberOpen(true);
-                                                }}
-                                                className="w-full flex items-center justify-center gap-2 bg-[#F0EDFF] hover:bg-[#E5E0FF] text-[#6C5CE7] text-xs font-bold py-2 rounded-xl transition"
-                                              >
-                                                <Plus className="w-3.5 h-3.5" />
-                                                + Add New Team Member
-                                              </button>
-
-                                              <div className="h-px bg-zinc-100 my-1" />
-
-                                              {/* MEMBER SELECTION LIST */}
-                                              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
-                                                {/* UNASSIGN OPTION */}
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    handleAssignMember(assignment.id, null);
-                                                    setDropdownPos(null);
+                                              setActiveDropdownId(isDropdownOpen ? null : assignment.id);
+                                            }}
+                                            className="flex flex-col items-center group/node cursor-pointer select-none relative"
+                                          >
+                                            {/* CIRCULAR NODE AVATAR */}
+                                            {isAssigned ? (
+                                              member.avatar_url ? (
+                                                // eslint-disable-next-next/no-img-element
+                                                <img
+                                                  src={member.avatar_url}
+                                                  alt={cleanName}
+                                                  className="w-11 h-11 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 group-hover/node:scale-105 transition shrink-0"
+                                                  onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
                                                   }}
-                                                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
-                                                    !isAssigned
-                                                      ? 'bg-rose-50 text-rose-600'
-                                                      : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
-                                                  }`}
-                                                >
-                                                  <span>• Unassign / Pending</span>
-                                                  {!isAssigned && <Check className="w-3.5 h-3.5" />}
-                                                </button>
-
-                                                {teamMembers
-                                                  .filter(m => {
-                                                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
-                                                    if (!memberSearchQuery.trim()) return true;
-                                                    const q = memberSearchQuery.toLowerCase();
-                                                    return (
-                                                      cleanMName.toLowerCase().includes(q) ||
-                                                      m.primary_role.toLowerCase().includes(q)
-                                                    );
-                                                  })
-                                                  .map((m) => {
-                                                    const isSelected = assignment.assigned_member_id === m.id;
-                                                    const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
-                                                    return (
-                                                      <button
-                                                        key={m.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                          handleAssignMember(assignment.id, m.id);
-                                                          setDropdownPos(null);
-                                                        }}
-                                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
-                                                          isSelected
-                                                            ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
-                                                            : 'text-[#0B111E] hover:bg-zinc-50'
-                                                        }`}
-                                                      >
-                                                        <div className="flex items-center gap-2.5">
-                                                          {m.avatar_url ? (
-                                                            // eslint-disable-next-next/no-img-element
-                                                            <img 
-                                                              src={m.avatar_url} 
-                                                              alt={cleanMName} 
-                                                              className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
-                                                            />
-                                                          ) : (
-                                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ring-1 ring-indigo-200">
-                                                              {getInitials(cleanMName)}
-                                                            </div>
-                                                          )}
-                                                          <span className="break-words max-w-[120px] text-left">{cleanMName}</span>
-                                                          <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
-                                                        </div>
-                                                        {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
-                                                      </button>
-                                                    );
-                                                  })}
+                                                />
+                                              ) : (
+                                                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover/node:scale-105 transition shrink-0">
+                                                  {getInitials(cleanName || role)}
+                                                </div>
+                                              )
+                                            ) : (
+                                              <div className="w-11 h-11 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs group-hover/node:bg-red-100 transition cursor-pointer shrink-0">
+                                                <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
                                               </div>
-                                            </motion.div>
-                                          </>,
-                                          document.body
-                                        )}
-                                      </div>
-                                    );
-                                  })}
+                                            )}
+
+                                            {/* ROLE LABEL */}
+                                            <span className={`font-bold text-[10px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
+                                              isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                            }`}>
+                                              {role}
+                                            </span>
+
+                                            {/* MEMBER NAME */}
+                                            {isAssigned && (
+                                              <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[11px] leading-tight max-w-[85px] mt-0.5">
+                                                <span className="block leading-none truncate max-w-[85px]">{line1}</span>
+                                                {line2 ? <span className="block leading-none truncate max-w-[85px] mt-0.5">{line2}</span> : null}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                   );
@@ -1115,26 +767,49 @@ export default function TeamManagerPage() {
           />
         )}
 
-        {/* ─── TAB VIEW: TRASH RECOVERY ─── */}
+        {/* ─── TAB VIEW: TRASH RECOVERY & PERMANENT DELETE ─── */}
         {activeTab === 'trash' && (
           <div className="space-y-4">
-            <h3 className="font-extrabold text-sm text-[#0B111E]">Soft-Archived Projects (Trash)</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-base text-[#0B111E]">Soft-Archived Projects (Trash Buffer)</h3>
+              <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-xs font-bold border border-rose-200">
+                {filteredProjects.length} Archived Project{filteredProjects.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
             {filteredProjects.length === 0 ? (
-              <div className="bg-white p-8 rounded-[24px] text-center text-xs text-[#4F5E74] font-bold">
+              <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center text-xs text-[#4F5E74] font-bold shadow-2xs">
                 Trash buffer is clear. No archived projects found.
               </div>
             ) : (
-              filteredProjects.map(p => (
-                <div key={p.id} className="bg-white p-4 rounded-2xl border border-zinc-200 flex items-center justify-between text-xs font-bold">
-                  <span>{p.client_name}</span>
-                  <button
-                    onClick={() => handleToggleArchiveProject(p.id, false)}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition flex items-center gap-1.5"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" /> Restore Project
-                  </button>
-                </div>
-              ))
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredProjects.map(p => (
+                  <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="font-extrabold text-sm text-[#0B111E]">{p.client_name}</h4>
+                      <p className="text-xs text-[#4F5E74] font-semibold mt-0.5">
+                        {p.fw_sub_events?.length || 0} Sub-Event(s) • Soft Archived
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleToggleArchiveProject(p.id, false)}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-xs transition flex items-center gap-1.5 border border-emerald-200 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Restore
+                      </button>
+
+                      <button
+                        onClick={() => setPermanentDeleteTarget(p)}
+                        className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-xs transition flex items-center gap-1.5 border border-rose-200 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Permanent Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -1145,8 +820,7 @@ export default function TeamManagerPage() {
           GLOBAL POPUP MODALS
          ───────────────────────────────────────────────────────────── */}
       
-      
-      {/* GLOBAL REACT PORTAL POPOVER FOR TEAM MEMBER ASSIGNMENT (WORKS ACROSS CARDS & LIST VIEW) */}
+      {/* GLOBAL REACT PORTAL POPOVER FOR TEAM MEMBER ASSIGNMENT */}
       {activeDropdownId && dropdownPos && typeof window !== 'undefined' && (() => {
         const activeAssignment = projects
           .flatMap(p => p.fw_sub_events || [])
@@ -1285,7 +959,7 @@ export default function TeamManagerPage() {
         );
       })()}
 
-      {/* 1. Add Project Modal */}
+      {/* 1. Add / Edit Project Modal */}
       <AddProjectModal
         isOpen={isAddProjectOpen}
         onClose={() => {
@@ -1294,9 +968,10 @@ export default function TeamManagerPage() {
         }}
         projectToEdit={editingProject}
         onSave={handleSaveProject}
+        onDeleteProject={(id) => handleToggleArchiveProject(id, true)}
       />
 
-      {/* 2. Add New Team Member 3D Modal (With International Country Flags Input) */}
+      {/* 2. Add New Team Member 3D Modal */}
       <AddTeamMemberModal
         isOpen={isAddMemberOpen}
         onClose={() => {
@@ -1308,7 +983,8 @@ export default function TeamManagerPage() {
         initialRole={activeAssignmentForMember?.role || 'Ass'}
         onSave={handleSaveTeamMember}
       />
-      {/* 3. Global Operations & Team Settings Modal (z-[99999]) */}
+
+      {/* 3. Global Operations & Team Settings Modal */}
       <TeamSettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
@@ -1333,6 +1009,47 @@ export default function TeamManagerPage() {
           }
         }}
       />
+
+      {/* 4. PERMANENT DELETE CONFIRMATION MODAL POPUP FOR TRASH BUFFER */}
+      {permanentDeleteTarget && (
+        <div className="fixed inset-0 z-[100005] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-150">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4 text-center"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-extrabold text-[#0B111E]">Permanently Delete Project?</h3>
+              <p className="text-xs font-semibold text-[#4F5E74]">
+                Are you sure you want to permanently delete <span className="font-extrabold text-slate-900">&quot;{permanentDeleteTarget.client_name}&quot;</span>? This action <span className="text-rose-600 font-extrabold">CANNOT be undone</span> and will erase all sub-events and crew assignments.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPermanentDeleteTarget(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePermanentDeleteProject(permanentDeleteTarget.id)}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition shadow-md shadow-rose-500/20 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                Permanently Delete
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
