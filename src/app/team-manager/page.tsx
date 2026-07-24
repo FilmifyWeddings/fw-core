@@ -284,8 +284,45 @@ export default function TeamManagerPage() {
         .find(a => a.id === assignmentId);
 
       if (activeAssign) {
+        const matchedMemberObj = memberId ? teamMembers.find(m => m.id === memberId) || null : null;
+
+        // Optimistic UI state update so member avatar changes INSTANTLY
+        setProjects(prevProjects =>
+          prevProjects.map(proj => ({
+            ...proj,
+            fw_sub_events: proj.fw_sub_events?.map(se => {
+              if (se.id !== activeAssign.sub_event_id) return se;
+              const existingAssignments = se.fw_assignments || [];
+              const exists = existingAssignments.some(
+                a => a.id === assignmentId || a.required_role === activeAssign.required_role
+              );
+              const updatedAssignments = exists
+                ? existingAssignments.map(a =>
+                    (a.id === assignmentId || a.required_role === activeAssign.required_role)
+                      ? { ...a, assigned_member_id: memberId, fw_team_members: matchedMemberObj }
+                      : a
+                  )
+                : [
+                    ...existingAssignments,
+                    {
+                      id: assignmentId,
+                      project_id: activeAssign.project_id,
+                      sub_event_id: activeAssign.sub_event_id,
+                      required_role: activeAssign.required_role,
+                      assigned_member_id: memberId,
+                      fw_team_members: matchedMemberObj,
+                    },
+                  ];
+              return { ...se, fw_assignments: updatedAssignments };
+            }),
+          }))
+        );
+
         if (assignmentId.includes('-role-')) {
-          // Insert new assignment row for synthetic assignment ID
+          const subEventObj = projects
+            .flatMap(p => p.fw_sub_events || [])
+            .find(se => se.id === activeAssign.sub_event_id);
+
           const { error: insertErr } = await supabase
             .from('fw_assignments')
             .insert([{
@@ -293,13 +330,16 @@ export default function TeamManagerPage() {
               sub_event_id: activeAssign.sub_event_id,
               required_role: activeAssign.required_role,
               assigned_member_id: memberId,
+              sub_event_name: subEventObj?.event_title || 'Wedding Event',
+              sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
+              start_time: subEventObj?.roll_call_time || '10:00',
+              end_time: subEventObj?.dismissal_estimate_time || '18:00',
             }]);
 
           if (insertErr) {
             console.error('[TeamManager] Insert assignment error:', insertErr.message);
           }
         } else {
-          // Update existing database UUID assignment
           const { error: assignErr } = await supabase
             .from('fw_assignments')
             .update({ assigned_member_id: memberId })

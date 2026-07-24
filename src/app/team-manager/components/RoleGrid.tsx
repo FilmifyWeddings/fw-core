@@ -20,13 +20,11 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customRole, setCustomRole] = useState('');
 
-  const handleAddRole = () => {
+  const handleAddRole = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (customRole.trim()) {
       const newRole = customRole.trim();
       onAddCustom(newRole);
-      if (!selectedRoles.includes(newRole)) {
-        onToggle(newRole);
-      }
       setCustomRole('');
       setShowCustomInput(false);
     }
