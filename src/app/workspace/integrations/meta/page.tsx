@@ -55,21 +55,31 @@ interface SyncedLeadLog {
 function MetaAdsContent() {
   const searchParams = useSearchParams();
   
-  // Facebook OAuth URL
+  // Clean Facebook OAuth URL
   const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '1488107768502570';
   const redirectUri = 'https://studiocore.in/api/auth/facebook/callback';
   const scope = 'email,public_profile,leads_retrieval,pages_show_list,pages_read_engagement,pages_manage_metadata';
   const fbOAuthUrl = "https://www.facebook.com/v19.0/dialog/oauth?client_id=" + appId + "&redirect_uri=" + encodeURIComponent(redirectUri) + "&scope=" + encodeURIComponent(scope) + "&response_type=code";
 
-  // Connection & Auth State
-  const [isConnected, setIsConnected] = useState(true);
+  // Dynamic Connection & Auth State
+  const [isConnected, setIsConnected] = useState(false);
   const [connectedAccountName, setConnectedAccountName] = useState('Filmify Weddings Studio');
   const [isLoading, setIsLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  // Check URL query parameters for OAuth Error or Cancelled state
-  const oauthError = searchParams ? (searchParams.get('oauth_error') || searchParams.get('error_message')) : null;
+  // Check URL query parameters for OAuth Error or Connection status
+  const oauthError = searchParams ? searchParams.get('oauth_error') : null;
   const isCancelled = searchParams ? (searchParams.get('meta') === 'cancelled' || searchParams.get('error') === 'access_denied') : false;
+
+  useEffect(() => {
+    if (searchParams) {
+      if (searchParams.get('meta') === 'connected') {
+        setIsConnected(true);
+      } else if (searchParams.get('oauth_error') || searchParams.get('meta') === 'cancelled') {
+        setIsConnected(false);
+      }
+    }
+  }, [searchParams]);
 
   // Active Tab: 'forms' | 'pages' | 'webhook' | 'logs'
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'webhook' | 'logs'>('forms');
@@ -83,7 +93,7 @@ function MetaAdsContent() {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
 
-  // Data Lists
+  // Data Lists (Displayed only when connected)
   const [pages, setPages] = useState<ConnectedPage[]>([
     {
       page_id: 'mock_page_101',
@@ -138,18 +148,6 @@ function MetaAdsContent() {
       last_lead_time: '3 hours ago',
       questions_count: 4,
     },
-    {
-      form_id: 'form_prewedding_reel',
-      name: 'Pre-Wedding Reel & Portrait Package Form',
-      status: 'PAUSED',
-      page_id: 'mock_page_102',
-      page_name: 'Studio Light & Cinema',
-      ad_account_name: 'act_394827104 - Filmify Ad Account',
-      is_active: false,
-      sync_count: 18,
-      last_lead_time: '2 days ago',
-      questions_count: 4,
-    },
   ]);
 
   const [syncedLogs, setSyncedLogs] = useState<SyncedLeadLog[]>([
@@ -174,17 +172,6 @@ function MetaAdsContent() {
       created_at: '14 mins ago',
       form_name: 'Destination Wedding Shoot Campaign',
       duplicate_check: 'UNIQUE',
-    },
-    {
-      id: 'lead_1003',
-      name: 'Priya Verma',
-      phone: '+91 98765 43210',
-      email: 'priya.v@example.com',
-      source: 'Facebook Lead Ads',
-      status: 'skipped',
-      created_at: '28 mins ago',
-      form_name: 'Haldi & Sangeet Instant Lead Inquiry Form',
-      duplicate_check: 'DUPLICATE_SKIPPED',
     },
   ]);
 
@@ -348,7 +335,7 @@ function MetaAdsContent() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
-        {/* 3. OAUTH ERROR HANDLING BANNER (CANCELLED / DENIED STATE) */}
+        {/* 2. OAUTH ERROR HANDLING BANNER (MISSING_CODE OR CANCELLED STATE) */}
         {(oauthError || isCancelled) && (
           <div className="bg-red-50/90 border-2 border-red-200/90 shadow-md shadow-red-100/50 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-red-950">
             <div className="flex items-start gap-3">
@@ -356,9 +343,11 @@ function MetaAdsContent() {
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-black text-red-900">Facebook Connection Interrupted or Denied</h4>
+                <h4 className="text-sm font-black text-red-900">Authentication Failed</h4>
                 <p className="text-xs font-semibold text-red-700 mt-0.5">
-                  {oauthError 
+                  {oauthError === 'missing_code'
+                    ? 'Authentication Failed: Meta did not return an authorization code. Please click "Connect Facebook Account" to try again.'
+                    : oauthError
                     ? ("OAuth Error: " + oauthError)
                     : 'The Facebook permissions dialogue was closed or access was denied. Please re-authorize to allow lead retrieval.'}
                 </p>
@@ -370,12 +359,12 @@ function MetaAdsContent() {
               className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2 shrink-0 cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
-              <span>Try Connecting Again</span>
+              <span>Connect Facebook Account</span>
             </a>
           </div>
         )}
 
-        {/* 2. HERO CONNECT SECTION (CINEMATIC LIGHT MODE CHASSIS) */}
+        {/* HERO CONNECT SECTION (CINEMATIC LIGHT MODE CHASSIS) */}
         <div className="bg-white border-2 border-slate-200/90 shadow-xl shadow-slate-200/50 rounded-3xl p-6 sm:p-10 relative overflow-hidden">
           {/* Glowing blur orb */}
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -430,315 +419,352 @@ function MetaAdsContent() {
           </div>
         </div>
 
-        {/* 4. LIVE STATUS & METRICS GRID (4 CARDS) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* CARD 1: CONNECTED PAGES */}
-          <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Connected Pages</span>
-              <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 text-[#1877F2] flex items-center justify-center font-black">
-                <FacebookIcon className="w-4 h-4" />
-              </div>
-            </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{pages.length} Pages</h3>
-            <div className="flex items-center gap-1.5 mt-2">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Active Token
-              </span>
-            </div>
-          </div>
+        {/* 1. DYNAMIC CONNECTION STATE RENDERING */}
+        {!isConnected ? (
+          /* EMPTY DISCONNECTED STATE */
+          <div className="space-y-6">
+            <FacebookConnect 
+              isConnected={false} 
+              pagesCount={0} 
+            />
 
-          {/* CARD 2: AD ACCOUNT ID */}
-          <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Ad Account ID</span>
-              <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black">
-                <Layers className="w-4 h-4" />
-              </div>
-            </div>
-            <h3 className="text-xl font-black text-indigo-950 mt-2 truncate">act_394827104</h3>
-            <span className="text-xs font-bold text-slate-500 mt-1 block truncate">
-              Filmify Ad Manager
-            </span>
-          </div>
-
-          {/* CARD 3: ACTIVE LEAD FORMS */}
-          <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Active Lead Forms</span>
-              <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center font-black">
-                <FileText className="w-4 h-4" />
-              </div>
-            </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{leadForms.filter(f => f.is_active).length} Forms</h3>
-            <span className="text-xs font-bold text-amber-600 mt-1 block">
-              296 Total Leads Synced
-            </span>
-          </div>
-
-          {/* CARD 4: WEBHOOK RECEIVER STATUS */}
-          <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Webhook Receiver</span>
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-black">
-                <Radio className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
-              <h3 className="text-lg font-black text-emerald-700">Live Active</h3>
-            </div>
-            <span className="text-[11px] font-bold text-slate-500 mt-1 block truncate" title="/api/webhooks/meta-leads">
-              /api/webhooks/meta-leads
-            </span>
-          </div>
-        </div>
-
-        {/* COMPONENT INTERACTION: FACEBOOK CONNECT STATUS */}
-        <FacebookConnect 
-          isConnected={isConnected} 
-          connectedAccountName={connectedAccountName} 
-          pagesCount={pages.length} 
-          onDisconnect={() => {
-            setIsConnected(false);
-            showToastNotification('Meta Business Account disconnected.');
-          }} 
-        />
-
-        {/* TABS NAVIGATION & SEARCH BAR */}
-        <div className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-md p-6 space-y-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
-            <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto py-1">
-              <button
-                onClick={() => setActiveTab('forms')}
-                className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
-                  activeTab === 'forms'
-                    ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                )}
-              >
-                Lead Forms ({leadForms.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab('pages')}
-                className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
-                  activeTab === 'pages'
-                    ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                )}
-              >
-                Connected Pages ({pages.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab('webhook')}
-                className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
-                  activeTab === 'webhook'
-                    ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                )}
-              >
-                Webhook Setup
-              </button>
-
-              <button
-                onClick={() => setActiveTab('logs')}
-                className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
-                  activeTab === 'logs'
-                    ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                )}
-              >
-                Live Sync Logs ({syncedLogs.length})
-              </button>
-            </div>
-
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <div className="relative w-full md:w-64">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search forms or pages..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 pl-10 pr-4 py-2 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-12 text-center shadow-sm space-y-4">
+              <div className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-200 text-[#1877F2] flex items-center justify-center mx-auto shadow-inner">
+                <FacebookIcon className="w-8 h-8" />
               </div>
 
-              <button
-                onClick={handleTestWebhook}
-                disabled={isLoading}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
-              >
-                {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-400" />}
-                <span>Test Webhook</span>
-              </button>
+              <div className="max-w-md mx-auto space-y-2">
+                <h3 className="text-lg font-black text-slate-900">No Meta Account Connected</h3>
+                <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                  Click 'Connect Facebook Account' above to start real-time lead sync. Once connected, your Facebook Pages, Instant Lead Forms, and Webhook logs will appear here automatically.
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <a
+                  href={fbOAuthUrl}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#1877F2] hover:bg-[#166FE5] text-white text-xs font-black shadow-md shadow-blue-500/20 transition cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <FacebookIcon className="w-4 h-4" />
+                  <span>Connect Facebook Account</span>
+                </a>
+              </div>
             </div>
           </div>
+        ) : (
+          /* CONNECTED STATE: METRICS GRID, FACEBOOK CONNECT & TABS */
+          <div className="space-y-8">
+            {/* LIVE METRICS GRID (4 CARDS) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {/* CARD 1: CONNECTED PAGES */}
+              <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Connected Pages</span>
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 text-[#1877F2] flex items-center justify-center font-black">
+                    <FacebookIcon className="w-4 h-4" />
+                  </div>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 mt-2">{pages.length} Pages</h3>
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Active Token
+                  </span>
+                </div>
+              </div>
 
-          {/* TAB 1: LEAD FORMS */}
-          {activeTab === 'forms' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredForms.map((form) => (
-                  <div
-                    key={form.form_id}
-                    className="bg-slate-50/80 rounded-2xl border border-slate-200 p-5 space-y-4 hover:border-blue-300 transition shadow-2xs"
+              {/* CARD 2: AD ACCOUNT ID */}
+              <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Ad Account ID</span>
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-black text-indigo-950 mt-2 truncate">act_394827104</h3>
+                <span className="text-xs font-bold text-slate-500 mt-1 block truncate">
+                  Filmify Ad Manager
+                </span>
+              </div>
+
+              {/* CARD 3: ACTIVE LEAD FORMS */}
+              <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Active Lead Forms</span>
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center font-black">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 mt-2">{leadForms.filter(f => f.is_active).length} Forms</h3>
+                <span className="text-xs font-bold text-amber-600 mt-1 block">
+                  296 Total Leads Synced
+                </span>
+              </div>
+
+              {/* CARD 4: WEBHOOK RECEIVER STATUS */}
+              <div className="bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Webhook Receiver</span>
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-black">
+                    <Radio className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                  <h3 className="text-lg font-black text-emerald-700">Live Active</h3>
+                </div>
+                <span className="text-[11px] font-bold text-slate-500 mt-1 block truncate" title="/api/webhooks/meta-leads">
+                  /api/webhooks/meta-leads
+                </span>
+              </div>
+            </div>
+
+            {/* FACEBOOK CONNECT CONTROL */}
+            <FacebookConnect 
+              isConnected={true} 
+              connectedAccountName={connectedAccountName} 
+              pagesCount={pages.length} 
+              onDisconnect={() => {
+                setIsConnected(false);
+                showToastNotification('Meta Business Account disconnected.');
+              }} 
+            />
+
+            {/* TABS NAVIGATION & SEARCH BAR */}
+            <div className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-md p-6 space-y-6">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
+                <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto py-1">
+                  <button
+                    onClick={() => setActiveTab('forms')}
+                    className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
+                      activeTab === 'forms'
+                        ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    )}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md">
-                          {form.page_name}
-                        </span>
-                        <h4 className="text-sm font-black text-slate-900 mt-1.5">{form.name}</h4>
+                    Lead Forms ({leadForms.length})
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('pages')}
+                    className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
+                      activeTab === 'pages'
+                        ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    )}
+                  >
+                    Connected Pages ({pages.length})
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('webhook')}
+                    className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
+                      activeTab === 'webhook'
+                        ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    )}
+                  >
+                    Webhook Setup
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('logs')}
+                    className={"px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 " + (
+                      activeTab === 'logs'
+                        ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    )}
+                  >
+                    Live Sync Logs ({syncedLogs.length})
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <div className="relative w-full md:w-64">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search forms or pages..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 pl-10 pr-4 py-2 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleTestWebhook}
+                    disabled={isLoading}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
+                  >
+                    {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-400" />}
+                    <span>Test Webhook</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* TAB 1: LEAD FORMS */}
+              {activeTab === 'forms' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredForms.map((form) => (
+                      <div
+                        key={form.form_id}
+                        className="bg-slate-50/80 rounded-2xl border border-slate-200 p-5 space-y-4 hover:border-blue-300 transition shadow-2xs"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <span className="text-[10px] font-black uppercase text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md">
+                              {form.page_name}
+                            </span>
+                            <h4 className="text-sm font-black text-slate-900 mt-1.5">{form.name}</h4>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className={"px-2.5 py-0.5 rounded-full text-[10px] font-black border " + (
+                              form.status === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            )}>
+                              {form.status}
+                            </span>
+
+                            <button
+                              onClick={() => handleToggleForm(form.form_id)}
+                              className={"w-10 h-6 rounded-full p-1 transition-colors cursor-pointer " + (
+                                form.is_active ? 'bg-[#1877F2]' : 'bg-slate-300'
+                              )}
+                            >
+                              <div className={"w-4 h-4 rounded-full bg-white transition-transform " + (
+                                form.is_active ? 'translate-x-4' : 'translate-x-0'
+                              )} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs font-bold text-slate-600">
+                          <span>{form.sync_count} Leads Synced</span>
+                          <span className="text-slate-400">Last lead: {form.last_lead_time || 'N/A'}</span>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
+              {/* TAB 2: CONNECTED PAGES */}
+              {activeTab === 'pages' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {pages.map((page) => (
+                      <div
+                        key={page.page_id}
+                        className="bg-slate-50/80 rounded-2xl border border-slate-200 p-5 flex items-center justify-between gap-4"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-blue-100 text-[#1877F2] flex items-center justify-center font-black shrink-0">
+                            <FacebookIcon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-slate-900">{page.page_name}</h4>
+                            <span className="text-xs font-bold text-slate-500">{page.page_category}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
+                            Subscribed
+                          </span>
+
+                          <button
+                            onClick={() => handleTogglePage(page.page_id)}
+                            className={"w-10 h-6 rounded-full p-1 transition-colors cursor-pointer " + (
+                              page.is_active ? 'bg-[#1877F2]' : 'bg-slate-300'
+                            )}
+                          >
+                            <div className={"w-4 h-4 rounded-full bg-white transition-transform " + (
+                              page.is_active ? 'translate-x-4' : 'translate-x-0'
+                            )} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: WEBHOOK SETUP */}
+              {activeTab === 'webhook' && (
+                <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 space-y-5">
+                  <h4 className="text-sm font-black text-slate-900">Meta Webhook Configuration Settings</h4>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 block mb-1">Callback URL:</label>
                       <div className="flex items-center gap-2">
-                        <span className={"px-2.5 py-0.5 rounded-full text-[10px] font-black border " + (
-                          form.status === 'ACTIVE'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        )}>
-                          {form.status}
-                        </span>
-
+                        <input
+                          type="text"
+                          readOnly
+                          value={webhookUrl}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                        />
                         <button
-                          onClick={() => handleToggleForm(form.form_id)}
-                          className={"w-10 h-6 rounded-full p-1 transition-colors cursor-pointer " + (
-                            form.is_active ? 'bg-[#1877F2]' : 'bg-slate-300'
-                          )}
+                          onClick={() => copyToClipboard(webhookUrl, 'url')}
+                          className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 transition shrink-0 cursor-pointer flex items-center gap-1.5"
                         >
-                          <div className={"w-4 h-4 rounded-full bg-white transition-transform " + (
-                            form.is_active ? 'translate-x-4' : 'translate-x-0'
-                          )} />
+                          {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedUrl ? 'Copied!' : 'Copy'}</span>
                         </button>
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs font-bold text-slate-600">
-                      <span>{form.sync_count} Leads Synced</span>
-                      <span className="text-slate-400">Last lead: {form.last_lead_time || 'N/A'}</span>
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 block mb-1">Verify Token:</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={verifyToken}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(verifyToken, 'token')}
+                          className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 transition shrink-0 cursor-pointer flex items-center gap-1.5"
+                        >
+                          {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedToken ? 'Copied!' : 'Copy'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
+              )}
 
-          {/* TAB 2: CONNECTED PAGES */}
-          {activeTab === 'pages' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {pages.map((page) => (
-                  <div
-                    key={page.page_id}
-                    className="bg-slate-50/80 rounded-2xl border border-slate-200 p-5 flex items-center justify-between gap-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-blue-100 text-[#1877F2] flex items-center justify-center font-black shrink-0">
-                        <FacebookIcon className="w-5 h-5" />
-                      </div>
+              {/* TAB 4: LIVE SYNC LOGS */}
+              {activeTab === 'logs' && (
+                <div className="space-y-3">
+                  {syncedLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                    >
                       <div>
-                        <h4 className="text-sm font-black text-slate-900">{page.page_name}</h4>
-                        <span className="text-xs font-bold text-slate-500">{page.page_category}</span>
+                        <h5 className="text-xs font-black text-slate-900">{log.name} • {log.phone}</h5>
+                        <span className="text-[11px] font-bold text-slate-500">{log.form_name}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
+                          {log.duplicate_check}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">{log.created_at}</span>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
-                        Subscribed
-                      </span>
-
-                      <button
-                        onClick={() => handleTogglePage(page.page_id)}
-                        className={"w-10 h-6 rounded-full p-1 transition-colors cursor-pointer " + (
-                          page.is_active ? 'bg-[#1877F2]' : 'bg-slate-300'
-                        )}
-                      >
-                        <div className={"w-4 h-4 rounded-full bg-white transition-transform " + (
-                          page.is_active ? 'translate-x-4' : 'translate-x-0'
-                        )} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: WEBHOOK SETUP */}
-          {activeTab === 'webhook' && (
-            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 space-y-5">
-              <h4 className="text-sm font-black text-slate-900">Meta Webhook Configuration Settings</h4>
-              
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">Callback URL:</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={webhookUrl}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
-                    />
-                    <button
-                      onClick={() => copyToClipboard(webhookUrl, 'url')}
-                      className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 transition shrink-0 cursor-pointer flex items-center gap-1.5"
-                    >
-                      {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedUrl ? 'Copied!' : 'Copy'}</span>
-                    </button>
-                  </div>
+                  ))}
                 </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">Verify Token:</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={verifyToken}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
-                    />
-                    <button
-                      onClick={() => copyToClipboard(verifyToken, 'token')}
-                      className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 transition shrink-0 cursor-pointer flex items-center gap-1.5"
-                    >
-                      {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedToken ? 'Copied!' : 'Copy'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
-          )}
-
-          {/* TAB 4: LIVE SYNC LOGS */}
-          {activeTab === 'logs' && (
-            <div className="space-y-3">
-              {syncedLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                >
-                  <div>
-                    <h5 className="text-xs font-black text-slate-900">{log.name} • {log.phone}</h5>
-                    <span className="text-[11px] font-bold text-slate-500">{log.form_name}</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
-                      {log.duplicate_check}
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400">{log.created_at}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </main>
     </div>
   );
