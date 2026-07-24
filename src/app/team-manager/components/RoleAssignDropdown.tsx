@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FWAssignment, FWTeamMember } from '@/types';
-import { Search, Plus, Check, UserPlus, UserCheck } from 'lucide-react';
+import { Search, Plus, Check } from 'lucide-react';
 
 interface RoleAssignDropdownProps {
   assignment: FWAssignment;
@@ -23,7 +23,7 @@ export default function RoleAssignDropdown({
   teamMembers,
   onAssignMember,
   onAddNewMember,
-  variant = 'chip',
+  variant = 'avatar',
 }: RoleAssignDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,28 +88,42 @@ export default function RoleAssignDropdown({
           </span>
         </div>
       ) : (
-        /* AVATAR VARIANT */
+        /* 3-LAYER CIRCULAR AVATAR VARIANT (MATCHES CARDS VIEW) */
         <div
           onClick={handleOpenPopover}
-          className="flex flex-col items-center group cursor-pointer"
+          className="flex flex-col items-center group cursor-pointer min-w-[64px]"
           title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
         >
           {isAssigned ? (
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
-              {cleanName.slice(0, 2).toUpperCase()}
-            </div>
+            memberObj?.avatar_url ? (
+              // eslint-disable-next-next/no-img-element
+              <img
+                src={memberObj.avatar_url}
+                alt={cleanName}
+                className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                }}
+              />
+            ) : (
+              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
+                {cleanName.slice(0, 2).toUpperCase() || role.slice(0, 2).toUpperCase()}
+              </div>
+            )
           ) : (
-            <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-              <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
+            <div className="w-11 h-11 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+              <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
             </div>
           )}
-          <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
-            isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+
+          <span className={`font-extrabold text-[10px] uppercase tracking-wide block text-center mt-1 leading-none ${
+            isAssigned ? 'text-indigo-600' : 'text-red-600'
           }`}>
             {role}
           </span>
+
           {isAssigned && (
-            <span className="block font-extrabold text-slate-900 text-xs truncate max-w-[90px] mt-0.5">
+            <span className="block font-black text-slate-900 text-[11px] truncate max-w-[80px] mt-0.5 text-center leading-none">
               {cleanName}
             </span>
           )}
@@ -192,6 +206,7 @@ export default function RoleAssignDropdown({
                 {filteredMembers.map((m) => {
                   const isSelected = assignment.assigned_member_id === m.id;
                   const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+
                   return (
                     <button
                       key={m.id}
@@ -206,12 +221,24 @@ export default function RoleAssignDropdown({
                           : 'text-[#0B111E] hover:bg-zinc-50'
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black flex items-center justify-center">
-                          {cleanMName.slice(0, 2).toUpperCase() || 'TM'}
-                        </div>
+                      <div className="flex items-center gap-2.5">
+                        {m.avatar_url ? (
+                          // eslint-disable-next-next/no-img-element
+                          <img
+                            src={m.avatar_url}
+                            alt={cleanMName}
+                            className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanMName)}`;
+                            }}
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white">
+                            {cleanMName.slice(0, 2).toUpperCase() || 'TM'}
+                          </div>
+                        )}
                         <div className="text-left leading-tight">
-                          <span className="block">{cleanMName}</span>
+                          <span className="block font-black text-slate-900 text-xs">{cleanMName}</span>
                           <span className="text-[9px] text-slate-400 font-semibold">{m.primary_role}</span>
                         </div>
                       </div>

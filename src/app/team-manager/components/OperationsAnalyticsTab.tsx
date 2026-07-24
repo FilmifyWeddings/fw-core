@@ -6,7 +6,7 @@ import {
   BarChart3, TrendingUp, Users, Calendar, Award, CheckCircle2, 
   AlertTriangle, DollarSign, X, Phone, Mail, MapPin, Clock, 
   FileText, Sparkles, PieChart, Activity, Briefcase, Camera, Film, Disc, Filter,
-  Layers, ArrowUpRight, Check, AlertCircle, Eye, SlidersHorizontal
+  Layers, ArrowUpRight, Check, AlertCircle, Eye, SlidersHorizontal, Search, ChevronRight
 } from 'lucide-react';
 
 interface OperationsAnalyticsTabProps {
@@ -32,9 +32,12 @@ export default function OperationsAnalyticsTab({
   // 1. TIME & SCOPE FILTER STATES
   const [scopeMode, setScopeMode] = useState<'month' | 'year' | 'custom'>('month');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [selectedMonth, setSelectedMonth] = useState<string>('All'); // 'All' or '0'-'11'
+  const [selectedMonth, setSelectedMonth] = useState<string>('All');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  // 2. CREW MEMBER SEARCH QUERY STATE
+  const [memberSearchQuery, setMemberSearchQuery] = useState<string>('');
 
   // Drill-down Modal State
   const [selectedMember, setSelectedMember] = useState<{
@@ -50,7 +53,7 @@ export default function OperationsAnalyticsTab({
 
   const activeProjects = projects.filter((p) => !p.is_archived);
 
-  // 2. DYNAMICALLY FILTER SUB-EVENTS ACCORDING TO SCOPE
+  // Filter Sub-events according to scope
   const filteredSubEvents = activeProjects.flatMap((p) =>
     (p.fw_sub_events || [])
       .filter((se) => {
@@ -186,6 +189,15 @@ export default function OperationsAnalyticsTab({
 
   memberAnalyticsList.sort((a, b) => b.totalShoots - a.totalShoots);
 
+  // Filter Crew Members by search query
+  const filteredMemberAnalytics = memberAnalyticsList.filter(({ member }) => {
+    if (!memberSearchQuery.trim()) return true;
+    const q = memberSearchQuery.toLowerCase();
+    const cleanName = member.name ? member.name.replace(/\.\.\./g, '').trim().toLowerCase() : '';
+    const role = member.primary_role ? member.primary_role.toLowerCase() : '';
+    return cleanName.includes(q) || role.includes(q);
+  });
+
   // Capacity & Allocation Metrics
   const totalSlotsInScope = allAssignmentsInScope.length;
   const assignedSlotsInScope = allAssignmentsInScope.filter(({ assignment }) => assignment.assigned_member_id !== null).length;
@@ -256,7 +268,6 @@ export default function OperationsAnalyticsTab({
 
         {/* Dynamic Controls depending on scope mode */}
         <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-slate-700 pt-1">
-          {/* Year selector */}
           <div className="flex items-center gap-2">
             <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Select Year:</span>
             <select
@@ -270,7 +281,6 @@ export default function OperationsAnalyticsTab({
             </select>
           </div>
 
-          {/* Month selector if in month mode */}
           {scopeMode === 'month' && (
             <div className="flex items-center gap-2">
               <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Select Month:</span>
@@ -287,7 +297,6 @@ export default function OperationsAnalyticsTab({
             </div>
           )}
 
-          {/* Custom Date Range pickers if in custom mode */}
           {scopeMode === 'custom' && (
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-1.5">
@@ -580,10 +589,12 @@ export default function OperationsAnalyticsTab({
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          5. TEAM MEMBER PERFORMANCE & ROLE DISTRIBUTION GRID
+          5. TEAM MEMBER PERFORMANCE & ROLE DISTRIBUTION LIST REGISTER (WITH SEARCH & DRILL-DOWN POPUP)
          ───────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
+        
+        {/* HEADER BAR WITH SEARCH INPUT */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center font-black shadow-lg shadow-indigo-500/20">
               <Users className="w-6 h-6" />
@@ -591,55 +602,73 @@ export default function OperationsAnalyticsTab({
             <div>
               <h3 className="text-xl font-black text-slate-900">Team Crew Performance & Role Distribution</h3>
               <p className="text-xs text-slate-500 font-bold">
-                Click any team member card to open full shoot timeline, venue locations, and payout status
+                Click any team member row to open full shoot timeline, venue locations, and payout status
               </p>
             </div>
           </div>
+
+          {/* CREW SEARCH BAR */}
+          <div className="relative w-full md:w-72">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search crew by name or role..."
+              value={memberSearchQuery}
+              onChange={(e) => setMemberSearchQuery(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 pl-10 pr-4 py-2.5 rounded-2xl text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7] transition shadow-2xs"
+            />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {memberAnalyticsList.map(({ member, totalShoots, completedCount, upcomingCount, roleCounts, shoots }) => {
-            return (
-              <div
-                key={member.id}
-                onClick={() => setSelectedMember({ member, shoots, roleCounts, completedCount, upcomingCount })}
-                className="bg-slate-50/80 hover:bg-white border-2 border-slate-200/90 hover:border-indigo-400 rounded-3xl p-5 transition-all duration-200 shadow-xs hover:shadow-lg hover:-translate-y-1 cursor-pointer space-y-4 group select-none"
-              >
-                <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
-                  <div className="flex items-center gap-3 min-w-0">
+        {/* CLEAN LIST REGISTER LAYOUT FOR OVERVIEW TEAM CARDS */}
+        <div className="space-y-3">
+          {filteredMemberAnalytics.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs font-bold text-slate-400">
+              No team members match your search criteria.
+            </div>
+          ) : (
+            filteredMemberAnalytics.map(({ member, totalShoots, completedCount, upcomingCount, roleCounts, shoots }) => {
+              const cleanMName = member.name ? member.name.replace(/\.\.\./g, '').trim() : '';
+
+              return (
+                <div
+                  key={member.id}
+                  onClick={() => setSelectedMember({ member, shoots, roleCounts, completedCount, upcomingCount })}
+                  className="bg-slate-50/80 hover:bg-white border-2 border-slate-200/90 hover:border-indigo-400 rounded-2xl p-4 transition-all duration-200 shadow-2xs hover:shadow-md hover:-translate-y-0.5 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4 group select-none"
+                >
+                  {/* MEMBER IDENTITY */}
+                  <div className="flex items-center gap-3.5 min-w-[220px]">
                     {member.avatar_url ? (
                       // eslint-disable-next-next/no-img-element
                       <img
                         src={member.avatar_url}
-                        alt={member.name}
+                        alt={cleanMName}
                         className="w-12 h-12 rounded-full object-cover border-2 border-white ring-2 ring-emerald-400 shadow-sm shrink-0 group-hover:scale-105 transition"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(member.name)}`;
+                          (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanMName)}`;
                         }}
                       />
                     ) : (
                       <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center border-2 border-white ring-2 ring-indigo-200 shadow-sm shrink-0 group-hover:scale-105 transition">
-                        {member.name.slice(0, 2).toUpperCase()}
+                        {cleanMName.slice(0, 2).toUpperCase() || 'TM'}
                       </div>
                     )}
 
-                    <div className="min-w-0">
-                      <h4 className="text-sm font-black text-slate-900 truncate group-hover:text-indigo-600 transition">{member.name}</h4>
-                      <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 text-[10px] font-black uppercase tracking-wider">
-                        {member.primary_role}
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition flex items-center gap-2">
+                        {cleanMName}
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 text-[10px] font-black uppercase">
+                          {member.primary_role}
+                        </span>
+                      </h4>
+                      <span className="text-[11px] font-bold text-slate-400 block mt-0.5">
+                        {member.country_code || '+91'} {member.phone_number}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-xl font-black text-indigo-600 block leading-none">{totalShoots}</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">Total Shoots</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Role Distribution Badges</span>
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* ROLE DISTRIBUTION BADGES */}
+                  <div className="flex-1 flex items-center gap-1.5 flex-wrap">
                     {Object.entries(roleCounts).length === 0 ? (
                       <span className="text-xs text-slate-400 italic">No shoots assigned in this scope</span>
                     ) : (
@@ -650,15 +679,24 @@ export default function OperationsAnalyticsTab({
                       ))
                     )}
                   </div>
-                </div>
 
-                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs font-bold text-slate-600">
-                  <span className="text-emerald-600 font-extrabold">{completedCount} Completed</span>
-                  <span className="text-indigo-600 font-extrabold">{upcomingCount} Upcoming</span>
+                  {/* STATS COUNTS & DRILL-DOWN ACTION BUTTON */}
+                  <div className="flex items-center justify-between md:justify-end gap-5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-200">
+                    <div className="text-left md:text-right">
+                      <span className="text-lg font-black text-indigo-600 block leading-none">{totalShoots}</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">
+                        {completedCount} Done • {upcomingCount} Up
+                      </span>
+                    </div>
+
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 group-hover:bg-indigo-600 text-indigo-600 group-hover:text-white flex items-center justify-center transition shadow-2xs shrink-0">
+                      <ChevronRight className="w-5 h-5" />
+                    </div>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 

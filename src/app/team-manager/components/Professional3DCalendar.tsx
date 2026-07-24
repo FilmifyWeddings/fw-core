@@ -332,7 +332,7 @@ export default function Professional3DCalendar({
                       {assignments.length === 0 ? (
                         <span className="text-xs text-slate-400 italic">No roles configured for this event.</span>
                       ) : (
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-4 flex-wrap pt-1">
                           {assignments.map((assignment) => (
                             <RoleAssignDropdown
                               key={assignment.id}
@@ -342,7 +342,7 @@ export default function Professional3DCalendar({
                               teamMembers={teamMembers}
                               onAssignMember={onAssignMember}
                               onAddNewMember={onAddNewMember}
-                              variant="chip"
+                              variant="avatar"
                             />
                           ))}
                         </div>
