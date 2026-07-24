@@ -163,32 +163,34 @@ export default function MonthListView({
               key={monthKey}
               className="bg-[#F8F9FD] rounded-3xl border border-slate-200/90 p-4 md:p-6 space-y-4 shadow-sm"
             >
-              {/* MONTH HEADER ACCORDION BAR */}
+              {/* MONTH HEADER ACCORDION BAR - SLEEK DARK THEME HEADER */}
               <div
                 onClick={() => toggleMonth(monthKey)}
-                className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200 cursor-pointer hover:border-indigo-300 transition shadow-2xs select-none"
+                className="flex items-center justify-between bg-gradient-to-r from-[#0B111E] via-[#1E1B4B] to-[#0B111E] text-white px-5 py-4 rounded-2xl border border-indigo-900/60 cursor-pointer hover:border-indigo-500/80 transition shadow-lg shadow-[#0B111E]/20 select-none"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-[#6C5CE7] flex items-center justify-center font-black">
-                    <Calendar className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-xl bg-white/10 text-indigo-300 backdrop-blur-md flex items-center justify-center font-black border border-white/10 shadow-inner">
+                    <Calendar className="w-5 h-5 text-indigo-300" />
                   </div>
                   <div>
-                    <h3 className="text-base md:text-lg font-black text-slate-900 tracking-tight">
+                    <h3 className="text-base md:text-lg font-black text-white tracking-tight">
                       {monthKey}
                     </h3>
-                    <span className="text-xs font-bold text-slate-500">
+                    <span className="text-xs font-bold text-indigo-200/80">
                       {items.length} Sub-Event{items.length === 1 ? '' : 's'} Total
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-black border border-indigo-100">
+                <div className="flex items-center gap-3">
+                  <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-200 text-xs font-extrabold border border-indigo-400/30 backdrop-blur-md">
                     {items.length} Events
                   </span>
-                  <button type="button" className="text-slate-400 hover:text-slate-600 transition">
-                    {isCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
-                  </button>
+                  <ChevronDown
+                    className={`w-5 h-5 text-indigo-300 transition-transform duration-200 ${
+                      isCollapsed ? 'rotate-180' : ''
+                    }`}
+                  />
                 </div>
               </div>
 

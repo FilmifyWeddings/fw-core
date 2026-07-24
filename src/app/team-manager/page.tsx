@@ -281,8 +281,8 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Handle Assignment Update (Assign / Unassign Team Member to Role)
-  const handleAssignMember = async (assignmentId: string, memberId: string | null) => {
+  // Handle Assignment Update (Assign / Unassign Team Member to Role INSTANTLY)
+  const handleAssignMember = (assignmentId: string, memberId: string | null) => {
     try {
       const activeAssign = projects
         .flatMap(p => p.fw_sub_events || [])
@@ -292,7 +292,7 @@ export default function TeamManagerPage() {
       if (activeAssign) {
         const matchedMemberObj = memberId ? teamMembers.find(m => m.id === memberId) || null : null;
 
-        // Optimistic UI state update so member avatar changes INSTANTLY
+        // 1. INSTANT OPTIMISTIC UI STATE UPDATE (NO PAGE RELOAD / NO RE-FETCH)
         setProjects(prevProjects =>
           prevProjects.map(proj => ({
             ...proj,
@@ -324,43 +324,48 @@ export default function TeamManagerPage() {
           }))
         );
 
-        if (assignmentId.includes('-role-')) {
-          const subEventObj = projects
-            .flatMap(p => p.fw_sub_events || [])
-            .find(se => se.id === activeAssign.sub_event_id);
+        // 2. BACKGROUND SILENT DB PERSISTENCE
+        (async () => {
+          try {
+            if (assignmentId.includes('-role-')) {
+              const subEventObj = projects
+                .flatMap(p => p.fw_sub_events || [])
+                .find(se => se.id === activeAssign.sub_event_id);
 
-          const { error: insertErr } = await supabase
-            .from('fw_assignments')
-            .insert([{
-              project_id: activeAssign.project_id,
-              sub_event_id: activeAssign.sub_event_id,
-              required_role: activeAssign.required_role,
-              assigned_member_id: memberId,
-              sub_event_name: subEventObj?.event_title || 'Wedding Event',
-              sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
-              start_time: subEventObj?.roll_call_time || '10:00',
-              end_time: subEventObj?.dismissal_estimate_time || '18:00',
-            }]);
+              const { error: insertErr } = await supabase
+                .from('fw_assignments')
+                .insert([{
+                  project_id: activeAssign.project_id,
+                  sub_event_id: activeAssign.sub_event_id,
+                  required_role: activeAssign.required_role,
+                  assigned_member_id: memberId,
+                  sub_event_name: subEventObj?.event_title || 'Wedding Event',
+                  sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
+                  start_time: subEventObj?.roll_call_time || '10:00',
+                  end_time: subEventObj?.dismissal_estimate_time || '18:00',
+                  status: 'pending',
+                }]);
 
-          if (insertErr) {
-            console.error('[TeamManager] Insert assignment error:', insertErr.message);
+              if (insertErr) {
+                console.error('[TeamManager] Insert assignment error:', insertErr.message);
+              }
+            } else {
+              const { error: assignErr } = await supabase
+                .from('fw_assignments')
+                .update({ assigned_member_id: memberId })
+                .eq('id', assignmentId);
+
+              if (assignErr) {
+                console.error('[TeamManager] Assignment update error:', assignErr.message);
+              }
+            }
+          } catch (err) {
+            console.error('[TeamManager] Background assignment update error:', err);
           }
-        } else {
-          const { error: assignErr } = await supabase
-            .from('fw_assignments')
-            .update({ assigned_member_id: memberId })
-            .eq('id', assignmentId);
-
-          if (assignErr) {
-            console.error('[TeamManager] Assignment update error:', assignErr.message);
-          }
-        }
+        })();
       }
-
-      await fetchAllData();
     } catch (err) {
       console.error('[TeamManager] handleAssignMember Exception:', err);
-      fetchAllData();
     }
   };
 

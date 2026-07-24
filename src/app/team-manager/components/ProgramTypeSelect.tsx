@@ -68,8 +68,9 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom, has
 
   return (
     <div className="relative" ref={dropdownRef}>
+      {/* RENAME TO EVENT TYPE */}
       <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5 flex items-center gap-1">
-        <span>Wedding Program Type</span>
+        <span>Event Type</span>
         <span className="text-rose-500 font-black">*</span>
       </label>
 
@@ -105,10 +106,21 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom, has
         }`}
       >
         <span className={selected.length === 0 ? 'text-slate-400 font-semibold' : ''}>
-          {selected.length === 0 ? 'Select program types...' : `${selected.length} type(s) selected`}
+          {selected.length === 0 ? 'Select event types...' : `${selected.length} type(s) selected`}
         </span>
         <ChevronDown className={`w-4 h-4 text-slate-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
+
+      {/* FIXED BACKDROP TO CLOSE DROPDOWN ON ANY OUTSIDE CLICK */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => {
+            setIsOpen(false);
+            setShowCustomInput(false);
+          }} 
+        />
+      )}
 
       {/* Dropdown menu */}
       <AnimatePresence>
@@ -152,55 +164,47 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom, has
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden border-b border-zinc-100"
+                  className="overflow-hidden bg-indigo-50/50 p-2 border-b border-zinc-100 flex gap-2"
                 >
-                  <div className="px-3 py-2.5 flex gap-2">
-                    <input
-                      type="text"
-                      value={customInput}
-                      onChange={(e) => setCustomInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddCustom()}
-                      placeholder="Enter custom event name..."
-                      className="flex-1 bg-[#F8F9FD] border border-[#6C5CE7]/10 px-3 py-1.5 rounded-lg text-[11px] font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCustom}
-                      className="bg-[#6C5CE7] text-white text-[10px] font-bold px-3 py-1.5 rounded-lg hover:bg-[#5b4cd1] transition"
-                    >
-                      Add
-                    </button>
-                  </div>
+                  <input
+                    type="text"
+                    placeholder="Type custom event name..."
+                    value={customInput}
+                    onChange={(e) => setCustomInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCustom())}
+                    className="flex-1 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustom}
+                    className="bg-[#6C5CE7] text-white text-xs font-bold px-3 py-1.5 rounded-xl hover:bg-[#5b4cd1] transition shadow-2xs"
+                  >
+                    Add
+                  </button>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Options list */}
-            <div className="max-h-48 overflow-y-auto p-1.5">
-              {filteredPrograms.length === 0 ? (
-                <div className="p-3 text-center text-xs text-slate-400 italic">No matching event types found</div>
-              ) : (
-                filteredPrograms.map((program) => {
-                  const isSelected = selected.includes(program);
-                  return (
-                    <button
-                      key={program}
-                      type="button"
-                      onClick={() => toggleProgram(program)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[11px] font-semibold transition ${
-                        isSelected
-                          ? 'bg-[#6C5CE7]/8 text-[#6C5CE7]'
-                          : 'text-[#0B111E] hover:bg-zinc-50'
-                      }`}
-                    >
-                      <span>{program}</span>
-                      {isSelected && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#6C5CE7]" />
-                      )}
-                    </button>
-                  );
-                })
-              )}
+            {/* Program types scrollable list */}
+            <div className="max-h-48 overflow-y-auto p-1.5 space-y-0.5">
+              {filteredPrograms.map((program) => {
+                const isSelected = selected.includes(program);
+                return (
+                  <button
+                    key={program}
+                    type="button"
+                    onClick={() => toggleProgram(program)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition text-left cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{program}</span>
+                    {isSelected && <X className="w-3.5 h-3.5 text-[#6C5CE7]" />}
+                  </button>
+                );
+              })}
             </div>
           </motion.div>
         )}
