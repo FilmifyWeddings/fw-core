@@ -55,7 +55,7 @@ interface SyncedLeadLog {
 function MetaAdsContent() {
   const searchParams = useSearchParams();
   
-  // Clean Facebook OAuth URL
+  // Clean Facebook OAuth URL targeting https://studiocore.in callback
   const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '1488107768502570';
   const redirectUri = 'https://studiocore.in/api/auth/facebook/callback';
   const scope = 'email,public_profile,leads_retrieval,pages_show_list,pages_read_engagement,pages_manage_metadata';
@@ -63,13 +63,13 @@ function MetaAdsContent() {
 
   // Dynamic Connection & Auth State
   const [isConnected, setIsConnected] = useState(false);
-  const [connectedAccountName, setConnectedAccountName] = useState('Filmify Weddings Studio');
-  const [adAccountId, setAdAccountId] = useState('act_394827104');
+  const [connectedAccountName, setConnectedAccountName] = useState<string>('Meta Business Account');
+  const [adAccountId, setAdAccountId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  // Pages & Lead Forms state
+  // Real Pages & Lead Forms state (NO MOCK DEMO DATA)
   const [pages, setPages] = useState<ConnectedPage[]>([]);
   const [leadForms, setLeadForms] = useState<LeadForm[]>([]);
   const [totalLeadsSynced, setTotalLeadsSynced] = useState<number>(0);
@@ -90,63 +90,31 @@ function MetaAdsContent() {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
 
-  const [syncedLogs, setSyncedLogs] = useState<SyncedLeadLog[]>([
-    {
-      id: 'lead_1001',
-      name: 'Vikram & Ananya',
-      phone: '+91 98765 43210',
-      email: 'vikram.ananya@example.com',
-      source: 'Facebook Lead Ads',
-      status: 'new',
-      created_at: 'Just now',
-      form_name: 'Filmify Weddings - Premium Booking Form 2026',
-      duplicate_check: 'UNIQUE',
-    },
-    {
-      id: 'lead_1002',
-      name: 'Rohan Sharma',
-      phone: '+91 98123 45678',
-      email: 'rohan.sharma@gmail.com',
-      source: 'Instagram Instant Form',
-      status: 'new',
-      created_at: '14 mins ago',
-      form_name: 'Destination Wedding Shoot Campaign',
-      duplicate_check: 'UNIQUE',
-    },
-  ]);
+  const [syncedLogs, setSyncedLogs] = useState<SyncedLeadLog[]>([]);
 
-  // Dynamic Data Fetching Function
-  const fetchMetaSyncData = async (forceConnect: boolean = false) => {
+  // Fetch Real Meta Connected Pages & Forms
+  const fetchMetaSyncData = async () => {
     setIsSyncing(true);
     try {
-      const isConnectedQuery = forceConnect ? '&force_connected=true' : '';
-      const metaQuery = searchParams?.get('meta') ? ("?meta=" + searchParams.get('meta')) : '';
-      const url = '/api/meta/sync' + (metaQuery ? metaQuery + isConnectedQuery : (isConnectedQuery ? '?' + isConnectedQuery.slice(1) : ''));
-      
-      const res = await fetch(url);
+      const res = await fetch('/api/meta/sync');
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.isConnected) {
           setIsConnected(true);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('fw_meta_connected', 'true');
-          }
-          setConnectedAccountName(data.accountName || 'Filmify Weddings Studio');
-          setAdAccountId(data.adAccountId || 'act_394827104');
+          setConnectedAccountName(data.accountName || 'Meta Business Account');
+          setAdAccountId(data.adAccountId);
           setPages(data.pages || []);
           setLeadForms(data.leadForms || []);
-          setTotalLeadsSynced(data.totalLeadsSynced || 296);
+          setTotalLeadsSynced(data.totalLeadsSynced || 0);
 
           if (searchParams?.get('meta') === 'connected') {
-            showToastNotification('Meta Business Account Connected! Pages & Lead Forms auto-subscribed ✓');
+            showToastNotification('Meta Account Connected Successfully! Pages & Forms Synced ✓');
           }
         } else {
-          if (typeof window !== 'undefined' && localStorage.getItem('fw_meta_connected') === 'true') {
-            // Retain local connected state
-            setIsConnected(true);
-          } else {
-            setIsConnected(false);
-          }
+          setIsConnected(false);
+          setPages([]);
+          setLeadForms([]);
+          setTotalLeadsSynced(0);
         }
       }
     } catch (err: any) {
@@ -157,30 +125,39 @@ function MetaAdsContent() {
   };
 
   useEffect(() => {
-    const isMetaConnectedParam = searchParams?.get('meta') === 'connected';
-    const hasLocalConnected = typeof window !== 'undefined' && localStorage.getItem('fw_meta_connected') === 'true';
-
     if (searchParams?.get('oauth_error') || searchParams?.get('meta') === 'cancelled') {
       setIsConnected(false);
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('fw_meta_connected');
-      }
-    } else if (isMetaConnectedParam || hasLocalConnected) {
-      setIsConnected(true);
-      fetchMetaSyncData(true);
+      setPages([]);
+      setLeadForms([]);
     } else {
-      fetchMetaSyncData(false);
+      fetchMetaSyncData();
     }
   }, [searchParams]);
 
-  const handleDisconnect = () => {
-    setIsConnected(false);
-    setPages([]);
-    setLeadForms([]);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('fw_meta_connected');
+  // Handle Disconnect (Calls API to set inactive in DB & clears frontend state)
+  const handleDisconnect = async () => {
+    setIsLoading(true);
+    try {
+      await fetch('/api/meta/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'disconnect' }),
+      });
+    } catch (err: any) {
+      console.warn('Disconnect warning:', err);
+    } finally {
+      setIsLoading(false);
+      setIsConnected(false);
+      setPages([]);
+      setLeadForms([]);
+      setTotalLeadsSynced(0);
+      showToastNotification('Meta Business Account Disconnected.');
+
+      // Clean URL hash and search params cleanly
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', '/workspace/integrations/meta');
+      }
     }
-    showToastNotification('Meta Business Account disconnected.');
   };
 
   const showToastNotification = (msg: string) => {
@@ -219,15 +196,15 @@ function MetaAdsContent() {
         body: JSON.stringify({
           entry: [
             {
-              id: 'mock_entry_999',
+              id: 'test_entry_999',
               time: Math.floor(Date.now() / 1000),
               changes: [
                 {
                   field: 'leadgen',
                   value: {
                     leadgen_id: "leadgen_" + Date.now(),
-                    form_id: 'form_wedding_2026',
-                    page_id: 'mock_page_101',
+                    form_id: leadForms[0]?.form_id || 'form_live_test',
+                    page_id: pages[0]?.page_id || 'page_live_test',
                     created_time: Math.floor(Date.now() / 1000),
                   },
                 },
@@ -241,27 +218,13 @@ function MetaAdsContent() {
       setIsLoading(false);
 
       if (data.success) {
-        showToastNotification('Real-time Webhook Test Event Processed Cleanly! Lead inserted into CRM.');
-        setSyncedLogs(prev => [
-          {
-            id: "lead_" + Date.now().toString().slice(-4),
-            name: 'Test Meta Lead (Live Webhook)',
-            phone: "+91 " + Math.floor(6000000000 + Math.random() * 3999999999),
-            email: 'test.lead@meta-admanager.com',
-            source: 'Facebook Webhook Engine',
-            status: 'new',
-            created_at: 'Just now',
-            form_name: 'Filmify Weddings - Premium Booking Form 2026',
-            duplicate_check: 'UNIQUE',
-          },
-          ...prev,
-        ]);
+        showToastNotification('Real-time Webhook Test Event Processed Cleanly!');
       } else {
         showToastNotification("Webhook Test: " + (data.error || 'Sent successfully!'));
       }
     } catch (err: any) {
       setIsLoading(false);
-      showToastNotification('Webhook test sent successfully!');
+      showToastNotification('Webhook test event sent!');
     }
   };
 
@@ -343,7 +306,7 @@ function MetaAdsContent() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
-        {/* 2. OAUTH ERROR HANDLING BANNER (MISSING_CODE OR CANCELLED STATE) */}
+        {/* OAUTH ERROR HANDLING BANNER */}
         {(oauthError || isCancelled) && (
           <div className="bg-red-50/90 border-2 border-red-200/90 shadow-md shadow-red-100/50 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-red-950">
             <div className="flex items-start gap-3">
@@ -429,7 +392,7 @@ function MetaAdsContent() {
 
         {/* DYNAMIC CONNECTION STATE RENDERING */}
         {!isConnected ? (
-          /* EMPTY DISCONNECTED STATE */
+          /* EMPTY DISCONNECTED STATE - 0 PAGES, 0 FORMS, ZERO DEMO DATA */
           <div className="space-y-6">
             <FacebookConnect 
               isConnected={false} 
@@ -489,9 +452,9 @@ function MetaAdsContent() {
                     <Layers className="w-4 h-4" />
                   </div>
                 </div>
-                <h3 className="text-xl font-black text-indigo-950 mt-2 truncate">{adAccountId}</h3>
+                <h3 className="text-xl font-black text-indigo-950 mt-2 truncate">{adAccountId || 'Managed Account'}</h3>
                 <span className="text-xs font-bold text-slate-500 mt-1 block truncate">
-                  Filmify Ad Manager
+                  Meta Graph API
                 </span>
               </div>
 
@@ -611,8 +574,10 @@ function MetaAdsContent() {
               {activeTab === 'forms' && (
                 <div className="space-y-4">
                   {leadForms.length === 0 ? (
-                    <div className="p-8 text-center text-xs font-bold text-slate-400 bg-slate-50 rounded-2xl">
-                      No Instant Lead Forms retrieved yet.
+                    <div className="p-12 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
+                      <FileText className="w-8 h-8 text-slate-400 mx-auto" />
+                      <p className="font-extrabold text-slate-700 text-sm">No Instant Lead Forms Found</p>
+                      <p className="text-slate-400 text-xs">No active Instant Lead Forms are associated with your connected Facebook Pages yet.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -666,8 +631,10 @@ function MetaAdsContent() {
               {activeTab === 'pages' && (
                 <div className="space-y-4">
                   {pages.length === 0 ? (
-                    <div className="p-8 text-center text-xs font-bold text-slate-400 bg-slate-50 rounded-2xl">
-                      No Facebook Pages connected yet.
+                    <div className="p-12 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
+                      <FacebookIcon className="w-8 h-8 text-slate-400 mx-auto" />
+                      <p className="font-extrabold text-slate-700 text-sm">No Facebook Pages Connected</p>
+                      <p className="text-slate-400 text-xs">No active Facebook Pages were retrieved for this account.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -759,24 +726,30 @@ function MetaAdsContent() {
               {/* TAB 4: LIVE SYNC LOGS */}
               {activeTab === 'logs' && (
                 <div className="space-y-3">
-                  {syncedLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                    >
-                      <div>
-                        <h5 className="text-xs font-black text-slate-900">{log.name} • {log.phone}</h5>
-                        <span className="text-[11px] font-bold text-slate-500">{log.form_name}</span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
-                          {log.duplicate_check}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-400">{log.created_at}</span>
-                      </div>
+                  {syncedLogs.length === 0 ? (
+                    <div className="p-8 text-center text-xs font-bold text-slate-400 bg-slate-50 rounded-2xl">
+                      No webhook lead sync logs recorded yet.
                     </div>
-                  ))}
+                  ) : (
+                    syncedLogs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                      >
+                        <div>
+                          <h5 className="text-xs font-black text-slate-900">{log.name} • {log.phone}</h5>
+                          <span className="text-[11px] font-bold text-slate-500">{log.form_name}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-200">
+                            {log.duplicate_check}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400">{log.created_at}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>
