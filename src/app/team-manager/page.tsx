@@ -97,7 +97,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
   }
 
   if (!rawRoles || rawRoles.length === 0) {
-    rawRoles = ['TP', 'Ass'];
+    return [];
   }
 
   return rawRoles.map((r: string, idx: number) => {
@@ -281,27 +281,40 @@ export default function TeamManagerPage() {
   // Handle Assignment Update (Assign / Unassign Team Member to Role)
   const handleAssignMember = async (assignmentId: string, memberId: string | null) => {
     try {
-      setProjects(prev =>
-        prev.map(p => ({
-          ...p,
-          fw_sub_events: p.fw_sub_events?.map(se => ({
-            ...se,
-            fw_assignments: se.fw_assignments?.map(a =>
-              a.id === assignmentId ? { ...a, assigned_member_id: memberId } : a
-            ),
-          })),
-        }))
-      );
+      const activeAssign = projects
+        .flatMap(p => p.fw_sub_events || [])
+        .flatMap(se => resolveSubEventAssignments(se, teamMembers))
+        .find(a => a.id === assignmentId);
 
-      const { error: assignErr } = await supabase
-        .from('fw_assignments')
-        .update({ assigned_member_id: memberId })
-        .eq('id', assignmentId);
+      if (activeAssign) {
+        if (assignmentId.includes('-role-')) {
+          // Insert new assignment row for synthetic assignment ID
+          const { error: insertErr } = await supabase
+            .from('fw_assignments')
+            .insert([{
+              project_id: activeAssign.project_id,
+              sub_event_id: activeAssign.sub_event_id,
+              required_role: activeAssign.required_role,
+              assigned_member_id: memberId,
+            }]);
 
-      if (assignErr) {
-        console.error('[TeamManager] Assignment update error:', assignErr.message);
-        fetchAllData();
+          if (insertErr) {
+            console.error('[TeamManager] Insert assignment error:', insertErr.message);
+          }
+        } else {
+          // Update existing database UUID assignment
+          const { error: assignErr } = await supabase
+            .from('fw_assignments')
+            .update({ assigned_member_id: memberId })
+            .eq('id', assignmentId);
+
+          if (assignErr) {
+            console.error('[TeamManager] Assignment update error:', assignErr.message);
+          }
+        }
       }
+
+      await fetchAllData();
     } catch (err) {
       console.error('[TeamManager] handleAssignMember Exception:', err);
       fetchAllData();
@@ -359,7 +372,7 @@ export default function TeamManagerPage() {
       if (targetProjectId && blocks.length > 0) {
         for (const block of blocks) {
           const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
-          const rolesToSave = (block.roles && block.roles.length > 0) ? block.roles : ['TP', 'Ass'];
+          const rolesToSave = block.roles || [];
           
           // STEP 2: Insert sub-event into fw_sub_events (matching roles JSONB column)
           const subEventPayload: any = {
@@ -382,19 +395,14 @@ export default function TeamManagerPage() {
 
           if (seErr) throw seErr;
 
-          // STEP 3: Insert each selected role placement into fw_assignments table
-          if (insertedSubEvent) {
-            const assignmentsPayload = rolesToSave.map(role => {
-              const matchedMember = teamMembers.find(
-                m => m.primary_role?.toLowerCase() === role.toLowerCase() || m.name?.toLowerCase() === role.toLowerCase()
-              );
-              return {
-                project_id: targetProjectId,
-                sub_event_id: insertedSubEvent.id,
-                required_role: role,
-                assigned_member_id: matchedMember ? matchedMember.id : null,
-              };
-            });
+          // STEP 3: Insert each selected role placement into fw_assignments table (ALL START UNASSIGNED)
+          if (insertedSubEvent && rolesToSave.length > 0) {
+            const assignmentsPayload = rolesToSave.map(role => ({
+              project_id: targetProjectId,
+              sub_event_id: insertedSubEvent.id,
+              required_role: role,
+              assigned_member_id: null, // ALWAYS UNASSIGNED ON INITIAL CREATION!
+            }));
 
             const { error: assignErr } = await supabase
               .from('fw_assignments')
@@ -1191,7 +1199,7 @@ export default function TeamManagerPage() {
       {activeDropdownId && dropdownPos && typeof window !== 'undefined' && (() => {
         const activeAssignment = projects
           .flatMap(p => p.fw_sub_events || [])
-          .flatMap(se => se.fw_assignments || [])
+          .flatMap(se => resolveSubEventAssignments(se, teamMembers))
           .find(a => a.id === activeDropdownId);
 
         if (!activeAssignment) return null;
