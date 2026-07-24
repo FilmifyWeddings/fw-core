@@ -20,9 +20,23 @@ interface FlattenedSubEvent {
   subEvent: FWSubEvent;
   project: FWProject;
   dateObj: Date;
-  monthKey: string; // e.g. "July 2026"
+  monthKey: string;
   sortTimestamp: number;
 }
+
+const getInitials = (name: string) => {
+  if (!name) return 'CR';
+  const parts = name.split(' ').filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const formatMemberName2Lines = (fullName: string) => {
+  if (!fullName) return { line1: '', line2: '' };
+  const parts = fullName.split(' ').filter(Boolean);
+  if (parts.length === 1) return { line1: parts[0], line2: '' };
+  return { line1: parts[0], line2: parts.slice(1).join(' ') };
+};
 
 export default function MonthListView({
   projects,
@@ -143,7 +157,7 @@ export default function MonthListView({
 
             {/* SUB-EVENTS LIST BODY */}
             {!isCollapsed && (
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-5">
                 {items.map(({ subEvent, project, dateObj }) => {
                   const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
@@ -167,46 +181,49 @@ export default function MonthListView({
                   return (
                     <div
                       key={subEvent.id}
-                      className="bg-slate-50/70 hover:bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-300 shadow-xs hover:shadow-md transition-all p-4 flex flex-col lg:flex-row items-stretch gap-4"
+                      className="bg-white rounded-2xl border-2 border-slate-200/90 hover:border-indigo-300 shadow-sm hover:shadow-md transition-all p-5 flex flex-col lg:flex-row items-stretch gap-5"
                     >
                       {/* DATE BADGE COLUMN */}
                       <div
-                        className={`${projectGradient} w-full lg:w-32 rounded-xl p-3 shrink-0 flex lg:flex-col items-center justify-between text-center text-white`}
+                        className={`${projectGradient} w-full lg:w-32 rounded-xl p-3.5 shrink-0 flex lg:flex-col items-center justify-between text-center text-white`}
                       >
                         <div className="flex lg:flex-col items-center gap-2 lg:gap-0">
                           <span className="text-xs font-bold text-white/80 uppercase tracking-wider">
                             {dayName}
                           </span>
-                          <span className="text-2xl lg:text-3xl font-black text-white leading-none my-0.5">
+                          <span className="text-2xl lg:text-3xl font-black text-white leading-none my-1">
                             {dayNumber}
                           </span>
                           <span className="text-xs font-black text-white/90 uppercase tracking-wider">
                             {monthAbbr} {yearStr}
                           </span>
                         </div>
-                        <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20">
+                        <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
                           {assignedCount}/{totalSlots} Crew
                         </div>
                       </div>
 
                       {/* MAIN CONTENT AREA */}
-                      <div className="flex-1 space-y-3">
+                      <div className="flex-1 space-y-3.5">
                         {/* HEADER: CLIENT NAME & SUB EVENT TITLE */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black tracking-wide border border-indigo-200">
-                              Client: {project.client_name}
-                            </span>
-                            <h4 className="text-base font-black text-slate-900 tracking-tight">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            {/* 3. PROMINENT CLIENT NAME BADGE */}
+                            <div className="px-3.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/90 text-indigo-950 font-black text-sm md:text-base shadow-2xs flex items-center gap-2">
+                              <span className="text-indigo-600 font-extrabold text-xs uppercase tracking-wider">Client:</span>
+                              <span className="text-slate-900 font-black">{project.client_name}</span>
+                            </div>
+
+                            <h4 className="text-base md:text-lg font-black text-slate-900 tracking-tight">
                               {subEvent.event_title}
                             </h4>
                           </div>
 
-                          {/* Time & Venue */}
+                          {/* 4. DISPLAY LOCATION & TIME */}
                           <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
                             {subEvent.roll_call_time && (
-                              <div className="flex items-center gap-1.5 text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                                <Clock className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <div className="flex items-center gap-1.5 text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <Clock className="w-4 h-4 text-indigo-600 shrink-0" />
                                 <span>
                                   {format12HourTime(subEvent.roll_call_time)}
                                   {subEvent.dismissal_estimate_time
@@ -216,10 +233,15 @@ export default function MonthListView({
                               </div>
                             )}
                             {subEvent.venue_name && (
-                              <div className="flex items-center gap-1.5 text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
-                              </div>
+                              <a
+                                href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition hover:border-indigo-300"
+                              >
+                                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
+                              </a>
                             )}
                           </div>
                         </div>

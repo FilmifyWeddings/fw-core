@@ -24,6 +24,20 @@ interface CalendarSubEventItem {
   project: FWProject;
 }
 
+const getInitials = (name: string) => {
+  if (!name) return 'CR';
+  const parts = name.split(' ').filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const formatMemberName2Lines = (fullName: string) => {
+  if (!fullName) return { line1: '', line2: '' };
+  const parts = fullName.split(' ').filter(Boolean);
+  if (parts.length === 1) return { line1: parts[0], line2: '' };
+  return { line1: parts[0], line2: parts.slice(1).join(' ') };
+};
+
 export default function Professional3DCalendar({
   projects,
   teamMembers,
@@ -111,7 +125,6 @@ export default function Professional3DCalendar({
             </div>
           </div>
 
-          {/* Month Navigation & Today Button */}
           <div className="flex items-center gap-2">
             <button
               onClick={goToToday}
@@ -141,7 +154,6 @@ export default function Professional3DCalendar({
 
         {/* CALENDAR GRID */}
         <div>
-          {/* Days of Week Header */}
           <div className="grid grid-cols-7 gap-2 text-center mb-3">
             {daysOfWeek.map((day, idx) => (
               <div
@@ -155,7 +167,6 @@ export default function Professional3DCalendar({
             ))}
           </div>
 
-          {/* Date Cells Grid */}
           <div className="grid grid-cols-7 gap-2 sm:gap-3">
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
               <div
@@ -252,7 +263,6 @@ export default function Professional3DCalendar({
       {selectedDayInspector && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl border-2 border-indigo-200 shadow-2xl max-w-2xl w-full p-6 space-y-5 relative max-h-[90vh] overflow-y-auto">
-            {/* MODAL HEADER */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-md">
@@ -284,7 +294,6 @@ export default function Professional3DCalendar({
                     key={subEvent.id}
                     className="bg-slate-50/80 rounded-2xl border border-slate-200/90 p-4 space-y-3 shadow-xs"
                   >
-                    {/* CLIENT & EVENT BAR */}
                     <div className="flex items-center justify-between gap-3 border-b border-slate-200/60 pb-2.5">
                       <div className="flex items-center gap-2">
                         <span className="px-3 py-1 rounded-full bg-indigo-900 text-white text-xs font-black">
@@ -295,7 +304,6 @@ export default function Professional3DCalendar({
                         </h4>
                       </div>
 
-                      {/* Time */}
                       {subEvent.roll_call_time && (
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
                           <Clock className="w-3.5 h-3.5 text-indigo-600" />
@@ -309,7 +317,6 @@ export default function Professional3DCalendar({
                       )}
                     </div>
 
-                    {/* Venue */}
                     {subEvent.venue_name && (
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
                         <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -346,7 +353,6 @@ export default function Professional3DCalendar({
               })}
             </div>
 
-            {/* MODAL FOOTER */}
             <div className="pt-2 text-right">
               <button
                 onClick={() => setSelectedDayInspector(null)}
