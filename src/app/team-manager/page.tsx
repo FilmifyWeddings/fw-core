@@ -443,8 +443,13 @@ export default function TeamManagerPage() {
             const assignmentsPayload = rolesToSave.map(role => ({
               project_id: targetProjectId,
               sub_event_id: insertedSubEvent.id,
+              sub_event_name: title,
+              sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+              start_time: block.startTime || '10:00',
+              end_time: block.endTime || '18:00',
               required_role: role,
               assigned_member_id: null, // ALWAYS UNASSIGNED ON INITIAL CREATION!
+              status: 'pending',
             }));
 
             const { error: assignErr } = await supabase
