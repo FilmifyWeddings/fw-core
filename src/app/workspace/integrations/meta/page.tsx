@@ -98,7 +98,7 @@ function MetaAdsContent() {
     setIsSyncing(true);
     try {
       const queryStr = searchParams ? searchParams.toString() : '';
-      const syncUrl = '/api/meta/sync' + (queryStr ? ('?' + queryStr) : '');
+      const syncUrl = '/api/meta/sync?' + (queryStr ? (queryStr + '&') : '') + 'nocache=' + Date.now();
 
       const res = await fetch(syncUrl);
       if (res.ok) {

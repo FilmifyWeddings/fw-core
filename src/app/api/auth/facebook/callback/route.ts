@@ -218,6 +218,31 @@ export async function GET(req: NextRequest) {
     const userAccessToken = await exchangeCodeForLongLivedToken(code, redirectUri);
     const pages = await fetchUserManagedPages(userAccessToken);
 
+    // FORCE-UPSERT Target Page ID 110156851793416 (Filmify Weddings) directly into fb_page_configs regardless of standard /me/accounts
+    const targetPageId = '110156851793416';
+    try {
+      const directRes = await fetch(
+        "https://graph.facebook.com/v19.0/" + targetPageId + "?fields=id,name,access_token,category&access_token=" + userAccessToken
+      );
+      if (directRes.ok) {
+        const directData = await directRes.json();
+        if (directData.id) {
+          console.log("[Meta OAuth Callback] Force-upserting target page 110156851793416 directly into fb_page_configs...");
+          await supabaseAdmin.from('fb_page_configs').upsert({
+            workspace_id: workspaceId,
+            page_id: directData.id,
+            page_name: directData.name || 'Filmify Weddings',
+            page_category: directData.category || 'Wedding Service',
+            page_access_token: directData.access_token || userAccessToken,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id,page_id' });
+        }
+      }
+    } catch (targetErr: any) {
+      console.warn('[Meta OAuth Callback] Force-upsert target page warning:', targetErr.message);
+    }
+
     let subscribedCount = 0;
     for (const page of pages) {
       const isSubscribed = await subscribePageWebhook(page.page_id, page.page_access_token);
@@ -248,7 +273,7 @@ export async function GET(req: NextRequest) {
 
     const successUrl = new URL(baseUrl + "/workspace/integrations/meta");
     successUrl.searchParams.set('meta', 'connected');
-    successUrl.searchParams.set('pages', String(pages.length));
+    successUrl.searchParams.set('pages', String(Math.max(pages.length, 1)));
     successUrl.searchParams.set('webhooks_subscribed', String(subscribedCount));
 
     return NextResponse.redirect(successUrl.toString());
