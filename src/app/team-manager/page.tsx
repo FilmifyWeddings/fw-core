@@ -1071,36 +1071,14 @@ export default function TeamManagerPage() {
           </div>
         )}
 
-        {/* ─── TAB VIEW: OVERVIEW DASHBOARD STATS ─── */}
+        {/* ─── TAB VIEW: OVERVIEW DASHBOARD STATS (3D ADVANCED ANALYTICS) ─── */}
         {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              <div className="bg-white p-5 rounded-[24px] border border-[#6C5CE7]/8 shadow-sm">
-                <span className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Total Active Weddings</span>
-                <h3 className="text-2xl font-black text-[#0B111E] mt-1">{projects.filter(p => !p.is_archived).length}</h3>
-                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-1"><TrendingUp className="w-3 h-3" /> +12% from last month</span>
-              </div>
-              <div className="bg-white p-5 rounded-[24px] border border-[#6C5CE7]/8 shadow-sm">
-                <span className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Directory Crew</span>
-                <h3 className="text-2xl font-black text-[#0B111E] mt-1">{teamMembers.length}</h3>
-                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-1"><Award className="w-3 h-3" /> Active Roster</span>
-              </div>
-              <div className="bg-white p-5 rounded-[24px] border border-[#6C5CE7]/8 shadow-sm">
-                <span className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Unassigned Slots</span>
-                <h3 className="text-2xl font-black text-rose-600 mt-1">
-                  {projects.flatMap(p => p.fw_sub_events || []).flatMap(se => se.fw_assignments || []).filter(a => !a.assigned_member_id).length}
-                </h3>
-                <span className="text-[10px] text-rose-500 font-bold mt-1 block">Requires Allocation</span>
-              </div>
-              <div className="bg-white p-5 rounded-[24px] border border-[#6C5CE7]/8 shadow-sm">
-                <span className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">Assigned Slots</span>
-                <h3 className="text-2xl font-black text-emerald-600 mt-1">
-                  {projects.flatMap(p => p.fw_sub_events || []).flatMap(se => se.fw_assignments || []).filter(a => a.assigned_member_id).length}
-                </h3>
-                <span className="text-[10px] text-emerald-600 font-bold mt-1 block">100% Confirmed</span>
-              </div>
-            </div>
-          </div>
+          <OperationsAnalyticsTab
+            projects={projects}
+            teamMembers={teamMembers}
+            format12HourTime={format12HourTime}
+            getGradientByProjectId={getGradientByProjectId}
+          />
         )}
 
         {/* ─── TAB VIEW: LIST REGISTER (MONTH-WISE) ─── */}

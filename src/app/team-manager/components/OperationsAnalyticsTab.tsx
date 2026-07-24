@@ -5,7 +5,8 @@ import { FWProject, FWTeamMember, FWSubEvent, FWAssignment } from '@/types';
 import { 
   BarChart3, TrendingUp, Users, Calendar, Award, CheckCircle2, 
   AlertTriangle, DollarSign, X, Phone, Mail, MapPin, Clock, 
-  FileText, Sparkles, PieChart, Activity, Briefcase, Camera, Film, Disc, Filter
+  FileText, Sparkles, PieChart, Activity, Briefcase, Camera, Film, Disc, Filter,
+  Layers, ArrowUpRight, Check, AlertCircle, Eye, SlidersHorizontal
 } from 'lucide-react';
 
 interface OperationsAnalyticsTabProps {
@@ -28,6 +29,14 @@ export default function OperationsAnalyticsTab({
   format12HourTime,
   getGradientByProjectId,
 }: OperationsAnalyticsTabProps) {
+  // 1. TIME & SCOPE FILTER STATES
+  const [scopeMode, setScopeMode] = useState<'month' | 'year' | 'custom'>('month');
+  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedMonth, setSelectedMonth] = useState<string>('All'); // 'All' or '0'-'11'
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  // Drill-down Modal State
   const [selectedMember, setSelectedMember] = useState<{
     member: FWTeamMember;
     shoots: MemberShootItem[];
@@ -36,45 +45,68 @@ export default function OperationsAnalyticsTab({
     upcomingCount: number;
   } | null>(null);
 
-  const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>('All');
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const activeProjects = projects.filter((p) => !p.is_archived);
-  
-  const allSubEvents = activeProjects.flatMap((p) => 
+
+  // 2. DYNAMICALLY FILTER SUB-EVENTS ACCORDING TO SCOPE
+  const filteredSubEvents = activeProjects.flatMap((p) =>
     (p.fw_sub_events || [])
       .filter((se) => {
-        if (selectedMonthFilter === 'All') return true;
         const d = new Date(se.event_date);
-        return !isNaN(d.getTime()) && d.getMonth() === parseInt(selectedMonthFilter, 10);
+        if (isNaN(d.getTime())) return false;
+
+        if (scopeMode === 'month') {
+          const matchYear = d.getFullYear() === selectedYear;
+          if (!matchYear) return false;
+          if (selectedMonth !== 'All') {
+            return d.getMonth() === parseInt(selectedMonth, 10);
+          }
+          return true;
+        }
+
+        if (scopeMode === 'year') {
+          return d.getFullYear() === selectedYear;
+        }
+
+        if (scopeMode === 'custom') {
+          if (!customStartDate && !customEndDate) return true;
+          const time = d.getTime();
+          const start = customStartDate ? new Date(customStartDate).getTime() : 0;
+          const end = customEndDate ? new Date(customEndDate).getTime() + 86400000 : Infinity;
+          return time >= start && time <= end;
+        }
+
+        return true;
       })
       .map((se) => ({ subEvent: se, project: p }))
   );
 
-  const allAssignments = allSubEvents.flatMap(({ subEvent, project }) => 
+  const allAssignmentsInScope = filteredSubEvents.flatMap(({ subEvent, project }) =>
     (subEvent.fw_assignments || []).map((a) => ({ assignment: a, subEvent, project }))
   );
 
+  // Categories Breakdown
   const categories = [
-    { key: 'Wedding', name: 'Wedding Ceremonies', icon: Sparkles, color: 'from-amber-500 to-orange-600', keywords: ['wedding', 'phera', 'marriage', 'vow'] },
-    { key: 'Pre-wedding', name: 'Pre-Wedding Shoots', icon: Camera, color: 'from-indigo-500 to-purple-600', keywords: ['pre-wedding', 'engagement', 'save the date', 'ring'] },
-    { key: 'Sangeet', name: 'Sangeet & Cocktail', icon: Disc, color: 'from-fuchsia-500 to-pink-600', keywords: ['sangeet', 'cocktail', 'party', 'dance'] },
-    { key: 'Haldi', name: 'Haldi & Mehendi', icon: Film, color: 'from-yellow-400 to-amber-500', keywords: ['haldi', 'mehendi', 'myaap', 'chooda'] },
-    { key: 'Corporate', name: 'Corporate & Other', icon: Briefcase, color: 'from-emerald-500 to-teal-600', keywords: ['corporate', 'commercial', 'portfolio', 'birthday'] },
+    { key: 'Wedding', name: 'Wedding Ceremonies', icon: Sparkles, color: 'from-amber-500 via-orange-500 to-amber-600', keywords: ['wedding', 'phera', 'marriage', 'vow'] },
+    { key: 'Pre-wedding', name: 'Pre-Wedding Shoots', icon: Camera, color: 'from-indigo-500 via-purple-600 to-indigo-700', keywords: ['pre-wedding', 'engagement', 'save the date', 'ring'] },
+    { key: 'Sangeet', name: 'Sangeet & Cocktail', icon: Disc, color: 'from-fuchsia-500 via-pink-600 to-rose-600', keywords: ['sangeet', 'cocktail', 'party', 'dance'] },
+    { key: 'Haldi', name: 'Haldi & Mehendi', icon: Film, color: 'from-yellow-400 via-amber-500 to-yellow-500', keywords: ['haldi', 'mehendi', 'myaap', 'chooda'] },
+    { key: 'Corporate', name: 'Corporate & Other', icon: Briefcase, color: 'from-emerald-500 via-teal-600 to-emerald-700', keywords: ['corporate', 'commercial', 'portfolio', 'birthday'] },
   ];
 
+  const totalShootsCount = filteredSubEvents.length;
+
   const categoryStats = categories.map((cat) => {
-    const count = allSubEvents.filter(({ subEvent }) => {
+    const count = filteredSubEvents.filter(({ subEvent }) => {
       const title = subEvent.event_title.toLowerCase();
       return cat.keywords.some((kw) => title.includes(kw)) || (cat.key === 'Wedding' && !title.includes('pre') && !title.includes('sangeet') && !title.includes('haldi'));
     }).length;
     return { ...cat, count };
   });
 
-  const totalShootsCount = allSubEvents.length;
-
+  // Monthly Volume Chart Data
   const monthsList = [
     { label: 'Jan', val: '0' },
     { label: 'Feb', val: '1' },
@@ -93,29 +125,43 @@ export default function OperationsAnalyticsTab({
   const monthlyShoots = monthsList.map((m) => {
     const count = activeProjects.flatMap(p => p.fw_sub_events || []).filter((se) => {
       const d = new Date(se.event_date);
-      return !isNaN(d.getTime()) && d.getMonth() === parseInt(m.val, 10);
+      return !isNaN(d.getTime()) && d.getFullYear() === selectedYear && d.getMonth() === parseInt(m.val, 10);
     }).length;
     return { month: m.label, val: m.val, count };
   });
   const maxMonthlyCount = Math.max(...monthlyShoots.map((m) => m.count), 1);
 
+  // Completed vs Upcoming
+  let completedShootsCount = 0;
+  let upcomingShootsCount = 0;
+
+  filteredSubEvents.forEach(({ subEvent }) => {
+    const d = new Date(subEvent.event_date);
+    if (!isNaN(d.getTime()) && d < today) {
+      completedShootsCount++;
+    } else {
+      upcomingShootsCount++;
+    }
+  });
+
+  // Team Member Performance & Role Distribution Analytics
   const memberAnalyticsList = teamMembers.map((member) => {
-    const memberAssignments = allAssignments.filter(({ assignment }) => assignment.assigned_member_id === member.id);
-    
+    const memberAssignments = allAssignmentsInScope.filter(({ assignment }) => assignment.assigned_member_id === member.id);
+
     const roleCounts: Record<string, number> = {};
-    let completedCount = 0;
-    let upcomingCount = 0;
+    let memberCompletedCount = 0;
+    let memberUpcomingCount = 0;
 
     const shoots: MemberShootItem[] = memberAssignments.map(({ assignment, subEvent, project }) => {
       const d = new Date(subEvent.event_date);
       const isValid = !isNaN(d.getTime());
       if (isValid && d < today) {
-        completedCount++;
+        memberCompletedCount++;
       } else {
-        upcomingCount++;
+        memberUpcomingCount++;
       }
 
-      const role = assignment.required_role || 'Ass';
+      const role = assignment.required_role || 'Crew';
       roleCounts[role] = (roleCounts[role] || 0) + 1;
 
       return {
@@ -131,8 +177,8 @@ export default function OperationsAnalyticsTab({
     return {
       member,
       totalShoots: shoots.length,
-      completedCount,
-      upcomingCount,
+      completedCount: memberCompletedCount,
+      upcomingCount: memberUpcomingCount,
       roleCounts,
       shoots,
     };
@@ -140,91 +186,202 @@ export default function OperationsAnalyticsTab({
 
   memberAnalyticsList.sort((a, b) => b.totalShoots - a.totalShoots);
 
-  const totalSlots = allAssignments.length;
-  const assignedSlots = allAssignments.filter(({ assignment }) => assignment.assigned_member_id !== null).length;
-  const unassignedSlots = totalSlots - assignedSlots;
-  const allocationRate = totalSlots > 0 ? Math.round((assignedSlots / totalSlots) * 100) : 100;
+  // Capacity & Allocation Metrics
+  const totalSlotsInScope = allAssignmentsInScope.length;
+  const assignedSlotsInScope = allAssignmentsInScope.filter(({ assignment }) => assignment.assigned_member_id !== null).length;
+  const unassignedSlotsInScope = totalSlotsInScope - assignedSlotsInScope;
+  const allocationRateInScope = totalSlotsInScope > 0 ? Math.round((assignedSlotsInScope / totalSlotsInScope) * 100) : 100;
+
+  // Unassigned Slots List for Warning Widget
+  const unassignedEventsList = filteredSubEvents.filter(({ subEvent }) =>
+    (subEvent.fw_assignments || []).some((a) => !a.assigned_member_id)
+  );
 
   return (
-    <div className="space-y-8">
-      {/* FILTER & TOP EXECUTIVE CONTROL BAR */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-5 rounded-3xl border-2 border-slate-200/90 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black">
-            <Filter className="w-5 h-5" />
+    <div className="space-y-8 animate-in fade-in duration-300">
+      
+      {/* ─────────────────────────────────────────────────────────────
+          1. TIME & SCOPE FILTERS BAR
+         ───────────────────────────────────────────────────────────── */}
+      <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border-2 border-slate-200/90 shadow-lg shadow-slate-200/40 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-500/25">
+              <SlidersHorizontal className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">Operations Analytics Scope Filters</h3>
+              <p className="text-xs text-slate-500 font-bold">
+                Select Scope: Month View, Year View, or Custom Date Range
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="text-base font-black text-slate-900">Operations Analytics & Dynamic Filters</h4>
-            <p className="text-xs text-slate-500 font-bold">Filter operations breakdown by specific month or entire year</p>
+
+          {/* Scope Mode Switcher Tabs */}
+          <div className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shrink-0">
+            <button
+              onClick={() => setScopeMode('month')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer select-none ${
+                scopeMode === 'month'
+                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Month View
+            </button>
+
+            <button
+              onClick={() => setScopeMode('year')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer select-none ${
+                scopeMode === 'year'
+                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Year View
+            </button>
+
+            <button
+              onClick={() => setScopeMode('custom')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer select-none ${
+                scopeMode === 'custom'
+                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Custom Date Range
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-bold text-slate-600">Month Filter:</label>
-          <select
-            value={selectedMonthFilter}
-            onChange={(e) => setSelectedMonthFilter(e.target.value)}
-            className="px-4 py-2 bg-slate-50 border border-slate-300 rounded-2xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="All">All Months (Year 2026)</option>
-            {monthsList.map((m) => (
-              <option key={m.val} value={m.val}>{m.label} 2026</option>
-            ))}
-          </select>
+        {/* Dynamic Controls depending on scope mode */}
+        <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-slate-700 pt-1">
+          {/* Year selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Select Year:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+              className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+            >
+              <option value={2026}>2026</option>
+              <option value={2025}>2025</option>
+              <option value={2027}>2027</option>
+            </select>
+          </div>
+
+          {/* Month selector if in month mode */}
+          {scopeMode === 'month' && (
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Select Month:</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+              >
+                <option value="All">All Months in {selectedYear}</option>
+                {monthsList.map((m) => (
+                  <option key={m.val} value={m.val}>{m.label} {selectedYear}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Custom Date Range pickers if in custom mode */}
+          {scopeMode === 'custom' && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500 font-bold text-[10px]">From:</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500 font-bold text-[10px]">To:</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="ml-auto text-indigo-600 font-black text-xs bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
+            Showing {totalShootsCount} Sub-Events in Selected Scope
+          </div>
         </div>
       </div>
 
-      {/* SECTION 1: TOP EXECUTIVE KPIs SUMMARY CARDS */}
+      {/* ─────────────────────────────────────────────────────────────
+          2. TOP EXECUTIVE 3D KPI METRIC CARDS
+         ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-700/50 shadow-xl relative overflow-hidden">
+        
+        {/* KPI 1: TOTAL SHOOTS IN SCOPE */}
+        <div className="bg-gradient-to-br from-indigo-900 via-purple-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-700/60 shadow-xl relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-indigo-200 uppercase tracking-wider">Scheduled Events</span>
+            <span className="text-[11px] font-black text-indigo-200 uppercase tracking-wider">Scheduled Sub-Events</span>
             <Calendar className="w-5 h-5 text-indigo-300" />
           </div>
-          <h3 className="text-3xl font-black text-white mt-2">{totalShootsCount}</h3>
-          <div className="flex items-center gap-2 mt-2 text-[11px] font-bold text-indigo-200">
-            <span className="px-2 py-0.5 rounded-md bg-indigo-500/30 border border-indigo-400/30">Active Shoots</span>
-            <span>Across {activeProjects.length} Clients</span>
+          <h3 className="text-4xl font-black text-white mt-2 leading-none">{totalShootsCount}</h3>
+          <div className="flex items-center justify-between mt-3 text-[11px] font-bold text-indigo-200">
+            <span className="px-2 py-0.5 rounded-md bg-white/20 border border-white/20">
+              {scopeMode === 'month' ? (selectedMonth === 'All' ? `Year ${selectedYear}` : `${monthsList[parseInt(selectedMonth, 10)]?.label} ${selectedYear}`) : scopeMode === 'year' ? `Year ${selectedYear}` : 'Custom Range'}
+            </span>
+            <span>{completedShootsCount} Done • {upcomingShootsCount} Upcoming</span>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
+        {/* KPI 2: ACTIVE CREW ROSTER */}
+        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Active Crew Roster</span>
-            <Users className="w-5 h-5 text-indigo-600" />
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Active Directory Roster</span>
+            <Users className="w-5 h-5 text-[#6C5CE7]" />
           </div>
-          <h3 className="text-3xl font-black text-slate-900 mt-2">{teamMembers.length}</h3>
-          <div className="flex items-center gap-2 mt-2 text-[11px] font-bold text-emerald-600">
-            <Award className="w-4 h-4 text-emerald-500" />
-            <span>100% Operational Roster</span>
+          <h3 className="text-4xl font-black text-slate-900 mt-2 leading-none">{teamMembers.length}</h3>
+          <div className="flex items-center gap-2 mt-3 text-[11px] font-bold text-emerald-600">
+            <Award className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span>100% Active & Operational</span>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
+        {/* KPI 3: CREW ALLOCATION RATE */}
+        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Crew Allocation Rate</span>
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Crew Allocation Rate</span>
             <Activity className="w-5 h-5 text-emerald-600" />
           </div>
-          <h3 className="text-3xl font-black text-emerald-600 mt-2">{allocationRate}%</h3>
+          <h3 className="text-4xl font-black text-emerald-600 mt-2 leading-none">{allocationRateInScope}%</h3>
           <div className="w-full bg-slate-100 rounded-full h-2 mt-3 overflow-hidden border border-slate-200">
-            <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${allocationRate}%` }} />
+            <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${allocationRateInScope}%` }} />
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden">
+        {/* KPI 4: CRITICAL UNASSIGNED SLOTS ALERT */}
+        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Unassigned Pending Slots</span>
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Pending Unassigned Slots</span>
             <AlertTriangle className="w-5 h-5 text-rose-500" />
           </div>
-          <h3 className="text-3xl font-black text-rose-600 mt-2">{unassignedSlots}</h3>
-          <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-rose-600">
-            <span>{unassignedSlots === 0 ? 'All Slots Filled 🎉' : 'Action Required in Roster'}</span>
+          <h3 className="text-4xl font-black text-rose-600 mt-2 leading-none">{unassignedSlotsInScope}</h3>
+          <div className="flex items-center gap-1.5 mt-3 text-[11px] font-bold text-rose-600">
+            <span>{unassignedSlotsInScope === 0 ? 'All Slots Filled 🎉' : 'Action Needed in Roster'}</span>
           </div>
         </div>
       </div>
 
-      {/* SECTION 2: 3D MONTH-BY-MONTH SHOOT VOLUME & CATEGORY BREAKDOWN */}
+      {/* ─────────────────────────────────────────────────────────────
+          3. 3D MONTHLY SHOOT VOLUME & SUB-EVENT CATEGORY BREAKDOWN
+         ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* MONTHLY VOLUME CHART (8 COLS) */}
         <div className="lg:col-span-8 bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-6">
           <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
             <div className="flex items-center gap-3">
@@ -232,26 +389,29 @@ export default function OperationsAnalyticsTab({
                 <BarChart3 className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-lg font-black text-slate-900">2026 Monthly Shoot Volume</h4>
-                <p className="text-xs text-slate-500 font-bold">Click any month bar to filter stats</p>
+                <h4 className="text-lg font-black text-slate-900">{selectedYear} Monthly Shoot Volume</h4>
+                <p className="text-xs text-slate-500 font-bold">Click any month bar to isolate operations stats</p>
               </div>
             </div>
 
-            <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-black border border-slate-200">
-              Year 2026
+            <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black border border-indigo-200">
+              Year {selectedYear}
             </span>
           </div>
 
           <div className="h-64 flex items-end justify-between gap-2 pt-8 px-2 border-b border-slate-200">
             {monthlyShoots.map(({ month, val, count }) => {
               const heightPercent = Math.round((count / maxMonthlyCount) * 100);
-              const isSelected = selectedMonthFilter === val;
+              const isSelected = scopeMode === 'month' && selectedMonth === val;
 
               return (
                 <div
                   key={month}
-                  onClick={() => setSelectedMonthFilter(isSelected ? 'All' : val)}
-                  className="flex-1 flex flex-col items-center gap-2 group h-full justify-end cursor-pointer"
+                  onClick={() => {
+                    setScopeMode('month');
+                    setSelectedMonth(isSelected ? 'All' : val);
+                  }}
+                  className="flex-1 flex flex-col items-center gap-2 group h-full justify-end cursor-pointer select-none"
                 >
                   <span className="opacity-0 group-hover:opacity-100 transition text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-md shadow-lg pointer-events-none whitespace-nowrap">
                     {count} {count === 1 ? 'Shoot' : 'Shoots'}
@@ -259,10 +419,10 @@ export default function OperationsAnalyticsTab({
 
                   <div
                     style={{ height: `${Math.max(heightPercent, 8)}%` }}
-                    className={`w-full max-w-[36px] rounded-t-xl transition-all duration-300 shadow-md flex items-start justify-center pt-1 ${
+                    className={`w-full max-w-[38px] rounded-t-xl transition-all duration-300 shadow-md flex items-start justify-center pt-1 ${
                       isSelected
                         ? 'bg-gradient-to-t from-amber-500 via-orange-500 to-amber-400 ring-2 ring-amber-400'
-                        : 'bg-gradient-to-t from-indigo-700 via-indigo-500 to-purple-400 group-hover:from-indigo-800 group-hover:to-purple-500'
+                        : 'bg-gradient-to-t from-[#6C5CE7] via-indigo-600 to-purple-400 group-hover:from-indigo-800 group-hover:to-purple-500'
                     }`}
                   >
                     {count > 0 && <span className="text-[10px] font-black text-white">{count}</span>}
@@ -277,14 +437,15 @@ export default function OperationsAnalyticsTab({
           </div>
         </div>
 
+        {/* CATEGORY BREAKDOWN CARDS (4 COLS) */}
         <div className="lg:col-span-4 bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-5">
           <div className="flex items-center gap-3 border-b border-slate-200/80 pb-4">
             <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center font-black">
               <PieChart className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-lg font-black text-slate-900">Category Breakdown</h4>
-              <p className="text-xs text-slate-500 font-bold">Shoots by sub-event category</p>
+              <h4 className="text-lg font-black text-slate-900">Sub-Event Type Breakdown</h4>
+              <p className="text-xs text-slate-500 font-bold">Shoots count by event type</p>
             </div>
           </div>
 
@@ -315,7 +476,112 @@ export default function OperationsAnalyticsTab({
         </div>
       </div>
 
-      {/* SECTION 3: TEAM MEMBER DEEP ANALYTICS ROSTER WITH CLICKABLE DRILL-DOWN POPUPS */}
+      {/* ─────────────────────────────────────────────────────────────
+          4. CAPACITY & ALLOCATION PLANNING WIDGETS
+         ───────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* CRITICAL UNASSIGNED SLOTS WARNING WIDGET (6 COLS) */}
+        <div className="lg:col-span-6 bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center font-black">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-lg font-black text-slate-900">Critical Unassigned Slots</h4>
+                <p className="text-xs text-slate-500 font-bold">Sub-events requiring crew allocation</p>
+              </div>
+            </div>
+
+            <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-700 text-xs font-black border border-rose-200">
+              {unassignedEventsList.length} Events Pending
+            </span>
+          </div>
+
+          <div className="max-h-64 overflow-y-auto space-y-3 pr-1">
+            {unassignedEventsList.length === 0 ? (
+              <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-200 text-center text-xs font-bold text-emerald-800">
+                🎉 All sub-events in this scope have 100% assigned crew!
+              </div>
+            ) : (
+              unassignedEventsList.map(({ subEvent, project }) => {
+                const unassignedCount = (subEvent.fw_assignments || []).filter((a) => !a.assigned_member_id).length;
+
+                return (
+                  <div
+                    key={subEvent.id}
+                    className="flex items-center justify-between p-3.5 bg-rose-50/60 rounded-2xl border border-rose-200 text-xs font-bold"
+                  >
+                    <div>
+                      <span className="font-extrabold text-indigo-900 block">{project.client_name}</span>
+                      <span className="text-slate-700 text-[11px] block">{subEvent.event_title} ({subEvent.event_date})</span>
+                    </div>
+                    <span className="px-3 py-1 rounded-xl bg-rose-600 text-white font-black text-[10px]">
+                      {unassignedCount} Unassigned Role{unassignedCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* CREW UTILIZATION & CAPACITY HEATMAP INDICATOR (6 COLS) */}
+        <div className="lg:col-span-6 bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-black">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-lg font-black text-slate-900">Crew Utilization & Capacity Heatmap</h4>
+                <p className="text-xs text-slate-500 font-bold">Booked vs Available Capacity</p>
+              </div>
+            </div>
+
+            <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 text-xs font-black border border-emerald-200">
+              Capacity Meter
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+              <span>Overall Roster Capacity Filled:</span>
+              <span className="text-indigo-600 font-black text-sm">{allocationRateInScope}%</span>
+            </div>
+
+            <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden border border-slate-200">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  allocationRateInScope > 85
+                    ? 'bg-gradient-to-r from-emerald-500 to-indigo-600'
+                    : allocationRateInScope > 50
+                    ? 'bg-gradient-to-r from-amber-500 to-emerald-500'
+                    : 'bg-gradient-to-r from-rose-500 to-amber-500'
+                }`}
+                style={{ width: `${allocationRateInScope}%` }}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-center">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Assigned Slots</span>
+                <span className="text-xl font-black text-emerald-600">{assignedSlotsInScope}</span>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-center">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Available Slots</span>
+                <span className="text-xl font-black text-amber-600">{unassignedSlotsInScope}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          5. TEAM MEMBER PERFORMANCE & ROLE DISTRIBUTION GRID
+         ───────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
           <div className="flex items-center gap-3">
@@ -325,7 +591,7 @@ export default function OperationsAnalyticsTab({
             <div>
               <h3 className="text-xl font-black text-slate-900">Team Crew Performance & Role Distribution</h3>
               <p className="text-xs text-slate-500 font-bold">
-                Click any team member card to open full shoot timeline, location maps, and pay summary
+                Click any team member card to open full shoot timeline, venue locations, and payout status
               </p>
             </div>
           </div>
@@ -337,7 +603,7 @@ export default function OperationsAnalyticsTab({
               <div
                 key={member.id}
                 onClick={() => setSelectedMember({ member, shoots, roleCounts, completedCount, upcomingCount })}
-                className="bg-slate-50/80 hover:bg-white border-2 border-slate-200/90 hover:border-indigo-400 rounded-3xl p-5 transition-all duration-200 shadow-xs hover:shadow-lg cursor-pointer space-y-4 group"
+                className="bg-slate-50/80 hover:bg-white border-2 border-slate-200/90 hover:border-indigo-400 rounded-3xl p-5 transition-all duration-200 shadow-xs hover:shadow-lg hover:-translate-y-1 cursor-pointer space-y-4 group select-none"
               >
                 <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
                   <div className="flex items-center gap-3 min-w-0">
@@ -372,14 +638,14 @@ export default function OperationsAnalyticsTab({
                 </div>
 
                 <div className="space-y-1.5">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Role Assignments</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Role Distribution Badges</span>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {Object.entries(roleCounts).length === 0 ? (
-                      <span className="text-xs text-slate-400 italic">No shoots assigned yet</span>
+                      <span className="text-xs text-slate-400 italic">No shoots assigned in this scope</span>
                     ) : (
                       Object.entries(roleCounts).map(([role, count]) => (
                         <span key={role} className="px-2.5 py-1 rounded-xl bg-white border border-slate-200 text-xs font-black text-slate-800 shadow-2xs">
-                          {role}: <span className="text-indigo-600">{count}</span>
+                          {role}: <span className="text-indigo-600 font-extrabold">{count}x</span>
                         </span>
                       ))
                     )}
@@ -396,10 +662,14 @@ export default function OperationsAnalyticsTab({
         </div>
       </div>
 
-      {/* SECTION 4: CLICKABLE TEAM MEMBER DRILL-DOWN MODAL */}
+      {/* ─────────────────────────────────────────────────────────────
+          6. INTERACTIVE TEAM MEMBER DRILL-DOWN MODAL
+         ───────────────────────────────────────────────────────────── */}
       {selectedMember && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl border-2 border-indigo-200 shadow-2xl max-w-3xl w-full p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto">
+            
+            {/* MODAL HEADER */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-5">
               <div className="flex items-center gap-4">
                 {selectedMember.member.avatar_url ? (
@@ -442,9 +712,10 @@ export default function OperationsAnalyticsTab({
               </button>
             </div>
 
+            {/* MODAL STAT CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-indigo-50/70 border border-indigo-200 p-4 rounded-2xl">
-                <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider block">Total Shoots Assigned</span>
+                <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider block">Total Assigned Shoots</span>
                 <h4 className="text-2xl font-black text-indigo-950 mt-1">{selectedMember.shoots.length}</h4>
               </div>
 
@@ -459,18 +730,21 @@ export default function OperationsAnalyticsTab({
               </div>
             </div>
 
+            {/* SHOOT HISTORY & ROSTER TIMELINE */}
             <div className="space-y-3">
               <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider block">
-                Assigned Shoot Timeline ({selectedMember.shoots.length})
+                Assigned Shoot Roster History ({selectedMember.shoots.length})
               </h4>
 
               {selectedMember.shoots.length === 0 ? (
                 <div className="bg-slate-50 p-6 rounded-2xl text-center text-xs font-bold text-slate-400">
-                  No shoots assigned to this team member yet.
+                  No shoots assigned to this team member in the selected scope.
                 </div>
               ) : (
                 <div className="space-y-3">
                   {selectedMember.shoots.map(({ subEvent, project, assignment, dateObj }) => {
+                    const isPast = !isNaN(dateObj.getTime()) && dateObj < today;
+
                     return (
                       <div
                         key={assignment.id}
@@ -484,14 +758,18 @@ export default function OperationsAnalyticsTab({
                             <h4 className="font-black text-slate-900 text-sm">
                               {subEvent.event_title}
                             </h4>
-                            <span className="px-2.5 py-0.5 rounded-md bg-emerald-100 text-emerald-900 text-[10px] font-black">
+                            <span className="px-2.5 py-0.5 rounded-md bg-indigo-100 text-indigo-900 text-[10px] font-black">
                               Role: {assignment.required_role}
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>{subEvent.event_date}</span>
+                          <div className="flex items-center gap-2 text-xs font-bold">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                              isPast ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {isPast ? 'Completed / Paid' : 'Upcoming'}
+                            </span>
+                            <span className="text-slate-600 flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-indigo-600" /> {subEvent.event_date}</span>
                           </div>
                         </div>
 
@@ -499,7 +777,10 @@ export default function OperationsAnalyticsTab({
                           {subEvent.roll_call_time && (
                             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
                               <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>{format12HourTime(subEvent.roll_call_time)}</span>
+                              <span>
+                                {format12HourTime(subEvent.roll_call_time)}
+                                {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                              </span>
                             </div>
                           )}
 
@@ -529,6 +810,7 @@ export default function OperationsAnalyticsTab({
               )}
             </div>
 
+            {/* MODAL FOOTER */}
             <div className="pt-2 text-right border-t border-slate-100">
               <button
                 onClick={() => setSelectedMember(null)}
