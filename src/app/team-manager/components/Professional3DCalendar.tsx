@@ -1,18 +1,22 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FWProject, FWSubEvent } from '@/types';
+import { FWProject, FWSubEvent, FWTeamMember } from '@/types';
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, MapPin, 
-  X, Sparkles, UserCheck, AlertCircle, Users 
+  X, Sparkles 
 } from 'lucide-react';
+import RoleAssignDropdown from './RoleAssignDropdown';
 
 interface Professional3DCalendarProps {
   projects: FWProject[];
+  teamMembers: FWTeamMember[];
   searchQuery: string;
   selectedRoleFilter: string;
   format12HourTime: (time?: string) => string;
   getGradientByProjectId: (id: string) => string;
+  onAssignMember: (assignmentId: string, memberId: string | null) => void;
+  onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
 }
 
 interface CalendarSubEventItem {
@@ -22,10 +26,13 @@ interface CalendarSubEventItem {
 
 export default function Professional3DCalendar({
   projects,
+  teamMembers,
   searchQuery,
   selectedRoleFilter,
   format12HourTime,
   getGradientByProjectId,
+  onAssignMember,
+  onAddNewMember,
 }: Professional3DCalendarProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDayInspector, setSelectedDayInspector] = useState<{
@@ -34,11 +41,10 @@ export default function Professional3DCalendar({
     items: CalendarSubEventItem[];
   } | null>(null);
 
-  // Month navigation helpers
   const year = currentDate.getFullYear();
-  const month = currentDate.getMonth(); // 0-indexed
+  const month = currentDate.getMonth();
 
-  const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 = Sun
+  const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   const prevMonth = () => {
@@ -53,7 +59,6 @@ export default function Professional3DCalendar({
     setCurrentDate(new Date());
   };
 
-  // Build map of YYYY-MM-DD -> CalendarSubEventItem[]
   const eventsByDate: { [dateStr: string]: CalendarSubEventItem[] } = {};
 
   projects.forEach((project) => {
@@ -71,7 +76,6 @@ export default function Professional3DCalendar({
         if (!hasRole) return;
       }
 
-      // Parse YYYY-MM-DD
       const d = new Date(se.event_date);
       if (isNaN(d.getTime())) return;
 
@@ -111,7 +115,7 @@ export default function Professional3DCalendar({
           <div className="flex items-center gap-2">
             <button
               onClick={goToToday}
-              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200/80 transition shadow-2xs"
+              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200/80 transition shadow-2xs cursor-pointer"
             >
               Today
             </button>
@@ -153,7 +157,6 @@ export default function Professional3DCalendar({
 
           {/* Date Cells Grid */}
           <div className="grid grid-cols-7 gap-2 sm:gap-3">
-            {/* Empty Offset Cells */}
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
               <div
                 key={`empty-${i}`}
@@ -161,11 +164,9 @@ export default function Professional3DCalendar({
               />
             ))}
 
-            {/* Actual Days of Month */}
             {Array.from({ length: daysInMonth }).map((_, dayIdx) => {
               const dayNum = dayIdx + 1;
               const dateObj = new Date(year, month, dayNum);
-              // Format YYYY-MM-DD
               const yearPad = dateObj.getFullYear();
               const monthPad = (dateObj.getMonth() + 1).toString().padStart(2, '0');
               const dayPad = dayNum.toString().padStart(2, '0');
@@ -199,7 +200,6 @@ export default function Professional3DCalendar({
                       : 'bg-slate-50/50 border-slate-200/60 hover:bg-white'
                   }`}
                 >
-                  {/* CELL TOP BAR: DATE NUMBER & BADGES */}
                   <div className="flex items-center justify-between">
                     <span
                       className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black transition ${
@@ -218,7 +218,6 @@ export default function Professional3DCalendar({
                     )}
                   </div>
 
-                  {/* CELL MIDDLE/BOTTOM: SUB-EVENT PILLS */}
                   <div className="space-y-1.5 mt-2 overflow-hidden">
                     {items.slice(0, 2).map(({ subEvent, project }, idx) => {
                       const grad = getGradientByProjectId(project.id || project.client_name);
@@ -275,10 +274,9 @@ export default function Professional3DCalendar({
               </button>
             </div>
 
-            {/* EVENTS BREAKDOWN LIST */}
+            {/* EVENTS BREAKDOWN LIST WITH INTERACTIVE ASSIGNMENT DROPDOWNS */}
             <div className="space-y-4">
               {selectedDayInspector.items.map(({ subEvent, project }) => {
-                const grad = getGradientByProjectId(project.id || project.client_name);
                 const assignments = subEvent.fw_assignments || [];
 
                 return (
@@ -319,35 +317,27 @@ export default function Professional3DCalendar({
                       </div>
                     )}
 
-                    {/* CREW ALLOCATIONS */}
+                    {/* CREW ALLOCATIONS WITH INTERACTIVE ROLE ASSIGNMENT DROPDOWNS */}
                     <div>
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                        Assigned Crew Roster
+                        Assigned Crew Roster (Click chip to assign team member)
                       </span>
                       {assignments.length === 0 ? (
                         <span className="text-xs text-slate-400 italic">No roles configured for this event.</span>
                       ) : (
                         <div className="flex items-center gap-2 flex-wrap">
-                          {assignments.map((assignment) => {
-                            const member = assignment.fw_team_members;
-                            const isAssigned = !!assignment.assigned_member_id;
-
-                            return (
-                              <div
-                                key={assignment.id}
-                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
-                                  isAssigned
-                                    ? 'bg-emerald-50 text-emerald-950 border-emerald-200'
-                                    : 'bg-rose-50 text-rose-800 border-rose-200'
-                                }`}
-                              >
-                                <span className="font-semibold">{assignment.required_role}:</span>
-                                <span className={isAssigned ? 'font-black text-emerald-900' : 'font-bold italic text-rose-600'}>
-                                  {member?.name || 'Unassigned'}
-                                </span>
-                              </div>
-                            );
-                          })}
+                          {assignments.map((assignment) => (
+                            <RoleAssignDropdown
+                              key={assignment.id}
+                              assignment={assignment}
+                              subEventId={subEvent.id}
+                              projectId={project.id}
+                              teamMembers={teamMembers}
+                              onAssignMember={onAssignMember}
+                              onAddNewMember={onAddNewMember}
+                              variant="chip"
+                            />
+                          ))}
                         </div>
                       )}
                     </div>

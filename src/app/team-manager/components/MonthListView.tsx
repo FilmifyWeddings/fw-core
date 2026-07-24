@@ -1,15 +1,19 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FWProject, FWSubEvent } from '@/types';
+import { FWProject, FWSubEvent, FWTeamMember } from '@/types';
 import { Calendar, Clock, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
+import RoleAssignDropdown from './RoleAssignDropdown';
 
 interface MonthListViewProps {
   projects: FWProject[];
+  teamMembers: FWTeamMember[];
   searchQuery: string;
   selectedRoleFilter: string;
   format12HourTime: (time?: string) => string;
   getGradientByProjectId: (id: string) => string;
+  onAssignMember: (assignmentId: string, memberId: string | null) => void;
+  onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
 }
 
 interface FlattenedSubEvent {
@@ -22,10 +26,13 @@ interface FlattenedSubEvent {
 
 export default function MonthListView({
   projects,
+  teamMembers,
   searchQuery,
   selectedRoleFilter,
   format12HourTime,
   getGradientByProjectId,
+  onAssignMember,
+  onAddNewMember,
 }: MonthListViewProps) {
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
 
@@ -35,7 +42,6 @@ export default function MonthListView({
   projects.forEach((project) => {
     if (project.is_archived) return;
 
-    // Filter by client name if searchQuery exists
     const q = searchQuery.trim().toLowerCase();
     const matchClientName = !q || project.client_name.toLowerCase().includes(q);
 
@@ -43,7 +49,6 @@ export default function MonthListView({
       const matchSubTitle = !q || se.event_title.toLowerCase().includes(q);
       if (!matchClientName && !matchSubTitle) return;
 
-      // Role filter check
       if (selectedRoleFilter !== 'All') {
         const hasRole = se.fw_assignments?.some((a) => a.required_role === selectedRoleFilter);
         if (!hasRole) return;
@@ -67,10 +72,8 @@ export default function MonthListView({
     });
   });
 
-  // Sort sub-events chronologically
   allSubEvents.sort((a, b) => a.sortTimestamp - b.sortTimestamp);
 
-  // Group by Month Key maintaining chronological month order
   const monthGroups: { [monthKey: string]: FlattenedSubEvent[] } = {};
   const monthOrder: string[] = [];
 
@@ -221,42 +224,27 @@ export default function MonthListView({
                           </div>
                         </div>
 
-                        {/* CREW ALLOCATION CHIPS GRID */}
+                        {/* CREW ALLOCATION CHIPS GRID WITH CLICKABLE ASSIGN POPOVERS */}
                         <div>
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                            Assigned Crew Roster
+                            Assigned Crew Roster (Click chip to assign team member)
                           </span>
                           {assignments.length === 0 ? (
                             <span className="text-xs text-slate-400 italic">No roles configured for this event.</span>
                           ) : (
                             <div className="flex items-center gap-2 flex-wrap">
-                              {assignments.map((assignment) => {
-                                const member = assignment.fw_team_members;
-                                const isAssigned = !!assignment.assigned_member_id;
-
-                                return (
-                                  <div
-                                    key={assignment.id}
-                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition ${
-                                      isAssigned
-                                        ? 'bg-emerald-50 text-emerald-950 border-emerald-200/90 shadow-2xs'
-                                        : 'bg-rose-50 text-rose-800 border-rose-200/90 shadow-2xs'
-                                    }`}
-                                  >
-                                    <div
-                                      className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black text-white ${
-                                        isAssigned ? 'bg-emerald-600' : 'bg-rose-500'
-                                      }`}
-                                    >
-                                      {assignment.required_role?.slice(0, 2).toUpperCase() || 'CR'}
-                                    </div>
-                                    <span>{assignment.required_role}:</span>
-                                    <span className={isAssigned ? 'font-black text-emerald-900' : 'font-bold italic text-rose-600'}>
-                                      {member?.name || 'Unassigned'}
-                                    </span>
-                                  </div>
-                                );
-                              })}
+                              {assignments.map((assignment) => (
+                                <RoleAssignDropdown
+                                  key={assignment.id}
+                                  assignment={assignment}
+                                  subEventId={subEvent.id}
+                                  projectId={project.id}
+                                  teamMembers={teamMembers}
+                                  onAssignMember={onAssignMember}
+                                  onAddNewMember={onAddNewMember}
+                                  variant="chip"
+                                />
+                              ))}
                             </div>
                           )}
                         </div>

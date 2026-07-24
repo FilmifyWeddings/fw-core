@@ -1106,10 +1106,16 @@ export default function TeamManagerPage() {
         {activeTab === 'list' && (
           <MonthListView
             projects={projects}
+            teamMembers={teamMembers}
             searchQuery={searchQuery}
             selectedRoleFilter={selectedRoleFilter}
             format12HourTime={format12HourTime}
             getGradientByProjectId={getGradientByProjectId}
+            onAssignMember={handleAssignMember}
+            onAddNewMember={(info) => {
+              setActiveAssignmentForMember(info);
+              setIsAddMemberOpen(true);
+            }}
           />
         )}
 
@@ -1117,10 +1123,16 @@ export default function TeamManagerPage() {
         {activeTab === 'calendar' && (
           <Professional3DCalendar
             projects={projects}
+            teamMembers={teamMembers}
             searchQuery={searchQuery}
             selectedRoleFilter={selectedRoleFilter}
             format12HourTime={format12HourTime}
             getGradientByProjectId={getGradientByProjectId}
+            onAssignMember={handleAssignMember}
+            onAddNewMember={(info) => {
+              setActiveAssignmentForMember(info);
+              setIsAddMemberOpen(true);
+            }}
           />
         )}
 
