@@ -109,7 +109,7 @@ function IntegrationsCore() {
       description: 'Ingest leads automatically from Facebook & Instagram lead campaigns.',
       logoName: 'meta.png',
       status: metaConnected ? 'connected' : 'disconnected',
-      path: '/dashboard/integrations/meta-ads',
+      path: '/workspace/integrations/meta',
       metaText: 'Facebook/Instagram Forms Sync'
     },
     {
