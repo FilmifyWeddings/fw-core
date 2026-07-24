@@ -141,19 +141,22 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (!code || !state) {
+  // 1. Check only if code exists (state is optional)
+  if (!code) {
     return NextResponse.redirect(
       `${baseUrl}/workspace/integrations/meta?meta=error&oauth_error=missing_code`
     );
   }
 
-  // Decode State Parameter -> Extract workspace_id
+  // 2. Safely decode State if present, else fallback
   let workspaceId = '00000000-0000-0000-0000-000000000000';
-  try {
-    const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
-    if (decoded.workspace_id) workspaceId = decoded.workspace_id;
-  } catch (err: any) {
-    console.error('[Meta OAuth Callback] State decode error:', err.message);
+  if (state) {
+    try {
+      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
+      if (decoded.workspace_id) workspaceId = decoded.workspace_id;
+    } catch (err: any) {
+      console.warn('[Meta OAuth Callback] State decode skipped/failed:', err.message);
+    }
   }
 
   try {
