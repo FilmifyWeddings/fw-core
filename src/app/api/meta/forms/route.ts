@@ -7,90 +7,116 @@ export async function GET(req: NextRequest) {
     const pageId = searchParams.get('page_id') || '110156851793416';
     const workspaceId = '00000000-0000-0000-0000-000000000000';
 
-    let pageAccessToken: string | null = null;
-    let userAccessToken: string | null = null;
+    let initialToken: string | null = searchParams.get('access_token');
 
-    // Step 1: Lookup stored Page Access Token from fb_page_configs
-    try {
-      const { data: pageConfig } = await supabaseAdmin
-        .from('fb_page_configs')
-        .select('page_access_token')
-        .eq('page_id', pageId)
-        .limit(1)
-        .single();
+    // Step 1: Retrieve stored token from fb_page_configs or integration_credentials
+    if (!initialToken) {
+      try {
+        const { data: pageCfg } = await supabaseAdmin
+          .from('fb_page_configs')
+          .select('page_access_token')
+          .eq('page_id', pageId)
+          .limit(1)
+          .single();
 
-      if (pageConfig?.page_access_token) {
-        pageAccessToken = pageConfig.page_access_token;
-      }
-    } catch (err: any) {
-      console.warn('[Meta Forms API] Page token lookup warning:', err.message);
+        if (pageCfg?.page_access_token) {
+          initialToken = pageCfg.page_access_token;
+        }
+      } catch (err: any) {}
     }
 
-    // Step 2: Fallback User Token from integration_credentials
-    try {
-      const { data: credData } = await supabaseAdmin
-        .from('integration_credentials')
-        .select('access_token')
-        .eq('provider', 'meta')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .single();
+    if (!initialToken) {
+      try {
+        const { data: cred } = await supabaseAdmin
+          .from('integration_credentials')
+          .select('access_token')
+          .eq('provider', 'meta')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
 
-      if (credData?.access_token) {
-        userAccessToken = credData.access_token;
+        if (cred?.access_token) initialToken = cred.access_token;
+      } catch (err: any) {}
+    }
+
+    let freshPageToken: string | null = null;
+    let pageInfo: any = null;
+
+    // Step 2: FORCE PAGE TOKEN EXCHANGE
+    // GET /110156851793416?fields=id,name,access_token,category
+    if (initialToken) {
+      try {
+        const pageRes = await fetch(
+          `https://graph.facebook.com/v19.0/${pageId}?fields=id,name,access_token,category&access_token=${initialToken}`
+        );
+        if (pageRes.ok) {
+          pageInfo = await pageRes.json();
+          if (pageInfo.access_token) {
+            freshPageToken = pageInfo.access_token;
+            console.log(`[Meta Forms API] Successfully exchanged token for FRESH Page Access Token for ${pageId}!`);
+
+            try {
+              await supabaseAdmin.from('fb_page_configs').upsert({
+                workspace_id: workspaceId,
+                page_id: pageId,
+                page_name: pageInfo.name || 'Filmify Weddings',
+                page_category: pageInfo.category || 'Wedding Service',
+                page_access_token: freshPageToken,
+                is_active: true,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id,page_id' });
+            } catch (dbErr: any) {}
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Meta Forms API] Page token exchange warning:', err.message);
       }
-    } catch (err: any) {}
+    }
 
-    const tokenToUse = pageAccessToken || userAccessToken;
+    const tokenToUse = freshPageToken || initialToken;
+    let rawMetaFormsRes: any = null;
     const fetchedForms: any[] = [];
 
-    // Step 3: Direct Loop Query to Meta Graph API with limit=100
+    // Step 3: FETCH FORMS WITH FRESH PAGE ACCESS TOKEN (limit=100)
     if (tokenToUse) {
       try {
-        console.log(`[Meta Forms API] Fetching leadgen_forms with limit=100 for page ${pageId}...`);
+        console.log(`[Meta Forms API] Fetching leadgen_forms for page ${pageId} with limit=100...`);
         const formsRes = await fetch(
           `https://graph.facebook.com/v19.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=100&access_token=${tokenToUse}`
         );
+        rawMetaFormsRes = await formsRes.json().catch(() => ({}));
 
-        if (formsRes.ok) {
-          const formsData = await formsRes.json();
-          if (formsData.data && Array.isArray(formsData.data)) {
-            console.log(`[Meta Forms API] Successfully fetched ${formsData.data.length} real lead forms from Graph API!`);
-            formsData.data.forEach((f: any) => {
-              fetchedForms.push({
-                workspace_id: workspaceId,
-                page_id: pageId,
-                form_id: f.id,
-                form_name: f.name || 'Meta Lead Form',
-                status: (f.status || 'ACTIVE').toUpperCase(),
-                leads_count: f.leads_count || 0,
-                created_time: f.created_time || new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
+        if (formsRes.ok && rawMetaFormsRes.data && Array.isArray(rawMetaFormsRes.data)) {
+          console.log(`[Meta Forms API] EXACT FORMS RETURNED FROM META GRAPH API: ${rawMetaFormsRes.data.length}`);
+          rawMetaFormsRes.data.forEach((f: any) => {
+            fetchedForms.push({
+              workspace_id: workspaceId,
+              page_id: pageId,
+              form_id: f.id,
+              form_name: f.name || 'Meta Lead Form',
+              status: (f.status || 'ACTIVE').toUpperCase(),
+              leads_count: f.leads_count || 0,
+              created_time: f.created_time || new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             });
-          }
+          });
         } else {
-          const errBody = await formsRes.json().catch(() => ({}));
-          console.warn('[Meta Forms API] Graph API error response:', errBody);
+          console.warn('[Meta Forms API] Graph API leadgen_forms error or empty:', rawMetaFormsRes);
         }
       } catch (graphErr: any) {
         console.error('[Meta Forms API] Graph API Exception:', graphErr.message);
       }
     }
 
-    // Step 4: Upsert ALL returned forms directly into Supabase fb_lead_forms table
+    // Step 4: UPSERT ALL RETURNED FORMS INTO Supabase fb_lead_forms
     if (fetchedForms.length > 0) {
       try {
         console.log(`[Meta Forms API] Upserting ${fetchedForms.length} real forms into Supabase fb_lead_forms...`);
-        const { error: upsertErr } = await supabaseAdmin
+        await supabaseAdmin
           .from('fb_lead_forms')
           .upsert(fetchedForms, { onConflict: 'form_id' });
-
-        if (upsertErr) {
-          console.warn('[Meta Forms API] Supabase fb_lead_forms upsert warning:', upsertErr.message);
-        }
-      } catch (dbErr: any) {
-        console.warn('[Meta Forms API] Database upsert exception:', dbErr.message);
+      } catch (dbUpsertErr: any) {
+        console.warn('[Meta Forms API] fb_lead_forms upsert warning:', dbUpsertErr.message);
       }
     }
 
@@ -117,11 +143,8 @@ export async function GET(req: NextRequest) {
           questions_count: 5,
         }));
       }
-    } catch (readErr: any) {
-      console.warn('[Meta Forms API] Read from fb_lead_forms warning:', readErr.message);
-    }
+    } catch (readErr: any) {}
 
-    // Fallback to in-memory fetchedForms if DB query returned 0 items
     if (finalForms.length === 0 && fetchedForms.length > 0) {
       finalForms = fetchedForms.map(f => ({
         form_id: f.form_id,
@@ -142,6 +165,12 @@ export async function GET(req: NextRequest) {
       page_id: pageId,
       forms: finalForms,
       total_forms: finalForms.length,
+      meta_graph_api_debug: {
+        tokenUsed: tokenToUse ? 'YES' : 'NO',
+        freshPageTokenObtained: !!freshPageToken,
+        metaFormsCountReturned: rawMetaFormsRes?.data?.length || 0,
+        rawMetaFormsRes,
+      },
     });
   } catch (error: any) {
     console.error('[Meta Forms API Error]:', error);
