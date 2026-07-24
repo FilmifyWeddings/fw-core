@@ -8,14 +8,14 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
 
   // Step 1: Authorization Code → Short-Lived User Access Token
   const tokenRes = await fetch(
-    `https://graph.facebook.com/v19.0/oauth/access_token?` +
-    `client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&` +
-    `client_secret=${appSecret}&code=${code}`
+    "https://graph.facebook.com/v19.0/oauth/access_token?" +
+    "client_id=" + appId + "&redirect_uri=" + encodeURIComponent(redirectUri) + "&" +
+    "client_secret=" + appSecret + "&code=" + code
   );
 
   if (!tokenRes.ok) {
     const err = await tokenRes.json().catch(() => ({}));
-    throw new Error(`Token exchange failed: ${err?.error?.message || tokenRes.status}`);
+    throw new Error("Token exchange failed: " + (err?.error?.message || tokenRes.status));
   }
 
   const tokenData = await tokenRes.json();
@@ -23,9 +23,9 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
 
   // Step 2: Short-Lived Token → Long-Lived Token (60-day validity)
   const longLivedRes = await fetch(
-    `https://graph.facebook.com/v19.0/oauth/access_token?` +
-    `grant_type=fb_exchange_token&client_id=${appId}&` +
-    `client_secret=${appSecret}&fb_exchange_token=${shortLivedToken}`
+    "https://graph.facebook.com/v19.0/oauth/access_token?" +
+    "grant_type=fb_exchange_token&client_id=" + appId + "&" +
+    "client_secret=" + appSecret + "&fb_exchange_token=" + shortLivedToken
   );
 
   if (!longLivedRes.ok) {
@@ -37,37 +37,41 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
   return longLivedData.access_token || shortLivedToken;
 }
 
-// ── Helper: Fetch User Managed Facebook Pages ─────────────────────────
-async function fetchUserManagedPages(userToken: string): Promise<Array<{
-  page_id: string;
-  page_name: string;
-  page_category: string | null;
-  page_access_token: string;
-}>> {
+// ── Helper: Fetch User Managed Facebook Pages with tasks field ────────────
+async function fetchUserManagedPages(userToken: string): Promise<{
+  pages: Array<{
+    page_id: string;
+    page_name: string;
+    page_category: string | null;
+    page_access_token: string;
+  }>;
+  rawResponse: any;
+}> {
   const pagesRes = await fetch(
-    `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category,access_token&access_token=${userToken}`
+    "https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category,access_token,tasks&access_token=" + userToken
   );
 
+  const pagesData = await pagesRes.json().catch(() => ({}));
+
   if (!pagesRes.ok) {
-    const err = await pagesRes.json().catch(() => ({}));
-    throw new Error(`Failed to fetch pages from Meta Graph API: ${err?.error?.message || pagesRes.status}`);
+    throw new Error("Failed to fetch pages from Meta Graph API: " + (pagesData?.error?.message || pagesRes.status));
   }
 
-  const pagesData = await pagesRes.json();
-  return (pagesData.data || []).map((page: any) => ({
+  const pagesList = (pagesData.data || []).map((page: any) => ({
     page_id: page.id,
     page_name: page.name,
     page_category: page.category || null,
     page_access_token: page.access_token,
   }));
+
+  return { pages: pagesList, rawResponse: pagesData };
 }
 
 // ── Helper: Automatically Subscribe Webhook to Page (leadgen) ─────────
 async function subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<boolean> {
   try {
-    // POST /{page_id}/subscribed_apps?subscribed_fields=leadgen
     const subscribeRes = await fetch(
-      `https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`,
+      "https://graph.facebook.com/v19.0/" + pageId + "/subscribed_apps",
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -80,19 +84,19 @@ async function subscribePageWebhook(pageId: string, pageAccessToken: string): Pr
 
     const subscribeData = await subscribeRes.json();
     if (!subscribeRes.ok || subscribeData.error) {
-      console.warn(`[Meta Webhook Subscribe] Warning for page ${pageId}:`, subscribeData?.error?.message || subscribeRes.status);
+      console.warn("[Meta Webhook Subscribe] Warning for page " + pageId + ":", subscribeData?.error?.message || subscribeRes.status);
       return false;
     }
 
-    console.log(`[Meta Webhook Subscribe] Successfully subscribed leadgen webhook for page ID: ${pageId}`);
+    console.log("[Meta Webhook Subscribe] Successfully subscribed leadgen webhook for page ID: " + pageId);
     return true;
   } catch (err) {
-    console.error(`[Meta Webhook Subscribe] Error for page ${pageId}:`, err);
+    console.error("[Meta Webhook Subscribe] Error for page " + pageId + ":", err);
     return false;
   }
 }
 
-// ── Helper: Save Connected Pages to Supabase DB ────────────────────────
+// ── Helper: Save Connected Pages & Forms to Supabase DB ─────────────────
 async function savePagesToDatabase(
   workspaceId: string,
   pages: Array<{ page_id: string; page_name: string; page_category: string | null; page_access_token: string }>
@@ -130,25 +134,22 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_APP_URL || 
     'http://localhost:3000';
 
-  const redirectUri = `${baseUrl}/api/auth/facebook/callback`;
+  const redirectUri = baseUrl + "/api/auth/facebook/callback";
 
-  // User cancelled or denied permissions
   if (error) {
     const reason = searchParams.get('error_description') || error;
     console.warn('[Meta OAuth Callback] Authorization denied by user:', reason);
     return NextResponse.redirect(
-      `${baseUrl}/workspace/integrations/meta?meta=cancelled&oauth_error=${encodeURIComponent(reason)}`
+      baseUrl + "/workspace/integrations/meta?meta=cancelled&oauth_error=" + encodeURIComponent(reason)
     );
   }
 
-  // 1. Check only if code exists (state is optional)
   if (!code) {
     return NextResponse.redirect(
-      `${baseUrl}/workspace/integrations/meta?meta=error&oauth_error=missing_code`
+      baseUrl + "/workspace/integrations/meta?meta=error&oauth_error=missing_code"
     );
   }
 
-  // 2. Safely decode State if present, else fallback
   let workspaceId = '00000000-0000-0000-0000-000000000000';
   if (state) {
     try {
@@ -160,23 +161,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 1. Exchange authorization code for User Long-Lived Token
     console.log('[Meta OAuth] Exchanging code for token for workspace:', workspaceId);
     const userAccessToken = await exchangeCodeForLongLivedToken(code, redirectUri);
 
-    // 2. Fetch all managed Facebook Pages & Page Access Tokens
-    console.log('[Meta OAuth] Fetching managed Facebook Pages...');
-    const pages = await fetchUserManagedPages(userAccessToken);
-    console.log(`[Meta OAuth] Successfully fetched ${pages.length} Facebook Pages`);
+    console.log('[Meta OAuth] Fetching managed Facebook Pages with tasks field...');
+    const { pages, rawResponse } = await fetchUserManagedPages(userAccessToken);
+    console.log("[Meta OAuth] Successfully fetched " + pages.length + " Facebook Pages");
 
-    // 3. For each Page: Automatically subscribe leadgen Webhook
     let subscribedCount = 0;
     for (const page of pages) {
       const isSubscribed = await subscribePageWebhook(page.page_id, page.page_access_token);
       if (isSubscribed) subscribedCount++;
     }
 
-    // 4. Save User Token & Pages in Database
+    // Save User Token in profiles & integration_credentials
     await supabaseAdmin
       .from('profiles')
       .update({
@@ -185,7 +183,6 @@ export async function GET(req: NextRequest) {
       })
       .eq('id', workspaceId);
 
-    // Save in integration_credentials for multi-tenant integration hub
     await supabaseAdmin
       .from('integration_credentials')
       .upsert({
@@ -200,15 +197,13 @@ export async function GET(req: NextRequest) {
       await savePagesToDatabase(workspaceId, pages);
     }
 
-    // 5. Log Connection Event
     await supabaseAdmin.from('live_logs').insert({
       workspace_id: workspaceId,
       event_type: 'meta_oauth_connected',
-      message: `Meta OAuth Connected! ${pages.length} page(s) synced, ${subscribedCount} webhook(s) auto-subscribed.`,
+      message: "Meta OAuth Connected! " + pages.length + " page(s) synced, " + subscribedCount + " webhook(s) auto-subscribed.",
     });
 
-    // 6. Redirect back to Meta Integration Dashboard with success query params
-    const successUrl = new URL(`${baseUrl}/workspace/integrations/meta`);
+    const successUrl = new URL(baseUrl + "/workspace/integrations/meta");
     successUrl.searchParams.set('meta', 'connected');
     successUrl.searchParams.set('pages', String(pages.length));
     successUrl.searchParams.set('webhooks_subscribed', String(subscribedCount));
@@ -219,7 +214,7 @@ export async function GET(req: NextRequest) {
     console.error('[Meta OAuth Callback] Error processing OAuth:', err.message);
 
     return NextResponse.redirect(
-      `${baseUrl}/workspace/integrations/meta?meta=error&oauth_error=${encodeURIComponent(err.message)}`
+      baseUrl + "/workspace/integrations/meta?meta=error&oauth_error=" + encodeURIComponent(err.message)
     );
   }
 }
