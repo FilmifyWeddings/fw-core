@@ -348,7 +348,7 @@ export interface FWWhatsAppLog {
 // SaaS Suite Registry Types
 // ─────────────────────────────────────────────────────────────
 
-export type SubAppSlug = 'team-manager' | 'quotations' | 'leads';
+export type SubAppSlug = 'team-manager' | 'quotations' | 'leads' | 'integrations';
 
 export interface SuiteAppNavItem {
   label: string;
@@ -420,6 +420,22 @@ export const SUITE_REGISTRY: SuiteRegistry = {
         { label: 'Meta Ads Sync', icon: 'Webhook', href: '/leads' },
         { label: 'Outbox Queue', icon: 'Send', href: '/leads' },
         { label: 'Lead Pipeline', icon: 'BarChart3', href: '/leads' },
+      ],
+    },
+    {
+      slug: 'integrations',
+      title: 'Integrations',
+      subtitle: 'APIs & WhatsApp',
+      description: 'Connect Baileys WhatsApp Web, Facebook Meta Ads, Google Contacts, and Webhook APIs.',
+      icon: 'Plug',
+      accentColor: '#3B82F6',
+      accentGradient: 'from-blue-500 to-indigo-600',
+      href: '/workspace/integrations',
+      sidebarNavItems: [
+        { label: 'WhatsApp Web', icon: 'MessageSquare', href: '/workspace/integrations' },
+        { label: 'Meta Ads', icon: 'Globe', href: '/workspace/integrations' },
+        { label: 'Google Sync', icon: 'RefreshCw', href: '/workspace/integrations' },
+        { label: 'Webhooks API', icon: 'Key', href: '/workspace/integrations' },
       ],
     },
   ],

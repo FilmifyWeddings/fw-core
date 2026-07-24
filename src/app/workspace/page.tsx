@@ -4,13 +4,14 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Users, FileText, Database, Sparkles } from 'lucide-react';
+import { Users, FileText, Database, Sparkles, Plug } from 'lucide-react';
 import { SUITE_REGISTRY, type SuiteAppConfig } from '@/types';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Users,
   FileText,
   Database,
+  Plug,
 };
 
 const SUITE_ACCENT_MAP: Record<string, { bg: string; border: string; text: string; glow: string; iconBg: string }> = {
@@ -35,11 +36,18 @@ const SUITE_ACCENT_MAP: Record<string, { bg: string; border: string; text: strin
     glow: 'hover:shadow-[0_20px_40px_rgba(16,185,129,0.08)]',
     iconBg: 'bg-gradient-to-br from-emerald-500 to-green-600',
   },
+  'integrations': {
+    bg: 'bg-white',
+    border: 'border-zinc-200',
+    text: 'text-zinc-900',
+    glow: 'hover:shadow-[0_20px_40px_rgba(59,130,246,0.08)]',
+    iconBg: 'bg-gradient-to-br from-blue-500 to-indigo-600',
+  },
 };
 
 function SuiteCard({ app, index }: { app: SuiteAppConfig; index: number }) {
   const Icon = ICON_MAP[app.icon] || FileText;
-  const styles = SUITE_ACCENT_MAP[app.slug];
+  const styles = SUITE_ACCENT_MAP[app.slug] || SUITE_ACCENT_MAP['team-manager'];
 
   return (
     <motion.div
@@ -88,7 +96,7 @@ export default function WorkspacePage() {
     <div className="min-h-screen bg-[#F8F9FD] text-zinc-900">
       {/* Top navigation bar */}
       <header className="border-b border-zinc-200 bg-white/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center font-bold text-xs text-white shadow-lg shadow-orange-500/15">
               FW
@@ -108,7 +116,7 @@ export default function WorkspacePage() {
       </header>
 
       {/* Main launchpad content */}
-      <main className="max-w-5xl mx-auto px-6 py-12 sm:py-16">
+      <main className="max-w-6xl mx-auto px-6 py-12 sm:py-16">
         {/* Hero section */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -128,8 +136,8 @@ export default function WorkspacePage() {
           </p>
         </motion.div>
 
-        {/* Suite App Launcher Grid - 3-column side-by-side */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Suite App Launcher Grid - 4-column side-by-side */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {SUITE_REGISTRY.apps.map((app, index) => (
             <SuiteCard key={app.slug} app={app} index={index} />
           ))}
@@ -143,7 +151,7 @@ export default function WorkspacePage() {
           className="mt-12 text-center"
         >
           <p className="text-[11px] text-zinc-400 font-medium">
-            3 applications available &middot; Click any tile to enter the workspace
+            {SUITE_REGISTRY.apps.length} applications available &middot; Click any tile to enter the workspace
           </p>
         </motion.div>
       </main>
