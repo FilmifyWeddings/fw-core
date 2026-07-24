@@ -186,7 +186,12 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   ];
 
   // Routes that bypass the global sidebar entirely
-  const bypassRoutes = ['/', '/login', '/home', '/admin/sushant', '/admin/dashboard'];
+  const bypassRoutes = ['/', '/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager'];
+
+  // Bypass sidebar for launchpad, team-manager, and special routes
+  if (bypassRoutes.includes(pathname) || pathname.startsWith('/team-manager')) {
+    return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
+  }
   
   // For sub-app routes, render the context-aware sidebar
   if (subApp && suiteApp) {
