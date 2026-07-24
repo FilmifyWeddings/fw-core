@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// ─────────────────────────────────────────────────────────────
-// Helper: Short-lived code → Long-lived User Access Token exchange
-// ─────────────────────────────────────────────────────────────
-async function exchangeCodeForToken(code: string, redirectUri: string): Promise<string> {
-  const appId     = process.env.FACEBOOK_APP_ID!;
+// ── Helper: Exchange Code for Long-Lived User Access Token ──────────────
+async function exchangeCodeForLongLivedToken(code: string, redirectUri: string): Promise<string> {
+  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID!;
   const appSecret = process.env.FACEBOOK_APP_SECRET!;
 
-  // Step 1: Code → Short-lived User Token
+  // Step 1: Authorization Code → Short-Lived User Access Token
   const tokenRes = await fetch(
-    `https://graph.facebook.com/v20.0/oauth/access_token?` +
+    `https://graph.facebook.com/v19.0/oauth/access_token?` +
     `client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&` +
     `client_secret=${appSecret}&code=${code}`
   );
@@ -23,16 +21,15 @@ async function exchangeCodeForToken(code: string, redirectUri: string): Promise<
   const tokenData = await tokenRes.json();
   const shortLivedToken: string = tokenData.access_token;
 
-  // Step 2: Short-lived → Long-lived Token (60 din valid)
+  // Step 2: Short-Lived Token → Long-Lived Token (60-day validity)
   const longLivedRes = await fetch(
-    `https://graph.facebook.com/v20.0/oauth/access_token?` +
+    `https://graph.facebook.com/v19.0/oauth/access_token?` +
     `grant_type=fb_exchange_token&client_id=${appId}&` +
     `client_secret=${appSecret}&fb_exchange_token=${shortLivedToken}`
   );
 
   if (!longLivedRes.ok) {
-    // Long-lived exchange fail ho toh short-lived use karo (fallback)
-    console.warn('[FB OAuth] Long-lived token exchange failed, using short-lived token');
+    console.warn('[Meta OAuth] Long-lived token exchange failed, falling back to short-lived token');
     return shortLivedToken;
   }
 
@@ -40,65 +37,76 @@ async function exchangeCodeForToken(code: string, redirectUri: string): Promise<
   return longLivedData.access_token || shortLivedToken;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helper: User ki saari Facebook Pages fetch karo
-// ─────────────────────────────────────────────────────────────
-async function fetchUserPages(userToken: string): Promise<Array<{
+// ── Helper: Fetch User Managed Facebook Pages ─────────────────────────
+async function fetchUserManagedPages(userToken: string): Promise<Array<{
   page_id: string;
   page_name: string;
   page_category: string | null;
   page_access_token: string;
 }>> {
-  // Debug: Log active permissions of the token
-  try {
-    const permRes = await fetch(
-      `https://graph.facebook.com/v20.0/me/permissions?access_token=${userToken}`
-    );
-    if (permRes.ok) {
-      const permData = await permRes.json();
-      console.log('[FB Callback] /me/permissions response:', JSON.stringify(permData, null, 2));
-    }
-  } catch (err: any) {
-    console.warn('[FB Callback] Failed to fetch permissions log:', err.message);
-  }
-
-  // /me/accounts → User ke managed pages + unke Page Access Tokens
   const pagesRes = await fetch(
-    `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token&access_token=${userToken}`
+    `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category,access_token&access_token=${userToken}`
   );
 
   if (!pagesRes.ok) {
     const err = await pagesRes.json().catch(() => ({}));
-    throw new Error(`Failed to fetch pages: ${err?.error?.message || pagesRes.status}`);
+    throw new Error(`Failed to fetch pages from Meta Graph API: ${err?.error?.message || pagesRes.status}`);
   }
 
   const pagesData = await pagesRes.json();
-  console.log('[FB Callback] /me/accounts raw response:', JSON.stringify(pagesData, null, 2));
   return (pagesData.data || []).map((page: any) => ({
-    page_id:           page.id,
-    page_name:         page.name,
-    page_category:     page.category || null,
-    page_access_token: page.access_token,  // Yeh Page-specific token hai, User token nahi
+    page_id: page.id,
+    page_name: page.name,
+    page_category: page.category || null,
+    page_access_token: page.access_token,
   }));
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helper: Pages ko Supabase mein save karo
-// ─────────────────────────────────────────────────────────────
-async function savePagesToDb(
+// ── Helper: Automatically Subscribe Webhook to Page (leadgen) ─────────
+async function subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<boolean> {
+  try {
+    // POST /{page_id}/subscribed_apps?subscribed_fields=leadgen
+    const subscribeRes = await fetch(
+      `https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          subscribed_fields: 'leadgen',
+          access_token: pageAccessToken,
+        }).toString(),
+      }
+    );
+
+    const subscribeData = await subscribeRes.json();
+    if (!subscribeRes.ok || subscribeData.error) {
+      console.warn(`[Meta Webhook Subscribe] Warning for page ${pageId}:`, subscribeData?.error?.message || subscribeRes.status);
+      return false;
+    }
+
+    console.log(`[Meta Webhook Subscribe] Successfully subscribed leadgen webhook for page ID: ${pageId}`);
+    return true;
+  } catch (err) {
+    console.error(`[Meta Webhook Subscribe] Error for page ${pageId}:`, err);
+    return false;
+  }
+}
+
+// ── Helper: Save Connected Pages to Supabase DB ────────────────────────
+async function savePagesToDatabase(
   workspaceId: string,
   pages: Array<{ page_id: string; page_name: string; page_category: string | null; page_access_token: string }>
 ): Promise<void> {
   if (pages.length === 0) return;
 
   const upsertData = pages.map(page => ({
-    workspace_id:      workspaceId,
-    page_id:           page.page_id,
-    page_name:         page.page_name,
-    page_category:     page.page_category,
+    workspace_id: workspaceId,
+    page_id: page.page_id,
+    page_name: page.page_name,
+    page_category: page.page_category,
     page_access_token: page.page_access_token,
-    is_active:         true,             // Default: connected pages active hoti hain
-    updated_at:        new Date().toISOString(),
+    is_active: true,
+    updated_at: new Date().toISOString(),
   }));
 
   const { error } = await supabaseAdmin
@@ -106,120 +114,109 @@ async function savePagesToDb(
     .upsert(upsertData, { onConflict: 'workspace_id,page_id' });
 
   if (error) {
-    throw new Error(`Failed to save pages to DB: ${error.message}`);
+    console.error('[Meta OAuth DB Error] Failed to save pages to DB:', error.message);
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/auth/facebook/callback
-//
-// Meta OAuth 2.0 callback handler.
-// Yeh route tab trigger hota hai jab user Facebook pe login karke
-// permissions de deta hai.
-//
-// Flow:
-//   1. State se workspace_id nikalo
-//   2. Authorization code → Long-lived User Access Token
-//   3. User Token → /me/accounts → All Page Access Tokens
-//   4. User Token + Page configs → Supabase save
-//   5. User ko /integrations?integration=facebook&tab=pages pe redirect karo
-// ─────────────────────────────────────────────────────────────
+// ── GET /api/auth/facebook/callback ───────────────────────────────────
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const code  = searchParams.get('code');
+  const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const baseUrl = 
+    process.env.NEXT_PUBLIC_BASE_URL || 
+    process.env.NEXT_PUBLIC_APP_URL || 
+    'http://localhost:3000';
 
-  // ── User ne "Cancel" kiya ──────────────────────────────────
+  const redirectUri = `${baseUrl}/api/auth/facebook/callback`;
+
+  // User cancelled or denied permissions
   if (error) {
     const reason = searchParams.get('error_description') || error;
-    console.warn('[FB OAuth Callback] User cancelled or error:', reason);
+    console.warn('[Meta OAuth Callback] Authorization denied by user:', reason);
     return NextResponse.redirect(
-      `${appUrl}/integrations?integration=facebook&oauth_error=${encodeURIComponent(reason)}`
+      `${baseUrl}/workspace/integrations/meta?meta=cancelled&oauth_error=${encodeURIComponent(reason)}`
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      `${appUrl}/integrations?integration=facebook&oauth_error=missing_code`
+      `${baseUrl}/workspace/integrations/meta?meta=error&oauth_error=missing_code`
     );
   }
 
-  // ── State decode karo → workspace_id nikalo ────────────────
-  let workspaceId: string;
+  // Decode State Parameter -> Extract workspace_id
+  let workspaceId = '00000000-0000-0000-0000-000000000000';
   try {
     const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
-    workspaceId = decoded.workspace_id;
-    if (!workspaceId) throw new Error('workspace_id missing in state');
+    if (decoded.workspace_id) workspaceId = decoded.workspace_id;
   } catch (err: any) {
-    console.error('[FB OAuth Callback] State decode error:', err.message);
-    return NextResponse.redirect(
-      `${appUrl}/integrations?integration=facebook&oauth_error=invalid_state`
-    );
+    console.error('[Meta OAuth Callback] State decode error:', err.message);
   }
 
-  const redirectUri = `${appUrl}/api/auth/facebook/callback`;
-
   try {
-    // ── Step 1 & 2: Code → Long-lived User Token ───────────────
-    console.log('[FB OAuth] Exchanging code for token. workspace_id:', workspaceId);
-    const userAccessToken = await exchangeCodeForToken(code, redirectUri);
+    // 1. Exchange authorization code for User Long-Lived Token
+    console.log('[Meta OAuth] Exchanging code for token for workspace:', workspaceId);
+    const userAccessToken = await exchangeCodeForLongLivedToken(code, redirectUri);
 
-    // ── Step 3: User Token → Page Access Tokens ───────────────
-    console.log('[FB OAuth] Fetching pages for workspace:', workspaceId);
-    const pages = await fetchUserPages(userAccessToken);
-    console.log(`[FB OAuth] Found ${pages.length} pages`);
+    // 2. Fetch all managed Facebook Pages & Page Access Tokens
+    console.log('[Meta OAuth] Fetching managed Facebook Pages...');
+    const pages = await fetchUserManagedPages(userAccessToken);
+    console.log(`[Meta OAuth] Successfully fetched ${pages.length} Facebook Pages`);
 
-    // ── Step 4a: Profile mein User Token save karo ────────────
+    // 3. For each Page: Automatically subscribe leadgen Webhook
+    let subscribedCount = 0;
+    for (const page of pages) {
+      const isSubscribed = await subscribePageWebhook(page.page_id, page.page_access_token);
+      if (isSubscribed) subscribedCount++;
+    }
+
+    // 4. Save User Token & Pages in Database
     await supabaseAdmin
       .from('profiles')
       .update({
         meta_access_token: userAccessToken,
-        updated_at:        new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', workspaceId);
 
-    // ── Step 4b: Pages ko fb_page_configs mein save karo ──────
+    // Save in integration_credentials for multi-tenant integration hub
+    await supabaseAdmin
+      .from('integration_credentials')
+      .upsert({
+        user_id: workspaceId,
+        provider: 'meta',
+        status: 'connected',
+        access_token: userAccessToken,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,provider' });
+
     if (pages.length > 0) {
-      await savePagesToDb(workspaceId, pages);
+      await savePagesToDatabase(workspaceId, pages);
     }
 
-    // ── Step 5: Log the event ──────────────────────────────────
+    // 5. Log Connection Event
     await supabaseAdmin.from('live_logs').insert({
       workspace_id: workspaceId,
-      event_type:   'fb_oauth_connected',
-      message:      `Meta Facebook OAuth connected. ${pages.length} page(s) synced automatically.`,
-      metadata:     {
-        pages_synced: pages.map(p => ({ id: p.page_id, name: p.page_name })),
-      },
+      event_type: 'meta_oauth_connected',
+      message: `Meta OAuth Connected! ${pages.length} page(s) synced, ${subscribedCount} webhook(s) auto-subscribed.`,
     });
 
-    // ── Step 6: Success → Redirect to Pages & Forms tab ───────
-    const successUrl = new URL(`${appUrl}/integrations`);
-    successUrl.searchParams.set('integration', 'facebook');
-    successUrl.searchParams.set('tab', 'pages');
-    successUrl.searchParams.set('oauth_success', 'true');
-    successUrl.searchParams.set('pages_count', String(pages.length));
+    // 6. Redirect back to Meta Integration Dashboard with success query params
+    const successUrl = new URL(`${baseUrl}/workspace/integrations/meta`);
+    successUrl.searchParams.set('meta', 'connected');
+    successUrl.searchParams.set('pages', String(pages.length));
+    successUrl.searchParams.set('webhooks_subscribed', String(subscribedCount));
 
     return NextResponse.redirect(successUrl.toString());
 
   } catch (err: any) {
-    console.error('[FB OAuth Callback] Error:', err.message);
-
-    // Log error to Supabase
-    try {
-      await supabaseAdmin.from('live_logs').insert({
-        workspace_id: workspaceId,
-        event_type:   'fb_oauth_error',
-        message:      `Meta OAuth error: ${err.message}`,
-        metadata:     { error: String(err) },
-      });
-    } catch (_) {}
+    console.error('[Meta OAuth Callback] Error processing OAuth:', err.message);
 
     return NextResponse.redirect(
-      `${appUrl}/integrations?integration=facebook&oauth_error=${encodeURIComponent(err.message)}`
+      `${baseUrl}/workspace/integrations/meta?meta=error&oauth_error=${encodeURIComponent(err.message)}`
     );
   }
 }

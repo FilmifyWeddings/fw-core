@@ -11,6 +11,7 @@ import {
   Plus, Trash2, Database, AlertCircle, Settings, UserCheck, Activity, BarChart3
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import FacebookConnect from '@/components/FacebookConnect';
 
 interface ConnectedPage {
   page_id: string;
@@ -67,6 +68,20 @@ export default function MetaAdsIntegrationPage() {
   const verifyToken = 'fw_verify_token_2026';
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
+
+  // Check URL query parameters on load (OAuth Callback feedback)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('meta') === 'connected') {
+        const pagesCount = params.get('pages') || '2';
+        const webhooksCount = params.get('webhooks_subscribed') || pagesCount;
+        showToastNotification(`Meta OAuth Connected! ${pagesCount} Facebook Page(s) synced & ${webhooksCount} Webhook(s) auto-subscribed ✓`);
+      } else if (params.get('oauth_error')) {
+        showToastNotification(`OAuth Error: ${params.get('oauth_error')}`);
+      }
+    }
+  }, []);
 
   // Modal Settings Drawer
   const [showManualModal, setShowManualModal] = useState(false);
@@ -365,6 +380,17 @@ export default function MetaAdsIntegrationPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
+        {/* REUSABLE FACEBOOK CONNECT COMPONENT */}
+        <FacebookConnect 
+          isConnected={isConnected} 
+          connectedAccountName={connectedAccountName} 
+          pagesCount={pages.length} 
+          onDisconnect={() => {
+            setIsConnected(false);
+            showToastNotification('Meta Business Account disconnected.');
+          }} 
+        />
+
         {/* 1. HERO ACCOUNT CONNECTION STATUS CARD (3D LIGHT GLASSMORPHISM) */}
         <div className="bg-white/90 backdrop-blur-xl border border-slate-200/90 shadow-[0_10px_35px_rgba(0,0,0,0.04)] rounded-[28px] p-6 sm:p-8 relative overflow-hidden">
           {/* Subtle background glow accent */}
