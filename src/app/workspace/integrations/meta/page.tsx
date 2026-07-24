@@ -58,7 +58,7 @@ function MetaAdsContent() {
   // Clean Facebook OAuth URL targeting https://studiocore.in callback
   const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '1488107768502570';
   const redirectUri = 'https://studiocore.in/api/auth/facebook/callback';
-  const scope = 'email,public_profile,leads_retrieval,pages_show_list,pages_read_engagement,pages_manage_metadata';
+  const scope = 'email,public_profile,leads_retrieval,pages_show_list,pages_read_engagement,pages_manage_metadata,ads_management,ads_read';
   const fbOAuthUrl = "https://www.facebook.com/v19.0/dialog/oauth?client_id=" + appId + "&redirect_uri=" + encodeURIComponent(redirectUri) + "&scope=" + encodeURIComponent(scope) + "&response_type=code";
 
   // Dynamic Connection & Auth State

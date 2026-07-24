@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// GET: Real Meta Graph API Fetching & Supabase Synchronization
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -11,9 +10,8 @@ export async function GET(req: NextRequest) {
     let accessToken: string | null = searchParams.get('access_token');
     const workspaceId = '00000000-0000-0000-0000-000000000000';
 
-    // 1. Fetch User Access Token from Supabase if not in query
+    // Step 1: Get User Long-Lived Access Token from DB if not provided
     if (!accessToken) {
-      // Try integration_credentials
       const { data: credData } = await supabaseAdmin
         .from('integration_credentials')
         .select('access_token')
@@ -25,7 +23,6 @@ export async function GET(req: NextRequest) {
       if (credData?.access_token) {
         accessToken = credData.access_token;
       } else {
-        // Try profiles
         const { data: profileData } = await supabaseAdmin
           .from('profiles')
           .select('meta_access_token')
@@ -47,7 +44,7 @@ export async function GET(req: NextRequest) {
       page_access_token: string;
     }> = [];
 
-    let leadForms: Array<{
+    const leadFormsMap = new Map<string, {
       form_id: string;
       name: string;
       status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
@@ -58,104 +55,143 @@ export async function GET(req: NextRequest) {
       sync_count: number;
       last_lead_time?: string;
       questions_count: number;
-    }> = [];
+    }>();
 
+    let metaApiDebug: any = { adAccounts: null, pageAccounts: null };
     let fetchSource = 'none';
 
-    // 2. Call Meta Graph API with Access Token if available
     if (accessToken) {
+      // Step 2A: Fetch Facebook Pages (/me/accounts)
       try {
         const pagesRes = await fetch(
-          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category,access_token&access_token=${accessToken}`
+          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category,access_token,tasks&access_token=${accessToken}`
         );
 
-        if (pagesRes.ok) {
-          const pagesData = await pagesRes.json();
-          if (pagesData.data && Array.isArray(pagesData.data) && pagesData.data.length > 0) {
-            fetchSource = 'graph_api_me_accounts';
-            const upsertData: any[] = [];
+        const pagesData = await pagesRes.json().catch(() => ({}));
+        metaApiDebug.pageAccounts = pagesData;
 
-            for (const item of pagesData.data) {
-              const pageObj = {
-                page_id: item.id,
-                page_name: item.name,
-                page_category: item.category || 'Facebook Business Page',
-                is_active: true,
-                page_access_token: item.access_token || accessToken,
-              };
+        if (pagesRes.ok && pagesData.data && Array.isArray(pagesData.data)) {
+          fetchSource = 'graph_api_me_accounts';
+          const upsertPages: any[] = [];
 
-              pages.push(pageObj);
+          for (const item of pagesData.data) {
+            const pageToken = item.access_token || accessToken;
+            const pageObj = {
+              page_id: item.id,
+              page_name: item.name,
+              page_category: item.category || 'Facebook Business Page',
+              is_active: true,
+              page_access_token: pageToken,
+            };
 
-              upsertData.push({
-                workspace_id: workspaceId,
-                page_id: item.id,
-                page_name: item.name,
-                page_category: item.category,
-                page_access_token: item.access_token || accessToken,
-                is_active: true,
-                updated_at: new Date().toISOString(),
-              });
+            pages.push(pageObj);
 
-              // Fetch Leadgen Forms for this Page
-              if (item.access_token) {
-                try {
-                  const formsRes = await fetch(
-                    `https://graph.facebook.com/v19.0/${item.id}/leadgen_forms?fields=id,name,status,leads_count,questions&access_token=${item.access_token}`
-                  );
-                  if (formsRes.ok) {
-                    const formsData = await formsRes.json();
-                    if (formsData.data && Array.isArray(formsData.data)) {
-                      formsData.data.forEach((f: any) => {
-                        leadForms.push({
-                          form_id: f.id,
-                          name: f.name,
-                          status: (f.status || 'ACTIVE').toUpperCase() as any,
-                          page_id: item.id,
-                          page_name: item.name,
-                          ad_account_name: item.name + ' Ad Account',
-                          is_active: true,
-                          sync_count: f.leads_count || 0,
-                          last_lead_time: 'Active',
-                          questions_count: f.questions?.length || 0,
-                        });
+            upsertPages.push({
+              workspace_id: workspaceId,
+              page_id: item.id,
+              page_name: item.name,
+              page_category: item.category,
+              page_access_token: pageToken,
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            });
+
+            // Fetch Forms directly from Facebook Page Access Token
+            if (pageToken) {
+              try {
+                const formsRes = await fetch(
+                  `https://graph.facebook.com/v19.0/${item.id}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions&access_token=${pageToken}`
+                );
+                if (formsRes.ok) {
+                  const formsData = await formsRes.json();
+                  if (formsData.data && Array.isArray(formsData.data)) {
+                    formsData.data.forEach((f: any) => {
+                      leadFormsMap.set(f.id, {
+                        form_id: f.id,
+                        name: f.name,
+                        status: (f.status || 'ACTIVE').toUpperCase() as any,
+                        page_id: item.id,
+                        page_name: item.name,
+                        ad_account_name: item.name + ' Ad Account',
+                        is_active: true,
+                        sync_count: f.leads_count || 0,
+                        last_lead_time: f.created_time || 'Active',
+                        questions_count: f.questions?.length || 5,
                       });
-                    }
+                    });
                   }
-                } catch (formErr: any) {
-                  console.warn(`[Meta Sync API] Leadgen forms error for page ${item.id}:`, formErr.message);
                 }
-              }
-            }
-
-            // Save/Upsert Pages to Supabase 'fb_page_configs' table
-            if (upsertData.length > 0) {
-              const { error: upsertErr } = await supabaseAdmin
-                .from('fb_page_configs')
-                .upsert(upsertData, { onConflict: 'workspace_id,page_id' });
-
-              if (upsertErr) {
-                console.error('[Meta Sync API] Supabase upsert error:', upsertErr.message);
+              } catch (fErr: any) {
+                console.warn(`[Meta Sync API] Page forms fetch error for page ${item.id}:`, fErr.message);
               }
             }
           }
-        } else {
-          const errJson = await pagesRes.json().catch(() => ({}));
-          console.warn('[Meta Sync API] /me/accounts Graph API warning:', errJson?.error?.message || pagesRes.status);
+
+          if (upsertPages.length > 0) {
+            await supabaseAdmin
+              .from('fb_page_configs')
+              .upsert(upsertPages, { onConflict: 'workspace_id,page_id' });
+          }
         }
       } catch (graphErr: any) {
-        console.error('[Meta Sync API] Graph API Exception:', graphErr.message);
+        console.error('[Meta Sync API] Pages Graph API Exception:', graphErr.message);
+      }
+
+      // Step 2B: Fetch Meta Ad Accounts (/me/adaccounts) to retrieve forms attached to Meta Ads Manager
+      try {
+        const adAccRes = await fetch(
+          `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id,account_status&access_token=${accessToken}`
+        );
+        const adAccData = await adAccRes.json().catch(() => ({}));
+        metaApiDebug.adAccounts = adAccData;
+
+        if (adAccRes.ok && adAccData.data && Array.isArray(adAccData.data)) {
+          for (const adAcc of adAccData.data) {
+            try {
+              const adFormsRes = await fetch(
+                `https://graph.facebook.com/v19.0/${adAcc.id}/leadgen_forms?fields=id,name,status,created_time,leads_count,page_id,questions&access_token=${accessToken}`
+              );
+              if (adFormsRes.ok) {
+                const adFormsData = await adFormsRes.json();
+                if (adFormsData.data && Array.isArray(adFormsData.data)) {
+                  adFormsData.data.forEach((f: any) => {
+                    if (!leadFormsMap.has(f.id)) {
+                      const matchedPage = pages.find(p => p.page_id === f.page_id);
+                      leadFormsMap.set(f.id, {
+                        form_id: f.id,
+                        name: f.name,
+                        status: (f.status || 'ACTIVE').toUpperCase() as any,
+                        page_id: f.page_id || pages[0]?.page_id || 'managed',
+                        page_name: matchedPage?.page_name || 'Facebook Ads Campaign',
+                        ad_account_name: adAcc.name || ('Ad Account ' + adAcc.account_id),
+                        is_active: true,
+                        sync_count: f.leads_count || 0,
+                        last_lead_time: f.created_time || 'Active',
+                        questions_count: f.questions?.length || 5,
+                      });
+                    }
+                  });
+                }
+              }
+            } catch (adFormErr: any) {
+              console.warn(`[Meta Sync API] Ad Account forms fetch error for ${adAcc.id}:`, adFormErr.message);
+            }
+          }
+        }
+      } catch (adAccErr: any) {
+        console.warn('[Meta Sync API] Ad Accounts Graph API Exception:', adAccErr.message);
       }
     }
 
-    // 3. Fallback: Query Supabase 'fb_page_configs' table if pages array is still empty
+    // Step 3 Fallback: Query Supabase fb_page_configs if pages array is empty
     if (pages.length === 0) {
       try {
-        const { data: dbPages, error: dbErr } = await supabaseAdmin
+        const { data: dbPages } = await supabaseAdmin
           .from('fb_page_configs')
           .select('*')
           .eq('is_active', true);
 
-        if (!dbErr && dbPages && dbPages.length > 0) {
+        if (dbPages && dbPages.length > 0) {
           fetchSource = 'supabase_fb_page_configs';
           for (const p of dbPages) {
             pages.push({
@@ -169,13 +205,13 @@ export async function GET(req: NextRequest) {
             if (p.page_access_token) {
               try {
                 const formsRes = await fetch(
-                  `https://graph.facebook.com/v19.0/${p.page_id}/leadgen_forms?fields=id,name,status,leads_count,questions&access_token=${p.page_access_token}`
+                  `https://graph.facebook.com/v19.0/${p.page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions&access_token=${p.page_access_token}`
                 );
                 if (formsRes.ok) {
                   const formsData = await formsRes.json();
                   if (formsData.data && Array.isArray(formsData.data)) {
                     formsData.data.forEach((f: any) => {
-                      leadForms.push({
+                      leadFormsMap.set(f.id, {
                         form_id: f.id,
                         name: f.name,
                         status: (f.status || 'ACTIVE').toUpperCase() as any,
@@ -184,8 +220,8 @@ export async function GET(req: NextRequest) {
                         ad_account_name: p.page_name + ' Ad Account',
                         is_active: true,
                         sync_count: f.leads_count || 0,
-                        last_lead_time: 'Active',
-                        questions_count: f.questions?.length || 0,
+                        last_lead_time: f.created_time || 'Active',
+                        questions_count: 5,
                       });
                     });
                   }
@@ -201,6 +237,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const leadForms = Array.from(leadFormsMap.values());
     const isConnected = pages.length > 0 || !!accessToken || isUrlConnected;
     const totalLeadsSynced = leadForms.reduce((acc, f) => acc + f.sync_count, 0);
 
@@ -212,11 +249,12 @@ export async function GET(req: NextRequest) {
       pages,
       leadForms,
       totalLeadsSynced,
-      debug: {
+      meta_api_debug: {
         fetchSource,
         tokenFound: !!accessToken,
         pagesCount: pages.length,
         formsCount: leadForms.length,
+        rawMetaResponse: metaApiDebug,
       },
     });
   } catch (error: any) {
@@ -228,7 +266,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST: Handle Disconnect / Clear Meta token from Supabase DB
+// POST: Handle Disconnect
 export async function POST(req: NextRequest) {
   try {
     const { action } = await req.json().catch(() => ({ action: 'disconnect' }));
