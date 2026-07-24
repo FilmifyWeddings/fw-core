@@ -101,16 +101,13 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
   }
 
   return rawRoles.map((r: string, idx: number) => {
-    const matchedMember = teamMembers.find(
-      m => m.primary_role?.toLowerCase() === r.toLowerCase() || m.name?.toLowerCase() === r.toLowerCase()
-    );
     return {
       id: `${subEvent.id}-role-${idx}`,
       sub_event_id: subEvent.id,
       project_id: subEvent.project_id,
       required_role: r,
-      assigned_member_id: matchedMember ? matchedMember.id : null,
-      fw_team_members: matchedMember || null,
+      assigned_member_id: null,
+      fw_team_members: null,
     };
   });
 };
