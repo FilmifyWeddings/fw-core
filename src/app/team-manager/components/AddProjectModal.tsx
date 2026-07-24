@@ -22,7 +22,7 @@ const DEFAULT_BLOCK: EventBlockData = {
   mapLink: '',
   startTime: '10:00',
   endTime: '18:00',
-  roles: [],
+  roles: ['TP', 'Ass'],
   notes: '',
 };
 
@@ -43,7 +43,7 @@ export default function AddProjectModal({
 }: AddProjectModalProps) {
   const [couplingName, setCouplingName] = useState('');
   const [eventBlocks, setEventBlocks] = useState<EventBlockData[]>([
-    { ...DEFAULT_BLOCK, id: generateUniqueId() },
+    { ...DEFAULT_BLOCK, id: generateUniqueId(), roles: ['TP', 'Ass'] },
   ]);
   const [customPrograms, setCustomPrograms] = useState<string[]>([]);
   const [customRoles, setCustomRoles] = useState<string[]>([]);
@@ -57,7 +57,7 @@ export default function AddProjectModal({
 
   const resetFormState = () => {
     setCouplingName('');
-    setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] }]);
+    setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: ['TP', 'Ass'] }]);
     setCustomPrograms([]);
     setCustomRoles([]);
     setValidatedAttempt(false);
@@ -80,12 +80,12 @@ export default function AddProjectModal({
           endTime: se.dismissal_estimate_time || '18:00',
           roles: se.fw_assignments && se.fw_assignments.length > 0
             ? se.fw_assignments.map(a => a.required_role)
-            : ((se as any).roles || (se as any).event_roles || []),
+            : ((se as any).roles || (se as any).event_roles || ['TP', 'Ass']),
           notes: se.operational_notes || '',
         }));
         setEventBlocks(blocks);
       } else {
-        setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] }]);
+        setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: ['TP', 'Ass'] }]);
       }
     } else if (isOpen) {
       resetFormState();
@@ -151,7 +151,7 @@ export default function AddProjectModal({
         ...DEFAULT_BLOCK,
         id: generateUniqueId(),
         subEventNames: [],
-        roles: [],
+        roles: ['TP', 'Ass'],
       },
     ]);
   };

@@ -97,7 +97,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
   }
 
   if (!rawRoles || rawRoles.length === 0) {
-    return [];
+    rawRoles = ['TP', 'Ass'];
   }
 
   return rawRoles.map((r: string, idx: number) => {
@@ -359,10 +359,10 @@ export default function TeamManagerPage() {
       if (targetProjectId && blocks.length > 0) {
         for (const block of blocks) {
           const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
-          const rolesToSave = block.roles || [];
+          const rolesToSave = (block.roles && block.roles.length > 0) ? block.roles : ['TP', 'Ass'];
           
-          // STEP 2: Insert sub-event into fw_sub_events (strictly matching columns)
-          const subEventPayload = {
+          // STEP 2: Insert sub-event into fw_sub_events (matching roles JSONB column)
+          const subEventPayload: any = {
             project_id: targetProjectId,
             event_title: title,
             event_date: block.subEventDate || new Date().toISOString().split('T')[0],
@@ -371,6 +371,7 @@ export default function TeamManagerPage() {
             roll_call_time: block.startTime || '10:00',
             dismissal_estimate_time: block.endTime || '18:00',
             operational_notes: block.notes || null,
+            roles: rolesToSave,
           };
 
           const { data: insertedSubEvent, error: seErr } = await supabase
