@@ -56,7 +56,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
   }
 
   if (rawRoles.length === 0) {
-    rawRoles = ['TP', 'Ass'];
+    return [];
   }
 
   return rawRoles.map((r: string, idx: number) => {

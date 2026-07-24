@@ -97,7 +97,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
   }
 
   if (!rawRoles || rawRoles.length === 0) {
-    rawRoles = ['TP', 'Ass'];
+    return [];
   }
 
   return rawRoles.map((r: string, idx: number) => {
@@ -359,7 +359,7 @@ export default function TeamManagerPage() {
       if (targetProjectId && blocks.length > 0) {
         for (const block of blocks) {
           const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
-          const rolesToSave = (block.roles && block.roles.length > 0) ? block.roles : ['TP', 'Ass'];
+          const rolesToSave = block.roles || [];
           
           // STEP 2: Insert sub-event into fw_sub_events (strictly matching columns)
           const subEventPayload = {
