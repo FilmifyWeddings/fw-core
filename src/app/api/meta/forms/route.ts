@@ -7,126 +7,163 @@ export async function GET(req: NextRequest) {
     const pageId = searchParams.get('page_id') || '110156851793416';
     const workspaceId = '00000000-0000-0000-0000-000000000000';
 
-    let initialToken: string | null = searchParams.get('access_token');
+    let userAccessToken: string | null = searchParams.get('access_token');
+    let pageAccessToken: string | null = null;
 
     // Step 1: Retrieve stored token from fb_page_configs or integration_credentials
-    if (!initialToken) {
+    try {
+      const { data: pageCfg } = await supabaseAdmin
+        .from('fb_page_configs')
+        .select('page_access_token')
+        .eq('page_id', pageId)
+        .limit(1)
+        .single();
+
+      if (pageCfg?.page_access_token) {
+        pageAccessToken = pageCfg.page_access_token;
+      }
+    } catch (err: any) {}
+
+    try {
+      const { data: cred } = await supabaseAdmin
+        .from('integration_credentials')
+        .select('access_token')
+        .eq('provider', 'meta')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (cred?.access_token) {
+        userAccessToken = cred.access_token;
+      }
+    } catch (err: any) {}
+
+    const tokenToUse = userAccessToken || pageAccessToken;
+    const formsMap = new Map<string, any>();
+
+    if (tokenToUse) {
+      // Step 2A: Query /me/accounts to get FRESH Page Access Token for pageId
       try {
-        const { data: pageCfg } = await supabaseAdmin
-          .from('fb_page_configs')
-          .select('page_access_token')
-          .eq('page_id', pageId)
-          .limit(1)
-          .single();
-
-        if (pageCfg?.page_access_token) {
-          initialToken = pageCfg.page_access_token;
-        }
-      } catch (err: any) {}
-    }
-
-    if (!initialToken) {
-      try {
-        const { data: cred } = await supabaseAdmin
-          .from('integration_credentials')
-          .select('access_token')
-          .eq('provider', 'meta')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (cred?.access_token) initialToken = cred.access_token;
-      } catch (err: any) {}
-    }
-
-    let freshPageToken: string | null = null;
-    let pageInfo: any = null;
-
-    // Step 2: FORCE PAGE TOKEN EXCHANGE
-    // GET /110156851793416?fields=id,name,access_token,category
-    if (initialToken) {
-      try {
-        const pageRes = await fetch(
-          `https://graph.facebook.com/v19.0/${pageId}?fields=id,name,access_token,category&access_token=${initialToken}`
+        console.log('[Meta Forms API] Querying /me/accounts for fresh Page Access Token...');
+        const meAccountsRes = await fetch(
+          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token&limit=100&access_token=${tokenToUse}`
         );
-        if (pageRes.ok) {
-          pageInfo = await pageRes.json();
-          if (pageInfo.access_token) {
-            freshPageToken = pageInfo.access_token;
-            console.log(`[Meta Forms API] Successfully exchanged token for FRESH Page Access Token for ${pageId}!`);
-
-            try {
-              await supabaseAdmin.from('fb_page_configs').upsert({
-                workspace_id: workspaceId,
-                page_id: pageId,
-                page_name: pageInfo.name || 'Filmify Weddings',
-                page_category: pageInfo.category || 'Wedding Service',
-                page_access_token: freshPageToken,
-                is_active: true,
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'workspace_id,page_id' });
-            } catch (dbErr: any) {}
+        if (meAccountsRes.ok) {
+          const meAccountsData = await meAccountsRes.json();
+          if (meAccountsData.data && Array.isArray(meAccountsData.data)) {
+            const matchedAcc = meAccountsData.data.find((a: any) => a.id === pageId);
+            if (matchedAcc?.access_token) {
+              pageAccessToken = matchedAcc.access_token;
+              console.log(`[Meta Forms API] Found page ${pageId} in /me/accounts! Page Access Token obtained.`);
+            }
           }
         }
       } catch (err: any) {
-        console.warn('[Meta Forms API] Page token exchange warning:', err.message);
+        console.warn('[Meta Forms API] /me/accounts lookup warning:', err.message);
       }
-    }
 
-    const tokenToUse = freshPageToken || initialToken;
-    let rawMetaFormsRes: any = null;
-    const fetchedForms: any[] = [];
+      // Step 2B: Direct Page Token Exchange fallback if pageAccessToken still null
+      if (!pageAccessToken) {
+        try {
+          const pageRes = await fetch(
+            `https://graph.facebook.com/v19.0/${pageId}?fields=id,name,access_token&access_token=${tokenToUse}`
+          );
+          if (pageRes.ok) {
+            const pageData = await pageRes.json();
+            if (pageData.access_token) pageAccessToken = pageData.access_token;
+          }
+        } catch (err: any) {}
+      }
 
-    // Step 3: FETCH FORMS WITH FRESH PAGE ACCESS TOKEN (limit=100)
-    if (tokenToUse) {
+      const activeToken = pageAccessToken || tokenToUse;
+
+      // Step 3: Query Page Leadgen Forms with activeToken (limit=100)
       try {
-        console.log(`[Meta Forms API] Fetching leadgen_forms for page ${pageId} with limit=100...`);
-        const formsRes = await fetch(
-          `https://graph.facebook.com/v19.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=100&access_token=${tokenToUse}`
+        console.log(`[Meta Forms API] Querying /${pageId}/leadgen_forms with limit=100...`);
+        const pageFormsRes = await fetch(
+          `https://graph.facebook.com/v19.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=100&access_token=${activeToken}`
         );
-        rawMetaFormsRes = await formsRes.json().catch(() => ({}));
-
-        if (formsRes.ok && rawMetaFormsRes.data && Array.isArray(rawMetaFormsRes.data)) {
-          console.log(`[Meta Forms API] EXACT FORMS RETURNED FROM META GRAPH API: ${rawMetaFormsRes.data.length}`);
-          rawMetaFormsRes.data.forEach((f: any) => {
-            fetchedForms.push({
-              workspace_id: workspaceId,
-              page_id: pageId,
-              form_id: f.id,
-              form_name: f.name || 'Meta Lead Form',
-              status: (f.status || 'ACTIVE').toUpperCase(),
-              leads_count: f.leads_count || 0,
-              created_time: f.created_time || new Date().toISOString(),
-              updated_at: new Date().toISOString(),
+        if (pageFormsRes.ok) {
+          const pageFormsData = await pageFormsRes.json();
+          if (pageFormsData.data && Array.isArray(pageFormsData.data)) {
+            console.log(`[Meta Forms API] Page leadgen_forms returned ${pageFormsData.data.length} items!`);
+            pageFormsData.data.forEach((f: any) => {
+              formsMap.set(f.id, {
+                workspace_id: workspaceId,
+                page_id: pageId,
+                form_id: f.id,
+                form_name: f.name || 'Meta Lead Form',
+                status: (f.status || 'ACTIVE').toUpperCase(),
+                leads_count: f.leads_count || 0,
+                created_time: f.created_time || new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
             });
-          });
-        } else {
-          console.warn('[Meta Forms API] Graph API leadgen_forms error or empty:', rawMetaFormsRes);
+          }
         }
-      } catch (graphErr: any) {
-        console.error('[Meta Forms API] Graph API Exception:', graphErr.message);
+      } catch (err: any) {
+        console.warn('[Meta Forms API] Page forms query exception:', err.message);
       }
+
+      // Step 4: Query Ad Accounts Leadgen Forms (/me/adaccounts)
+      try {
+        console.log('[Meta Forms API] Querying /me/adaccounts for Ads Manager forms...');
+        const adAccRes = await fetch(
+          `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id&access_token=${tokenToUse}`
+        );
+        if (adAccRes.ok) {
+          const adAccData = await adAccRes.json();
+          if (adAccData.data && Array.isArray(adAccData.data)) {
+            for (const adAcc of adAccData.data) {
+              try {
+                const adFormsRes = await fetch(
+                  `https://graph.facebook.com/v19.0/${adAcc.id}/leadgen_forms?fields=id,name,status,created_time,leads_count,page_id&limit=100&access_token=${tokenToUse}`
+                );
+                if (adFormsRes.ok) {
+                  const adFormsData = await adFormsRes.json();
+                  if (adFormsData.data && Array.isArray(adFormsData.data)) {
+                    adFormsData.data.forEach((f: any) => {
+                      if (!formsMap.has(f.id)) {
+                        formsMap.set(f.id, {
+                          workspace_id: workspaceId,
+                          page_id: f.page_id || pageId,
+                          form_id: f.id,
+                          form_name: f.name || 'Meta Lead Form',
+                          status: (f.status || 'ACTIVE').toUpperCase(),
+                          leads_count: f.leads_count || 0,
+                          created_time: f.created_time || new Date().toISOString(),
+                          updated_at: new Date().toISOString(),
+                        });
+                      }
+                    });
+                  }
+                }
+              } catch (err: any) {}
+            }
+          }
+        }
+      } catch (err: any) {}
     }
 
-    // Step 4: UPSERT ALL RETURNED FORMS INTO Supabase fb_lead_forms
+    const fetchedForms = Array.from(formsMap.values());
+
+    // Step 5: Upsert into Supabase fb_lead_forms
     if (fetchedForms.length > 0) {
       try {
-        console.log(`[Meta Forms API] Upserting ${fetchedForms.length} real forms into Supabase fb_lead_forms...`);
         await supabaseAdmin
           .from('fb_lead_forms')
           .upsert(fetchedForms, { onConflict: 'form_id' });
-      } catch (dbUpsertErr: any) {
-        console.warn('[Meta Forms API] fb_lead_forms upsert warning:', dbUpsertErr.message);
+      } catch (dbErr: any) {
+        console.warn('[Meta Forms API] fb_lead_forms upsert warning:', dbErr.message);
       }
     }
 
-    // Step 5: Read directly from fb_lead_forms table in Supabase
+    // Step 6: Read all forms from Supabase fb_lead_forms
     let finalForms: any[] = [];
     try {
       const { data: dbForms } = await supabaseAdmin
         .from('fb_lead_forms')
         .select('*')
-        .eq('page_id', pageId)
         .order('created_at', { ascending: false });
 
       if (dbForms && dbForms.length > 0) {
@@ -134,7 +171,7 @@ export async function GET(req: NextRequest) {
           form_id: f.form_id,
           name: f.form_name,
           status: (f.status || 'ACTIVE').toUpperCase(),
-          page_id: f.page_id,
+          page_id: f.page_id || pageId,
           page_name: 'Filmify Weddings',
           ad_account_name: 'Filmify Weddings Ad Account',
           is_active: true,
@@ -150,7 +187,7 @@ export async function GET(req: NextRequest) {
         form_id: f.form_id,
         name: f.form_name,
         status: f.status,
-        page_id: f.page_id,
+        page_id: f.page_id || pageId,
         page_name: 'Filmify Weddings',
         ad_account_name: 'Filmify Weddings Ad Account',
         is_active: true,
@@ -165,12 +202,6 @@ export async function GET(req: NextRequest) {
       page_id: pageId,
       forms: finalForms,
       total_forms: finalForms.length,
-      meta_graph_api_debug: {
-        tokenUsed: tokenToUse ? 'YES' : 'NO',
-        freshPageTokenObtained: !!freshPageToken,
-        metaFormsCountReturned: rawMetaFormsRes?.data?.length || 0,
-        rawMetaFormsRes,
-      },
     });
   } catch (error: any) {
     console.error('[Meta Forms API Error]:', error);
