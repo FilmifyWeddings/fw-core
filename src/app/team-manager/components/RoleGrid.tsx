@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, UserPlus } from 'lucide-react';
 
 const DEFAULT_ROLES = [
   'TM', 'Ass', 'TP', 'TV', 'CP', 'CV', 'Dron', 'Makeup Art',
@@ -30,17 +30,19 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
 
   return (
     <div className="space-y-2 pt-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider">
           Role Placements For This Subevent
         </span>
+
+        {/* ADD SLOTS ICON BUTTON */}
         <button
           type="button"
           onClick={() => setShowCustomInput(!showCustomInput)}
-          className="text-xs font-extrabold text-[#6C5CE7] hover:text-[#5b4cd1] transition flex items-center gap-1 cursor-pointer"
+          className="text-xs font-extrabold text-[#6C5CE7] hover:text-[#5b4cd1] transition flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg cursor-pointer shadow-2xs hover:bg-indigo-100/80 active:scale-95"
         >
-          <Plus className="w-3.5 h-3.5" />
-          Add Custom Role Requirement
+          <UserPlus className="w-3.5 h-3.5" />
+          <span>+ Add Slots</span>
         </button>
       </div>
 
@@ -59,60 +61,42 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
                 value={customRole}
                 onChange={(e) => setCustomRole(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddRole()}
-                placeholder="e.g. Drone 2, Junior Cine..."
-                className="flex-1 bg-white border-2 border-slate-200 px-3 py-1.5 rounded-xl text-xs font-extrabold focus:outline-none focus:border-[#6C5CE7] transition text-slate-900 shadow-2xs"
+                placeholder="Enter custom role (e.g. Drone Operator 2)..."
+                className="flex-1 bg-[#F8F9FD] border border-[#6C5CE7]/10 px-3 py-1.5 rounded-lg text-xs font-semibold focus:outline-none focus:border-[#6C5CE7] text-[#0B111E]"
                 autoFocus
               />
               <button
                 type="button"
                 onClick={handleAddRole}
-                className="bg-[#6C5CE7] text-white text-xs font-black px-4 py-1.5 rounded-xl hover:bg-[#5b4cd1] transition shadow-xs cursor-pointer"
+                className="bg-[#6C5CE7] text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-[#5b4cd1] transition"
               >
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowCustomInput(false); setCustomRole(''); }}
-                className="text-slate-400 hover:text-slate-600 transition p-1.5 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
+                Add Role Slot
               </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Role chip grid */}
-      <div className="flex flex-wrap gap-2">
+      {/* Role buttons grid */}
+      <div className="flex flex-wrap gap-1.5">
         {DEFAULT_ROLES.map((role) => {
-          const isActive = selectedRoles.includes(role);
+          const isSelected = selectedRoles.includes(role);
           return (
             <button
               key={role}
               type="button"
               onClick={() => onToggle(role)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold border-2 transition-all cursor-pointer select-none ${
-                isActive
-                  ? 'bg-[#6C5CE7] border-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30 scale-105'
-                  : 'bg-white border-slate-200 text-slate-800 hover:border-indigo-400 hover:text-indigo-600 shadow-2xs'
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
+                isSelected
+                  ? 'bg-[#6C5CE7] text-white shadow-sm shadow-[#6C5CE7]/20 border border-[#6C5CE7]'
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}
             >
-              {role}
+              <span>{role}</span>
+              {isSelected && <X className="w-3 h-3 text-white/80" />}
             </button>
           );
         })}
-        {selectedRoles
-          .filter(r => !DEFAULT_ROLES.includes(r))
-          .map((role) => (
-            <button
-              key={role}
-              type="button"
-              onClick={() => onToggle(role)}
-              className="px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all bg-[#6C5CE7] border-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/10"
-            >
-              {role}
-            </button>
-          ))}
       </div>
     </div>
   );

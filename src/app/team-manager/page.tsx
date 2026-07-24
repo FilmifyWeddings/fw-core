@@ -118,6 +118,39 @@ export default function TeamManagerPage() {
   const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
 
   // ─────────────────────────────────────────────────────────────
+  // DYNAMIC SCROLL TRACKING FOR ASSIGNMENT POPOVER
+  // ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!activeDropdownId) return;
+
+    const updatePosition = () => {
+      const el = document.querySelector(`[data-assignment-id="${activeDropdownId}"]`);
+      if (!el) {
+        setActiveDropdownId(null);
+        setDropdownPos(null);
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        setActiveDropdownId(null);
+        setDropdownPos(null);
+      } else {
+        setDropdownPos({
+          top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+          left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
+        });
+      }
+    };
+
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [activeDropdownId]);
+
+  // ─────────────────────────────────────────────────────────────
   // DATA FETCHING & HYDRATION FROM SUPABASE
   // ─────────────────────────────────────────────────────────────
   const fetchAllData = async () => {
@@ -239,7 +272,7 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Handle Project Creation & Update with Multi-Sub-Event Blocks (FIXED main_date NOT NULL)
+  // Handle Project Creation & Update with Multi-Sub-Event Blocks (FIXED main_date & main_venue NOT NULL CONSTRAINTS)
   const handleSaveProject = async (
     couplingName: string,
     blocks: EventBlockData[],
@@ -248,6 +281,7 @@ export default function TeamManagerPage() {
     try {
       let targetProjectId = projectId;
       const firstSubEventDate = blocks[0]?.subEventDate || new Date().toISOString().split('T')[0];
+      const firstSubEventVenue = blocks[0]?.venueLocation || 'TBD Venue';
 
       if (projectId) {
         const { error: projErr } = await supabase
@@ -255,6 +289,7 @@ export default function TeamManagerPage() {
           .update({ 
             client_name: couplingName, 
             main_date: firstSubEventDate,
+            main_venue: firstSubEventVenue,
             updated_at: new Date().toISOString() 
           })
           .eq('id', projectId);
@@ -275,7 +310,8 @@ export default function TeamManagerPage() {
           .from('fw_projects')
           .insert([{ 
             client_name: couplingName,
-            main_date: firstSubEventDate 
+            main_date: firstSubEventDate,
+            main_venue: firstSubEventVenue
           }])
           .select()
           .single();
@@ -423,8 +459,8 @@ export default function TeamManagerPage() {
               </p>
             </div>
 
-            {/* Action controls row */}
-            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap w-full lg:w-auto justify-start sm:justify-end">
+            {/* Action controls row - RE-ARCHITECTED FOR CLEAN MOBILE FLEX ALLOCATION */}
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full lg:w-auto justify-between sm:justify-end">
               <div className="relative w-full sm:w-64">
                 <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input 
@@ -436,34 +472,36 @@ export default function TeamManagerPage() {
                 />
               </div>
 
-              <button
-                onClick={() => {
-                  setActiveAssignmentForMember(null);
-                  setIsAddMemberOpen(true);
-                }}
-                className="bg-white border border-[#6C5CE7]/20 hover:border-[#6C5CE7] text-[#6C5CE7] text-xs font-bold px-4 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-2xs shrink-0 cursor-pointer"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span className="hidden sm:inline">+ Add Team Member</span>
-                <span className="sm:hidden">+ Member</span>
-              </button>
+              {/* MOBILE TOP ACTION BUTTONS BAR (PROPER ALLOCATION) */}
+              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-between">
+                <button
+                  onClick={() => {
+                    setActiveAssignmentForMember(null);
+                    setIsAddMemberOpen(true);
+                  }}
+                  className="flex-1 sm:flex-none bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold py-2.5 px-3 rounded-2xl flex items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>+ Member</span>
+                </button>
 
-              <button 
-                onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-                className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30 shrink-0 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Add Project
-              </button>
+                <button 
+                  onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                  className="flex-1 sm:flex-none bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black py-2.5 px-4 rounded-2xl transition flex items-center justify-center gap-1.5 shadow-lg shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Project</span>
+                </button>
 
-              <button 
-                type="button" 
-                onClick={() => setIsSettingsModalOpen(true)}
-                className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
-                title="Team & Operations Settings"
-              >
-                <Settings className="w-5 h-5"/>
-              </button>
+                <button 
+                  type="button" 
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
+                  title="Team & Operations Settings"
+                >
+                  <Settings className="w-4 h-4"/>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -699,6 +737,7 @@ export default function TeamManagerPage() {
                                       return (
                                         <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
                                           <div
+                                            data-assignment-id={assignment.id}
                                             onClick={(e) => {
                                               const rect = e.currentTarget.getBoundingClientRect();
                                               if (activeDropdownId === dropdownKey) {
@@ -765,7 +804,7 @@ export default function TeamManagerPage() {
                   })}
                 </div>
 
-                {/* 2. MOBILE / TABLET CARDS VIEW (COMPACT STACKED CLIENT CARDS LAYOUT) */}
+                {/* 2. MOBILE / TABLET CARDS VIEW (COMPACT STACKED CLIENT CARDS LAYOUT WITH COMMENTS VISIBLE) */}
                 <div className="block lg:hidden grid grid-cols-1 md:grid-cols-2 gap-5">
                   {filteredProjects.map((project) => {
                     const subEvents = project.fw_sub_events || [];
@@ -852,6 +891,14 @@ export default function TeamManagerPage() {
                                     )}
                                   </div>
 
+                                  {/* MOBILE SUB-EVENT OPERATIONAL NOTES / COMMENTS BANNER */}
+                                  {subEvent.operational_notes && (
+                                    <div className="bg-amber-50/90 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-[11px] text-amber-950 font-medium flex items-center gap-2 my-1">
+                                      <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                      <span className="break-words">{subEvent.operational_notes}</span>
+                                    </div>
+                                  )}
+
                                   <div>
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
                                       Crew Placements
@@ -870,6 +917,7 @@ export default function TeamManagerPage() {
                                           return (
                                             <div
                                               key={assignment.id}
+                                              data-assignment-id={assignment.id}
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 const rect = e.currentTarget.getBoundingClientRect();
