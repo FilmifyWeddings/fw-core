@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, User, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Plus, User, Sparkles, AlertCircle, Loader2, Save } from 'lucide-react';
 import EventBlock, { EventBlockData } from './EventBlock';
 import { FWProject } from '@/types';
 
@@ -35,7 +35,6 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Pre-populate state when projectToEdit changes
   useEffect(() => {
     if (projectToEdit && isOpen) {
       setCouplingName(projectToEdit.client_name || '');
@@ -71,7 +70,6 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
     try {
       const result = await onSave(couplingName, eventBlocks, projectToEdit?.id);
       if (result !== false) {
-        // Successful save -> reset and close
         setCouplingName('');
         setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
         onClose();
@@ -135,64 +133,56 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50">
-          {/* ─── GLASS-MORPHISM OVERLAY ─── */}
+          {/* GLASSMORPHISM BACKDROP OVERLAY */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="absolute inset-0"
-            style={{
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              backgroundColor: 'rgba(0,0,0,0.4)',
-            }}
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
           />
 
-          {/* ─── 3D MODAL CHASSIS ─── */}
+          {/* 3D MODAL CHASSIS */}
           <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4 pointer-events-none">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="modal-chassis bg-white w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto
-                rounded-[24px] border border-[#6C5CE7]/8 text-[#0B111E]"
-              style={{
-                boxShadow: '0 30px 70px rgba(0,0,0,0.25), 0 12px 30px rgba(108, 92, 231, 0.05)',
-              }}
+              className="modal-chassis bg-white w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto rounded-3xl border-2 border-slate-200 shadow-2xl"
             >
-              {/* ─── MODAL HEADER ─── */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 shrink-0">
+              {/* MODAL HEADER WITH DISTINCT DARK ROYAL GRADIENT */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#6C5CE7] flex items-center justify-center text-white shadow-lg shadow-[#6C5CE7]/20">
-                    <Sparkles className="w-4.5 h-4.5" />
+                  <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shadow-md">
+                    <Sparkles className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-extrabold text-[#0B111E] tracking-tight">
+                    <h3 className="text-base font-black text-white tracking-tight">
                       {projectToEdit ? 'Edit Wedding Project' : 'Create Wedding Project'}
                     </h3>
-                    <p className="text-[10px] text-[#4F5E74] font-semibold mt-0.5">
+                    <p className="text-xs text-slate-300 font-bold mt-0.5">
                       {projectToEdit ? `Updating configuration for ${projectToEdit.client_name}` : 'Configure client profile and program event blocks.'}
                     </p>
                   </div>
                 </div>
+
                 <button
                   onClick={onClose}
-                  className="w-8 h-8 rounded-xl bg-zinc-50 hover:bg-zinc-100 flex items-center justify-center text-[#4F5E74] hover:text-[#0B111E] transition"
+                  className="w-9 h-9 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* ─── ERROR BANNER IF INSERTION FAILS ─── */}
+              {/* ERROR BANNER */}
               {errorMessage && (
-                <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-xs text-rose-700 font-bold shrink-0">
-                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                <div className="mx-6 mt-4 p-3 bg-rose-50 border-2 border-rose-200 rounded-2xl flex items-start gap-2.5 text-xs text-rose-800 font-extrabold shrink-0">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <span className="block font-extrabold">Database Operation Warning</span>
-                    <span className="font-semibold text-[11px] opacity-90">{errorMessage}</span>
+                    <span className="block font-black">Database Operation Warning</span>
+                    <span className="font-bold text-[11px] text-rose-700">{errorMessage}</span>
                   </div>
                   <button 
                     onClick={() => setErrorMessage(null)} 
@@ -203,13 +193,13 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
                 </div>
               )}
 
-              {/* ─── SCROLLABLE BODY ─── */}
-              <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+              {/* SCROLLABLE BODY */}
+              <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-slate-50/50">
 
-                {/* ─── OVERSIZED COUPLE NAME INPUT ─── */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-[#6C5CE7]" />
+                {/* OVERSIZED CLIENT NAME INPUT WITH BOLD DARK STYLING */}
+                <div className="space-y-2 bg-white p-5 rounded-3xl border-2 border-slate-200 shadow-xs">
+                  <label className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <User className="w-4 h-4 text-indigo-600" />
                     Client Coupling Name / Couple Profile
                   </label>
                   <input
@@ -221,18 +211,19 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
                       setCouplingName(e.target.value);
                       if (errorMessage) setErrorMessage(null);
                     }}
-                    className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-5 py-4 rounded-2xl text-base font-bold focus:outline-none focus:border-[#6C5CE7] focus:ring-2 focus:ring-[#6C5CE7]/10 transition text-[#0B111E] placeholder:text-zinc-400"
+                    className="w-full bg-slate-50 border-2 border-slate-300 focus:border-[#6C5CE7] px-5 py-3.5 rounded-2xl text-[#0B111E] font-black text-base placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
                   />
                 </div>
 
-                {/* ─── DYNAMIC SUB-EVENT BLOCKS ─── */}
+                {/* DYNAMIC SUB-EVENT BLOCKS */}
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black text-[#6C5CE7] uppercase tracking-wider">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-black text-indigo-900 uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
                       Wedding Sub-Events & Requirements
                     </span>
-                    <span className="text-[9px] font-bold text-[#4F5E74]">
-                      {eventBlocks.length} block(s)
+                    <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black border border-indigo-200">
+                      {eventBlocks.length} Block{eventBlocks.length === 1 ? '' : 's'} Configured
                     </span>
                   </div>
 
@@ -253,43 +244,44 @@ export default function AddProjectModal({ isOpen, onClose, projectToEdit, onSave
                     ))}
                   </AnimatePresence>
 
-                  {/* ─── ADD EVENT BLOCK BUTTON ─── */}
-                  <motion.button
+                  {/* ADD ANOTHER SUB-EVENT BLOCK BUTTON */}
+                  <button
                     type="button"
                     onClick={addEventBlock}
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.99 }}
-                    className="w-full border-2 border-dashed border-[#6C5CE7]/25 hover:border-[#6C5CE7]/50 bg-white text-[#6C5CE7] text-xs font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 hover:bg-[#6C5CE7]/5"
+                    className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 border-2 border-dashed border-indigo-300 text-indigo-700 font-black text-xs rounded-3xl transition flex items-center justify-center gap-2 shadow-2xs hover:shadow-xs cursor-pointer"
                   >
-                    <Plus className="w-4 h-4" />
-                    Add Wedding Event Block
-                  </motion.button>
+                    <Plus className="w-4 h-4 text-indigo-600 stroke-[3]" />
+                    + Add Another Sub-Event Block
+                  </button>
                 </div>
               </div>
 
-              {/* ─── MODAL FOOTER ─── */}
-              <div className="flex justify-end gap-3 px-6 py-4 border-t border-zinc-100 shrink-0 bg-white/80 backdrop-blur-sm rounded-b-[24px]">
+              {/* FOOTER ACTIONS BAR */}
+              <div className="px-6 py-4 bg-white border-t-2 border-slate-200 flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={onClose}
-                  disabled={isSubmitting}
-                  className="bg-transparent border border-zinc-200 text-[#4F5E74] text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-zinc-50 transition disabled:opacity-50"
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-2xl transition cursor-pointer"
                 >
                   Cancel
                 </button>
+
                 <button
                   type="button"
-                  onClick={handleSubmit}
                   disabled={isSubmitting}
-                  className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-6 py-2.5 rounded-xl transition shadow-lg shadow-[#6C5CE7]/15 hover:shadow-[#6C5CE7]/25 flex items-center gap-2 disabled:opacity-50"
+                  onClick={handleSubmit}
+                  className="px-6 py-2.5 bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white font-black text-xs rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/25 cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Saving to Supabase...
+                      Saving Project...
                     </>
                   ) : (
-                    projectToEdit ? 'Update Project Config' : 'Save Project Config'
+                    <>
+                      <Save className="w-4 h-4" />
+                      Save Project Config
+                    </>
                   )}
                 </button>
               </div>

@@ -62,7 +62,7 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block mb-1.5">
+      <label className="text-xs font-black text-slate-900 uppercase tracking-wider block mb-1.5">
         Wedding Program Type
       </label>
 
@@ -72,15 +72,15 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
           {selected.map((program) => (
             <span
               key={program}
-              className="inline-flex items-center gap-1 bg-[#6C5CE7]/8 text-[#6C5CE7] text-[10px] font-bold px-2.5 py-1 rounded-full border border-[#6C5CE7]/12"
+              className="inline-flex items-center gap-1.5 bg-indigo-100 text-indigo-900 text-xs font-black px-3 py-1 rounded-full border border-indigo-200 shadow-2xs"
             >
               {program}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); removeProgram(program); }}
-                className="w-3.5 h-3.5 rounded-full bg-rose-500 text-white flex items-center justify-center hover:bg-rose-600 transition ml-0.5"
+                className="w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center hover:bg-rose-600 transition ml-0.5"
               >
-                <X className="w-2 h-2" />
+                <X className="w-2.5 h-2.5" />
               </button>
             </span>
           ))}
@@ -91,12 +91,12 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2.5 rounded-xl text-xs font-semibold text-[#0B111E] focus:outline-none focus:border-[#6C5CE7] transition flex items-center justify-between"
+        className="w-full bg-white border-2 border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none focus:border-[#6C5CE7] transition flex items-center justify-between shadow-2xs"
       >
-        <span className={selected.length === 0 ? 'text-zinc-400' : ''}>
+        <span className={selected.length === 0 ? 'text-slate-400' : ''}>
           {selected.length === 0 ? 'Select program types...' : `${selected.length} type(s) selected`}
         </span>
-        <ChevronDown className={`w-3.5 h-3.5 text-[#4F5E74] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-slate-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown menu */}

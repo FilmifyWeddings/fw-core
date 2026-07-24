@@ -66,17 +66,17 @@ export default function SmartTimePicker({
 
   return (
     <div className="space-y-1.5" ref={dropdownRef}>
-      <label className="text-[8px] text-[#4F5E74] font-semibold block">
+      <label className="text-[10px] text-slate-800 font-extrabold block uppercase tracking-wider">
         {label}
       </label>
       <div className="relative flex gap-1.5">
         <div className="relative flex-1">
-          <Clock className="w-3 h-3 text-[#4F5E74]/50 absolute left-2 top-1/2 -translate-y-1/2" />
+          <Clock className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="time"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full bg-white border border-[#6C5CE7]/10 pl-7 pr-2 py-1.5 rounded-lg text-[11px] font-semibold text-[#0B111E] focus:outline-none focus:border-[#6C5CE7] transition appearance-none"
+            className="w-full bg-white border-2 border-slate-200 pl-8 pr-2 py-2 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
           />
         </div>
         {showSlots && (

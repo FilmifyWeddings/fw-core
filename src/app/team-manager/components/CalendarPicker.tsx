@@ -81,19 +81,19 @@ export default function CalendarPicker({ value, onChange }: CalendarPickerProps)
 
   return (
     <div className="relative" ref={calendarRef}>
-      <label className="text-[9px] font-extrabold text-[#4F5E74] uppercase tracking-wider block mb-1.5">
+      <label className="text-xs font-black text-slate-900 uppercase tracking-wider block mb-1.5">
         Program Date
       </label>
 
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-white border border-[#6C5CE7]/10 px-3 py-2 rounded-xl text-xs font-semibold text-[#0B111E] focus:outline-none focus:border-[#6C5CE7] transition flex items-center justify-between"
+        className="w-full bg-white border-2 border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none focus:border-[#6C5CE7] transition flex items-center justify-between shadow-2xs"
       >
-        <span className={displayValue ? '' : 'text-zinc-400'}>
+        <span className={displayValue ? '' : 'text-slate-400'}>
           {displayValue || 'Pick a date...'}
         </span>
-        <Calendar className="w-3.5 h-3.5 text-[#4F5E74]" />
+        <Calendar className="w-4 h-4 text-slate-600" />
       </button>
 
       <AnimatePresence>

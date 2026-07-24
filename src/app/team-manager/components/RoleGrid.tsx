@@ -31,15 +31,15 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
   return (
     <div className="space-y-2 pt-2">
       <div className="flex items-center justify-between">
-        <span className="text-[9px] font-black text-[#4F5E74] uppercase tracking-wider">
+        <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
           Role Placements For This Subevent
         </span>
         <button
           type="button"
           onClick={() => setShowCustomInput(!showCustomInput)}
-          className="text-[9px] font-bold text-[#6C5CE7] hover:text-[#5b4cd1] transition flex items-center gap-0.5"
+          className="text-xs font-extrabold text-[#6C5CE7] hover:text-[#5b4cd1] transition flex items-center gap-1 cursor-pointer"
         >
-          <Plus className="w-3 h-3" />
+          <Plus className="w-3.5 h-3.5" />
           Add Custom Role Requirement
         </button>
       </div>
@@ -60,22 +60,22 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
                 onChange={(e) => setCustomRole(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddRole()}
                 placeholder="e.g. Drone 2, Junior Cine..."
-                className="flex-1 bg-[#F8F9FD] border border-[#6C5CE7]/10 px-3 py-1.5 rounded-lg text-[11px] font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
+                className="flex-1 bg-white border-2 border-slate-200 px-3 py-1.5 rounded-xl text-xs font-extrabold focus:outline-none focus:border-[#6C5CE7] transition text-slate-900 shadow-2xs"
                 autoFocus
               />
               <button
                 type="button"
                 onClick={handleAddRole}
-                className="bg-[#6C5CE7] text-white text-[10px] font-bold px-3 py-1.5 rounded-lg hover:bg-[#5b4cd1] transition"
+                className="bg-[#6C5CE7] text-white text-xs font-black px-4 py-1.5 rounded-xl hover:bg-[#5b4cd1] transition shadow-xs cursor-pointer"
               >
                 Add
               </button>
               <button
                 type="button"
                 onClick={() => { setShowCustomInput(false); setCustomRole(''); }}
-                className="text-zinc-400 hover:text-zinc-600 transition p-1.5"
+                className="text-slate-400 hover:text-slate-600 transition p-1.5 cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           </motion.div>
@@ -83,7 +83,7 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
       </AnimatePresence>
 
       {/* Role chip grid */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2">
         {DEFAULT_ROLES.map((role) => {
           const isActive = selectedRoles.includes(role);
           return (
@@ -91,10 +91,10 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
               key={role}
               type="button"
               onClick={() => onToggle(role)}
-              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold border-2 transition-all cursor-pointer select-none ${
                 isActive
-                  ? 'bg-[#6C5CE7] border-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/10'
-                  : 'bg-white border-zinc-200 text-[#4F5E74] hover:border-[#6C5CE7]/30'
+                  ? 'bg-[#6C5CE7] border-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30 scale-105'
+                  : 'bg-white border-slate-200 text-slate-800 hover:border-indigo-400 hover:text-indigo-600 shadow-2xs'
               }`}
             >
               {role}
