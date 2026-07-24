@@ -103,7 +103,17 @@ function MetaAdsContent() {
       const res = await fetch(syncUrl);
       if (res.ok) {
         const data = await res.json();
-        setDebugInfo(data.debug);
+        
+        if (data.meta_api_debug || data.raw_me_accounts) {
+          console.log('[Meta API Debug Info]:', {
+            debug_user_id: data.debug_user_id,
+            debug_meta_scopes: data.debug_meta_scopes,
+            raw_me_accounts: data.raw_me_accounts,
+            raw_me_businesses: data.raw_me_businesses,
+            meta_api_debug: data.meta_api_debug,
+          });
+          setDebugInfo(data);
+        }
 
         const urlIsConnected = searchParams?.get('meta') === 'connected' || searchParams?.has('pages');
 
@@ -119,11 +129,11 @@ function MetaAdsContent() {
           setTotalLeadsSynced(data.totalLeadsSynced || 0);
 
           if ((data.pages || []).length === 0) {
-            console.warn('[Meta Integration] 0 Facebook Pages returned from Meta API. Verify user selected and granted pages_show_list permissions during Facebook OAuth login.');
+            console.warn('[Meta Integration Warning] 0 Pages Found: Please verify that your Facebook user has Admin rights on the Meta Page and that all page permissions were checked during OAuth.');
           }
 
           if (searchParams?.get('meta') === 'connected') {
-            showToastNotification('Meta Account Connected! Real-time Graph API sync complete ✓');
+            showToastNotification('Meta Account Connected! Real-time Graph API Sync Completed ✓');
           }
         } else {
           if (typeof window !== 'undefined' && localStorage.getItem('fw_meta_connected') === 'true' && !searchParams?.get('oauth_error')) {
@@ -366,6 +376,31 @@ function MetaAdsContent() {
             >
               <RefreshCw className="w-4 h-4" />
               <span>Connect Facebook Account</span>
+            </a>
+          </div>
+        )}
+
+        {/* 0 PAGES RETURNED WARNING BANNER */}
+        {isConnected && pages.length === 0 && !isSyncing && (
+          <div className="bg-amber-50/95 border-2 border-amber-200/90 shadow-md shadow-amber-100/50 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-amber-950">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0 mt-0.5">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-amber-900">0 Pages Found</h4>
+                <p className="text-xs font-semibold text-amber-800 mt-0.5 leading-relaxed">
+                  0 Pages Found: Please verify that your Facebook user has Admin rights on the Meta Page and that all page permissions were checked during OAuth.
+                </p>
+              </div>
+            </div>
+
+            <a
+              href={fbOAuthUrl}
+              className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2 shrink-0 cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Re-Authenticate & Select Pages</span>
             </a>
           </div>
         )}
@@ -678,7 +713,7 @@ function MetaAdsContent() {
                       <FacebookIcon className="w-8 h-8 text-slate-400 mx-auto" />
                       <p className="font-extrabold text-slate-700 text-sm">0 Facebook Pages Returned</p>
                       <p className="text-slate-500 text-xs max-w-md mx-auto leading-relaxed">
-                        Meta Graph API returned 0 Facebook Pages. Please make sure to check and select your Facebook Pages during the Facebook OAuth popup dialog.
+                        0 Pages Found: Please verify that your Facebook user has Admin rights on the Meta Page and that all page permissions were checked during OAuth.
                       </p>
                       <div className="pt-2">
                         <a
