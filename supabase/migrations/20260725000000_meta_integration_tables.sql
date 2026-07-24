@@ -1,4 +1,4 @@
--- Migration: Meta Integration Tables (fb_page_configs & fb_lead_forms)
+-- Migration: Fix Postgres Error 42830 for Meta Integration Tables (fb_page_configs & fb_lead_forms)
 
 CREATE TABLE IF NOT EXISTS public.fb_page_configs (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -12,6 +12,19 @@ CREATE TABLE IF NOT EXISTS public.fb_page_configs (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Ensure UNIQUE constraint on fb_page_configs(page_id) if table existed prior
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fb_page_configs_page_id_key'
+    ) THEN
+        ALTER TABLE public.fb_page_configs ADD CONSTRAINT fb_page_configs_page_id_key UNIQUE (page_id);
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+
+-- Create fb_lead_forms referencing fb_page_configs(page_id)
 CREATE TABLE IF NOT EXISTS public.fb_lead_forms (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     workspace_id TEXT,
@@ -29,5 +42,17 @@ CREATE TABLE IF NOT EXISTS public.fb_lead_forms (
 ALTER TABLE public.fb_page_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fb_lead_forms ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow service role full access on fb_page_configs" ON public.fb_page_configs FOR ALL USING (true);
-CREATE POLICY "Allow service role full access on fb_lead_forms" ON public.fb_lead_forms FOR ALL USING (true);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE policyname = 'Allow service role full access on fb_page_configs'
+    ) THEN
+        CREATE POLICY "Allow service role full access on fb_page_configs" ON public.fb_page_configs FOR ALL USING (true);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE policyname = 'Allow service role full access on fb_lead_forms'
+    ) THEN
+        CREATE POLICY "Allow service role full access on fb_lead_forms" ON public.fb_lead_forms FOR ALL USING (true);
+    END IF;
+END $$;
