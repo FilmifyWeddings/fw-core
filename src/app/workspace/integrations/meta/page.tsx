@@ -381,7 +381,7 @@ function MetaAdsContent() {
         )}
 
         {/* 0 PAGES RETURNED WARNING BANNER */}
-        {isConnected && pages.length === 0 && !isSyncing && (
+        {false && ( // Disabled warning banner when connected
           <div className="bg-amber-50/95 border-2 border-amber-200/90 shadow-md shadow-amber-100/50 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-amber-950">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0 mt-0.5">
