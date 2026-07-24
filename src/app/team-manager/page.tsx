@@ -8,7 +8,7 @@ import {
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
-  HardDrive, UserPlus, AlertTriangle
+  HardDrive, UserPlus, AlertTriangle, Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
@@ -432,6 +432,7 @@ export default function TeamManagerPage() {
             roll_call_time: block.startTime || '10:00',
             dismissal_estimate_time: block.endTime || '18:00',
             operational_notes: block.notes || null,
+            shift_hours_slot: block.shiftSlot || null,
             roles: rolesToSave,
           };
 
@@ -804,6 +805,12 @@ export default function TeamManagerPage() {
                                             {format12HourTime(subEvent.roll_call_time)}
                                             {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
                                           </span>
+                                          {(subEvent as any).shift_hours_slot && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-extrabold border border-amber-200/90 ml-1">
+                                              <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
+                                              {(subEvent as any).shift_hours_slot}
+                                            </span>
+                                          )}
                                         </div>
                                       )}
                                       
@@ -999,6 +1006,13 @@ export default function TeamManagerPage() {
                                           {format12HourTime(subEvent.roll_call_time)}
                                           {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
                                         </span>
+                                      </div>
+                                    )}
+
+                                    {(subEvent as any).shift_hours_slot && (
+                                      <div className="flex items-center gap-1 text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 text-[11px] font-extrabold">
+                                        <Zap className="w-3 h-3 text-amber-500 shrink-0 fill-amber-400" />
+                                        <span>{(subEvent as any).shift_hours_slot}</span>
                                       </div>
                                     )}
 

@@ -78,6 +78,7 @@ export default function AddProjectModal({
           mapLink: se.venue_map_link || '',
           startTime: se.roll_call_time || '10:00',
           endTime: se.dismissal_estimate_time || '18:00',
+          shiftSlot: (se as any).shift_hours_slot || '',
           roles: se.fw_assignments && se.fw_assignments.length > 0
             ? se.fw_assignments.map(a => a.required_role)
             : ((se as any).roles || (se as any).event_roles || []),
