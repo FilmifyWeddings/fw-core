@@ -79,7 +79,7 @@ const format12HourTime = (timeStr?: string): string => {
   return `${formattedHours}:${minutes} ${ampm}`;
 };
 
-// Robust assignment resolver ensuring roles are never empty on any card
+// Robust assignment resolver ensuring roles are fetched via fw_assignments relation
 const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMember[]): FWAssignment[] => {
   if (subEvent.fw_assignments && subEvent.fw_assignments.length > 0) {
     return subEvent.fw_assignments;
@@ -187,7 +187,7 @@ export default function TeamManagerPage() {
   }, [activeDropdownId]);
 
   // ─────────────────────────────────────────────────────────────
-  // DATA FETCHING & HYDRATION FROM SUPABASE
+  // DATA FETCHING & HYDRATION FROM SUPABASE (RELATIONAL SCHEMAS)
   // ─────────────────────────────────────────────────────────────
   const fetchAllData = async () => {
     setLoading(true);
@@ -207,7 +207,7 @@ export default function TeamManagerPage() {
       if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
       setTeamMembers(membersData || []);
 
-      // 2. Fetch Projects with sub_events & assignments
+      // 2. Fetch Projects with nested sub_events and fw_assignments JOIN
       const { data: projectsData, error: projectsErr } = await supabase
         .from('fw_projects')
         .select(`
@@ -308,7 +308,7 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Handle Project Creation & Update with Multi-Sub-Event Blocks (100% SYNCED ROLES TO SUPABASE)
+  // Handle Project Creation & Update strictly following Granular Relational Schema
   const handleSaveProject = async (
     couplingName: string,
     blocks: EventBlockData[],
@@ -319,6 +319,7 @@ export default function TeamManagerPage() {
       const firstSubEventDate = blocks[0]?.subEventDate || new Date().toISOString().split('T')[0];
       const firstSubEventVenue = blocks[0]?.venueLocation || 'TBD Venue';
 
+      // STEP 1: Insert or Update Project in fw_projects
       if (projectId) {
         const { error: projErr } = await supabase
           .from('fw_projects')
@@ -360,8 +361,8 @@ export default function TeamManagerPage() {
           const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
           const rolesToSave = (block.roles && block.roles.length > 0) ? block.roles : ['TP', 'Ass'];
           
-          // Construct sub-event record payload with roles attached
-          const subEventPayload: any = {
+          // STEP 2: Insert sub-event into fw_sub_events (strictly matching columns)
+          const subEventPayload = {
             project_id: targetProjectId,
             event_title: title,
             event_date: block.subEventDate || new Date().toISOString().split('T')[0],
@@ -370,7 +371,6 @@ export default function TeamManagerPage() {
             roll_call_time: block.startTime || '10:00',
             dismissal_estimate_time: block.endTime || '18:00',
             operational_notes: block.notes || null,
-            roles: rolesToSave,
           };
 
           const { data: insertedSubEvent, error: seErr } = await supabase
@@ -381,7 +381,7 @@ export default function TeamManagerPage() {
 
           if (seErr) throw seErr;
 
-          // Insert all selected role placements into fw_assignments table
+          // STEP 3: Insert each selected role placement into fw_assignments table
           if (insertedSubEvent) {
             const assignmentsPayload = rolesToSave.map(role => {
               const matchedMember = teamMembers.find(
@@ -400,12 +400,13 @@ export default function TeamManagerPage() {
               .insert(assignmentsPayload);
 
             if (assignErr) {
-              console.warn('[TeamManager] Insert assignments warning:', assignErr.message);
+              console.error('[TeamManager] Insert fw_assignments error:', assignErr.message);
             }
           }
         }
       }
 
+      // Re-fetch clean relational state
       await fetchAllData();
       setIsAddProjectOpen(false);
       setEditingProject(null);
@@ -694,7 +695,7 @@ export default function TeamManagerPage() {
                               ? '2026' 
                               : eventDate.getFullYear().toString();
 
-                            // Robust assignment resolver ensuring roles are never empty
+                            // Robust assignment resolver ensuring roles are fetched via fw_assignments relation
                             const assignments = resolveSubEventAssignments(subEvent, teamMembers);
 
                             return (
