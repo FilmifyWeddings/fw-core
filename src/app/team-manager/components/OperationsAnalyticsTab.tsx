@@ -210,7 +210,7 @@ export default function OperationsAnalyticsTab({
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
+    <div className="space-y-6 sm:space-y-8 animate-in fade-in duration-300 max-w-full overflow-x-hidden pb-28 md:pb-10">
       
       {/* ─────────────────────────────────────────────────────────────
           1. TIME & SCOPE FILTERS BAR - COMPACT RESPONSIVE
@@ -325,16 +325,16 @@ export default function OperationsAnalyticsTab({
       {/* ─────────────────────────────────────────────────────────────
           2. TOP EXECUTIVE 3D KPI METRIC CARDS
          ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         
         {/* KPI 1: TOTAL SHOOTS IN SCOPE */}
-        <div className="bg-gradient-to-br from-indigo-900 via-purple-950 to-slate-900 text-white p-6 rounded-3xl border border-indigo-700/60 shadow-xl relative overflow-hidden group hover:-translate-y-1 transition duration-200">
+        <div className="bg-gradient-to-br from-indigo-900 via-purple-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl border border-indigo-700/60 shadow-xl relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-indigo-200 uppercase tracking-wider">Scheduled Sub-Events</span>
             <Calendar className="w-5 h-5 text-indigo-300" />
           </div>
-          <h3 className="text-4xl font-black text-white mt-2 leading-none">{totalShootsCount}</h3>
-          <div className="flex items-center justify-between mt-3 text-[11px] font-bold text-indigo-200">
+          <h3 className="text-3xl sm:text-4xl font-black text-white mt-2 leading-none">{totalShootsCount}</h3>
+          <div className="flex items-center justify-between mt-3 text-[11px] font-bold text-indigo-200 flex-wrap gap-1">
             <span className="px-2 py-0.5 rounded-md bg-white/20 border border-white/20">
               {scopeMode === 'month' ? (selectedMonth === 'All' ? `Year ${selectedYear}` : `${monthsList[parseInt(selectedMonth, 10)]?.label} ${selectedYear}`) : scopeMode === 'year' ? `Year ${selectedYear}` : 'Custom Range'}
             </span>
@@ -343,12 +343,12 @@ export default function OperationsAnalyticsTab({
         </div>
 
         {/* KPI 2: ACTIVE CREW ROSTER */}
-        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Active Directory Roster</span>
             <Users className="w-5 h-5 text-[#6C5CE7]" />
           </div>
-          <h3 className="text-4xl font-black text-slate-900 mt-2 leading-none">{teamMembers.length}</h3>
+          <h3 className="text-3xl sm:text-4xl font-black text-slate-900 mt-2 leading-none">{teamMembers.length}</h3>
           <div className="flex items-center gap-2 mt-3 text-[11px] font-bold text-emerald-600">
             <Award className="w-4 h-4 text-emerald-500 shrink-0" />
             <span>100% Active & Operational</span>
@@ -356,24 +356,24 @@ export default function OperationsAnalyticsTab({
         </div>
 
         {/* KPI 3: CREW ALLOCATION RATE */}
-        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Crew Allocation Rate</span>
             <Activity className="w-5 h-5 text-emerald-600" />
           </div>
-          <h3 className="text-4xl font-black text-emerald-600 mt-2 leading-none">{allocationRateInScope}%</h3>
+          <h3 className="text-3xl sm:text-4xl font-black text-emerald-600 mt-2 leading-none">{allocationRateInScope}%</h3>
           <div className="w-full bg-slate-100 rounded-full h-2 mt-3 overflow-hidden border border-slate-200">
             <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${allocationRateInScope}%` }} />
           </div>
         </div>
 
         {/* KPI 4: CRITICAL UNASSIGNED SLOTS ALERT */}
-        <div className="bg-white p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 relative overflow-hidden group hover:-translate-y-1 transition duration-200">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Pending Unassigned Slots</span>
             <AlertTriangle className="w-5 h-5 text-rose-500" />
           </div>
-          <h3 className="text-4xl font-black text-rose-600 mt-2 leading-none">{unassignedSlotsInScope}</h3>
+          <h3 className="text-3xl sm:text-4xl font-black text-rose-600 mt-2 leading-none">{unassignedSlotsInScope}</h3>
           <div className="flex items-center gap-1.5 mt-3 text-[11px] font-bold text-rose-600">
             <span>{unassignedSlotsInScope === 0 ? 'All Slots Filled 🎉' : 'Action Needed in Roster'}</span>
           </div>
@@ -385,16 +385,16 @@ export default function OperationsAnalyticsTab({
          ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* MONTHLY VOLUME CHART (8 COLS) */}
-        <div className="lg:col-span-8 bg-white rounded-3xl border-2 border-slate-200/90 p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black">
+        {/* MONTHLY VOLUME CHART (8 COLS) - RESPONSIVE SCROLL WRAPPER */}
+        <div className="lg:col-span-8 bg-white rounded-3xl border-2 border-slate-200/90 p-4 sm:p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-6 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4 flex-wrap gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black shrink-0">
                 <BarChart3 className="w-5 h-5" />
               </div>
-              <div>
-                <h4 className="text-lg font-black text-slate-900">{selectedYear} Monthly Shoot Volume</h4>
-                <p className="text-xs text-slate-500 font-bold">Click any month bar to isolate operations stats</p>
+              <div className="min-w-0">
+                <h4 className="text-base sm:text-lg font-black text-slate-900 truncate">{selectedYear} Monthly Shoot Volume</h4>
+                <p className="text-[11px] sm:text-xs text-slate-500 font-bold">Tap any month bar to isolate operational stats</p>
               </div>
             </div>
 
@@ -403,41 +403,44 @@ export default function OperationsAnalyticsTab({
             </span>
           </div>
 
-          <div className="h-64 flex items-end justify-between gap-2 pt-8 px-2 border-b border-slate-200">
-            {monthlyShoots.map(({ month, val, count }) => {
-              const heightPercent = Math.round((count / maxMonthlyCount) * 100);
-              const isSelected = scopeMode === 'month' && selectedMonth === val;
+          {/* HORIZONTAL SCROLL FOR CHART ON MOBILE */}
+          <div className="overflow-x-auto scrollbar-thin pb-2">
+            <div className="h-64 min-w-[520px] sm:min-w-full flex items-end justify-between gap-2 pt-8 px-2 border-b border-slate-200">
+              {monthlyShoots.map(({ month, val, count }) => {
+                const heightPercent = Math.round((count / maxMonthlyCount) * 100);
+                const isSelected = scopeMode === 'month' && selectedMonth === val;
 
-              return (
-                <div
-                  key={month}
-                  onClick={() => {
-                    setScopeMode('month');
-                    setSelectedMonth(isSelected ? 'All' : val);
-                  }}
-                  className="flex-1 flex flex-col items-center gap-2 group h-full justify-end cursor-pointer select-none"
-                >
-                  <span className="opacity-0 group-hover:opacity-100 transition text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-md shadow-lg pointer-events-none whitespace-nowrap">
-                    {count} {count === 1 ? 'Shoot' : 'Shoots'}
-                  </span>
-
+                return (
                   <div
-                    style={{ height: `${Math.max(heightPercent, 8)}%` }}
-                    className={`w-full max-w-[38px] rounded-t-xl transition-all duration-300 shadow-md flex items-start justify-center pt-1 ${
-                      isSelected
-                        ? 'bg-gradient-to-t from-amber-500 via-orange-500 to-amber-400 ring-2 ring-amber-400'
-                        : 'bg-gradient-to-t from-[#6C5CE7] via-indigo-600 to-purple-400 group-hover:from-indigo-800 group-hover:to-purple-500'
-                    }`}
+                    key={month}
+                    onClick={() => {
+                      setScopeMode('month');
+                      setSelectedMonth(isSelected ? 'All' : val);
+                    }}
+                    className="flex-1 flex flex-col items-center gap-2 group h-full justify-end cursor-pointer select-none"
                   >
-                    {count > 0 && <span className="text-[10px] font-black text-white">{count}</span>}
-                  </div>
+                    <span className="opacity-0 group-hover:opacity-100 transition text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-md shadow-lg pointer-events-none whitespace-nowrap">
+                      {count} {count === 1 ? 'Shoot' : 'Shoots'}
+                    </span>
 
-                  <span className={`text-xs font-extrabold mt-2 ${isSelected ? 'text-amber-600 font-black' : 'text-slate-600'}`}>
-                    {month}
-                  </span>
-                </div>
-              );
-            })}
+                    <div
+                      style={{ height: `${Math.max(heightPercent, 8)}%` }}
+                      className={`w-full max-w-[38px] rounded-t-xl transition-all duration-300 shadow-md flex items-start justify-center pt-1 ${
+                        isSelected
+                          ? 'bg-gradient-to-t from-amber-500 via-orange-500 to-amber-400 ring-2 ring-amber-400'
+                          : 'bg-gradient-to-t from-[#6C5CE7] via-indigo-600 to-purple-400 group-hover:from-indigo-800 group-hover:to-purple-500'
+                      }`}
+                    >
+                      {count > 0 && <span className="text-[10px] font-black text-white">{count}</span>}
+                    </div>
+
+                    <span className={`text-xs font-extrabold mt-2 ${isSelected ? 'text-amber-600 font-black' : 'text-slate-600'}`}>
+                      {month}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 

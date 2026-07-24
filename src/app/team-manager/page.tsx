@@ -1,7 +1,7 @@
 'use client';
 import OperationsAnalyticsTab from './components/OperationsAnalyticsTab';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   Users, Calendar, List, Plus, Trash2, RotateCcw, Check, X, 
@@ -120,6 +120,22 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
 
 export default function TeamManagerPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
+  
+  // Dynamic Time-Based Greeting & Studio Profile Name
+  const greetingInfo = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return { text: 'Good Morning', emoji: '🌅' };
+    if (hour < 17) return { text: 'Good Afternoon', emoji: '☀️' };
+    return { text: 'Good Evening', emoji: '🌙' };
+  }, []);
+
+  const studioName = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('fw_studio_name');
+      if (saved) return saved;
+    }
+    return 'Studio Admin';
+  }, []);
   
   // Real Data State
   const [projects, setProjects] = useState<FWProject[]>([]);
@@ -634,7 +650,7 @@ export default function TeamManagerPage() {
         {/* PC STICKY TOP TOOLBAR WRAPPER */}
         <div className="sticky top-0 z-30 bg-slate-100/95 backdrop-blur-md pb-4 pt-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 border-b border-slate-200/60 shadow-2xs space-y-4">
           {/* Top Responsive Header Block */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               {/* BACK TO DASHBOARD BUTTON */}
               <Link
@@ -645,23 +661,23 @@ export default function TeamManagerPage() {
                 <ArrowLeft className="w-4 h-4" />
               </Link>
               <div>
-                <h2 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight flex items-center gap-2 flex-wrap">
-                  Welcome back, Studio Admin 👋
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-2xs">
-                    v3.0-mobile-app
-                  </span>
+                {/* TEAM MANAGER LABEL - 3D STYLE */}
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500 mb-0.5" style={{
+                  textShadow: '0 1px 0 #a5b4fc, 0 2px 4px rgba(99,102,241,0.18)'
+                }}>Team Manager</p>
+                {/* DYNAMIC GREETING WITH 3D LABEL ABOVE */}
+                <h2 className="text-base sm:text-xl font-black text-[#0B111E] tracking-tight leading-tight">
+                  {greetingInfo.text}, {studioName} {greetingInfo.emoji}
                 </h2>
-                <p className="text-xs text-[#4F5E74] font-bold mt-0.5">
-                  Here&apos;s what&apos;s happening with your wedding operations today.
-                </p>
               </div>
             </div>
 
-            {/* Action controls row - RE-ARCHITECTED FOR CLEAN MOBILE FLEX ALLOCATION */}
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full lg:w-auto justify-between sm:justify-end">
-              <div className="relative w-full sm:w-64">
+            {/* RIGHT: Desktop action controls + mobile settings only */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Search - desktop only */}
+              <div className="relative hidden sm:block w-52 lg:w-64">
                 <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input 
+                <input
                   type="text"
                   placeholder="Search clients or sub-events..."
                   value={searchQuery}
@@ -670,37 +686,49 @@ export default function TeamManagerPage() {
                 />
               </div>
 
-              {/* MOBILE TOP ACTION BUTTONS BAR (PROPER ALLOCATION) */}
-              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-between">
-                <button
-                  onClick={() => {
-                    setActiveAssignmentForMember(null);
-                    setIsAddMemberOpen(true);
-                  }}
-                  className="flex-1 sm:flex-none bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold py-2.5 px-3 rounded-2xl flex items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  <span>+ Member</span>
-                </button>
+              {/* + Member - desktop only */}
+              <button
+                onClick={() => {
+                  setActiveAssignmentForMember(null);
+                  setIsAddMemberOpen(true);
+                }}
+                className="hidden sm:flex bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold py-2.5 px-3 rounded-2xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>+ Member</span>
+              </button>
 
-                <button 
-                  onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-                  className="flex-1 sm:flex-none bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black py-2.5 px-4 rounded-2xl transition flex items-center justify-center gap-1.5 shadow-lg shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>+ Project</span>
-                </button>
+              {/* + Project - desktop only */}
+              <button
+                onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black py-2.5 px-4 rounded-2xl transition items-center justify-center gap-1.5 shadow-lg shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Project</span>
+              </button>
 
-                <button 
-                  type="button" 
-                  onClick={() => setIsSettingsModalOpen(true)}
-                  className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
-                  title="Team & Operations Settings"
-                >
-                  <Settings className="w-4 h-4"/>
-                </button>
-              </div>
+              {/* Settings - always visible */}
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
+                title="Team & Operations Settings"
+              >
+                <Settings className="w-4 h-4"/>
+              </button>
             </div>
+          </div>
+
+          {/* Mobile search bar - full width below header */}
+          <div className="sm:hidden relative w-full">
+            <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search clients or sub-events..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#6C5CE7]/10 rounded-2xl text-xs font-bold text-[#0B111E] placeholder:text-[#4F5E74]/60 focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
+            />
           </div>
 
           {/* ─── VIEW MODE NAVIGATION SWITCHER BAR (DESKTOP) ─── */}
@@ -1111,7 +1139,7 @@ export default function TeamManagerPage() {
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
                                       Crew Placements
                                     </span>
-                                    <div className="flex items-center gap-3 flex-wrap">
+                                    <div className="flex items-start gap-3 flex-wrap">
                                       {assignments.map((assignment: any) => {
                                         const member = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
                                         const isAssigned = member !== undefined && member !== null;
@@ -1132,31 +1160,34 @@ export default function TeamManagerPage() {
                                               });
                                               setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
                                             }}
-                                            className="flex flex-col items-center group/node cursor-pointer select-none relative"
+                                            className="flex flex-col items-center group/node cursor-pointer select-none relative w-16 text-center"
                                           >
-                                            {isAssigned ? (
-                                              member.avatar_url ? (
-                                                // eslint-disable-next-next/no-img-element
-                                                <img
-                                                  src={member.avatar_url}
-                                                  alt={cleanName}
-                                                  className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 shrink-0"
-                                                  onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
-                                                  }}
-                                                />
+                                            {/* ANCHORED 40px CIRCLE BASELINE */}
+                                            <div className="w-10 h-10 flex items-center justify-center shrink-0 mb-1">
+                                              {isAssigned ? (
+                                                member.avatar_url ? (
+                                                  // eslint-disable-next-next/no-img-element
+                                                  <img
+                                                    src={member.avatar_url}
+                                                    alt={cleanName}
+                                                    className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 shrink-0"
+                                                    onError={(e) => {
+                                                      (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                                                    }}
+                                                  />
+                                                ) : (
+                                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 shrink-0">
+                                                    {getInitials(cleanName || role)}
+                                                  </div>
+                                                )
                                               ) : (
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 shrink-0">
-                                                  {getInitials(cleanName || role)}
+                                                <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
+                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
                                                 </div>
-                                              )
-                                            ) : (
-                                              <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
-                                                <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
-                                              </div>
-                                            )}
+                                              )}
+                                            </div>
 
-                                            <span className={`font-bold text-[9px] uppercase tracking-wide block text-center mt-1 leading-none ${
+                                            <span className={`font-bold text-[9px] uppercase tracking-wide block text-center leading-none ${
                                               isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
                                             }`}>
                                               {role}
