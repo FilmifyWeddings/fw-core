@@ -31,7 +31,7 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
   return (
     <div className="space-y-2 pt-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
+        <span className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider">
           Role Placements For This Subevent
         </span>
         <button

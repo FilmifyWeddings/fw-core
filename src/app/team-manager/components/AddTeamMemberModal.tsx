@@ -70,7 +70,6 @@ export default function AddTeamMemberModal({
       const compressedDataUrl = await compressImageToDataUrl(file);
       setAvatarUrl(compressedDataUrl);
 
-      // Attempt background upload to Supabase Storage 'team-avatars' bucket if configured
       try {
         const fileExt = 'jpg';
         const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExt}`;
@@ -173,42 +172,44 @@ export default function AddTeamMemberModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-black/40 backdrop-blur-md"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
           />
 
-          {/* 3D Modal Chassis */}
+          {/* 3D Modal Chassis - Clean Professional Minimal */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            initial={{ opacity: 0, scale: 0.96, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 15 }}
+            exit={{ opacity: 0, scale: 0.96, y: 15 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative z-10 w-full max-w-md bg-white rounded-[24px] border border-[#6C5CE7]/10 shadow-[0_30px_70px_rgba(0,0,0,0.25),0_12px_30px_rgba(108,92,231,0.08)] overflow-hidden"
+            className="relative z-10 w-full max-w-md bg-white rounded-[24px] border border-slate-200 shadow-2xl overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#6C5CE7] flex items-center justify-center text-white shadow-lg shadow-[#6C5CE7]/20">
-                  <UserPlus className="w-4.5 h-4.5" />
+                <div className="w-10 h-10 rounded-2xl bg-[#6C5CE7] flex items-center justify-center text-white shadow-md shadow-[#6C5CE7]/20">
+                  <UserPlus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-[#0B111E] tracking-tight">Add New Team Member</h3>
-                  <p className="text-[10px] text-[#4F5E74] font-semibold">Directory registry & assignment allocation</p>
+                  <h3 className="text-base font-extrabold text-[#0B111E] tracking-tight">
+                    {memberToEdit ? 'Edit Team Member' : 'Add New Team Member'}
+                  </h3>
+                  <p className="text-xs text-[#4F5E74] font-semibold mt-0.5">Directory registry & assignment allocation</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="w-8 h-8 rounded-xl bg-zinc-50 hover:bg-zinc-100 flex items-center justify-center text-[#4F5E74] transition"
+                className="w-9 h-9 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[#4F5E74] flex items-center justify-center transition cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4.5 h-4.5" />
               </button>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 bg-slate-50/40">
               {/* Photo Upload Picker with Avatar Preview */}
-              <div className="flex items-center gap-4 bg-[#F8F9FD] p-3 rounded-2xl border border-[#6C5CE7]/10">
-                <div className="relative w-14 h-14 rounded-full bg-[#6C5CE7]/10 border-2 border-white ring-2 ring-[#6C5CE7]/30 flex items-center justify-center overflow-hidden shrink-0">
+              <div className="flex items-center gap-4 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <div className="relative w-14 h-14 rounded-full bg-indigo-50 border-2 border-white ring-2 ring-[#6C5CE7]/30 flex items-center justify-center overflow-hidden shrink-0">
                   {avatarUrl ? (
                     // eslint-disable-next-next/no-img-element
                     <img src={avatarUrl} alt="Preview" className="w-full h-full object-cover" />
@@ -222,10 +223,10 @@ export default function AddTeamMemberModal({
                   )}
                 </div>
                 <div className="flex-1 space-y-1">
-                  <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider block">
+                  <label className="text-[10px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">
                     Profile Photo (Compressed &lt; 30KB)
                   </label>
-                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#6C5CE7]/20 text-[#6C5CE7] hover:bg-[#6C5CE7]/5 text-xs font-bold transition shadow-sm">
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 text-[#6C5CE7] text-xs font-bold transition shadow-2xs">
                     <Camera className="w-3.5 h-3.5" />
                     <span>{avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
                     <input 
@@ -240,7 +241,7 @@ export default function AddTeamMemberModal({
 
               {/* Member Name */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider flex items-center gap-1.5">
+                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-[#6C5CE7]" />
                   Member Full Name
                 </label>
@@ -250,20 +251,20 @@ export default function AddTeamMemberModal({
                   placeholder="e.g. Sushant Nawale"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-3 rounded-2xl text-sm font-bold text-[#0B111E] placeholder:text-zinc-400 focus:outline-none focus:border-[#6C5CE7] focus:ring-2 focus:ring-[#6C5CE7]/10 transition"
+                  className="w-full bg-white border border-slate-200 focus:border-[#6C5CE7] px-4 py-3 rounded-xl text-sm font-bold text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
                 />
               </div>
 
               {/* Primary Designation / Role */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider flex items-center gap-1.5">
+                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
                   <Briefcase className="w-3.5 h-3.5 text-[#6C5CE7]" />
                   Primary Role / Designation
                 </label>
                 <select
                   value={primaryRole}
                   onChange={(e) => setPrimaryRole(e.target.value)}
-                  className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-3 rounded-2xl text-sm font-bold text-[#0B111E] focus:outline-none focus:border-[#6C5CE7] focus:ring-2 focus:ring-[#6C5CE7]/10 transition cursor-pointer"
+                  className="w-full bg-white border border-slate-200 focus:border-[#6C5CE7] px-4 py-3 rounded-xl text-sm font-bold text-[#0B111E] focus:outline-none transition cursor-pointer shadow-2xs"
                 >
                   {COMMON_ROLES.map((role) => (
                     <option key={role} value={role}>{role}</option>
@@ -273,7 +274,7 @@ export default function AddTeamMemberModal({
 
               {/* International Mobile Phone Input */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider flex items-center gap-1.5">
+                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
                   <Phone className="w-3.5 h-3.5 text-[#6C5CE7]" />
                   Mobile Number (With Country Flag)
                 </label>
@@ -287,7 +288,7 @@ export default function AddTeamMemberModal({
 
               {/* Email (Optional) */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-[#4F5E74] uppercase tracking-wider flex items-center gap-1.5">
+                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-[#6C5CE7]" />
                   Email Address (Optional)
                 </label>
@@ -296,23 +297,23 @@ export default function AddTeamMemberModal({
                   placeholder="e.g. sushant@studio.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-3 rounded-2xl text-sm font-bold text-[#0B111E] placeholder:text-zinc-400 focus:outline-none focus:border-[#6C5CE7] focus:ring-2 focus:ring-[#6C5CE7]/10 transition"
+                  className="w-full bg-white border border-slate-200 focus:border-[#6C5CE7] px-4 py-3 rounded-xl text-sm font-bold text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
                 />
               </div>
 
               {/* Footer Actions */}
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-zinc-100">
+              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-200 text-xs font-bold text-[#4F5E74] hover:bg-zinc-50 transition"
+                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-[#4F5E74] transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading || isCompressing}
-                  className="px-6 py-2.5 rounded-xl bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold shadow-lg shadow-[#6C5CE7]/20 transition disabled:opacity-50 flex items-center gap-2"
+                  className="px-6 py-2.5 rounded-xl bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-extrabold shadow-md shadow-[#6C5CE7]/20 transition disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                 >
                   {loading ? (
                     <>

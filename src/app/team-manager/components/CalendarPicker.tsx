@@ -81,7 +81,7 @@ export default function CalendarPicker({ value, onChange }: CalendarPickerProps)
 
   return (
     <div className="relative" ref={calendarRef}>
-      <label className="text-xs font-black text-slate-900 uppercase tracking-wider block mb-1.5">
+      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5">
         Program Date
       </label>
 

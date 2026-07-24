@@ -62,7 +62,7 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <label className="text-xs font-black text-slate-900 uppercase tracking-wider block mb-1.5">
+      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5">
         Wedding Program Type
       </label>
 

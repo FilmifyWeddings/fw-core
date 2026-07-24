@@ -66,7 +66,7 @@ export default function SmartTimePicker({
 
   return (
     <div className="space-y-1.5" ref={dropdownRef}>
-      <label className="text-[10px] text-slate-800 font-extrabold block uppercase tracking-wider">
+      <label className="text-[10px] text-[#4F5E74] font-bold block uppercase tracking-wider">
         {label}
       </label>
       <div className="relative flex gap-1.5">
