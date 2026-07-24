@@ -79,12 +79,8 @@ const format12HourTime = (timeStr?: string): string => {
   return `${formattedHours}:${minutes} ${ampm}`;
 };
 
-// Robust assignment resolver ensuring roles are fetched via fw_assignments relation
+// Robust assignment resolver ensuring ALL configured roles remain visible (assigned or unassigned)
 const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMember[]): FWAssignment[] => {
-  if (subEvent.fw_assignments && subEvent.fw_assignments.length > 0) {
-    return subEvent.fw_assignments;
-  }
-
   let rawRoles: string[] = [];
   if (Array.isArray((subEvent as any).roles)) {
     rawRoles = (subEvent as any).roles;
@@ -96,16 +92,26 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
     rawRoles = (subEvent as any).event_roles;
   }
 
-  if (!rawRoles || rawRoles.length === 0) {
-    return [];
+  const existingAssignments = subEvent.fw_assignments || [];
+  const assignRoles = existingAssignments.map(a => a.required_role).filter(Boolean);
+  const allRoles = Array.from(new Set([...rawRoles, ...assignRoles]));
+
+  if (allRoles.length === 0) {
+    return existingAssignments;
   }
 
-  return rawRoles.map((r: string, idx: number) => {
+  return allRoles.map((role: string, idx: number) => {
+    const existing = existingAssignments.find(
+      a => a.required_role?.toLowerCase() === role.toLowerCase()
+    );
+    if (existing) {
+      return existing;
+    }
     return {
       id: `${subEvent.id}-role-${idx}`,
       sub_event_id: subEvent.id,
       project_id: subEvent.project_id,
-      required_role: r,
+      required_role: role,
       assigned_member_id: null,
       fw_team_members: null,
     };
