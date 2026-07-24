@@ -79,6 +79,42 @@ const format12HourTime = (timeStr?: string): string => {
   return `${formattedHours}:${minutes} ${ampm}`;
 };
 
+// Robust assignment resolver ensuring roles are never empty on any card
+const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMember[]): FWAssignment[] => {
+  if (subEvent.fw_assignments && subEvent.fw_assignments.length > 0) {
+    return subEvent.fw_assignments;
+  }
+
+  let rawRoles: string[] = [];
+  if (Array.isArray((subEvent as any).roles)) {
+    rawRoles = (subEvent as any).roles;
+  } else if (typeof (subEvent as any).roles === 'string') {
+    try { rawRoles = JSON.parse((subEvent as any).roles); } catch (e) {}
+  } else if (Array.isArray((subEvent as any).roles_assigned)) {
+    rawRoles = (subEvent as any).roles_assigned;
+  } else if (Array.isArray((subEvent as any).event_roles)) {
+    rawRoles = (subEvent as any).event_roles;
+  }
+
+  if (!rawRoles || rawRoles.length === 0) {
+    rawRoles = ['TP', 'Ass'];
+  }
+
+  return rawRoles.map((r: string, idx: number) => {
+    const matchedMember = teamMembers.find(
+      m => m.primary_role?.toLowerCase() === r.toLowerCase() || m.name?.toLowerCase() === r.toLowerCase()
+    );
+    return {
+      id: `${subEvent.id}-role-${idx}`,
+      sub_event_id: subEvent.id,
+      project_id: subEvent.project_id,
+      required_role: r,
+      assigned_member_id: matchedMember ? matchedMember.id : null,
+      fw_team_members: matchedMember || null,
+    };
+  });
+};
+
 export default function TeamManagerPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   
@@ -322,8 +358,9 @@ export default function TeamManagerPage() {
       if (targetProjectId && blocks.length > 0) {
         for (const block of blocks) {
           const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
+          const rolesToSave = (block.roles && block.roles.length > 0) ? block.roles : ['TP', 'Ass'];
           
-          // Construct sub-event record payload
+          // Construct sub-event record payload with roles attached
           const subEventPayload: any = {
             project_id: targetProjectId,
             event_title: title,
@@ -333,6 +370,7 @@ export default function TeamManagerPage() {
             roll_call_time: block.startTime || '10:00',
             dismissal_estimate_time: block.endTime || '18:00',
             operational_notes: block.notes || null,
+            roles: rolesToSave,
           };
 
           const { data: insertedSubEvent, error: seErr } = await supabase
@@ -344,8 +382,8 @@ export default function TeamManagerPage() {
           if (seErr) throw seErr;
 
           // Insert all selected role placements into fw_assignments table
-          if (insertedSubEvent && block.roles && block.roles.length > 0) {
-            const assignmentsPayload = block.roles.map(role => {
+          if (insertedSubEvent) {
+            const assignmentsPayload = rolesToSave.map(role => {
               const matchedMember = teamMembers.find(
                 m => m.primary_role?.toLowerCase() === role.toLowerCase() || m.name?.toLowerCase() === role.toLowerCase()
               );
@@ -656,17 +694,8 @@ export default function TeamManagerPage() {
                               ? '2026' 
                               : eventDate.getFullYear().toString();
 
-                            // Fallback role construction if fw_assignments is empty
-                            const assignments = (subEvent.fw_assignments && subEvent.fw_assignments.length > 0)
-                              ? subEvent.fw_assignments
-                              : ((subEvent as any).roles || (subEvent as any).event_roles || []).map((r: string, idx: number) => ({
-                                  id: `${subEvent.id}-role-${idx}`,
-                                  sub_event_id: subEvent.id,
-                                  project_id: subEvent.project_id,
-                                  required_role: r,
-                                  assigned_member_id: null,
-                                  fw_team_members: null
-                                }));
+                            // Robust assignment resolver ensuring roles are never empty
+                            const assignments = resolveSubEventAssignments(subEvent, teamMembers);
 
                             return (
                               <div 
@@ -744,76 +773,82 @@ export default function TeamManagerPage() {
 
                                   <div className="border-t border-slate-100 my-1.5" />
 
-                                  <div className="flex items-start gap-4 flex-wrap">
-                                    {assignments?.map((assignment: any) => {
-                                      const isAssigned = assignment.assigned_member_id !== null;
-                                      const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                                      const rawName = memberObj?.name || '';
-                                      const cleanName = rawName.replace(/\.\.\./g, '').trim();
-                                      const role = assignment.required_role;
-                                      const dropdownKey = assignment.id;
+                                  {/* CREW PLACEMENT ROLE BADGES GRID */}
+                                  <div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
+                                      Assigned Crew Roster (Click avatar to assign role)
+                                    </span>
+                                    <div className="flex items-start gap-4 flex-wrap">
+                                      {assignments.map((assignment: any) => {
+                                        const isAssigned = assignment.assigned_member_id !== null;
+                                        const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                        const rawName = memberObj?.name || '';
+                                        const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                                        const role = assignment.required_role;
+                                        const dropdownKey = assignment.id;
 
-                                      const { line1, line2 } = formatMemberName2Lines(cleanName);
+                                        const { line1, line2 } = formatMemberName2Lines(cleanName);
 
-                                      return (
-                                        <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
-                                          <div
-                                            data-assignment-id={assignment.id}
-                                            onClick={(e) => {
-                                              const rect = e.currentTarget.getBoundingClientRect();
-                                              if (activeDropdownId === dropdownKey) {
-                                                setActiveDropdownId(null);
-                                                setDropdownPos(null);
-                                              } else {
-                                                setActiveDropdownId(dropdownKey);
-                                                setMemberSearchQuery('');
-                                                setDropdownPos({
-                                                  top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                  left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
-                                                });
-                                              }
-                                            }}
-                                            className="flex flex-col items-center group cursor-pointer"
-                                            title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
-                                          >
-                                            {isAssigned ? (
-                                              memberObj?.avatar_url ? (
-                                                // eslint-disable-next-next/no-img-element
-                                                <img 
-                                                  src={memberObj.avatar_url} 
-                                                  alt={cleanName} 
-                                                  className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
-                                                  onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
-                                                  }}
-                                                />
+                                        return (
+                                          <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
+                                            <div
+                                              data-assignment-id={assignment.id}
+                                              onClick={(e) => {
+                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                if (activeDropdownId === dropdownKey) {
+                                                  setActiveDropdownId(null);
+                                                  setDropdownPos(null);
+                                                } else {
+                                                  setActiveDropdownId(dropdownKey);
+                                                  setMemberSearchQuery('');
+                                                  setDropdownPos({
+                                                    top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                    left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
+                                                  });
+                                                }
+                                              }}
+                                              className="flex flex-col items-center group cursor-pointer"
+                                              title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
+                                            >
+                                              {isAssigned ? (
+                                                memberObj?.avatar_url ? (
+                                                  // eslint-disable-next-next/no-img-element
+                                                  <img 
+                                                    src={memberObj.avatar_url} 
+                                                    alt={cleanName} 
+                                                    className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
+                                                    onError={(e) => {
+                                                      (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
+                                                    }}
+                                                  />
+                                                ) : (
+                                                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
+                                                    {getInitials(cleanName || role)}
+                                                  </div>
+                                                )
                                               ) : (
-                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
-                                                  {getInitials(cleanName || role)}
+                                                <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                                  <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
                                                 </div>
-                                              )
-                                            ) : (
-                                              <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
-                                              </div>
-                                            )}
+                                              )}
 
-                                            <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
-                                              isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
-                                            }`}>
-                                              {role}
-                                            </span>
+                                              <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
+                                                isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                              }`}>
+                                                {role}
+                                              </span>
 
-                                            {isAssigned && (
-                                              <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
-                                                <span className="block leading-none truncate max-w-[90px]">{line1}</span>
-                                                {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
-                                              </div>
-                                            )}
+                                              {isAssigned && (
+                                                <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
+                                                  <span className="block leading-none truncate max-w-[90px]">{line1}</span>
+                                                  {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
+                                                </div>
+                                              )}
+                                            </div>
                                           </div>
-                                        </div>
-                                      );
-                                    })}
+                                        );
+                                      })}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -869,18 +904,7 @@ export default function TeamManagerPage() {
                             <div className="text-center py-4 text-xs text-slate-400 italic">No sub-events added yet.</div>
                           ) : (
                             subEvents.map((subEvent) => {
-                              // Fallback role construction if fw_assignments is empty
-                              const assignments = (subEvent.fw_assignments && subEvent.fw_assignments.length > 0)
-                                ? subEvent.fw_assignments
-                                : ((subEvent as any).roles || (subEvent as any).event_roles || []).map((r: string, idx: number) => ({
-                                    id: `${subEvent.id}-role-${idx}`,
-                                    sub_event_id: subEvent.id,
-                                    project_id: subEvent.project_id,
-                                    required_role: r,
-                                    assigned_member_id: null,
-                                    fw_team_members: null
-                                  }));
-
+                              const assignments = resolveSubEventAssignments(subEvent, teamMembers);
                               const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
                               const totalSlots = assignments.length;
 
@@ -935,71 +959,67 @@ export default function TeamManagerPage() {
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
                                       Crew Placements
                                     </span>
-                                    {assignments.length === 0 ? (
-                                      <span className="text-xs text-slate-400 italic">No roles configured</span>
-                                    ) : (
-                                      <div className="flex items-center gap-3 flex-wrap">
-                                        {assignments.map((assignment: any) => {
-                                          const member = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                                          const isAssigned = member !== undefined && member !== null;
-                                          const role = assignment.required_role || 'Crew';
-                                          const cleanName = member?.name ? member.name.replace(/\.\.\./g, '').trim() : '';
-                                          const { line1, line2 } = formatMemberName2Lines(cleanName);
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      {assignments.map((assignment: any) => {
+                                        const member = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                        const isAssigned = member !== undefined && member !== null;
+                                        const role = assignment.required_role || 'Crew';
+                                        const cleanName = member?.name ? member.name.replace(/\.\.\./g, '').trim() : '';
+                                        const { line1, line2 } = formatMemberName2Lines(cleanName);
 
-                                          return (
-                                            <div
-                                              key={assignment.id}
-                                              data-assignment-id={assignment.id}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                setDropdownPos({
-                                                  top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                  left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
-                                                });
-                                                setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
-                                              }}
-                                              className="flex flex-col items-center group/node cursor-pointer select-none relative"
-                                            >
-                                              {isAssigned ? (
-                                                member.avatar_url ? (
-                                                  // eslint-disable-next-next/no-img-element
-                                                  <img
-                                                    src={member.avatar_url}
-                                                    alt={cleanName}
-                                                    className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 shrink-0"
-                                                    onError={(e) => {
-                                                      (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
-                                                    }}
-                                                  />
-                                                ) : (
-                                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 shrink-0">
-                                                    {getInitials(cleanName || role)}
-                                                  </div>
-                                                )
+                                        return (
+                                          <div
+                                            key={assignment.id}
+                                            data-assignment-id={assignment.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              setDropdownPos({
+                                                top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
+                                              });
+                                              setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
+                                            }}
+                                            className="flex flex-col items-center group/node cursor-pointer select-none relative"
+                                          >
+                                            {isAssigned ? (
+                                              member.avatar_url ? (
+                                                // eslint-disable-next-next/no-img-element
+                                                <img
+                                                  src={member.avatar_url}
+                                                  alt={cleanName}
+                                                  className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 shrink-0"
+                                                  onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                                                  }}
+                                                />
                                               ) : (
-                                                <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
-                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 shrink-0">
+                                                  {getInitials(cleanName || role)}
                                                 </div>
-                                              )}
+                                              )
+                                            ) : (
+                                              <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
+                                                <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                              </div>
+                                            )}
 
-                                              <span className={`font-bold text-[9px] uppercase tracking-wide block text-center mt-1 leading-none ${
-                                                isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
-                                              }`}>
-                                                {role}
-                                              </span>
+                                            <span className={`font-bold text-[9px] uppercase tracking-wide block text-center mt-1 leading-none ${
+                                              isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                            }`}>
+                                              {role}
+                                            </span>
 
-                                              {isAssigned && (
-                                                <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[10px] leading-tight max-w-[75px] mt-0.5">
-                                                  <span className="block leading-none truncate max-w-[75px]">{line1}</span>
-                                                  {line2 ? <span className="block leading-none truncate max-w-[75px] mt-0.5">{line2}</span> : null}
-                                                </div>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
+                                            {isAssigned && (
+                                              <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[10px] leading-tight max-w-[75px] mt-0.5">
+                                                <span className="block leading-none truncate max-w-[75px]">{line1}</span>
+                                                {line2 ? <span className="block leading-none truncate max-w-[75px] mt-0.5">{line2}</span> : null}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
                                 </div>
                               );
