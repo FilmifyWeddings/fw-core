@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FWProject, FWSubEvent, FWTeamMember } from '@/types';
+import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import { 
-  ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, MapPin, 
-  X, Sparkles 
+  Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, MapPin, 
+  UserCheck, AlertCircle, X, Sparkles, Filter 
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
 
@@ -19,23 +19,40 @@ interface Professional3DCalendarProps {
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
 }
 
-interface CalendarSubEventItem {
-  subEvent: FWSubEvent;
-  project: FWProject;
-}
+// Fallback assignment resolver
+const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMember[]): FWAssignment[] => {
+  if (subEvent.fw_assignments && subEvent.fw_assignments.length > 0) {
+    return subEvent.fw_assignments;
+  }
 
-const getInitials = (name: string) => {
-  if (!name) return 'CR';
-  const parts = name.split(' ').filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-};
+  let rawRoles: string[] = [];
+  if (Array.isArray((subEvent as any).roles)) {
+    rawRoles = (subEvent as any).roles;
+  } else if (typeof (subEvent as any).roles === 'string') {
+    try { rawRoles = JSON.parse((subEvent as any).roles); } catch (e) {}
+  } else if (Array.isArray((subEvent as any).roles_assigned)) {
+    rawRoles = (subEvent as any).roles_assigned;
+  } else if (Array.isArray((subEvent as any).event_roles)) {
+    rawRoles = (subEvent as any).event_roles;
+  }
 
-const formatMemberName2Lines = (fullName: string) => {
-  if (!fullName) return { line1: '', line2: '' };
-  const parts = fullName.split(' ').filter(Boolean);
-  if (parts.length === 1) return { line1: parts[0], line2: '' };
-  return { line1: parts[0], line2: parts.slice(1).join(' ') };
+  if (rawRoles.length === 0) {
+    rawRoles = ['TP', 'Ass'];
+  }
+
+  return rawRoles.map((r: string, idx: number) => {
+    const matchedMember = teamMembers.find(
+      m => m.primary_role?.toLowerCase() === r.toLowerCase() || m.name?.toLowerCase() === r.toLowerCase()
+    );
+    return {
+      id: `${subEvent.id}-role-${idx}`,
+      sub_event_id: subEvent.id,
+      project_id: subEvent.project_id,
+      required_role: r,
+      assigned_member_id: matchedMember ? matchedMember.id : null,
+      fw_team_members: matchedMember || null,
+    };
+  });
 };
 
 export default function Professional3DCalendar({
@@ -52,28 +69,31 @@ export default function Professional3DCalendar({
   const [selectedDayInspector, setSelectedDayInspector] = useState<{
     dateStr: string;
     formattedDate: string;
-    items: CalendarSubEventItem[];
+    items: { subEvent: FWSubEvent; project: FWProject }[];
   } | null>(null);
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-
-  const firstDayOfMonth = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-
+  // Month navigation helpers
   const prevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   };
 
   const nextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   };
 
   const goToToday = () => {
     setCurrentDate(new Date());
   };
 
-  const eventsByDate: { [dateStr: string]: CalendarSubEventItem[] } = {};
+  // Calendar Grid Calculation
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const firstDayOfMonth = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Map events to date strings YYYY-MM-DD
+  const eventsByDate: { [dateStr: string]: { subEvent: FWSubEvent; project: FWProject }[] } = {};
 
   projects.forEach((project) => {
     if (project.is_archived) return;
@@ -85,15 +105,14 @@ export default function Professional3DCalendar({
       const matchSubTitle = !q || se.event_title.toLowerCase().includes(q);
       if (!matchClientName && !matchSubTitle) return;
 
+      const assignments = resolveSubEventAssignments(se, teamMembers);
+
       if (selectedRoleFilter !== 'All') {
-        const hasRole = se.fw_assignments?.some((a) => a.required_role === selectedRoleFilter);
+        const hasRole = assignments.some((a) => a.required_role === selectedRoleFilter);
         if (!hasRole) return;
       }
 
-      const d = new Date(se.event_date);
-      if (isNaN(d.getTime())) return;
-
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = se.event_date;
       if (!eventsByDate[dateStr]) {
         eventsByDate[dateStr] = [];
       }
@@ -139,112 +158,90 @@ export default function Professional3DCalendar({
                 title="Previous Month"
                 className="p-2 hover:bg-white rounded-xl text-slate-700 transition cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-5 h-5" />
               </button>
               <button
                 onClick={nextMonth}
                 title="Next Month"
                 className="p-2 hover:bg-white rounded-xl text-slate-700 transition cursor-pointer"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-5 h-5" />
               </button>
             </div>
           </div>
         </div>
 
-        {/* CALENDAR GRID */}
-        <div>
-          <div className="grid grid-cols-7 gap-2 text-center mb-3">
-            {daysOfWeek.map((day, idx) => (
-              <div
-                key={day}
-                className={`py-2 text-xs font-black uppercase tracking-wider rounded-xl ${
-                  idx === 0 || idx === 6 ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-600 bg-slate-100/60'
-                }`}
-              >
+        {/* CALENDAR MONTH GRID */}
+        <div className="space-y-2">
+          {/* DAY NAMES HEADER */}
+          <div className="grid grid-cols-7 gap-2 text-center">
+            {daysOfWeek.map((day) => (
+              <div key={day} className="py-2 text-xs font-black text-slate-400 uppercase tracking-wider">
                 {day}
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-2 sm:gap-3">
+          {/* DATES GRID */}
+          <div className="grid grid-cols-7 gap-2">
+            {/* Blank leading slots */}
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-              <div
-                key={`empty-${i}`}
-                className="min-h-[100px] sm:min-h-[120px] bg-slate-50/40 rounded-2xl border border-dashed border-slate-200/60 opacity-40"
-              />
+              <div key={`blank-${i}`} className="min-h-[100px] md:min-h-[130px] rounded-2xl bg-slate-50/50 border border-slate-100/80" />
             ))}
 
-            {Array.from({ length: daysInMonth }).map((_, dayIdx) => {
-              const dayNum = dayIdx + 1;
-              const dateObj = new Date(year, month, dayNum);
-              const yearPad = dateObj.getFullYear();
-              const monthPad = (dateObj.getMonth() + 1).toString().padStart(2, '0');
-              const dayPad = dayNum.toString().padStart(2, '0');
-              const dateStr = `${yearPad}-${monthPad}-${dayPad}`;
-
-              const items = eventsByDate[dateStr] || [];
+            {/* Month Day Cells */}
+            {Array.from({ length: daysInMonth }).map((_, i) => {
+              const dayNum = i + 1;
+              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
               const isToday = dateStr === todayStr;
-
-              const formattedDate = dateObj.toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              });
+              const items = eventsByDate[dateStr] || [];
 
               return (
                 <div
-                  key={dateStr}
+                  key={dayNum}
                   onClick={() => {
                     if (items.length > 0) {
-                      setSelectedDayInspector({ dateStr, formattedDate, items });
+                      const dObj = new Date(dateStr);
+                      setSelectedDayInspector({
+                        dateStr,
+                        formattedDate: dObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
+                        items,
+                      });
                     }
                   }}
-                  className={`min-h-[100px] sm:min-h-[120px] rounded-2xl border p-2 flex flex-col justify-between transition-all duration-200 select-none ${
-                    items.length > 0 ? 'cursor-pointer hover:shadow-md hover:scale-[1.01]' : ''
-                  } ${
+                  className={`min-h-[100px] md:min-h-[130px] p-2.5 rounded-2xl border-2 transition-all flex flex-col justify-between ${
                     isToday
-                      ? 'bg-gradient-to-b from-indigo-50/90 via-purple-50/40 to-white border-2 border-indigo-500 shadow-md shadow-indigo-100/50'
+                      ? 'border-indigo-600 bg-indigo-50/30 shadow-md ring-2 ring-indigo-500/20'
                       : items.length > 0
-                      ? 'bg-white border-slate-300/90 shadow-xs hover:border-indigo-400'
-                      : 'bg-slate-50/50 border-slate-200/60 hover:bg-white'
+                      ? 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-md cursor-pointer'
+                      : 'border-slate-100 bg-white/60'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span
-                      className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black transition ${
-                        isToday
-                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                          : 'text-slate-800'
-                      }`}
-                    >
+                    <span className={`text-xs md:text-sm font-black ${
+                      isToday ? 'w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs' : 'text-slate-700'
+                    }`}>
                       {dayNum}
                     </span>
 
                     {items.length > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 font-black text-[10px] border border-indigo-200">
-                        {items.length} {items.length === 1 ? 'Event' : 'Events'}
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black border border-indigo-200">
+                        {items.length} Event{items.length === 1 ? '' : 's'}
                       </span>
                     )}
                   </div>
 
-                  <div className="space-y-1.5 mt-2 overflow-hidden">
-                    {items.slice(0, 2).map(({ subEvent, project }, idx) => {
-                      const grad = getGradientByProjectId(project.id || project.client_name);
-
-                      return (
-                        <div
-                          key={`${subEvent.id}-${idx}`}
-                          className={`${grad} text-white p-1.5 rounded-xl text-[10px] font-bold shadow-xs truncate`}
-                        >
-                          <div className="font-extrabold truncate">{project.client_name}</div>
-                          <div className="text-white/90 font-medium text-[9px] truncate">
-                            {subEvent.event_title}
-                          </div>
-                        </div>
-                      );
-                    })}
+                  {/* EVENTS PILLS PREVIEW */}
+                  <div className="space-y-1 mt-1 flex-1">
+                    {items.slice(0, 2).map(({ subEvent, project }, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-indigo-900 text-white p-1.5 rounded-xl text-[10px] font-extrabold truncate border border-indigo-950 shadow-2xs"
+                      >
+                        <span className="text-amber-300 block font-black leading-tight">{project.client_name}</span>
+                        <span className="text-white/90 block font-semibold truncate leading-tight">{subEvent.event_title}</span>
+                      </div>
+                    ))}
 
                     {items.length > 2 && (
                       <div className="text-[10px] font-bold text-indigo-600 text-center bg-indigo-50 py-0.5 rounded-lg border border-indigo-100">
@@ -287,7 +284,7 @@ export default function Professional3DCalendar({
             {/* EVENTS BREAKDOWN LIST WITH INTERACTIVE ASSIGNMENT DROPDOWNS */}
             <div className="space-y-4">
               {selectedDayInspector.items.map(({ subEvent, project }) => {
-                const assignments = subEvent.fw_assignments || [];
+                const assignments = resolveSubEventAssignments(subEvent, teamMembers);
 
                 return (
                   <div
@@ -318,48 +315,34 @@ export default function Professional3DCalendar({
                     </div>
 
                     {subEvent.venue_name && (
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600" />
                         <span>{subEvent.venue_name}</span>
                       </div>
                     )}
 
-                    {/* CREW ALLOCATIONS WITH INTERACTIVE ROLE ASSIGNMENT DROPDOWNS */}
                     <div>
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                        Assigned Crew Roster (Click chip to assign team member)
+                        Assigned Crew Roster
                       </span>
-                      {assignments.length === 0 ? (
-                        <span className="text-xs text-slate-400 italic">No roles configured for this event.</span>
-                      ) : (
-                        <div className="flex items-center gap-4 flex-wrap pt-1">
-                          {assignments.map((assignment) => (
-                            <RoleAssignDropdown
-                              key={assignment.id}
-                              assignment={assignment}
-                              subEventId={subEvent.id}
-                              projectId={project.id}
-                              teamMembers={teamMembers}
-                              onAssignMember={onAssignMember}
-                              onAddNewMember={onAddNewMember}
-                              variant="avatar"
-                            />
-                          ))}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-4 flex-wrap pt-1">
+                        {assignments.map((assignment) => (
+                          <RoleAssignDropdown
+                            key={assignment.id}
+                            assignment={assignment}
+                            subEventId={subEvent.id}
+                            projectId={project.id}
+                            teamMembers={teamMembers}
+                            onAssignMember={onAssignMember}
+                            onAddNewMember={onAddNewMember}
+                            variant="avatar"
+                          />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 );
               })}
-            </div>
-
-            <div className="pt-2 text-right">
-              <button
-                onClick={() => setSelectedDayInspector(null)}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-2xl transition cursor-pointer"
-              >
-                Close Inspector
-              </button>
             </div>
           </div>
         </div>
