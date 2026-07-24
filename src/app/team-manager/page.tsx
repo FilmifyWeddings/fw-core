@@ -522,7 +522,7 @@ export default function TeamManagerPage() {
           </div>
         </div>
 
-        {/* ─── TAB VIEW: CARDS VIEW (RESTORED ORIGINAL PC/DESKTOP CONTAINER + VERTICAL GRADIENT DATE BLOCK) ─── */}
+        {/* ─── TAB VIEW: CARDS VIEW (SMART DUAL RESPONSIVE LAYOUT: PC DESKTOP + MOBILE APP CARDS) ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
             {loading ? (
@@ -547,215 +547,379 @@ export default function TeamManagerPage() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-8">
-                {filteredProjects.map((project) => {
-                  const projectGradient = getGradientByProjectId(project.id || project.client_name);
+              <>
+                {/* 1. DESKTOP / PC CARDS VIEW (RESTORED MASTER CLIENT CONTAINER + VERTICAL GRADIENT DATE BLOCK) */}
+                <div className="hidden lg:block space-y-8">
+                  {filteredProjects.map((project) => {
+                    const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
-                  return (
-                    /* MASTER CLIENT CONTAINER CHASSIS (RESTORED ORIGINAL DESKTOP LAYOUT) */
-                    <div 
-                      key={project.id}
-                      className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8"
-                    >
-                      {/* MASTER CLIENT CARD HEADER */}
-                      <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
-                        <div className="flex items-center gap-3">
-                          <h3 className="text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
-                            {project.client_name}
-                          </h3>
-                          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
-                            {project.fw_sub_events?.length || 0} Sub-Events
-                          </span>
+                    return (
+                      <div 
+                        key={project.id}
+                        className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8"
+                      >
+                        {/* MASTER CLIENT CARD HEADER */}
+                        <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
+                              {project.client_name}
+                            </h3>
+                            <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
+                              {project.fw_sub_events?.length || 0} Sub-Events
+                            </span>
+                          </div>
+
+                          <button 
+                            title="Edit Project"
+                            onClick={() => {
+                              setEditingProject(project);
+                              setIsAddProjectOpen(true);
+                            }}
+                            className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
                         </div>
 
-                        {/* SINGLE PENCIL EDIT BUTTON */}
-                        <button 
-                          title="Edit Project"
-                          onClick={() => {
-                            setEditingProject(project);
-                            setIsAddProjectOpen(true);
-                          }}
-                          className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                      </div>
+                        {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
+                        <div className="space-y-4">
+                          {project.fw_sub_events?.map((subEvent) => {
+                            const eventDate = new Date(subEvent.event_date);
+                            const dayName = isNaN(eventDate.getTime()) 
+                              ? 'DAY' 
+                              : eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                            const monthAbbr = isNaN(eventDate.getTime()) 
+                              ? 'MMM' 
+                              : eventDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+                            const dayNumber = isNaN(eventDate.getTime()) 
+                              ? '00' 
+                              : eventDate.getDate().toString().padStart(2, '0');
+                            const yearStr = isNaN(eventDate.getTime()) 
+                              ? '2026' 
+                              : eventDate.getFullYear().toString();
 
-                      {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
-                      <div className="space-y-4">
-                        {project.fw_sub_events?.map((subEvent) => {
-                          const eventDate = new Date(subEvent.event_date);
-                          const dayName = isNaN(eventDate.getTime()) 
-                            ? 'DAY' 
-                            : eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-                          const monthAbbr = isNaN(eventDate.getTime()) 
-                            ? 'MMM' 
-                            : eventDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-                          const dayNumber = isNaN(eventDate.getTime()) 
-                            ? '00' 
-                            : eventDate.getDate().toString().padStart(2, '0');
-                          const yearStr = isNaN(eventDate.getTime()) 
-                            ? '2026' 
-                            : eventDate.getFullYear().toString();
-
-                          return (
-                            /* MODERN GRADIENT SUB-EVENT CARD */
-                            <div 
-                              key={subEvent.id}
-                              className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-stretch overflow-hidden"
-                            >
-                              {/* 1. LEFT VERTICAL GRADIENT DATE BLOCK (DETERMINISTIC ID-BASED GRADIENT) */}
-                              <div className={`${projectGradient} w-full md:w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
-                                <div>
-                                  <span className="text-xs font-bold text-white/80 uppercase tracking-wider block">
-                                    {dayName}
-                                  </span>
-                                  <span className="text-2xl font-black text-white leading-none my-1 block">
-                                    {dayNumber}
-                                  </span>
-                                  <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider block">
-                                    {monthAbbr}
-                                  </span>
-                                  <span className="text-[10px] font-semibold text-white/70 tracking-widest mt-0.5 block">
-                                    {yearStr}
-                                  </span>
-                                </div>
-
-                                <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
-                                  <Calendar className="w-3.5 h-3.5" />
-                                </div>
-                              </div>
-
-                              {/* MAIN RIGHT CONTENT BODY */}
-                              <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
-                                <div>
-                                  <div className="flex items-start justify-between gap-3 mb-1">
-                                    <h4 className="font-black text-slate-900 text-sm md:text-base tracking-tight" style={{ color: '#1E1B4B' }}>
-                                      {subEvent.event_title}
-                                    </h4>
+                            return (
+                              <div 
+                                key={subEvent.id}
+                                className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-row items-stretch overflow-hidden"
+                              >
+                                {/* LEFT VERTICAL GRADIENT DATE BLOCK */}
+                                <div className={`${projectGradient} w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
+                                  <div>
+                                    <span className="text-xs font-bold text-white/80 uppercase tracking-wider block">
+                                      {dayName}
+                                    </span>
+                                    <span className="text-2xl font-black text-white leading-none my-1 block">
+                                      {dayNumber}
+                                    </span>
+                                    <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider block">
+                                      {monthAbbr}
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-white/70 tracking-widest mt-0.5 block">
+                                      {yearStr}
+                                    </span>
                                   </div>
 
-                                  <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
+                                  <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
+                                    <Calendar className="w-3.5 h-3.5" />
+                                  </div>
+                                </div>
+
+                                {/* MAIN RIGHT CONTENT BODY */}
+                                <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
+                                  <div>
+                                    <div className="flex items-start justify-between gap-3 mb-1">
+                                      <h4 className="font-black text-slate-900 text-base tracking-tight" style={{ color: '#1E1B4B' }}>
+                                        {subEvent.event_title}
+                                      </h4>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
+                                      {subEvent.roll_call_time && (
+                                        <div className="flex items-center gap-1.5 text-slate-700">
+                                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                          <span>
+                                            {format12HourTime(subEvent.roll_call_time)}
+                                            {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                          </span>
+                                        </div>
+                                      )}
+                                      
+                                      {subEvent.roll_call_time && subEvent.venue_name && (
+                                        <span className="text-slate-300 font-normal">|</span>
+                                      )}
+
+                                      {subEvent.venue_name && (
+                                        <div className="relative group/venue">
+                                          <a
+                                            href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
+                                          >
+                                            <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                                            <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
+                                          </a>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {subEvent.operational_notes && (
+                                    <div className="bg-amber-50/80 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2 my-1">
+                                      <FileText className="w-4 h-4 text-amber-600 shrink-0" />
+                                      <span>{subEvent.operational_notes}</span>
+                                    </div>
+                                  )}
+
+                                  <div className="border-t border-slate-100 my-1.5" />
+
+                                  <div className="flex items-start gap-4 flex-wrap">
+                                    {subEvent.fw_assignments?.map((assignment) => {
+                                      const isAssigned = assignment.assigned_member_id !== null;
+                                      const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                      const rawName = memberObj?.name || '';
+                                      const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                                      const role = assignment.required_role;
+                                      const dropdownKey = assignment.id;
+
+                                      const { line1, line2 } = formatMemberName2Lines(cleanName);
+
+                                      return (
+                                        <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
+                                          <div
+                                            onClick={(e) => {
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              if (activeDropdownId === dropdownKey) {
+                                                setActiveDropdownId(null);
+                                                setDropdownPos(null);
+                                              } else {
+                                                setActiveDropdownId(dropdownKey);
+                                                setMemberSearchQuery('');
+                                                setDropdownPos({
+                                                  top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                  left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
+                                                });
+                                              }
+                                            }}
+                                            className="flex flex-col items-center group cursor-pointer"
+                                            title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
+                                          >
+                                            {isAssigned ? (
+                                              memberObj?.avatar_url ? (
+                                                // eslint-disable-next-next/no-img-element
+                                                <img 
+                                                  src={memberObj.avatar_url} 
+                                                  alt={cleanName} 
+                                                  className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
+                                                  onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
+                                                  }}
+                                                />
+                                              ) : (
+                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
+                                                  {getInitials(cleanName || role)}
+                                                </div>
+                                              )
+                                            ) : (
+                                              <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                                <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
+                                              </div>
+                                            )}
+
+                                            <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
+                                              isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                            }`}>
+                                              {role}
+                                            </span>
+
+                                            {isAssigned && (
+                                              <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
+                                                <span className="block leading-none truncate max-w-[90px]">{line1}</span>
+                                                {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 2. MOBILE / TABLET CARDS VIEW (COMPACT STACKED CLIENT CARDS LAYOUT) */}
+                <div className="block lg:hidden grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {filteredProjects.map((project) => {
+                    const subEvents = project.fw_sub_events || [];
+
+                    return (
+                      <div
+                        key={project.id}
+                        className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 overflow-hidden flex flex-col hover:border-indigo-300 transition duration-200 group"
+                      >
+                        {/* CLIENT CARD HEADER BAR */}
+                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-2xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
+                              {getInitials(project.client_name)}
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-black text-white tracking-tight flex items-center gap-2">
+                                {project.client_name}
+                              </h3>
+                              <span className="text-[10px] font-bold text-slate-300">
+                                {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Configured
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              setEditingProject(project);
+                              setIsAddProjectOpen(true);
+                            }}
+                            className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer"
+                            title="Edit Project Configuration"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* SUB-EVENTS LIST */}
+                        <div className="p-4 space-y-4 flex-1 bg-slate-50/40">
+                          {subEvents.length === 0 ? (
+                            <div className="text-center py-4 text-xs text-slate-400 italic">No sub-events added yet.</div>
+                          ) : (
+                            subEvents.map((subEvent) => {
+                              const assignments = subEvent.fw_assignments || [];
+                              const assignedCount = assignments.filter(a => a.assigned_member_id !== null).length;
+                              const totalSlots = assignments.length;
+
+                              return (
+                                <div
+                                  key={subEvent.id}
+                                  className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-2xs"
+                                >
+                                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                    <div>
+                                      <h4 className="font-extrabold text-slate-900 text-xs">
+                                        {subEvent.event_title}
+                                      </h4>
+                                      <span className="text-[10px] font-bold text-slate-500 block mt-0.5">
+                                        {subEvent.event_date} ({getCountdownBadge(subEvent.event_date)})
+                                      </span>
+                                    </div>
+
+                                    <span className="px-2 py-0.5 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold text-[10px] border border-indigo-100">
+                                      {assignedCount}/{totalSlots} Roles
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 text-xs font-bold text-slate-600 flex-wrap">
                                     {subEvent.roll_call_time && (
-                                      <div className="flex items-center gap-1.5 text-slate-700">
-                                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                      <div className="flex items-center gap-1 text-slate-700 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200 text-[11px]">
+                                        <Clock className="w-3 h-3 text-indigo-600" />
                                         <span>
                                           {format12HourTime(subEvent.roll_call_time)}
                                           {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
                                         </span>
                                       </div>
                                     )}
-                                    
-                                    {subEvent.roll_call_time && subEvent.venue_name && (
-                                      <span className="text-slate-300 font-normal">|</span>
-                                    )}
 
                                     {subEvent.venue_name && (
-                                      <div className="relative group/venue">
-                                        <a
-                                          href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
-                                        >
-                                          <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                                          <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
-                                        </a>
+                                      <div className="flex items-center gap-1 text-emerald-700 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200 text-[11px]">
+                                        <MapPin className="w-3 h-3 text-emerald-600" />
+                                        <span className="truncate max-w-[120px]">{subEvent.venue_name}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
+                                      Crew Placements
+                                    </span>
+                                    {assignments.length === 0 ? (
+                                      <span className="text-xs text-slate-400 italic">No roles configured</span>
+                                    ) : (
+                                      <div className="flex items-center gap-3 flex-wrap">
+                                        {assignments.map((assignment) => {
+                                          const member = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                          const isAssigned = member !== undefined && member !== null;
+                                          const role = assignment.required_role || 'Crew';
+                                          const cleanName = member?.name ? member.name.replace(/\.\.\./g, '').trim() : '';
+                                          const { line1, line2 } = formatMemberName2Lines(cleanName);
+
+                                          return (
+                                            <div
+                                              key={assignment.id}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                setDropdownPos({
+                                                  top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                  left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
+                                                });
+                                                setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
+                                              }}
+                                              className="flex flex-col items-center group/node cursor-pointer select-none relative"
+                                            >
+                                              {isAssigned ? (
+                                                member.avatar_url ? (
+                                                  // eslint-disable-next-next/no-img-element
+                                                  <img
+                                                    src={member.avatar_url}
+                                                    alt={cleanName}
+                                                    className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 shrink-0"
+                                                    onError={(e) => {
+                                                      (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                                                    }}
+                                                  />
+                                                ) : (
+                                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 shrink-0">
+                                                    {getInitials(cleanName || role)}
+                                                  </div>
+                                                )
+                                              ) : (
+                                                <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
+                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                </div>
+                                              )}
+
+                                              <span className={`font-bold text-[9px] uppercase tracking-wide block text-center mt-1 leading-none ${
+                                                isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                              }`}>
+                                                {role}
+                                              </span>
+
+                                              {isAssigned && (
+                                                <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[10px] leading-tight max-w-[75px] mt-0.5">
+                                                  <span className="block leading-none truncate max-w-[75px]">{line1}</span>
+                                                  {line2 ? <span className="block leading-none truncate max-w-[75px] mt-0.5">{line2}</span> : null}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     )}
                                   </div>
                                 </div>
-
-                                {subEvent.operational_notes && (
-                                  <div className="bg-amber-50/80 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2 my-1">
-                                    <FileText className="w-4 h-4 text-amber-600 shrink-0" />
-                                    <span>{subEvent.operational_notes}</span>
-                                  </div>
-                                )}
-
-                                <div className="border-t border-slate-100 my-1.5" />
-
-                                {/* CREW ALLOCATION ROSTER CHIPS (CIRCULAR AVATARS) */}
-                                <div className="flex items-start gap-4 flex-wrap">
-                                  {subEvent.fw_assignments?.map((assignment) => {
-                                    const isAssigned = assignment.assigned_member_id !== null;
-                                    const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                                    const rawName = memberObj?.name || '';
-                                    const cleanName = rawName.replace(/\.\.\./g, '').trim();
-                                    const role = assignment.required_role;
-                                    const dropdownKey = assignment.id;
-                                    const isDropdownOpen = activeDropdownId === dropdownKey;
-
-                                    const { line1, line2 } = formatMemberName2Lines(cleanName);
-
-                                    return (
-                                      <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
-                                        <div
-                                          onClick={(e) => {
-                                            const rect = e.currentTarget.getBoundingClientRect();
-                                            if (activeDropdownId === dropdownKey) {
-                                              setActiveDropdownId(null);
-                                              setDropdownPos(null);
-                                            } else {
-                                              setActiveDropdownId(dropdownKey);
-                                              setMemberSearchQuery('');
-                                              setDropdownPos({
-                                                top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
-                                              });
-                                            }
-                                          }}
-                                          className="flex flex-col items-center group cursor-pointer"
-                                          title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
-                                        >
-                                          {isAssigned ? (
-                                            memberObj?.avatar_url ? (
-                                              // eslint-disable-next-next/no-img-element
-                                              <img 
-                                                src={memberObj.avatar_url} 
-                                                alt={cleanName} 
-                                                className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
-                                                onError={(e) => {
-                                                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
-                                                }}
-                                              />
-                                            ) : (
-                                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
-                                                {getInitials(cleanName || role)}
-                                              </div>
-                                            )
-                                          ) : (
-                                            <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                              <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
-                                            </div>
-                                          )}
-
-                                          <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
-                                            isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
-                                          }`}>
-                                            {role}
-                                          </span>
-
-                                          {isAssigned && (
-                                            <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
-                                              <span className="block leading-none truncate max-w-[90px]">{line1}</span>
-                                              {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}
