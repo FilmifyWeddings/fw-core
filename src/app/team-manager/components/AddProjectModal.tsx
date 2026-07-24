@@ -59,7 +59,9 @@ export default function AddProjectModal({
           mapLink: se.venue_map_link || '',
           startTime: se.roll_call_time || '10:00',
           endTime: se.dismissal_estimate_time || '18:00',
-          roles: se.fw_assignments?.map(a => a.required_role) || ['TP', 'Ass'],
+          roles: se.fw_assignments && se.fw_assignments.length > 0
+            ? se.fw_assignments.map(a => a.required_role)
+            : ((se as any).roles || (se as any).event_roles || ['TP', 'Ass']),
           notes: se.operational_notes || '',
         }));
         setEventBlocks(blocks);
@@ -134,6 +136,7 @@ export default function AddProjectModal({
         ...DEFAULT_BLOCK,
         id: Math.random().toString(36).slice(2),
         subEventNames: [],
+        roles: ['TP', 'Ass'],
       },
     ]);
   };
@@ -156,9 +159,10 @@ export default function AddProjectModal({
   const toggleRoleInBlock = (blockId: string, role: string) => {
     setEventBlocks(prev => prev.map(b => {
       if (b.id !== blockId) return b;
-      const roles = b.roles.includes(role)
-        ? b.roles.filter(r => r !== role)
-        : [...b.roles, role];
+      const currentRoles = b.roles || [];
+      const roles = currentRoles.includes(role)
+        ? currentRoles.filter(r => r !== role)
+        : [...currentRoles, role];
       return { ...b, roles };
     }));
   };
@@ -167,8 +171,16 @@ export default function AddProjectModal({
     setCustomPrograms(prev => prev.includes(name) ? prev : [...prev, name]);
   };
 
-  const handleAddCustomRole = (role: string) => {
+  const handleAddCustomRole = (blockId: string, role: string) => {
     setCustomRoles(prev => prev.includes(role) ? prev : [...prev, role]);
+    setEventBlocks(prev => prev.map(b => {
+      if (b.id !== blockId) return b;
+      const currentRoles = b.roles || [];
+      if (!currentRoles.includes(role)) {
+        return { ...b, roles: [...currentRoles, role] };
+      }
+      return b;
+    }));
   };
 
   const isCouplingNameError = validatedAttempt && !couplingName.trim();
@@ -282,7 +294,7 @@ export default function AddProjectModal({
                     onRemove={removeEventBlock}
                     onDuplicate={duplicateEventBlock}
                     onAddCustomProgram={handleAddCustomProgram}
-                    onAddCustomRole={handleAddCustomRole}
+                    onAddCustomRole={(role) => handleAddCustomRole(block.id, role)}
                     onToggleRole={toggleRoleInBlock}
                     hasProgramTypeError={validatedAttempt && block.subEventNames.length === 0}
                     hasDateError={validatedAttempt && !block.subEventDate}
