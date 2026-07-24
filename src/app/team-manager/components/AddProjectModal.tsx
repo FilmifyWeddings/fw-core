@@ -6,6 +6,14 @@ import { X, Plus, User, Sparkles, AlertCircle, Loader2, Save, Trash2, AlertTrian
 import EventBlock, { EventBlockData } from './EventBlock';
 import { FWProject } from '@/types';
 
+// Robust unique UUID generator for sub-event blocks
+const generateUniqueId = (): string => {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return `se-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+};
+
 const DEFAULT_BLOCK: EventBlockData = {
   id: '',
   subEventNames: [],
@@ -35,7 +43,7 @@ export default function AddProjectModal({
 }: AddProjectModalProps) {
   const [couplingName, setCouplingName] = useState('');
   const [eventBlocks, setEventBlocks] = useState<EventBlockData[]>([
-    { ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) },
+    { ...DEFAULT_BLOCK, id: generateUniqueId() },
   ]);
   const [customPrograms, setCustomPrograms] = useState<string[]>([]);
   const [customRoles, setCustomRoles] = useState<string[]>([]);
@@ -47,12 +55,23 @@ export default function AddProjectModal({
   const [validatedAttempt, setValidatedAttempt] = useState(false);
   const [validationAlert, setValidationAlert] = useState<{ title: string; issues: string[] } | null>(null);
 
+  const resetFormState = () => {
+    setCouplingName('');
+    setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: ['TP', 'Ass'] }]);
+    setCustomPrograms([]);
+    setCustomRoles([]);
+    setValidatedAttempt(false);
+    setValidationAlert(null);
+    setErrorMessage(null);
+    setShowDeleteConfirm(false);
+  };
+
   useEffect(() => {
     if (projectToEdit && isOpen) {
       setCouplingName(projectToEdit.client_name || '');
       if (projectToEdit.fw_sub_events && projectToEdit.fw_sub_events.length > 0) {
         const blocks: EventBlockData[] = projectToEdit.fw_sub_events.map(se => ({
-          id: se.id || Math.random().toString(36).slice(2),
+          id: se.id || generateUniqueId(),
           subEventNames: se.event_title ? [se.event_title] : [],
           subEventDate: se.event_date || '',
           venueLocation: se.venue_name || '',
@@ -66,15 +85,11 @@ export default function AddProjectModal({
         }));
         setEventBlocks(blocks);
       } else {
-        setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+        setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: ['TP', 'Ass'] }]);
       }
     } else if (isOpen) {
-      setCouplingName('');
-      setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+      resetFormState();
     }
-    setShowDeleteConfirm(false);
-    setValidatedAttempt(false);
-    setValidationAlert(null);
   }, [projectToEdit, isOpen]);
 
   const handleSubmit = async () => {
@@ -109,8 +124,7 @@ export default function AddProjectModal({
     try {
       const result = await onSave(couplingName, eventBlocks, projectToEdit?.id);
       if (result !== false) {
-        setCouplingName('');
-        setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
+        resetFormState();
         onClose();
       }
     } catch (err: any) {
@@ -125,6 +139,7 @@ export default function AddProjectModal({
     if (projectToEdit && onDeleteProject) {
       onDeleteProject(projectToEdit.id);
       setShowDeleteConfirm(false);
+      resetFormState();
       onClose();
     }
   };
@@ -134,7 +149,7 @@ export default function AddProjectModal({
       ...prev,
       {
         ...DEFAULT_BLOCK,
-        id: Math.random().toString(36).slice(2),
+        id: generateUniqueId(),
         subEventNames: [],
         roles: ['TP', 'Ass'],
       },
@@ -148,7 +163,7 @@ export default function AddProjectModal({
   const duplicateEventBlock = (block: EventBlockData) => {
     setEventBlocks(prev => [
       ...prev,
-      { ...block, id: Math.random().toString(36).slice(2) },
+      { ...block, id: generateUniqueId() },
     ]);
   };
 
