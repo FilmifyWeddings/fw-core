@@ -239,7 +239,7 @@ export default function TeamManagerPage() {
     }
   };
 
-  // Handle Project Creation & Update with Multi-Sub-Event Blocks
+  // Handle Project Creation & Update with Multi-Sub-Event Blocks (FIXED main_date NOT NULL)
   const handleSaveProject = async (
     couplingName: string,
     blocks: EventBlockData[],
@@ -247,11 +247,16 @@ export default function TeamManagerPage() {
   ) => {
     try {
       let targetProjectId = projectId;
+      const firstSubEventDate = blocks[0]?.subEventDate || new Date().toISOString().split('T')[0];
 
       if (projectId) {
         const { error: projErr } = await supabase
           .from('fw_projects')
-          .update({ client_name: couplingName, updated_at: new Date().toISOString() })
+          .update({ 
+            client_name: couplingName, 
+            main_date: firstSubEventDate,
+            updated_at: new Date().toISOString() 
+          })
           .eq('id', projectId);
         if (projErr) throw projErr;
 
@@ -268,7 +273,10 @@ export default function TeamManagerPage() {
       } else {
         const { data: newProj, error: projErr } = await supabase
           .from('fw_projects')
-          .insert([{ client_name: couplingName }])
+          .insert([{ 
+            client_name: couplingName,
+            main_date: firstSubEventDate 
+          }])
           .select()
           .single();
         if (projErr) throw projErr;
@@ -391,7 +399,7 @@ export default function TeamManagerPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F8F9FD] text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15">
+    <div className="min-h-screen bg-[#F8F9FD] text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 pb-20 md:pb-6">
       <style>{customStyle}</style>
 
       {/* ─────────────────────────────────────────────────────────────
@@ -399,126 +407,129 @@ export default function TeamManagerPage() {
          ───────────────────────────────────────────────────────────── */}
       <main className="w-full min-h-screen px-4 sm:px-6 lg:px-8 py-6 bg-slate-100 space-y-6">
         
-        {/* Top Responsive Header Block */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight flex items-center gap-2 flex-wrap">
-              Welcome back, Studio Admin 👋
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-2xs">
-                v3.0-mobile-app
-              </span>
-            </h2>
-            <p className="text-xs text-[#4F5E74] font-bold mt-0.5">
-              Here&apos;s what&apos;s happening with your wedding operations today.
-            </p>
-          </div>
-
-          {/* Action controls row */}
-          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap w-full lg:w-auto justify-start sm:justify-end">
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input 
-                type="text"
-                placeholder="Search clients or sub-events..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#6C5CE7]/10 rounded-2xl text-xs font-bold text-[#0B111E] placeholder:text-[#4F5E74]/60 focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
-              />
+        {/* PC STICKY TOP TOOLBAR WRAPPER */}
+        <div className="sticky top-0 z-30 bg-slate-100/95 backdrop-blur-md pb-4 pt-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 border-b border-slate-200/60 shadow-2xs space-y-4">
+          {/* Top Responsive Header Block */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight flex items-center gap-2 flex-wrap">
+                Welcome back, Studio Admin 👋
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black tracking-wide border border-emerald-300 shadow-2xs">
+                  v3.0-mobile-app
+                </span>
+              </h2>
+              <p className="text-xs text-[#4F5E74] font-bold mt-0.5">
+                Here&apos;s what&apos;s happening with your wedding operations today.
+              </p>
             </div>
 
-            <button
-              onClick={() => {
-                setActiveAssignmentForMember(null);
-                setIsAddMemberOpen(true);
-              }}
-              className="bg-white border border-[#6C5CE7]/20 hover:border-[#6C5CE7] text-[#6C5CE7] text-xs font-bold px-4 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-2xs shrink-0 cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span className="hidden sm:inline">+ Add Team Member</span>
-              <span className="sm:hidden">+ Member</span>
-            </button>
+            {/* Action controls row */}
+            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap w-full lg:w-auto justify-start sm:justify-end">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input 
+                  type="text"
+                  placeholder="Search clients or sub-events..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#6C5CE7]/10 rounded-2xl text-xs font-bold text-[#0B111E] placeholder:text-[#4F5E74]/60 focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
+                />
+              </div>
 
-            <button 
-              onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-              className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30 shrink-0 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Add Project
-            </button>
+              <button
+                onClick={() => {
+                  setActiveAssignmentForMember(null);
+                  setIsAddMemberOpen(true);
+                }}
+                className="bg-white border border-[#6C5CE7]/20 hover:border-[#6C5CE7] text-[#6C5CE7] text-xs font-bold px-4 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-2xs shrink-0 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span className="hidden sm:inline">+ Add Team Member</span>
+                <span className="sm:hidden">+ Member</span>
+              </button>
 
-            <button 
-              type="button" 
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
-              title="Team & Operations Settings"
-            >
-              <Settings className="w-5 h-5"/>
-            </button>
+              <button 
+                onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/20 hover:shadow-[#6C5CE7]/30 shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Add Project
+              </button>
+
+              <button 
+                type="button" 
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
+                title="Team & Operations Settings"
+              >
+                <Settings className="w-5 h-5"/>
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* ─── VIEW MODE NAVIGATION SWITCHER BAR ─── */}
-        <div className="flex items-center justify-between gap-3 bg-white/95 backdrop-blur-md p-2 rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full py-0.5 scrollbar-none">
-            <button
-              onClick={() => setActiveTab('projects')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
-                activeTab === 'projects'
-                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Grid className="w-4 h-4" />
-              Cards View (Client-Wise)
-            </button>
+          {/* ─── VIEW MODE NAVIGATION SWITCHER BAR (DESKTOP) ─── */}
+          <div className="hidden md:flex items-center justify-between gap-3 bg-white/95 backdrop-blur-md p-2 rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="flex items-center gap-1.5 overflow-x-auto w-full py-0.5 scrollbar-none">
+              <button
+                onClick={() => setActiveTab('projects')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'projects'
+                    ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Grid className="w-4 h-4" />
+                Cards View (Client-Wise)
+              </button>
 
-            <button
-              onClick={() => setActiveTab('list')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
-                activeTab === 'list'
-                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <List className="w-4 h-4" />
-              Month-Wise List View
-            </button>
+              <button
+                onClick={() => setActiveTab('list')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'list'
+                    ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <List className="w-4 h-4" />
+                Month-Wise List View
+              </button>
 
-            <button
-              onClick={() => setActiveTab('calendar')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
-                activeTab === 'calendar'
-                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              3D Professional Calendar
-            </button>
+              <button
+                onClick={() => setActiveTab('calendar')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'calendar'
+                    ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                3D Professional Calendar
+              </button>
 
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
-                activeTab === 'overview'
-                  ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <TrendingUp className="w-4 h-4" />
-              Overview Stats
-            </button>
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'overview'
+                    ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4" />
+                Overview Stats
+              </button>
 
-            <button
-              onClick={() => setActiveTab('trash')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
-                activeTab === 'trash'
-                  ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30'
-                  : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50'
-              }`}
-            >
-              <Trash2 className="w-4 h-4" />
-              Trash Buffer ({projects.filter(p => p.is_archived).length})
-            </button>
+              <button
+                onClick={() => setActiveTab('trash')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'trash'
+                    ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30'
+                    : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50'
+                }`}
+              >
+                <Trash2 className="w-4 h-4" />
+                Trash Buffer ({projects.filter(p => p.is_archived).length})
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1016,6 +1027,59 @@ export default function TeamManagerPage() {
         )}
 
       </main>
+
+      {/* ─── MOBILE STICKY BOTTOM FOOTER NAVIGATION BAR ─── */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-2xl px-2 py-1.5 flex items-center justify-around">
+        <button
+          onClick={() => setActiveTab('projects')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
+            activeTab === 'projects' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
+          }`}
+        >
+          <Grid className="w-5 h-5" />
+          <span className="text-[10px]">Cards</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('list')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
+            activeTab === 'list' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
+          }`}
+        >
+          <List className="w-5 h-5" />
+          <span className="text-[10px]">Month</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('calendar')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
+            activeTab === 'calendar' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
+          }`}
+        >
+          <Calendar className="w-5 h-5" />
+          <span className="text-[10px]">3D Cal</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
+            activeTab === 'overview' ? 'text-[#6C5CE7] font-black' : 'text-slate-500 font-bold'
+          }`}
+        >
+          <TrendingUp className="w-5 h-5" />
+          <span className="text-[10px]">Stats</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('trash')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition ${
+            activeTab === 'trash' ? 'text-rose-600 font-black' : 'text-slate-500 font-bold'
+          }`}
+        >
+          <Trash2 className="w-5 h-5" />
+          <span className="text-[10px]">Trash</span>
+        </button>
+      </div>
 
       {/* ─────────────────────────────────────────────────────────────
           GLOBAL POPUP MODALS

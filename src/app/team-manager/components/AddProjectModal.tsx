@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, User, Sparkles, AlertCircle, Loader2, Save, Trash2, AlertTriangle } from 'lucide-react';
+import { X, Plus, User, Sparkles, AlertCircle, Loader2, Save, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import EventBlock, { EventBlockData } from './EventBlock';
 import { FWProject } from '@/types';
 
@@ -43,6 +43,10 @@ export default function AddProjectModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Validation State
+  const [validatedAttempt, setValidatedAttempt] = useState(false);
+  const [validationAlert, setValidationAlert] = useState<{ title: string; issues: string[] } | null>(null);
+
   useEffect(() => {
     if (projectToEdit && isOpen) {
       setCouplingName(projectToEdit.client_name || '');
@@ -67,15 +71,39 @@ export default function AddProjectModal({
       setEventBlocks([{ ...DEFAULT_BLOCK, id: Math.random().toString(36).slice(2) }]);
     }
     setShowDeleteConfirm(false);
+    setValidatedAttempt(false);
+    setValidationAlert(null);
   }, [projectToEdit, isOpen]);
 
   const handleSubmit = async () => {
+    setValidatedAttempt(true);
+    const issues: string[] = [];
+
     if (!couplingName.trim()) {
-      setErrorMessage('Please enter a valid Client Coupling Name / Couple Profile.');
+      issues.push('Client Couple Name / Profile (Required)');
+    }
+
+    eventBlocks.forEach((block, idx) => {
+      if (block.subEventNames.length === 0) {
+        issues.push(`Event #${idx + 1}: Wedding Program Type (Required)`);
+      }
+      if (!block.subEventDate) {
+        issues.push(`Event #${idx + 1}: Program Date (Required)`);
+      }
+    });
+
+    if (issues.length > 0) {
+      setValidationAlert({
+        title: 'Missing Mandatory Information',
+        issues,
+      });
       return;
     }
+
+    setValidationAlert(null);
     setErrorMessage(null);
     setIsSubmitting(true);
+
     try {
       const result = await onSave(couplingName, eventBlocks, projectToEdit?.id);
       if (result !== false) {
@@ -143,163 +171,150 @@ export default function AddProjectModal({
     setCustomRoles(prev => prev.includes(role) ? prev : [...prev, role]);
   };
 
+  const isCouplingNameError = validatedAttempt && !couplingName.trim();
+
   return (
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-4">
-          {/* GLASSMORPHISM BACKDROP */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
           />
 
-          {/* 3D MODAL CHASSIS */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 15 }}
+            initial={{ scale: 0.95, opacity: 0, y: 10 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 10 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative z-10 bg-white w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col rounded-[24px] border border-slate-200 shadow-2xl"
+            className="relative w-full max-w-3xl max-h-[90vh] bg-white border border-slate-200 rounded-[28px] shadow-2xl overflow-hidden flex flex-col z-10"
           >
-            {/* CLEAN PROFESSIONAL HEADER */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white shrink-0">
+            {/* MINIMAL MODAL HEADER */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#6C5CE7] flex items-center justify-center text-white shadow-md shadow-[#6C5CE7]/20">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-[#6C5CE7] flex items-center justify-center font-black">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-[#0B111E] tracking-tight">
-                    {projectToEdit ? 'Edit Wedding Project' : 'Create Wedding Project'}
+                  <h3 className="text-base font-black text-[#0B111E] tracking-tight">
+                    {projectToEdit ? 'Edit Project Configuration' : 'Create New Wedding Project'}
                   </h3>
-                  <p className="text-xs text-[#4F5E74] font-semibold mt-0.5">
-                    {projectToEdit ? `Updating configuration for ${projectToEdit.client_name}` : 'Configure client profile and program event blocks.'}
+                  <p className="text-xs text-[#4F5E74] font-semibold">
+                    Set up client profile, sub-events, and crew allocations.
                   </p>
                 </div>
               </div>
 
-              {/* TOP RIGHT ACTIONS: DELETE BUTTON (WHEN EDITING) & CLOSE BUTTON */}
               <div className="flex items-center gap-2">
                 {projectToEdit && onDeleteProject && (
                   <button
                     type="button"
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-rose-200"
-                    title="Move Project to Trash"
+                    className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-200/60 transition cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                    title="Delete Project Card"
                   >
-                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <Trash2 className="w-4 h-4" />
                     <span className="hidden sm:inline">Delete Card</span>
                   </button>
                 )}
 
                 <button
-                  type="button"
                   onClick={onClose}
-                  className="w-9 h-9 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[#4F5E74] flex items-center justify-center transition cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition cursor-pointer"
                 >
-                  <X className="w-4.5 h-4.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* ERROR BANNER */}
-            {errorMessage && (
-              <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-xs text-rose-800 font-bold shrink-0">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <span className="block font-extrabold">Database Operation Warning</span>
-                  <span className="font-medium text-[11px] text-rose-700">{errorMessage}</span>
+            {/* SCROLLABLE FORM BODY */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/40">
+              {errorMessage && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{errorMessage}</span>
                 </div>
-                <button 
-                  onClick={() => setErrorMessage(null)} 
-                  className="text-rose-400 hover:text-rose-700"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
+              )}
 
-            {/* SCROLLABLE BODY */}
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-slate-50/60">
-
-              {/* CLIENT NAME INPUT CARD */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-                <label className="text-xs font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-2">
-                  <User className="w-4 h-4 text-[#6C5CE7]" />
-                  Client Coupling Name / Couple Profile
+              {/* CLIENT NAME INPUT */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200/90 space-y-2 shadow-2xs">
+                <label className="text-xs font-black text-[#0B111E] uppercase tracking-wider block flex items-center gap-1">
+                  <span>Client Couple Name / Profile</span>
+                  <span className="text-rose-500 font-black">*</span>
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Sharma & Malhotra"
-                  value={couplingName}
-                  onChange={(e) => {
-                    setCouplingName(e.target.value);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  className="w-full bg-[#F8F9FD] border border-slate-200 focus:border-[#6C5CE7] focus:bg-white px-4 py-3 rounded-xl text-[#0B111E] font-bold text-base placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
-                />
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={couplingName}
+                    onChange={(e) => setCouplingName(e.target.value)}
+                    placeholder="e.g. Prakash & Mage Wedding"
+                    className={`w-full bg-[#F8F9FD] border-2 pl-10 pr-4 py-2.5 rounded-xl text-xs font-extrabold text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs ${
+                      isCouplingNameError
+                        ? 'border-rose-500 ring-2 ring-rose-500/40 animate-pulse bg-rose-50/50'
+                        : 'border-slate-200 focus:border-[#6C5CE7] focus:bg-white'
+                    }`}
+                  />
+                </div>
               </div>
 
-              {/* DYNAMIC SUB-EVENT BLOCKS CONTAINER */}
+              {/* MULTI SUB-EVENT BLOCKS LIST */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between px-1">
-                  <span className="text-xs font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-[#6C5CE7]" />
-                    Wedding Sub-Events & Requirements
-                  </span>
-                  <span className="px-3 py-1 rounded-full bg-indigo-50 text-[#6C5CE7] text-xs font-bold border border-indigo-100">
-                    {eventBlocks.length} Block{eventBlocks.length === 1 ? '' : 's'} Configured
+                  <h4 className="text-xs font-black text-[#0B111E] uppercase tracking-wider">
+                    Sub-Events Breakdown ({eventBlocks.length})
+                  </h4>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    Required fields marked with <span className="text-rose-500 font-black">*</span>
                   </span>
                 </div>
 
-                <AnimatePresence mode="popLayout">
-                  {eventBlocks.map((block, index) => (
-                    <EventBlock
-                      key={block.id}
-                      block={block}
-                      index={index}
-                      totalBlocks={eventBlocks.length}
-                      onUpdate={updateEventBlock}
-                      onRemove={removeEventBlock}
-                      onDuplicate={duplicateEventBlock}
-                      onAddCustomProgram={handleAddCustomProgram}
-                      onAddCustomRole={handleAddCustomRole}
-                      onToggleRole={toggleRoleInBlock}
-                    />
-                  ))}
-                </AnimatePresence>
+                {eventBlocks.map((block, idx) => (
+                  <EventBlock
+                    key={block.id}
+                    block={block}
+                    index={idx}
+                    totalBlocks={eventBlocks.length}
+                    onUpdate={updateEventBlock}
+                    onRemove={removeEventBlock}
+                    onDuplicate={duplicateEventBlock}
+                    onAddCustomProgram={handleAddCustomProgram}
+                    onAddCustomRole={handleAddCustomRole}
+                    onToggleRole={toggleRoleInBlock}
+                    hasProgramTypeError={validatedAttempt && block.subEventNames.length === 0}
+                    hasDateError={validatedAttempt && !block.subEventDate}
+                  />
+                ))}
 
-                {/* ADD ANOTHER SUB-EVENT BLOCK BUTTON */}
                 <button
                   type="button"
                   onClick={addEventBlock}
-                  className="w-full py-3.5 px-4 bg-white hover:bg-indigo-50/50 border-2 border-dashed border-indigo-200 text-[#6C5CE7] font-bold text-xs rounded-2xl transition flex items-center justify-center gap-2 shadow-2xs cursor-pointer"
+                  className="w-full py-3 border-2 border-dashed border-indigo-200 hover:border-[#6C5CE7] bg-indigo-50/50 hover:bg-indigo-50 text-[#6C5CE7] font-black text-xs rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
                 >
-                  <Plus className="w-4 h-4 text-[#6C5CE7]" />
-                  + Add Another Sub-Event Block
+                  <Plus className="w-4 h-4" />
+                  + Add Another Sub-Event
                 </button>
               </div>
             </div>
 
-            {/* FOOTER ACTIONS BAR */}
-            <div className="px-6 py-4 bg-white border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
+            {/* MODAL FOOTER */}
+            <div className="px-6 py-4 bg-white border-t border-slate-100 flex items-center justify-between shrink-0">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-[#4F5E74] font-bold text-xs rounded-xl transition cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
               >
                 Cancel
               </button>
 
               <button
                 type="button"
-                disabled={isSubmitting}
                 onClick={handleSubmit}
-                className="px-6 py-2.5 bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white font-extrabold text-xs rounded-xl transition flex items-center gap-2 shadow-md shadow-[#6C5CE7]/20 cursor-pointer disabled:opacity-50"
+                disabled={isSubmitting}
+                className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black px-6 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/25 cursor-pointer disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
@@ -309,53 +324,92 @@ export default function AddProjectModal({
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    Save Project Config
+                    Save Project Configuration
                   </>
                 )}
               </button>
             </div>
           </motion.div>
-        </div>
-      )}
 
-      {/* CONFIRMATION MODAL POPUP FOR DELETING PROJECT CARD */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[100005] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-150">
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4 text-center"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-
-            <div className="space-y-1">
-              <h3 className="text-lg font-extrabold text-[#0B111E]">Move Project to Trash?</h3>
-              <p className="text-xs font-semibold text-[#4F5E74]">
-                Are you sure you want to move <span className="font-extrabold text-slate-900">&quot;{couplingName || projectToEdit?.client_name}&quot;</span> to Trash? You can restore it anytime from the Trash tab.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+          {/* VALIDATION ERROR ALERT POPUP MODAL */}
+          {validationAlert && (
+            <div className="fixed inset-0 z-[100005] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-150">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4 text-center"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteConfirmed}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition shadow-md shadow-rose-500/20 cursor-pointer flex items-center gap-1.5"
-              >
-                <Trash2 className="w-4 h-4" />
-                Move to Trash
-              </button>
+                <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-base font-black text-[#0B111E]">{validationAlert.title}</h3>
+                  <p className="text-xs font-semibold text-[#4F5E74]">
+                    Please complete all mandatory fields highlighted in <span className="text-rose-600 font-black">blinking red</span> before saving:
+                  </p>
+                  <div className="bg-rose-50 border border-rose-200/80 rounded-2xl p-3 text-left space-y-1 max-h-36 overflow-y-auto">
+                    {validationAlert.issues.map((issue, idx) => (
+                      <div key={idx} className="text-xs font-bold text-rose-700 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                        <span>{issue}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setValidationAlert(null)}
+                  className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition shadow-md shadow-rose-500/20 cursor-pointer"
+                >
+                  Understand & Fix Missing Fields
+                </button>
+              </motion.div>
             </div>
-          </motion.div>
+          )}
+
+          {/* CONFIRMATION MODAL FOR DELETING CARD */}
+          {showDeleteConfirm && (
+            <div className="fixed inset-0 z-[100005] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-150">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4 text-center"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="text-lg font-extrabold text-[#0B111E]">Move Project to Trash?</h3>
+                  <p className="text-xs font-semibold text-[#4F5E74]">
+                    Are you sure you want to move <span className="font-extrabold text-slate-900">&quot;{couplingName}&quot;</span> to Trash? You can restore it anytime from the Trash tab.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteConfirmed}
+                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition shadow-md shadow-rose-500/20 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Move to Trash
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
         </div>
       )}
     </AnimatePresence>

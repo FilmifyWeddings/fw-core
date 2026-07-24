@@ -30,6 +30,8 @@ interface EventBlockProps {
   onAddCustomProgram: (name: string) => void;
   onAddCustomRole: (role: string) => void;
   onToggleRole: (blockId: string, role: string) => void;
+  hasProgramTypeError?: boolean;
+  hasDateError?: boolean;
 }
 
 export default function EventBlock({
@@ -42,6 +44,8 @@ export default function EventBlock({
   onAddCustomProgram,
   onAddCustomRole,
   onToggleRole,
+  hasProgramTypeError,
+  hasDateError,
 }: EventBlockProps) {
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
@@ -101,18 +105,40 @@ export default function EventBlock({
         selected={block.subEventNames}
         onChange={(names) => onUpdate(block.id, { subEventNames: names })}
         onAddCustom={onAddCustomProgram}
+        hasError={hasProgramTypeError}
       />
 
-      {/* 2. Program Date Custom Calendar */}
-      <CalendarPicker
-        value={block.subEventDate}
-        onChange={(date) => onUpdate(block.id, { subEventDate: date })}
-      />
+      {/* 2. PROGRAM DATE & CREW ROLL CALL TIME / DISMISSAL SHIFT SLOTS (ADJACENT SIDE-BY-SIDE) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+        <div className="sm:col-span-1">
+          <CalendarPicker
+            value={block.subEventDate}
+            onChange={(date) => onUpdate(block.id, { subEventDate: date })}
+            hasError={hasDateError}
+          />
+        </div>
 
-      {/* 3. Venue Coordinates / Location */}
+        <div className="sm:col-span-1">
+          <SmartTimePicker
+            label="Crew Roll Call Time"
+            value={block.startTime}
+            onChange={(time) => onUpdate(block.id, { startTime: time })}
+          />
+        </div>
+
+        <div className="sm:col-span-1">
+          <SmartTimePicker
+            label="Dismissal Estimate Time"
+            value={block.endTime}
+            onChange={(time) => onUpdate(block.id, { endTime: time })}
+          />
+        </div>
+      </div>
+
+      {/* 3. Venue Coordinates / Location (Optional) */}
       <div className="space-y-2">
         <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block">
-          Venue Coordinates / Location
+          Venue Coordinates / Location <span className="text-slate-400 font-normal lowercase">(optional)</span>
         </label>
         <div className="relative">
           <MapPin className="w-3.5 h-3.5 text-[#4F5E74] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -136,48 +162,29 @@ export default function EventBlock({
         </div>
       </div>
 
-      {/* 4. Crew Timing & Smart Hourly Slots */}
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block">
-          Crew Timing & Shift Slots
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <SmartTimePicker
-            label="Crew Roll Call Time"
-            value={block.startTime}
-            onChange={(time) => onUpdate(block.id, { startTime: time })}
-          />
-          <SmartTimePicker
-            label="Dismissal Estimate"
-            value={block.endTime}
-            onChange={(time) => onUpdate(block.id, { endTime: time })}
-            showSlots
-            slotReferenceTime={block.startTime}
-          />
-        </div>
-      </div>
-
-      {/* 5. Role Placements Grid */}
+      {/* 4. Roles Required Grid */}
       <RoleGrid
         selectedRoles={block.roles}
-        onToggle={(role) => onToggleRole(block.id, role)}
+        onToggle={(role: string) => onToggleRole(block.id, role)}
         onAddCustom={onAddCustomRole}
       />
 
-      {/* 6. Core Operational Notes */}
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
-          <MessageSquare className="w-3.5 h-3.5 text-[#6C5CE7]" />
-          Core Operational Notes / Instructions
+      {/* 5. Operational Notes / Comments (Optional) */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block">
+          Operational Notes & Instructions <span className="text-slate-400 font-normal lowercase">(optional)</span>
         </label>
-        <textarea
-          ref={notesRef}
-          value={block.notes}
-          onChange={(e) => onUpdate(block.id, { notes: e.target.value })}
-          placeholder="On-field directives, special instructions, VIP handling notes..."
-          rows={2}
-          className="w-full bg-[#F8F9FD] border border-slate-200 focus:border-[#6C5CE7] focus:bg-white px-3.5 py-2.5 rounded-xl text-xs font-medium text-[#0B111E] focus:outline-none transition resize-none placeholder:text-slate-400 min-h-[60px] shadow-2xs"
-        />
+        <div className="relative">
+          <MessageSquare className="w-3.5 h-3.5 text-[#4F5E74] absolute left-3 top-3" />
+          <textarea
+            ref={notesRef}
+            rows={1}
+            placeholder="Important operational notes for crew..."
+            value={block.notes}
+            onChange={(e) => onUpdate(block.id, { notes: e.target.value })}
+            className="w-full bg-[#F8F9FD] border border-slate-200 focus:border-[#6C5CE7] focus:bg-white pl-9 pr-3 py-2 rounded-xl text-xs font-medium text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs resize-none"
+          />
+        </div>
       </div>
     </motion.div>
   );

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, X, Plus } from 'lucide-react';
+import { ChevronDown, X, Plus, Search } from 'lucide-react';
 
 const DEFAULT_PROGRAMS = [
   'Wedding Ceremony',
@@ -20,10 +20,12 @@ interface ProgramTypeSelectProps {
   selected: string[];
   onChange: (programs: string[]) => void;
   onAddCustom: (name: string) => void;
+  hasError?: boolean;
 }
 
-export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: ProgramTypeSelectProps) {
+export default function ProgramTypeSelect({ selected, onChange, onAddCustom, hasError }: ProgramTypeSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
   const [customInput, setCustomInput] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -60,10 +62,15 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
     }
   };
 
+  const filteredPrograms = DEFAULT_PROGRAMS.filter(p => 
+    p.toLowerCase().includes(searchFilter.toLowerCase())
+  );
+
   return (
     <div className="relative" ref={dropdownRef}>
-      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5">
-        Wedding Program Type
+      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+        <span>Wedding Program Type</span>
+        <span className="text-rose-500 font-black">*</span>
       </label>
 
       {/* Selected tags display */}
@@ -91,9 +98,13 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-white border-2 border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none focus:border-[#6C5CE7] transition flex items-center justify-between shadow-2xs"
+        className={`w-full bg-white border-2 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none transition flex items-center justify-between shadow-2xs ${
+          hasError
+            ? 'border-rose-500 ring-2 ring-rose-500/40 animate-pulse bg-rose-50/50'
+            : 'border-slate-200 focus:border-[#6C5CE7]'
+        }`}
       >
-        <span className={selected.length === 0 ? 'text-slate-400' : ''}>
+        <span className={selected.length === 0 ? 'text-slate-400 font-semibold' : ''}>
           {selected.length === 0 ? 'Select program types...' : `${selected.length} type(s) selected`}
         </span>
         <ChevronDown className={`w-4 h-4 text-slate-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -107,13 +118,28 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute z-50 w-full mt-1.5 bg-white border border-[#6C5CE7]/10 rounded-2xl shadow-xl overflow-hidden"
+            className="absolute z-50 w-full mt-1.5 bg-white border border-[#6C5CE7]/20 rounded-2xl shadow-2xl overflow-hidden"
           >
+            {/* SEARCH FILTER BAR */}
+            <div className="p-2 border-b border-slate-100 bg-slate-50/80">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search event type..."
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#6C5CE7] placeholder:text-slate-400"
+                  autoFocus
+                />
+              </div>
+            </div>
+
             {/* Add Custom Event Name - persistent header link */}
             <button
               type="button"
               onClick={() => setShowCustomInput(!showCustomInput)}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-[11px] font-bold text-[#6C5CE7] hover:bg-[#6C5CE7]/5 transition border-b border-zinc-100"
+              className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-bold text-[#6C5CE7] hover:bg-[#6C5CE7]/5 transition border-b border-zinc-100"
             >
               <Plus className="w-3.5 h-3.5" />
               + Add Custom Event Name
@@ -136,7 +162,6 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
                       onKeyDown={(e) => e.key === 'Enter' && handleAddCustom()}
                       placeholder="Enter custom event name..."
                       className="flex-1 bg-[#F8F9FD] border border-[#6C5CE7]/10 px-3 py-1.5 rounded-lg text-[11px] font-semibold focus:outline-none focus:border-[#6C5CE7] transition text-[#0B111E]"
-                      autoFocus
                     />
                     <button
                       type="button"
@@ -152,26 +177,30 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom }: P
 
             {/* Options list */}
             <div className="max-h-48 overflow-y-auto p-1.5">
-              {DEFAULT_PROGRAMS.map((program) => {
-                const isSelected = selected.includes(program);
-                return (
-                  <button
-                    key={program}
-                    type="button"
-                    onClick={() => toggleProgram(program)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[11px] font-semibold transition ${
-                      isSelected
-                        ? 'bg-[#6C5CE7]/8 text-[#6C5CE7]'
-                        : 'text-[#0B111E] hover:bg-zinc-50'
-                    }`}
-                  >
-                    <span>{program}</span>
-                    {isSelected && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#6C5CE7]" />
-                    )}
-                  </button>
-                );
-              })}
+              {filteredPrograms.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-400 italic">No matching event types found</div>
+              ) : (
+                filteredPrograms.map((program) => {
+                  const isSelected = selected.includes(program);
+                  return (
+                    <button
+                      key={program}
+                      type="button"
+                      onClick={() => toggleProgram(program)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[11px] font-semibold transition ${
+                        isSelected
+                          ? 'bg-[#6C5CE7]/8 text-[#6C5CE7]'
+                          : 'text-[#0B111E] hover:bg-zinc-50'
+                      }`}
+                    >
+                      <span>{program}</span>
+                      {isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#6C5CE7]" />
+                      )}
+                    </button>
+                  );
+                })
+              )}
             </div>
           </motion.div>
         )}

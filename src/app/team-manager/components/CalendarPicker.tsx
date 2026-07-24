@@ -27,9 +27,10 @@ function formatDate(year: number, month: number, day: number) {
 interface CalendarPickerProps {
   value: string;
   onChange: (date: string) => void;
+  hasError?: boolean;
 }
 
-export default function CalendarPicker({ value, onChange }: CalendarPickerProps) {
+export default function CalendarPicker({ value, onChange, hasError }: CalendarPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -81,16 +82,21 @@ export default function CalendarPicker({ value, onChange }: CalendarPickerProps)
 
   return (
     <div className="relative" ref={calendarRef}>
-      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5">
-        Program Date
+      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+        <span>Program Date</span>
+        <span className="text-rose-500 font-black">*</span>
       </label>
 
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-white border-2 border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none focus:border-[#6C5CE7] transition flex items-center justify-between shadow-2xs"
+        className={`w-full bg-white border-2 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none transition flex items-center justify-between shadow-2xs ${
+          hasError
+            ? 'border-rose-500 ring-2 ring-rose-500/40 animate-pulse bg-rose-50/50'
+            : 'border-slate-200 focus:border-[#6C5CE7]'
+        }`}
       >
-        <span className={displayValue ? '' : 'text-slate-400'}>
+        <span className={displayValue ? '' : 'text-slate-400 font-semibold'}>
           {displayValue || 'Pick a date...'}
         </span>
         <Calendar className="w-4 h-4 text-slate-600" />
@@ -103,86 +109,72 @@ export default function CalendarPicker({ value, onChange }: CalendarPickerProps)
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute z-50 mt-1.5 bg-white border border-[#6C5CE7]/10 rounded-2xl shadow-xl p-3 w-full max-w-[280px]"
+            className="absolute z-50 w-64 mt-1.5 p-3 bg-white border border-[#6C5CE7]/10 rounded-2xl shadow-xl space-y-2 text-[#0B111E]"
           >
-            {/* Month/Year selector */}
-            <div className="flex items-center justify-between mb-3">
-              <button
-                type="button"
-                onClick={prevMonth}
-                className="w-7 h-7 rounded-lg bg-[#F8F9FD] border border-[#6C5CE7]/8 flex items-center justify-center hover:bg-[#6C5CE7]/8 transition"
-              >
-                <ChevronLeft className="w-3.5 h-3.5 text-[#4F5E74]" />
-              </button>
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={viewMonth}
-                  onChange={(e) => setViewMonth(Number(e.target.value))}
-                  className="bg-[#F8F9FD] border border-[#6C5CE7]/8 px-2 py-1 rounded-lg text-[11px] font-bold text-[#0B111E] focus:outline-none cursor-pointer"
+            {/* Header: month/year & nav */}
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+              <span className="text-xs font-bold text-[#0B111E]">
+                {MONTHS[viewMonth]} {viewYear}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={prevMonth}
+                  className="p-1 text-[#4F5E74] hover:text-[#6C5CE7] hover:bg-zinc-100 rounded-lg transition"
                 >
-                  {MONTHS.map((m, i) => (
-                    <option key={i} value={i}>{m}</option>
-                  ))}
-                </select>
-                <select
-                  value={viewYear}
-                  onChange={(e) => setViewYear(Number(e.target.value))}
-                  className="bg-[#F8F9FD] border border-[#6C5CE7]/8 px-2 py-1 rounded-lg text-[11px] font-bold text-[#0B111E] focus:outline-none cursor-pointer w-16"
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={nextMonth}
+                  className="p-1 text-[#4F5E74] hover:text-[#6C5CE7] hover:bg-zinc-100 rounded-lg transition"
                 >
-                  {Array.from({ length: 20 }, (_, i) => now.getFullYear() - 2 + i).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={nextMonth}
-                className="w-7 h-7 rounded-lg bg-[#F8F9FD] border border-[#6C5CE7]/8 flex items-center justify-center hover:bg-[#6C5CE7]/8 transition"
-              >
-                <ChevronRight className="w-3.5 h-3.5 text-[#4F5E74]" />
-              </button>
             </div>
 
-            {/* Weekday headers */}
-            <div className="grid grid-cols-7 gap-0.5 mb-1">
-              {WEEKDAYS.map((day) => (
-                <div key={day} className="text-center text-[9px] font-black text-[#4F5E74] py-1">
-                  {day}
-                </div>
+            {/* Weekdays */}
+            <div className="grid grid-cols-7 text-center">
+              {WEEKDAYS.map((d) => (
+                <span key={d} className="text-[10px] font-bold text-[#4F5E74]/70">
+                  {d}
+                </span>
               ))}
             </div>
 
-            {/* Day cells */}
-            <div className="grid grid-cols-7 gap-0.5">
+            {/* Grid of days */}
+            <div className="grid grid-cols-7 gap-1">
               {Array.from({ length: firstDay }).map((_, i) => (
                 <div key={`empty-${i}`} />
               ))}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
-                const dateStr = formatDate(viewYear, viewMonth, day);
-                const isSelected = value === dateStr;
-                const isToday = 
-                  day === now.getDate() && 
-                  viewMonth === now.getMonth() && 
-                  viewYear === now.getFullYear();
+                const isSelected =
+                  selectedDate &&
+                  selectedDate.getFullYear() === viewYear &&
+                  selectedDate.getMonth() === viewMonth &&
+                  selectedDate.getDate() === day;
+
+                const isToday =
+                  now.getFullYear() === viewYear &&
+                  now.getMonth() === viewMonth &&
+                  now.getDate() === day;
 
                 return (
                   <button
                     key={day}
                     type="button"
                     onClick={() => selectDay(day)}
-                    className={`relative w-full aspect-square rounded-xl text-[11px] font-bold flex items-center justify-center transition-all ${
+                    className={`h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition ${
                       isSelected
-                        ? 'bg-[#6C5CE7] text-white shadow-lg shadow-[#6C5CE7]/25 scale-105'
+                        ? 'bg-[#6C5CE7] text-white font-bold'
                         : isToday
-                        ? 'bg-[#6C5CE7]/8 text-[#6C5CE7]'
-                        : 'text-[#0B111E] hover:bg-zinc-50'
+                        ? 'bg-[#6C5CE7]/15 text-[#6C5CE7] font-bold'
+                        : 'text-[#0B111E] hover:bg-zinc-100'
                     }`}
                   >
                     {day}
-                    {isToday && !isSelected && (
-                      <span className="absolute bottom-1 w-1 h-1 rounded-full bg-[#6C5CE7]" />
-                    )}
                   </button>
                 );
               })}
