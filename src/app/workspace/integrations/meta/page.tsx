@@ -87,8 +87,16 @@ export default function RebuiltMetaIntegrationPage() {
   // Fetch Meta Connection Status, Pages, Forms & Logs from API
   const fetchMetaStatus = async () => {
     setIsLoading(true);
+    let targetWorkspaceId = '37c63a54-d4f1-4b99-b546-3d965cd23a37';
     try {
-      const res = await fetch('/api/meta/status');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        targetWorkspaceId = session.user.id;
+      }
+    } catch (_) {}
+
+    try {
+      const res = await fetch(`/api/meta/status?workspace_id=${targetWorkspaceId}`);
       const data = await res.json();
 
       if (data.success) {
@@ -218,11 +226,17 @@ export default function RebuiltMetaIntegrationPage() {
     // Optimistic UI update
     setForms(prev => prev.map(f => f.form_id === formId ? { ...f, is_active: nextActive } : f));
 
+    let activeWorkspaceId = '37c63a54-d4f1-4b99-b546-3d965cd23a37';
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) activeWorkspaceId = session.user.id;
+    } catch (_) {}
+
     try {
       const res = await fetch('/api/meta/forms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace_id: '00000000-0000-0000-0000-000000000000', form_id: formId, is_active: nextActive }),
+        body: JSON.stringify({ workspace_id: activeWorkspaceId, form_id: formId, is_active: nextActive }),
       });
       const data = await res.json();
       if (data.success) {
