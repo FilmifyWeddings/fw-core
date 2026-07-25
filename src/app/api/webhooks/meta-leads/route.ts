@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase';
 import { 
   logWebhookRequest, 
@@ -34,26 +35,65 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'Verification token mismatch' }, { status: 403 });
 }
 
-import crypto from 'crypto';
+export type SignatureVerifyResult = 
+  | { status: 'VALID' }
+  | { status: 'MISSING_SECRET'; message: string }
+  | { status: 'MISSING_HEADER'; message: string }
+  | { status: 'INVALID_SIGNATURE'; message: string };
 
-function verifyMetaHubSignature(rawBody: string, signatureHeader: string | null): boolean {
+/**
+ * Strict Fail-Closed HMAC SHA-256 Webhook Signature Verification
+ */
+export function verifyMetaHubSignatureStrict(rawBody: string, signatureHeader: string | null): SignatureVerifyResult {
   const appSecret = process.env.FACEBOOK_APP_SECRET;
-  if (!appSecret || appSecret === 'your_facebook_app_secret_here') return true;
-  if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
 
+  // 1. FAIL CLOSED: Missing or Misconfigured FACEBOOK_APP_SECRET
+  if (!appSecret || appSecret === 'your_facebook_app_secret_here') {
+    return {
+      status: 'MISSING_SECRET',
+      message: 'Server configuration error: FACEBOOK_APP_SECRET is not configured.',
+    };
+  }
+
+  // 2. FAIL CLOSED: Missing or Malformed X-Hub-Signature-256 Header
+  if (!signatureHeader || !signatureHeader.startsWith('sha256=')) {
+    return {
+      status: 'MISSING_HEADER',
+      message: 'Missing or malformed X-Hub-Signature-256 header.',
+    };
+  }
+
+  // 3. HMAC-SHA256 Checksum Calculation & timingSafeEqual Comparison
   try {
     const expectedSignature = signatureHeader.split('sha256=')[1];
     const hmac = crypto.createHmac('sha256', appSecret);
     const calculatedSignature = hmac.update(rawBody).digest('hex');
 
-    if (calculatedSignature.length !== expectedSignature.length) return false;
+    if (calculatedSignature.length !== expectedSignature.length) {
+      return {
+        status: 'INVALID_SIGNATURE',
+        message: 'Invalid HMAC X-Hub-Signature-256 signature length.',
+      };
+    }
 
-    return crypto.timingSafeEqual(
+    const isValid = crypto.timingSafeEqual(
       Buffer.from(calculatedSignature, 'hex'),
       Buffer.from(expectedSignature, 'hex')
     );
-  } catch (e) {
-    return false;
+
+    if (!isValid) {
+      return {
+        status: 'INVALID_SIGNATURE',
+        message: 'Invalid HMAC X-Hub-Signature-256 signature checksum mismatch.',
+      };
+    }
+
+    return { status: 'VALID' };
+  } catch (e: any) {
+    return {
+      status: 'INVALID_SIGNATURE',
+      message: `Signature verification exception: ${e.message}`,
+    };
   }
 }
 
@@ -67,18 +107,46 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signatureHeader = req.headers.get('x-hub-signature-256');
 
-    // ── X-Hub-Signature-256 HMAC Validation ──────────────────────────────
-    if (signatureHeader && !verifyMetaHubSignature(rawBody, signatureHeader)) {
-      console.error('[Meta Webhook SECURITY ERROR] Invalid X-Hub-Signature-256 header!');
+    // ── Strict Fail-Closed HMAC Signature Verification ────────────────────
+    const verifyResult = verifyMetaHubSignatureStrict(rawBody, signatureHeader);
+
+    if (verifyResult.status === 'MISSING_SECRET') {
+      console.error(`[CRITICAL CONFIG ERROR] ${verifyResult.message}`);
       await triggerAlert({
         alert_type: 'WEBHOOK_FAILURE',
         severity: 'CRITICAL',
-        title: 'Invalid Meta Webhook Signature',
-        message: 'Webhook request rejected due to invalid X-Hub-Signature-256 HMAC payload checksum.',
+        title: 'FACEBOOK_APP_SECRET Misconfigured',
+        message: verifyResult.message,
+        resolution_hint: 'Add FACEBOOK_APP_SECRET to .env.local and server environment variables.',
+      });
+      return NextResponse.json({ error: verifyResult.message }, { status: 500 });
+    }
+
+    if (verifyResult.status === 'MISSING_HEADER') {
+      console.warn(`[SECURITY WARN] ${verifyResult.message}`);
+      await triggerAlert({
+        alert_type: 'WEBHOOK_FAILURE',
+        severity: 'WARNING',
+        title: 'Missing Webhook Signature Header',
+        message: verifyResult.message,
+        resolution_hint: 'Ensure request originated from Meta Lead Ads webhook engine with SHA-256 enabled.',
+      });
+      return NextResponse.json({ error: 'Forbidden: Missing X-Hub-Signature-256 header' }, { status: 403 });
+    }
+
+    if (verifyResult.status === 'INVALID_SIGNATURE') {
+      console.error(`[SECURITY ERROR] ${verifyResult.message}`);
+      await triggerAlert({
+        alert_type: 'WEBHOOK_FAILURE',
+        severity: 'CRITICAL',
+        title: 'Invalid Webhook HMAC Signature',
+        message: verifyResult.message,
         resolution_hint: 'Verify FACEBOOK_APP_SECRET matches the App Secret in Meta App Dashboard.',
       });
-      return NextResponse.json({ error: 'Invalid HMAC X-Hub-Signature-256 signature' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Invalid HMAC X-Hub-Signature-256 signature' }, { status: 403 });
     }
+
+    console.log(`[SECURITY SUCCESS] HMAC X-Hub-Signature-256 verified successfully for Req: ${requestId}`);
 
     const payload = JSON.parse(rawBody || '{}');
     const entries = payload.entry || [];
@@ -276,12 +344,10 @@ export async function POST(req: NextRequest) {
                   error_message: errMessage,
                 });
 
-                // Detect Token Expiry / Invalid OAuth (Error Code 190 / 102 / 10)
                 if (errCode === 190 || errCode === 102 || errCode === 10 || errSubcode === 463) {
                   await markTokenNeedsReconnect(targetWorkspaceId, page_id, errMessage);
                 }
 
-                // Enqueue into Retry Queue so the lead payload is NOT lost!
                 await enqueueRetry({
                   workspace_id: targetWorkspaceId,
                   page_id,
@@ -375,7 +441,6 @@ export async function POST(req: NextRequest) {
               raw_payload: payload,
             });
           } else if (inserted) {
-            // Check for high latency (> 5000ms)
             if (totalDuration > 5000) {
               await triggerAlert({
                 workspace_id: targetWorkspaceId,
