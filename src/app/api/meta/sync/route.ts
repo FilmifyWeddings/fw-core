@@ -1,229 +1,184 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-export async function GET(req: NextRequest) {
+/**
+ * POST /api/meta/sync
+ * Body: { workspace_id, form_id, page_id }
+ *
+ * Fetches historical lead submissions directly from Meta Graph API:
+ * GET /{form-id}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id
+ *
+ * Saves unique leads into CRM leads table and updates meta_sync_logs.
+ */
+export async function POST(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const metaParam = searchParams.get('meta');
-    const isUrlConnected = metaParam === 'connected' || searchParams.has('pages');
+    const body = await req.json();
+    const { workspace_id, form_id, page_id } = body;
 
-    let userAccessToken: string | null = searchParams.get('access_token');
-    const workspaceId = '00000000-0000-0000-0000-000000000000';
-    const targetPageId = '110156851793416';
+    const workspaceId = workspace_id || '00000000-0000-0000-0000-000000000000';
 
-    if (!userAccessToken) {
-      try {
-        const { data: credData } = await supabaseAdmin
-          .from('integration_credentials')
-          .select('access_token')
-          .eq('provider', 'meta')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (credData?.access_token) {
-          userAccessToken = credData.access_token;
-        } else {
-          const { data: profileData } = await supabaseAdmin
-            .from('profiles')
-            .select('meta_access_token')
-            .not('meta_access_token', 'is', null)
-            .limit(1)
-            .single();
-
-          if (profileData?.meta_access_token) {
-            userAccessToken = profileData.meta_access_token;
-          }
-        }
-      } catch (dbErr: any) {}
+    if (!form_id) {
+      return NextResponse.json({ error: 'form_id required' }, { status: 400 });
     }
 
-    let pageAccessToken: string | null = null;
-    if (userAccessToken) {
-      try {
-        const meAccountsRes = await fetch(
-          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token&limit=100&access_token=${userAccessToken}`
-        );
-        if (meAccountsRes.ok) {
-          const meAccountsData = await meAccountsRes.json();
-          if (meAccountsData.data && Array.isArray(meAccountsData.data)) {
-            const matchedAcc = meAccountsData.data.find((a: any) => a.id === targetPageId);
-            if (matchedAcc?.access_token) {
-              pageAccessToken = matchedAcc.access_token;
-              try {
-                await supabaseAdmin.from('fb_page_configs').upsert({
-                  workspace_id: workspaceId,
-                  page_id: targetPageId,
-                  page_name: matchedAcc.name || 'Filmify Weddings',
-                  page_category: 'Wedding Service',
-                  page_access_token: pageAccessToken,
-                  is_active: true,
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id,page_id' });
-              } catch (err: any) {}
-            }
-          }
-        }
-      } catch (err: any) {}
-    }
+    // 1. Page Access Token fetch
+    let pageToken = '';
+    if (page_id) {
+      const { data: page } = await supabaseAdmin
+        .from('meta_pages')
+        .select('page_access_token')
+        .eq('workspace_id', workspaceId)
+        .eq('page_id', page_id)
+        .maybeSingle();
 
-    const tokenToUse = pageAccessToken || userAccessToken;
-    const leadFormsMap = new Map<string, any>();
-
-    if (tokenToUse) {
-      try {
-        const pageFormsRes = await fetch(
-          `https://graph.facebook.com/v19.0/${targetPageId}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=100&access_token=${tokenToUse}`
-        );
-        if (pageFormsRes.ok) {
-          const pageFormsData = await pageFormsRes.json();
-          if (pageFormsData.data && Array.isArray(pageFormsData.data)) {
-            pageFormsData.data.forEach((f: any) => {
-              leadFormsMap.set(f.id, {
-                form_id: f.id,
-                name: f.name || 'Meta Lead Form',
-                status: (f.status || 'ACTIVE').toUpperCase(),
-                page_id: targetPageId,
-                page_name: 'Filmify Weddings',
-                ad_account_name: 'Filmify Weddings Ad Account',
-                is_active: true,
-                sync_count: f.leads_count || 0,
-                last_lead_time: f.created_time || 'Active',
-                questions_count: 5,
-              });
-            });
-          }
-        }
-      } catch (fErr: any) {}
-
-      // Query Ad Accounts forms fallback
-      try {
-        const adAccRes = await fetch(
-          `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id&access_token=${tokenToUse}`
-        );
-        if (adAccRes.ok) {
-          const adAccData = await adAccRes.json();
-          if (adAccData.data && Array.isArray(adAccData.data)) {
-            for (const adAcc of adAccData.data) {
-              try {
-                const adFormsRes = await fetch(
-                  `https://graph.facebook.com/v19.0/${adAcc.id}/leadgen_forms?fields=id,name,status,created_time,leads_count,page_id&limit=100&access_token=${tokenToUse}`
-                );
-                if (adFormsRes.ok) {
-                  const adFormsData = await adFormsRes.json();
-                  if (adFormsData.data && Array.isArray(adFormsData.data)) {
-                    adFormsData.data.forEach((f: any) => {
-                      if (!leadFormsMap.has(f.id)) {
-                        leadFormsMap.set(f.id, {
-                          form_id: f.id,
-                          name: f.name || 'Meta Lead Form',
-                          status: (f.status || 'ACTIVE').toUpperCase(),
-                          page_id: f.page_id || targetPageId,
-                          page_name: 'Filmify Weddings',
-                          ad_account_name: adAcc.name || ('Ad Account ' + adAcc.account_id),
-                          is_active: true,
-                          sync_count: f.leads_count || 0,
-                          last_lead_time: f.created_time || 'Active',
-                          questions_count: 5,
-                        });
-                      }
-                    });
-                  }
-                }
-              } catch (err: any) {}
-            }
-          }
-        }
-      } catch (err: any) {}
-    }
-
-    // Read directly from fb_lead_forms DB if leadFormsMap is empty
-    if (leadFormsMap.size === 0) {
-      try {
-        const { data: dbForms } = await supabaseAdmin
-          .from('fb_lead_forms')
-          .select('*');
-
-        if (dbForms && dbForms.length > 0) {
-          dbForms.forEach(f => {
-            leadFormsMap.set(f.form_id, {
-              form_id: f.form_id,
-              name: f.form_name,
-              status: (f.status || 'ACTIVE').toUpperCase(),
-              page_id: f.page_id || targetPageId,
-              page_name: 'Filmify Weddings',
-              ad_account_name: 'Filmify Weddings Ad Account',
-              is_active: true,
-              sync_count: f.leads_count || 0,
-              last_lead_time: f.created_time || 'Active',
-              questions_count: 5,
-            });
-          });
-        }
-      } catch (err: any) {}
-    }
-
-    const pages = [
-      {
-        page_id: targetPageId,
-        page_name: 'Filmify Weddings',
-        page_category: 'Wedding Service / Business Page',
-        is_active: true,
-        page_access_token: tokenToUse || '',
+      if (page?.page_access_token) {
+        pageToken = page.page_access_token;
       }
-    ];
+    }
 
-    const leadForms = Array.from(leadFormsMap.values());
-    const isConnected = true;
-    const totalLeadsSynced = leadForms.reduce((acc, f) => acc + f.sync_count, 0);
+    if (!pageToken) {
+      const { data: conn } = await supabaseAdmin
+        .from('meta_connections')
+        .select('access_token')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      if (conn?.access_token) pageToken = conn.access_token;
+    }
+
+    if (!pageToken) {
+      return NextResponse.json({
+        success: false,
+        error: 'No active Page or User Access Token found to fetch leads. Reconnect Meta.',
+      }, { status: 401 });
+    }
+
+    // 2. Fetch Leads from Meta Graph API
+    const metaGraphUrl = `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,is_organic&limit=100&access_token=${pageToken}`;
+    const graphRes = await fetch(metaGraphUrl);
+
+    if (!graphRes.ok) {
+      const err = await graphRes.json().catch(() => ({}));
+      return NextResponse.json({
+        success: false,
+        error: err?.error?.message || `Meta API Error: ${graphRes.status}`,
+      }, { status: graphRes.status });
+    }
+
+    const graphData = await graphRes.json();
+    const leadsList = graphData.data || [];
+
+    let importedCount = 0;
+    let duplicateCount = 0;
+    const insertedLeads: any[] = [];
+
+    for (const leadItem of leadsList) {
+      const leadgenId = leadItem.id;
+      const fieldData = leadItem.field_data || [];
+
+      let fullName = 'Facebook Lead';
+      let phone = '';
+      let email = '';
+      let eventDate = '';
+      let city = '';
+
+      fieldData.forEach((f: { name: string; values: string[] }) => {
+        const name = (f.name || '').toLowerCase();
+        const val = f.values ? f.values[0] || '' : '';
+        if (name.includes('name')) fullName = val;
+        if (name.includes('phone')) phone = val;
+        if (name.includes('email')) email = val;
+        if (name.includes('date') || name.includes('event')) eventDate = val;
+        if (name.includes('city') || name.includes('venue') || name.includes('location')) city = val;
+      });
+
+      if (!phone) phone = `+91 ${Date.now().toString().slice(-10)}`;
+      if (!email) email = `meta_lead_${leadgenId}@fwstudio.in`;
+
+      // Deduplication check
+      const { data: existing } = await supabaseAdmin
+        .from('leads')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .or(`phone.eq.${phone},id.eq.${leadgenId}`)
+        .maybeSingle();
+
+      if (existing) {
+        duplicateCount++;
+        continue;
+      }
+
+      // Insert into CRM leads table
+      const newLead = {
+        workspace_id: workspaceId,
+        name: fullName,
+        phone,
+        email,
+        source: 'Facebook Lead Ads',
+        status: 'new',
+        score: 'High-Value 🔥',
+        notes: `Imported via Form #${form_id}. Ad: ${leadItem.ad_name || 'N/A'}, Campaign: ${leadItem.campaign_name || 'N/A'}`,
+        created_at: leadItem.created_time || new Date().toISOString(),
+        raw_payload: {
+          leadgen_id: leadgenId,
+          form_id,
+          page_id,
+          campaign_id: leadItem.campaign_id,
+          campaign_name: leadItem.campaign_name,
+          adset_id: leadItem.adset_id,
+          adset_name: leadItem.adset_name,
+          ad_id: leadItem.ad_id,
+          ad_name: leadItem.ad_name,
+          raw_meta_lead: leadItem,
+        },
+      };
+
+      const { data: inserted, error: insertErr } = await supabaseAdmin
+        .from('leads')
+        .insert(newLead)
+        .select('*')
+        .single();
+
+      if (!insertErr && inserted) {
+        importedCount++;
+        insertedLeads.push(inserted);
+
+        // Save in meta_sync_logs
+        await supabaseAdmin.from('meta_sync_logs').insert({
+          workspace_id: workspaceId,
+          lead_id: inserted.id,
+          leadgen_id: leadgenId,
+          form_id,
+          page_id,
+          lead_name: fullName,
+          lead_phone: phone,
+          lead_email: email,
+          status: 'SYNCED',
+          duplicate_status: 'UNIQUE',
+        });
+      }
+    }
+
+    // Update sync count in meta_lead_forms
+    if (importedCount > 0) {
+      await supabaseAdmin
+        .from('meta_lead_forms')
+        .update({ sync_count: importedCount, updated_at: new Date().toISOString() })
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', form_id);
+    }
 
     return NextResponse.json({
       success: true,
-      isConnected,
-      accountName: 'Filmify Weddings',
-      adAccountId: 'act_110156851793416',
-      pages,
-      leadForms,
-      totalLeadsSynced,
-      meta_api_debug: {
-        tokenFound: !!tokenToUse,
-        pageAccessTokenFound: !!pageAccessToken,
-        pagesCount: pages.length,
-        formsCount: leadForms.length,
-      },
+      form_id,
+      imported_count: importedCount,
+      duplicate_skipped_count: duplicateCount,
+      inserted_leads: insertedLeads,
+      message: `Historical Lead Sync Complete! Imported ${importedCount} new lead(s) from Meta (${duplicateCount} duplicate(s) skipped).`,
     });
-  } catch (error: any) {
-    console.error('[Meta Sync API Error]:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to sync Meta integration data' },
-      { status: 500 }
-    );
-  }
-}
 
-// POST: Handle Disconnect
-export async function POST(req: NextRequest) {
-  try {
-    const { action } = await req.json().catch(() => ({ action: 'disconnect' }));
-
-    if (action === 'disconnect') {
-      try {
-        await supabaseAdmin
-          .from('fb_page_configs')
-          .update({ is_active: false, updated_at: new Date().toISOString() })
-          .neq('page_id', '0');
-
-        await supabaseAdmin
-          .from('integration_credentials')
-          .update({ status: 'disconnected', updated_at: new Date().toISOString() })
-          .eq('provider', 'meta');
-      } catch (err: any) {}
-
-      return NextResponse.json({ success: true, isConnected: false });
-    }
-
-    return NextResponse.json({ success: true });
   } catch (err: any) {
+    console.error('[Meta Historical Sync Error]:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
