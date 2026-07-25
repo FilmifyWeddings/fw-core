@@ -13,7 +13,12 @@ export async function GET(req: NextRequest) {
     process.env.FACEBOOK_VERIFY_TOKEN || 
     'fw_verify_token_2026';
 
-  if (mode === 'subscribe' && (token === configuredToken || token === 'fw_verify_token_2026' || token === 'bhamstra_meta_verify_token_2026')) {
+  if (mode === 'subscribe' && (
+    token === configuredToken || 
+    token === 'fw_verify_token_2026' || 
+    token === 'bhamstra_meta_verify_token_2026' ||
+    token === 'sahil_fw_verify_token_2026'
+  )) {
     console.log('[Meta Webhook Verification] Successfully verified challenge.');
     return new NextResponse(challenge, { status: 200 });
   }
@@ -22,32 +27,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'Verification token mismatch' }, { status: 403 });
 }
 
-// ── POST: Real-Time High-Scale Meta Leadgen Event Ingestion ──
+// ── POST: Real-Time Meta Leadgen Webhook Event Ingestion ──────
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
-    console.log('[Meta Webhook Receiver] Incoming Event Payload:', JSON.stringify(payload, null, 2));
-
-    const { searchParams } = new URL(req.url);
-    let targetWorkspaceId = searchParams.get('workspace_id');
-
-    if (!targetWorkspaceId) {
-      const { data: cred } = await supabaseAdmin
-        .from('integration_credentials')
-        .select('user_id')
-        .eq('provider', 'meta')
-        .eq('status', 'connected')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (cred?.user_id) {
-        targetWorkspaceId = cred.user_id;
-      } else {
-        const { data: filmifyProf } = await supabaseAdmin.from('profiles').select('id').ilike('workspace_name', '%Filmify%').maybeSingle();
-        targetWorkspaceId = filmifyProf?.id || 'f0635313-586c-406c-bda7-03c81a1343d3';
-      }
-    }
+    console.log('[Meta Webhook Ingestion] Received webhook payload:', JSON.stringify(payload, null, 2));
 
     const entries = payload.entry || [];
     const insertedLeads: any[] = [];
@@ -57,27 +41,56 @@ export async function POST(req: NextRequest) {
       const changes = entry.changes || [];
       for (const change of changes) {
         if (change.field === 'leadgen' && change.value) {
-          const { leadgen_id, form_id, page_id, created_time, ad_id, adset_id, campaign_id } = change.value;
+          const { leadgen_id, form_id, page_id, created_time } = change.value;
 
-          if (!leadgen_id) continue;
+          if (!leadgen_id || !page_id) {
+            console.warn('[Meta Webhook] Missing leadgen_id or page_id in payload. Skipping.');
+            continue;
+          }
 
-          // ── Form Toggle Check (If Form is turned OFF, stop importing) ──────
+          // 1. STRICT RESOLUTION: Query fb_page_configs using incoming page_id
+          const { data: pageConfig, error: pageConfigErr } = await supabaseAdmin
+            .from('fb_page_configs')
+            .select('workspace_id, page_access_token, page_name, is_active')
+            .eq('page_id', page_id)
+            .maybeSingle();
+
+          if (pageConfigErr || !pageConfig || !pageConfig.workspace_id) {
+            console.error(`[Meta Webhook CONFIG ERROR] No fb_page_configs row found for Page ID "${page_id}". Rejecting lead ${leadgen_id}.`);
+            await supabaseAdmin.from('live_logs').insert({
+              event_type: 'meta_webhook_config_error',
+              message: `[Meta Webhook ERROR] Unmapped Page ID: ${page_id}. No fb_page_configs workspace mapping found.`,
+              metadata: { page_id, leadgen_id, form_id }
+            });
+            continue;
+          }
+
+          if (pageConfig.is_active === false) {
+            console.warn(`[Meta Webhook] Page "${pageConfig.page_name}" (${page_id}) is marked inactive. Skipping lead.`);
+            continue;
+          }
+
+          const targetWorkspaceId = pageConfig.workspace_id;
+          const pageAccessToken = pageConfig.page_access_token || '';
+          const pageName = pageConfig.page_name || 'Facebook Page';
+
+          // 2. Check Form Active Status in fb_form_mappings
           if (form_id) {
             const { data: formSetting } = await supabaseAdmin
-              .from('meta_lead_forms')
+              .from('fb_form_mappings')
               .select('is_active, form_name')
               .eq('workspace_id', targetWorkspaceId)
               .eq('form_id', form_id)
               .maybeSingle();
 
             if (formSetting && formSetting.is_active === false) {
-              console.log(`[Meta Webhook] Form "${formSetting.form_name || form_id}" is turned OFF by user. Skipping lead.`);
+              console.log(`[Meta Webhook] Form "${formSetting.form_name || form_id}" is turned OFF by user toggle. Skipping.`);
               skippedDuplicates.push({ leadgen_id, form_id, reason: 'Form sync turned OFF by user toggle' });
               continue;
             }
           }
 
-          // ── Duplicate Check Logic ──────────────────────────────
+          // 3. Duplicate Lead Check
           const { data: existingLead } = await supabaseAdmin
             .from('leads')
             .select('id, name, phone')
@@ -88,50 +101,21 @@ export async function POST(req: NextRequest) {
           if (existingLead) {
             console.log(`[Meta Webhook] Duplicate lead detected for leadgen_id: ${leadgen_id}. Skipping.`);
             skippedDuplicates.push({ leadgen_id, form_id, reason: 'Duplicate leadgen_id' });
-
-            await supabaseAdmin.from('meta_sync_logs').insert({
-              workspace_id: targetWorkspaceId,
-              leadgen_id,
-              form_id,
-              page_id,
-              lead_name: existingLead.name,
-              lead_phone: existingLead.phone,
-              status: 'SKIPPED',
-              duplicate_status: 'DUPLICATE_SKIPPED',
-            });
-
             continue;
           }
 
-          // ── Fetch Live Lead Field Details via Page Token ──────
-          let pageAccessToken = '';
-          let pageName = 'Facebook Page';
-
-          const { data: pageConfig } = await supabaseAdmin
-            .from('meta_pages')
-            .select('page_access_token, page_name')
-            .eq('workspace_id', targetWorkspaceId)
-            .eq('page_id', page_id)
-            .maybeSingle();
-
-          if (pageConfig?.page_access_token) {
-            pageAccessToken = pageConfig.page_access_token;
-            pageName = pageConfig.page_name || pageName;
-          }
-
+          // 4. Fetch Live Lead Field Details via Page Access Token
           let leadFields: Record<string, string> = {
             full_name: 'Meta Instant Lead',
-            phone_number: '+91 98765 43210',
-            email: 'meta.lead@example.com',
-            event_date: '2026-11-20',
-            city: 'Mumbai',
+            phone_number: `+91 ${Date.now().toString().slice(-10)}`,
+            email: `lead_${leadgen_id}@meta-admanager.com`,
           };
 
           let campaignName = 'Facebook Lead Campaign';
           let adsetName = 'Target Audience Adset';
           let adName = 'Instant Lead Form Ad';
 
-          if (pageAccessToken && !pageAccessToken.startsWith('mock_')) {
+          if (pageAccessToken && !pageAccessToken.startsWith('mock_') && !pageAccessToken.startsWith('test_')) {
             try {
               const graphUrl = `https://graph.facebook.com/v20.0/${leadgen_id}?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&access_token=${pageAccessToken}`;
               const graphRes = await fetch(graphUrl);
@@ -148,33 +132,18 @@ export async function POST(req: NextRequest) {
                     if (key.includes('name')) leadFields.full_name = val;
                     if (key.includes('phone')) leadFields.phone_number = val;
                     if (key.includes('email')) leadFields.email = val;
-                    if (key.includes('date') || key.includes('event')) leadFields.event_date = val;
-                    if (key.includes('city') || key.includes('venue') || key.includes('location')) leadFields.city = val;
                   });
                 }
+              } else {
+                const errData = await graphRes.json().catch(() => ({}));
+                console.error(`[Meta Webhook Graph API Error]: ${graphRes.status}`, errData);
               }
             } catch (err) {
-              console.warn('[Meta Webhook] Graph API lead fetch exception:', err);
+              console.warn('[Meta Webhook] Graph API exception:', err);
             }
           }
 
-          // Secondary Duplicate Phone Check
-          if (leadFields.phone_number) {
-            const { data: phoneDuplicate } = await supabaseAdmin
-              .from('leads')
-              .select('id')
-              .eq('workspace_id', targetWorkspaceId)
-              .eq('phone', leadFields.phone_number)
-              .maybeSingle();
-
-            if (phoneDuplicate) {
-              console.log(`[Meta Webhook] Duplicate phone number detected: ${leadFields.phone_number}. Skipping.`);
-              skippedDuplicates.push({ leadgen_id, phone: leadFields.phone_number, reason: 'Duplicate phone' });
-              continue;
-            }
-          }
-
-          // Insert into CRM leads table
+          // 5. Insert into CRM leads table strictly for targetWorkspaceId
           const newLeadRecord = {
             workspace_id: targetWorkspaceId,
             tenant_id: targetWorkspaceId,
@@ -189,13 +158,9 @@ export async function POST(req: NextRequest) {
               form_id,
               page_id,
               page_name: pageName,
-              campaign_id,
               campaign_name: campaignName,
-              adset_id,
               adset_name: adsetName,
-              ad_id,
               ad_name: adName,
-              raw_change: change,
             },
           };
 
@@ -205,29 +170,11 @@ export async function POST(req: NextRequest) {
             .select('*')
             .single();
 
-          if (!insertErr && inserted) {
+          if (insertErr) {
+            console.error('[Meta Webhook Insert Error]:', insertErr.message);
+          } else if (inserted) {
+            console.log(`[Meta Webhook Insert Success] Inserted Lead ID: ${inserted.id} into Workspace: ${targetWorkspaceId}`);
             insertedLeads.push(inserted);
-
-            // Save in meta_sync_logs
-            await supabaseAdmin.from('meta_sync_logs').insert({
-              workspace_id: targetWorkspaceId,
-              lead_id: inserted.id,
-              leadgen_id,
-              form_id,
-              page_id,
-              lead_name: newLeadRecord.name,
-              lead_phone: newLeadRecord.phone,
-              lead_email: newLeadRecord.email,
-              status: 'SYNCED',
-              duplicate_status: 'UNIQUE',
-            });
-
-            // Increment form sync count
-            try {
-              await supabaseAdmin.rpc('exec_sql', {
-                sql_query: `UPDATE meta_lead_forms SET sync_count = sync_count + 1 WHERE form_id = '${form_id}';`
-              });
-            } catch (_) {}
           }
         }
       }
@@ -237,12 +184,10 @@ export async function POST(req: NextRequest) {
       success: true,
       inserted_count: insertedLeads.length,
       skipped_count: skippedDuplicates.length,
-      inserted_leads: insertedLeads,
-      skipped_duplicates: skippedDuplicates,
+      leads: insertedLeads,
     });
-
   } catch (err: any) {
-    console.error('[Meta Webhook POST Exception]:', err);
-    return NextResponse.json({ error: err.message || 'Webhook Ingestion Error' }, { status: 500 });
+    console.error('[Meta Webhook Error]:', err.message);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
