@@ -88,15 +88,25 @@ export default function RebuiltMetaIntegrationPage() {
   const fetchMetaStatus = async () => {
     setIsLoading(true);
     let targetWorkspaceId = '37c63a54-d4f1-4b99-b546-3d965cd23a37';
+    let accessToken = '';
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
         targetWorkspaceId = session.user.id;
       }
+      if (session?.access_token) {
+        accessToken = session.access_token;
+      }
     } catch (_) {}
 
     try {
-      const res = await fetch(`/api/meta/status?workspace_id=${targetWorkspaceId}`);
+      const headers: Record<string, string> = {};
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
+      const res = await fetch(`/api/meta/status?workspace_id=${targetWorkspaceId}`, { headers });
       const data = await res.json();
 
       if (data.success) {
@@ -112,11 +122,15 @@ export default function RebuiltMetaIntegrationPage() {
         return data;
       } else {
         setIsConnected(false);
+        setPages([]);
+        setForms([]);
         if (data.error) showToast('error', `❌ ${data.error}`);
       }
     } catch (err: any) {
       console.error('[Meta UI Fetch Error]:', err);
       setIsConnected(false);
+      setPages([]);
+      setForms([]);
     } finally {
       setIsLoading(false);
     }
@@ -124,11 +138,13 @@ export default function RebuiltMetaIntegrationPage() {
 
   useEffect(() => {
     fetchMetaStatus().then((fetchedData) => {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && fetchedData) {
         const params = new URLSearchParams(window.location.search);
-        if (params.get('meta_success') === 'connected') {
-          const pagesCount = fetchedData?.pages?.length ?? params.get('pages_count') ?? '1';
-          const formsCount = fetchedData?.forms?.length ?? params.get('forms_count') ?? '18';
+        
+        // Single Source of Truth Enforcement: Only show success toast if status API returned true connection!
+        if (params.get('meta_success') === 'connected' && fetchedData?.connection?.is_connected) {
+          const pagesCount = fetchedData?.pages?.length ?? 1;
+          const formsCount = fetchedData?.forms?.length ?? 18;
           showToast('success', `Facebook Connected ✅ (${pagesCount} Page(s) & ${formsCount} Lead Form(s) Synced)`);
         } else if (params.get('meta_error')) {
           showToast('error', `❌ ${params.get('meta_error')}`, 'Click "Connect Facebook" to grant all permissions.');
