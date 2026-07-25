@@ -78,7 +78,6 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
   return longData.access_token || shortToken;
 }
 
-// ── Step 2: Fetch User Profile ──────────────────────────────────────────
 async function fetchUserProfile(token: string) {
   console.log('[Meta Graph API Query] Fetching /me identity...');
   const res = await fetch(`https://graph.facebook.com/v20.0/me?fields=id,name,email&access_token=${token}`);
@@ -86,6 +85,24 @@ async function fetchUserProfile(token: string) {
   const profile = await res.json();
   console.log('[Meta Graph API Response] Profile:', profile);
   return profile;
+}
+
+async function fetchUserPermissions(token: string) {
+  console.log('[Meta Graph API Query] Fetching /me/permissions...');
+  try {
+    const res = await fetch(`https://graph.facebook.com/v20.0/me/permissions?access_token=${token}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const perms = (data.data || []).map((p: any) => ({
+      permission: p.permission,
+      status: p.status,
+    }));
+    console.log('[Meta Graph API Response] /me/permissions list:', JSON.stringify(perms, null, 2));
+    return perms;
+  } catch (err) {
+    console.warn('[Meta Callback] Failed to fetch permissions:', err);
+    return [];
+  }
 }
 
 // ── Step 3: Fetch Managed Pages ──────────────────────────────────────────
@@ -189,7 +206,15 @@ export async function GET(req: NextRequest) {
   try {
     const redirectUri = `${baseUrl}/api/meta/callback`;
     const userToken = await exchangeCodeForLongLivedToken(code, redirectUri);
+    const userPermissions = await fetchUserPermissions(userToken);
     const userProfile = await fetchUserProfile(userToken);
+
+    const grantedScopes = userPermissions
+      .filter((p: any) => p.status === 'granted')
+      .map((p: any) => p.permission);
+
+    console.log('[Meta OAuth Permissions Audit] Granted Scopes:', grantedScopes.join(', '));
+    console.log('[Meta OAuth Scope Check] pages_manage_metadata status:', grantedScopes.includes('pages_manage_metadata') ? 'GRANTED ✅' : 'NOT GRANTED ❌');
 
     // 1. Save Connection Token in `integration_credentials` (Valid Foreign Key in Supabase)
     console.log(`[Supabase DB Write] Saving token to integration_credentials for workspace: ${workspaceId}`);
