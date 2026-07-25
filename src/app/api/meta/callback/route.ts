@@ -163,6 +163,21 @@ async function subscribePageWebhook(pageId: string, pageAccessToken: string): Pr
   }
 }
 
+function getBaseUrl(req: NextRequest): string {
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const proto = req.headers.get('x-forwarded-proto') || (host?.includes('localhost') || host?.includes('127.0.0.1') ? 'http' : 'https');
+
+  if (host) {
+    return `${proto}://${host}`;
+  }
+
+  return (
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'http://143.244.133.235.nip.io:3000'
+  );
+}
+
 // ── GET /api/meta/callback ──────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -171,10 +186,7 @@ export async function GET(req: NextRequest) {
   const error = searchParams.get('error');
   const errorReason = searchParams.get('error_description') || error;
 
-  const baseUrl = 
-    process.env.NEXT_PUBLIC_BASE_URL || 
-    process.env.NEXT_PUBLIC_APP_URL || 
-    'https://studiocore.in';
+  const baseUrl = getBaseUrl(req);
 
   const targetRedirect = `${baseUrl}/workspace/integrations/meta`;
 

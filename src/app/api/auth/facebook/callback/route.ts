@@ -180,17 +180,28 @@ async function savePagesToDatabase(
   }
 }
 
+function getBaseUrl(req: NextRequest): string {
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const proto = req.headers.get('x-forwarded-proto') || (host?.includes('localhost') || host?.includes('127.0.0.1') ? 'http' : 'https');
+
+  if (host) {
+    return `${proto}://${host}`;
+  }
+
+  return (
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'http://143.244.133.235.nip.io:3000'
+  );
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
-  const baseUrl = 
-    process.env.NEXT_PUBLIC_BASE_URL || 
-    process.env.NEXT_PUBLIC_APP_URL || 
-    'http://localhost:3000';
-
+  const baseUrl = getBaseUrl(req);
   const redirectUri = baseUrl + "/api/auth/facebook/callback";
 
   if (error) {
