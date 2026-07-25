@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-
-async function getValidWorkspaceId(requestedId?: string | null): Promise<string> {
-  if (requestedId && requestedId !== '00000000-0000-0000-0000-000000000000') {
-    const { data } = await supabaseAdmin.from('profiles').select('id').eq('id', requestedId).maybeSingle();
-    if (data?.id) return data.id;
-  }
-  const { data: firstProfile } = await supabaseAdmin.from('profiles').select('id').order('created_at', { ascending: true }).limit(1).maybeSingle();
-  if (firstProfile?.id) return firstProfile.id;
-  return '37c63a54-d4f1-4b99-b546-3d965cd23a37';
-}
+import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
  * POST /api/meta/disconnect
@@ -17,9 +8,14 @@ async function getValidWorkspaceId(requestedId?: string | null): Promise<string>
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const workspaceId = await getValidWorkspaceId(body.workspace_id);
+    const authResult = await verifyMetaAuth(req, body.workspace_id);
+    if (!authResult.authorized && authResult.errorResponse) {
+      return authResult.errorResponse;
+    }
 
-    console.log(`[Supabase DB Write] Disconnecting Meta for workspace: ${workspaceId}...`);
+    const workspaceId = authResult.workspaceId;
+
+    console.log(`[Supabase DB Write] Disconnecting Meta for verified workspace: ${workspaceId}...`);
 
     // Invalidate integration_credentials
     await supabaseAdmin

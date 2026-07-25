@@ -17,6 +17,8 @@ async function getValidWorkspaceId(requestedId?: string | null): Promise<string>
   return 'f0635313-586c-406c-bda7-03c81a1343d3';
 }
 
+import { verifyMetaAuth } from '@/lib/meta-auth';
+
 /**
  * GET /api/meta/status?workspace_id=XXX
  * Returns Meta Connection Status, Profile Info, Pages Count, Lead Forms List & Error Logs.
@@ -25,8 +27,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const requestedWorkspaceId = searchParams.get('workspace_id');
 
-  const workspaceId = await getValidWorkspaceId(requestedWorkspaceId);
-  console.log(`[Meta Status API Query] Workspace ID resolved: ${workspaceId}`);
+  const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
+  if (!authResult.authorized && authResult.errorResponse) {
+    return authResult.errorResponse;
+  }
+
+  const workspaceId = authResult.workspaceId;
+  console.log(`[Meta Status API Query] Security verified workspace_id: ${workspaceId}`);
 
   try {
     // 1. Query `integration_credentials` strictly for workspace
