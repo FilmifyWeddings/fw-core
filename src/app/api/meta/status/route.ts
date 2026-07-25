@@ -29,29 +29,14 @@ export async function GET(req: NextRequest) {
   console.log(`[Meta Status API Query] Workspace ID resolved: ${workspaceId}`);
 
   try {
-    // 1. Query `integration_credentials`
+    // 1. Query `integration_credentials` strictly for workspace
     console.log(`[Supabase DB Read] Querying integration_credentials for workspace: ${workspaceId}...`);
-    let { data: conn } = await supabaseAdmin
+    const { data: conn } = await supabaseAdmin
       .from('integration_credentials')
       .select('*')
       .eq('user_id', workspaceId)
       .eq('provider', 'meta')
       .maybeSingle();
-
-    // Fallback: If not found for exact workspaceId, query globally for any active connected account
-    if (!conn) {
-      console.log('[Supabase DB Read] No workspace-specific credential found. Querying global connected accounts...');
-      const { data: globalConn } = await supabaseAdmin
-        .from('integration_credentials')
-        .select('*')
-        .eq('provider', 'meta')
-        .eq('status', 'connected')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (globalConn) conn = globalConn;
-    }
 
     let isConnected = conn?.status === 'connected' && !!conn?.access_token;
     let userName = 'Filmify Meta Admin';
@@ -73,20 +58,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. Query `fb_page_configs`
+    // 2. Query `fb_page_configs` strictly for workspace
     console.log(`[Supabase DB Read] Querying fb_page_configs for workspace: ${workspaceId}...`);
-    let { data: pagesData } = await supabaseAdmin
+    const { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
       .eq('workspace_id', workspaceId);
-
-    if (!pagesData || pagesData.length === 0) {
-      console.log('[Supabase DB Read] No pages found for workspace. Querying fb_page_configs globally...');
-      const { data: globalPages } = await supabaseAdmin
-        .from('fb_page_configs')
-        .select('*');
-      pagesData = globalPages || [];
-    }
 
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
@@ -97,22 +74,14 @@ export async function GET(req: NextRequest) {
       is_webhook_subscribed: true,
     }));
 
-    console.log(`[Supabase DB Read] Resolved ${pages.length} Facebook Page(s).`);
+    console.log(`[Supabase DB Read] Resolved ${pages.length} Facebook Page(s) for workspace ${workspaceId}.`);
 
-    // 3. Query `fb_form_mappings`
+    // 3. Query `fb_form_mappings` strictly for workspace
     console.log(`[Supabase DB Read] Querying fb_form_mappings for workspace: ${workspaceId}...`);
-    let { data: formsData } = await supabaseAdmin
+    const { data: formsData } = await supabaseAdmin
       .from('fb_form_mappings')
       .select('*')
       .eq('workspace_id', workspaceId);
-
-    if (!formsData || formsData.length === 0) {
-      console.log('[Supabase DB Read] No forms found for workspace. Querying fb_form_mappings globally...');
-      const { data: globalForms } = await supabaseAdmin
-        .from('fb_form_mappings')
-        .select('*');
-      formsData = globalForms || [];
-    }
 
     const forms = (formsData || []).map((f: any) => ({
       form_id: f.form_id,

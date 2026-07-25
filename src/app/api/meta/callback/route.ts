@@ -252,25 +252,46 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${targetRedirect}?meta_warning=${encodeURIComponent('No Facebook Pages Found under your account')}`);
     }
 
+    // Option A Multi-Tenant Security Check: Enforce Exclusive Page Ownership
+    for (const page of pages) {
+      const { data: existingOwnership } = await supabaseAdmin
+        .from('fb_page_configs')
+        .select('workspace_id, page_name')
+        .eq('page_id', page.page_id)
+        .eq('is_active', true)
+        .neq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      if (existingOwnership) {
+        console.warn(`[Multi-Tenant Violation] Page "${page.page_name}" (${page.page_id}) is already connected to workspace ${existingOwnership.workspace_id}.`);
+        return NextResponse.redirect(
+          `${targetRedirect}?meta_error=${encodeURIComponent(
+            `This Facebook Page (${page.page_name}) is already connected to another StudioCore workspace.`
+          )}`
+        );
+      }
+    }
+
     let totalFormsCount = 0;
 
     for (const page of pages) {
       // Subscribe Page Webhook
       const isSubbed = await subscribePageWebhook(page.page_id, page.page_access_token);
 
-      // Save Page in `fb_page_configs` (Valid Table in Supabase)
+      // Save Page in `fb_page_configs` (Valid Table in Supabase with tenant_id)
       console.log(`[Supabase DB Write] Upserting page "${page.page_name}" to fb_page_configs...`);
       const { error: pageErr } = await supabaseAdmin
         .from('fb_page_configs')
         .upsert({
           workspace_id: workspaceId,
+          tenant_id: workspaceId,
           page_id: page.page_id,
           page_name: page.page_name,
           page_category: page.page_category,
           page_access_token: page.page_access_token,
           is_active: true,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id,page_id' });
+        }, { onConflict: 'page_id' });
 
       if (pageErr) {
         console.error(`[Supabase DB Error] fb_page_configs upsert for ${page.page_id}:`, pageErr.message);
@@ -286,13 +307,14 @@ export async function GET(req: NextRequest) {
           .from('fb_form_mappings')
           .upsert({
             workspace_id: workspaceId,
+            tenant_id: workspaceId,
             page_id: page.page_id,
             form_id: form.form_id,
             form_name: form.form_name,
             is_active: true,
             is_tagging_enabled: true,
             updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id,form_id' });
+          }, { onConflict: 'form_id' });
 
         if (formErr) {
           console.error(`[Supabase DB Error] fb_form_mappings upsert for ${form.form_id}:`, formErr.message);
