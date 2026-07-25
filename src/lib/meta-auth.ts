@@ -10,8 +10,8 @@ export interface VerifiedAuthResult {
 
 /**
  * Backend Security Guard: Verifies Supabase Auth Session & Enforces Zero Cross-Workspace Access.
- * Ignores client-supplied workspace_id unless it matches the verified authenticated session.
- * Returns HTTP 403 Forbidden on any cross-workspace tampering attempt.
+ * Rejects unauthenticated requests with HTTP 401 Unauthorized (No default workspace fallbacks).
+ * Enforces Role-Based Access Control (RBAC) and returns HTTP 403 Forbidden for cross-workspace tampering.
  */
 export async function verifyMetaAuth(
   req: NextRequest,
@@ -38,54 +38,58 @@ export async function verifyMetaAuth(
       }
     }
 
-    let authenticatedUserId: string | null = null;
-
-    if (token) {
-      const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-      if (user && !error) {
-        authenticatedUserId = user.id;
-      }
+    // 3. STRICT AUTHENTICATION: Return 401 Unauthorized if no token exists (NO DEFAULT WORKSPACE FALLBACKS)
+    if (!token) {
+      return {
+        authorized: false,
+        workspaceId: '',
+        userId: '',
+        errorResponse: NextResponse.json(
+          { error: 'Unauthorized: A valid Supabase authentication session is required.' },
+          { status: 401 }
+        ),
+      };
     }
 
-    // 3. Fallback resolution if running in server environment or admin impersonation
-    if (!authenticatedUserId) {
-      if (clientSuppliedWorkspaceId && clientSuppliedWorkspaceId !== '00000000-0000-0000-0000-000000000000') {
-        const { data: prof } = await supabaseAdmin.from('profiles').select('id').eq('id', clientSuppliedWorkspaceId).maybeSingle();
-        if (prof?.id) {
-          authenticatedUserId = prof.id;
-        }
-      }
+    // 4. VERIFY SUPABASE JWT WITH DB AUTH ENGINE
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !user) {
+      return {
+        authorized: false,
+        workspaceId: '',
+        userId: '',
+        errorResponse: NextResponse.json(
+          { error: 'Unauthorized: Invalid or expired authentication session token.' },
+          { status: 401 }
+        ),
+      };
     }
 
-    if (!authenticatedUserId) {
-      const { data: primaryProf } = await supabaseAdmin.from('profiles').select('id').order('created_at', { ascending: true }).limit(1).maybeSingle();
-      authenticatedUserId = primaryProf?.id || '37c63a54-d4f1-4b99-b546-3d965cd23a37';
-    }
+    const authenticatedUserId = user.id;
 
-    const resolvedId: string = authenticatedUserId || '37c63a54-d4f1-4b99-b546-3d965cd23a37';
-
-    // 4. CROSS-WORKSPACE TAMPERING CHECK (HTTP 403 FORBIDDEN)
+    // 5. CROSS-WORKSPACE TAMPERING CHECK (HTTP 403 FORBIDDEN WITH ROLE-BASED ACCESS CONTROL)
     if (
       clientSuppliedWorkspaceId &&
       clientSuppliedWorkspaceId !== '00000000-0000-0000-0000-000000000000' &&
-      clientSuppliedWorkspaceId !== resolvedId
+      clientSuppliedWorkspaceId !== authenticatedUserId
     ) {
+      // Role-Based Authorization Only (NO hardcoded email strings)
       const { data: userProfile } = await supabaseAdmin
         .from('profiles')
-        .select('email, role')
-        .eq('id', resolvedId)
+        .select('role')
+        .eq('id', authenticatedUserId)
         .maybeSingle();
 
-      const isAdmin = userProfile?.email === 'sushantnawale700@gmail.com' || userProfile?.role === 'admin';
+      const isAdminRole = userProfile?.role === 'admin' || userProfile?.role === 'superadmin';
 
-      if (!isAdmin) {
-        console.warn(`[SECURITY 403] User ${resolvedId} attempted to access workspace ${clientSuppliedWorkspaceId}. Access Denied.`);
+      if (!isAdminRole) {
+        console.warn(`[SECURITY 403] Non-admin user ${authenticatedUserId} attempted cross-workspace access to ${clientSuppliedWorkspaceId}. Access Denied.`);
         return {
           authorized: false,
-          workspaceId: resolvedId,
-          userId: resolvedId,
+          workspaceId: authenticatedUserId,
+          userId: authenticatedUserId,
           errorResponse: NextResponse.json(
-            { error: 'Forbidden: Cross-workspace access denied. You cannot read or modify another user workspace.' },
+            { error: 'Forbidden: Cross-workspace access denied. You do not have permission to access another user workspace.' },
             { status: 403 }
           ),
         };
@@ -94,16 +98,16 @@ export async function verifyMetaAuth(
 
     return {
       authorized: true,
-      workspaceId: resolvedId,
-      userId: resolvedId,
+      workspaceId: authenticatedUserId,
+      userId: authenticatedUserId,
     };
   } catch (err: any) {
-    console.error('[Meta Security Audit Error]:', err.message);
+    console.error('[Meta Security Guard Error]:', err.message);
     return {
       authorized: false,
-      workspaceId: '37c63a54-d4f1-4b99-b546-3d965cd23a37',
-      userId: '37c63a54-d4f1-4b99-b546-3d965cd23a37',
-      errorResponse: NextResponse.json({ error: 'Authentication verification failed' }, { status: 401 }),
+      workspaceId: '',
+      userId: '',
+      errorResponse: NextResponse.json({ error: 'Unauthorized: Authentication processing failed.' }, { status: 401 }),
     };
   }
 }

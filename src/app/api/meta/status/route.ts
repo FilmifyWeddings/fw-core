@@ -1,22 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// Helper: Resolve a valid Profile / Workspace ID from Supabase DB
-async function getValidWorkspaceId(requestedId?: string | null): Promise<string> {
-  if (requestedId && requestedId !== '00000000-0000-0000-0000-000000000000') {
-    const { data } = await supabaseAdmin.from('profiles').select('id').eq('id', requestedId).maybeSingle();
-    if (data?.id) return data.id;
-  }
-  
-  const { data: filmifyProf } = await supabaseAdmin.from('profiles').select('id').ilike('workspace_name', '%Filmify%').maybeSingle();
-  if (filmifyProf?.id) return filmifyProf.id;
-
-  const { data: firstProfile } = await supabaseAdmin.from('profiles').select('id').order('created_at', { ascending: true }).limit(1).maybeSingle();
-  if (firstProfile?.id) return firstProfile.id;
-
-  return 'f0635313-586c-406c-bda7-03c81a1343d3';
-}
-
 import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
