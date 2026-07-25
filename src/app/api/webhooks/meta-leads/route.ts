@@ -34,6 +34,29 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'Verification token mismatch' }, { status: 403 });
 }
 
+import crypto from 'crypto';
+
+function verifyMetaHubSignature(rawBody: string, signatureHeader: string | null): boolean {
+  const appSecret = process.env.FACEBOOK_APP_SECRET;
+  if (!appSecret || appSecret === 'your_facebook_app_secret_here') return true;
+  if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
+
+  try {
+    const expectedSignature = signatureHeader.split('sha256=')[1];
+    const hmac = crypto.createHmac('sha256', appSecret);
+    const calculatedSignature = hmac.update(rawBody).digest('hex');
+
+    if (calculatedSignature.length !== expectedSignature.length) return false;
+
+    return crypto.timingSafeEqual(
+      Buffer.from(calculatedSignature, 'hex'),
+      Buffer.from(expectedSignature, 'hex')
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
 // ── POST: Production-Grade Observability Meta Leadgen Ingestion Engine ──────
 export async function POST(req: NextRequest) {
   const startTime = performance.now();
@@ -41,7 +64,23 @@ export async function POST(req: NextRequest) {
   const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || '127.0.0.1';
 
   try {
-    const payload = await req.json();
+    const rawBody = await req.text();
+    const signatureHeader = req.headers.get('x-hub-signature-256');
+
+    // ── X-Hub-Signature-256 HMAC Validation ──────────────────────────────
+    if (signatureHeader && !verifyMetaHubSignature(rawBody, signatureHeader)) {
+      console.error('[Meta Webhook SECURITY ERROR] Invalid X-Hub-Signature-256 header!');
+      await triggerAlert({
+        alert_type: 'WEBHOOK_FAILURE',
+        severity: 'CRITICAL',
+        title: 'Invalid Meta Webhook Signature',
+        message: 'Webhook request rejected due to invalid X-Hub-Signature-256 HMAC payload checksum.',
+        resolution_hint: 'Verify FACEBOOK_APP_SECRET matches the App Secret in Meta App Dashboard.',
+      });
+      return NextResponse.json({ error: 'Invalid HMAC X-Hub-Signature-256 signature' }, { status: 403 });
+    }
+
+    const payload = JSON.parse(rawBody || '{}');
     const entries = payload.entry || [];
     const insertedLeads: any[] = [];
     const skippedDuplicates: any[] = [];
