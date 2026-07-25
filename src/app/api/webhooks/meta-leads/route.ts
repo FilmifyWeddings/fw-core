@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { 
+  logWebhookRequest, 
+  logGraphApiCall, 
+  triggerAlert, 
+  markTokenNeedsReconnect, 
+  enqueueRetry 
+} from '@/lib/meta-observability';
 
 // ── GET: Meta Webhook Subscription Verification ──────────────
 export async function GET(req: NextRequest) {
@@ -27,12 +34,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'Verification token mismatch' }, { status: 403 });
 }
 
-// ── POST: Real-Time Meta Leadgen Webhook Event Ingestion ──────
+// ── POST: Production-Grade Observability Meta Leadgen Ingestion Engine ──────
 export async function POST(req: NextRequest) {
+  const startTime = performance.now();
+  const requestId = crypto.randomUUID();
+  const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || '127.0.0.1';
+
   try {
     const payload = await req.json();
-    console.log('[Meta Webhook Ingestion] Received webhook payload:', JSON.stringify(payload, null, 2));
-
     const entries = payload.entry || [];
     const insertedLeads: any[] = [];
     const skippedDuplicates: any[] = [];
@@ -44,11 +53,20 @@ export async function POST(req: NextRequest) {
           const { leadgen_id, form_id, page_id, created_time } = change.value;
 
           if (!leadgen_id || !page_id) {
-            console.warn('[Meta Webhook] Missing leadgen_id or page_id in payload. Skipping.');
+            await logWebhookRequest({
+              request_id: requestId,
+              event_type: 'leadgen_payload_invalid',
+              http_method: 'POST',
+              client_ip: clientIp,
+              duration_ms: performance.now() - startTime,
+              status: 'SKIPPED',
+              error_message: 'Missing leadgen_id or page_id in change payload',
+              raw_payload: payload,
+            });
             continue;
           }
 
-          // 1. STRICT RESOLUTION: Query fb_page_configs using incoming page_id
+          // ── 1. PAGE MAPPING VALIDATION ────────────────────────────────────
           const { data: pageConfig, error: pageConfigErr } = await supabaseAdmin
             .from('fb_page_configs')
             .select('workspace_id, page_access_token, page_name, is_active')
@@ -56,17 +74,48 @@ export async function POST(req: NextRequest) {
             .maybeSingle();
 
           if (pageConfigErr || !pageConfig || !pageConfig.workspace_id) {
-            console.error(`[Meta Webhook CONFIG ERROR] No fb_page_configs row found for Page ID "${page_id}". Rejecting lead ${leadgen_id}.`);
-            await supabaseAdmin.from('live_logs').insert({
-              event_type: 'meta_webhook_config_error',
-              message: `[Meta Webhook ERROR] Unmapped Page ID: ${page_id}. No fb_page_configs workspace mapping found.`,
-              metadata: { page_id, leadgen_id, form_id }
+            const errReason = `Unmapped Page ID ${page_id}. No active fb_page_configs row found for any workspace.`;
+            
+            await triggerAlert({
+              alert_type: 'INVALID_PAGE_MAPPING',
+              severity: 'CRITICAL',
+              title: 'Unmapped Facebook Page Webhook Received',
+              message: errReason,
+              resolution_hint: 'Go to Settings → Integrations → Meta Ads and reconnect the Facebook Page.',
+              metadata: { page_id, leadgen_id, form_id },
             });
-            continue;
+
+            await logWebhookRequest({
+              request_id: requestId,
+              page_id,
+              form_id,
+              leadgen_id,
+              event_type: 'leadgen_config_error',
+              http_method: 'POST',
+              client_ip: clientIp,
+              duration_ms: performance.now() - startTime,
+              status: 'CONFIG_ERROR',
+              error_message: errReason,
+              raw_payload: payload,
+            });
+
+            continue; // REJECT LEAD
           }
 
           if (pageConfig.is_active === false) {
-            console.warn(`[Meta Webhook] Page "${pageConfig.page_name}" (${page_id}) is marked inactive. Skipping lead.`);
+            await logWebhookRequest({
+              request_id: requestId,
+              workspace_id: pageConfig.workspace_id,
+              page_id,
+              form_id,
+              leadgen_id,
+              event_type: 'leadgen_page_inactive',
+              http_method: 'POST',
+              client_ip: clientIp,
+              duration_ms: performance.now() - startTime,
+              status: 'SKIPPED',
+              error_message: `Page "${pageConfig.page_name}" is turned OFF by user.`,
+            });
             continue;
           }
 
@@ -74,7 +123,7 @@ export async function POST(req: NextRequest) {
           const pageAccessToken = pageConfig.page_access_token || '';
           const pageName = pageConfig.page_name || 'Facebook Page';
 
-          // 2. Check Form Active Status in fb_form_mappings
+          // ── 2. FORM TOGGLE CHECK ──────────────────────────────────────────
           if (form_id) {
             const { data: formSetting } = await supabaseAdmin
               .from('fb_form_mappings')
@@ -84,13 +133,25 @@ export async function POST(req: NextRequest) {
               .maybeSingle();
 
             if (formSetting && formSetting.is_active === false) {
-              console.log(`[Meta Webhook] Form "${formSetting.form_name || form_id}" is turned OFF by user toggle. Skipping.`);
+              await logWebhookRequest({
+                request_id: requestId,
+                workspace_id: targetWorkspaceId,
+                page_id,
+                form_id,
+                leadgen_id,
+                event_type: 'leadgen_form_disabled',
+                http_method: 'POST',
+                client_ip: clientIp,
+                duration_ms: performance.now() - startTime,
+                status: 'SKIPPED',
+                error_message: `Lead Form "${formSetting.form_name || form_id}" is turned OFF by user toggle.`,
+              });
               skippedDuplicates.push({ leadgen_id, form_id, reason: 'Form sync turned OFF by user toggle' });
               continue;
             }
           }
 
-          // 3. Duplicate Lead Check
+          // ── 3. DUPLICATE LEAD DETECTION ──────────────────────────────────
           const { data: existingLead } = await supabaseAdmin
             .from('leads')
             .select('id, name, phone')
@@ -99,12 +160,24 @@ export async function POST(req: NextRequest) {
             .maybeSingle();
 
           if (existingLead) {
-            console.log(`[Meta Webhook] Duplicate lead detected for leadgen_id: ${leadgen_id}. Skipping.`);
+            await logWebhookRequest({
+              request_id: requestId,
+              workspace_id: targetWorkspaceId,
+              page_id,
+              form_id,
+              leadgen_id,
+              event_type: 'leadgen_duplicate_skipped',
+              http_method: 'POST',
+              client_ip: clientIp,
+              duration_ms: performance.now() - startTime,
+              status: 'SKIPPED',
+              error_message: `Duplicate lead detected. Existing Lead ID: ${existingLead.id}`,
+            });
             skippedDuplicates.push({ leadgen_id, form_id, reason: 'Duplicate leadgen_id' });
             continue;
           }
 
-          // 4. Fetch Live Lead Field Details via Page Access Token
+          // ── 4. GRAPH API FETCH & TOKEN MONITORING ────────────────────────
           let leadFields: Record<string, string> = {
             full_name: 'Meta Instant Lead',
             phone_number: `+91 ${Date.now().toString().slice(-10)}`,
@@ -114,11 +187,16 @@ export async function POST(req: NextRequest) {
           let campaignName = 'Facebook Lead Campaign';
           let adsetName = 'Target Audience Adset';
           let adName = 'Instant Lead Form Ad';
+          let graphApiSuccess = false;
 
           if (pageAccessToken && !pageAccessToken.startsWith('mock_') && !pageAccessToken.startsWith('test_')) {
+            const graphStart = performance.now();
+            const graphUrl = `https://graph.facebook.com/v20.0/${leadgen_id}?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&access_token=${pageAccessToken}`;
+
             try {
-              const graphUrl = `https://graph.facebook.com/v20.0/${leadgen_id}?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&access_token=${pageAccessToken}`;
               const graphRes = await fetch(graphUrl);
+              const graphDuration = performance.now() - graphStart;
+
               if (graphRes.ok) {
                 const graphData = await graphRes.json();
                 if (graphData.campaign_name) campaignName = graphData.campaign_name;
@@ -134,16 +212,68 @@ export async function POST(req: NextRequest) {
                     if (key.includes('email')) leadFields.email = val;
                   });
                 }
+
+                graphApiSuccess = true;
+                await logGraphApiCall({
+                  request_id: requestId,
+                  leadgen_id,
+                  endpoint: `/${leadgen_id}`,
+                  http_status: graphRes.status,
+                  duration_ms: graphDuration,
+                });
               } else {
                 const errData = await graphRes.json().catch(() => ({}));
-                console.error(`[Meta Webhook Graph API Error]: ${graphRes.status}`, errData);
+                const errCode = errData?.error?.code;
+                const errSubcode = errData?.error?.error_subcode;
+                const errMessage = errData?.error?.message || `HTTP ${graphRes.status}`;
+
+                await logGraphApiCall({
+                  request_id: requestId,
+                  leadgen_id,
+                  endpoint: `/${leadgen_id}`,
+                  http_status: graphRes.status,
+                  duration_ms: graphDuration,
+                  error_code: errCode,
+                  error_message: errMessage,
+                });
+
+                // Detect Token Expiry / Invalid OAuth (Error Code 190 / 102 / 10)
+                if (errCode === 190 || errCode === 102 || errCode === 10 || errSubcode === 463) {
+                  await markTokenNeedsReconnect(targetWorkspaceId, page_id, errMessage);
+                }
+
+                // Enqueue into Retry Queue so the lead payload is NOT lost!
+                await enqueueRetry({
+                  workspace_id: targetWorkspaceId,
+                  page_id,
+                  form_id,
+                  leadgen_id,
+                  payload: change.value,
+                  error_reason: `Graph API Error ${errCode}: ${errMessage}`,
+                });
               }
-            } catch (err) {
-              console.warn('[Meta Webhook] Graph API exception:', err);
+            } catch (err: any) {
+              await logGraphApiCall({
+                request_id: requestId,
+                leadgen_id,
+                endpoint: `/${leadgen_id}`,
+                http_status: 500,
+                duration_ms: performance.now() - graphStart,
+                error_message: err.message,
+              });
+
+              await enqueueRetry({
+                workspace_id: targetWorkspaceId,
+                page_id,
+                form_id,
+                leadgen_id,
+                payload: change.value,
+                error_reason: `Graph API Fetch Exception: ${err.message}`,
+              });
             }
           }
 
-          // 5. Insert into CRM leads table strictly for targetWorkspaceId
+          // ── 5. DATABASE LEAD INSERT & MONITORING ─────────────────────────
           const newLeadRecord = {
             workspace_id: targetWorkspaceId,
             tenant_id: targetWorkspaceId,
@@ -170,10 +300,67 @@ export async function POST(req: NextRequest) {
             .select('*')
             .single();
 
+          const totalDuration = performance.now() - startTime;
+
           if (insertErr) {
-            console.error('[Meta Webhook Insert Error]:', insertErr.message);
+            await triggerAlert({
+              workspace_id: targetWorkspaceId,
+              alert_type: 'DB_FAILURE',
+              severity: 'CRITICAL',
+              title: 'Database Insert Failed for Lead',
+              message: `Supabase insert failed for leadgen_id ${leadgen_id}: ${insertErr.message}`,
+              resolution_hint: 'Verify Supabase schema columns and table permissions.',
+            });
+
+            await enqueueRetry({
+              workspace_id: targetWorkspaceId,
+              page_id,
+              form_id,
+              leadgen_id,
+              payload: change.value,
+              error_reason: `DB Insert Error: ${insertErr.message}`,
+            });
+
+            await logWebhookRequest({
+              request_id: requestId,
+              workspace_id: targetWorkspaceId,
+              page_id,
+              form_id,
+              leadgen_id,
+              event_type: 'leadgen_db_insert_failed',
+              http_method: 'POST',
+              client_ip: clientIp,
+              duration_ms: totalDuration,
+              status: 'FAILED',
+              error_message: insertErr.message,
+              raw_payload: payload,
+            });
           } else if (inserted) {
-            console.log(`[Meta Webhook Insert Success] Inserted Lead ID: ${inserted.id} into Workspace: ${targetWorkspaceId}`);
+            // Check for high latency (> 5000ms)
+            if (totalDuration > 5000) {
+              await triggerAlert({
+                workspace_id: targetWorkspaceId,
+                alert_type: 'HIGH_LATENCY',
+                severity: 'WARNING',
+                title: 'High Processing Latency Detected',
+                message: `Webhook processing took ${totalDuration.toFixed(0)}ms (>5s target limit).`,
+              });
+            }
+
+            await logWebhookRequest({
+              request_id: requestId,
+              workspace_id: targetWorkspaceId,
+              page_id,
+              form_id,
+              leadgen_id,
+              event_type: 'leadgen_ingestion_success',
+              http_method: 'POST',
+              client_ip: clientIp,
+              duration_ms: totalDuration,
+              status: 'SUCCESS',
+              raw_payload: payload,
+            });
+
             insertedLeads.push(inserted);
           }
         }
@@ -182,12 +369,25 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      request_id: requestId,
+      processing_duration_ms: Math.round(performance.now() - startTime),
       inserted_count: insertedLeads.length,
       skipped_count: skippedDuplicates.length,
       leads: insertedLeads,
     });
   } catch (err: any) {
-    console.error('[Meta Webhook Error]:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const totalDuration = performance.now() - startTime;
+
+    await logWebhookRequest({
+      request_id: requestId,
+      event_type: 'webhook_exception',
+      http_method: 'POST',
+      client_ip: clientIp,
+      duration_ms: totalDuration,
+      status: 'FAILED',
+      error_message: err.message,
+    });
+
+    return NextResponse.json({ error: err.message, request_id: requestId }, { status: 500 });
   }
 }

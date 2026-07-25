@@ -340,6 +340,15 @@ export default function RebuiltMetaIntegrationPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href="/workspace/integrations/meta/diagnostics"
+              className="px-3.5 py-2 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-black border border-cyan-200 shadow-2xs transition flex items-center gap-1.5"
+              title="Open Meta Observability & Diagnostics Dashboard"
+            >
+              <Activity className="w-3.5 h-3.5 text-cyan-600" />
+              Diagnostics
+            </Link>
+
             {isConnected ? (
               <>
                 <button
