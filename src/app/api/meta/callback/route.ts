@@ -8,10 +8,13 @@ async function getValidWorkspaceId(requestedId?: string | null): Promise<string>
     if (data?.id) return data.id;
   }
   
+  const { data: filmifyProf } = await supabaseAdmin.from('profiles').select('id').ilike('workspace_name', '%Filmify%').maybeSingle();
+  if (filmifyProf?.id) return filmifyProf.id;
+
   const { data: firstProfile } = await supabaseAdmin.from('profiles').select('id').order('created_at', { ascending: true }).limit(1).maybeSingle();
   if (firstProfile?.id) return firstProfile.id;
 
-  return '37c63a54-d4f1-4b99-b546-3d965cd23a37';
+  return 'f0635313-586c-406c-bda7-03c81a1343d3';
 }
 
 function getBaseUrl(req: NextRequest): string {

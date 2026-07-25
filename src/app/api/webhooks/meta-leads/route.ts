@@ -32,18 +32,20 @@ export async function POST(req: NextRequest) {
     let targetWorkspaceId = searchParams.get('workspace_id');
 
     if (!targetWorkspaceId) {
-      const { data: conn } = await supabaseAdmin
-        .from('meta_connections')
-        .select('workspace_id')
-        .eq('is_valid', true)
+      const { data: cred } = await supabaseAdmin
+        .from('integration_credentials')
+        .select('user_id')
+        .eq('provider', 'meta')
+        .eq('status', 'connected')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (conn?.workspace_id) {
-        targetWorkspaceId = conn.workspace_id;
+      if (cred?.user_id) {
+        targetWorkspaceId = cred.user_id;
       } else {
-        targetWorkspaceId = '00000000-0000-0000-0000-000000000000';
+        const { data: filmifyProf } = await supabaseAdmin.from('profiles').select('id').ilike('workspace_name', '%Filmify%').maybeSingle();
+        targetWorkspaceId = filmifyProf?.id || 'f0635313-586c-406c-bda7-03c81a1343d3';
       }
     }
 
@@ -175,6 +177,7 @@ export async function POST(req: NextRequest) {
           // Insert into CRM leads table
           const newLeadRecord = {
             workspace_id: targetWorkspaceId,
+            tenant_id: targetWorkspaceId,
             name: leadFields.full_name || 'Facebook Instant Lead',
             phone: leadFields.phone_number || `+91 ${Date.now().toString().slice(-10)}`,
             email: leadFields.email || `lead_${leadgen_id}@meta-admanager.com`,

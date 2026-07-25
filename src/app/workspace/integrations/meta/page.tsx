@@ -10,6 +10,7 @@ import {
   Plus, Trash2, Database, AlertCircle, Settings, UserCheck, Activity, BarChart3,
   AlertTriangle, ArrowUpRight, Download, Filter, Eye, RefreshCcw, Unplug, ShieldAlert
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface MetaPage {
   id?: string;
@@ -137,9 +138,17 @@ export default function RebuiltMetaIntegrationPage() {
     }
   };
 
-  // 1. Connect Facebook OAuth Start (Enforces HTTPS in production)
-  const handleConnectFacebook = () => {
+  // 1. Connect Facebook OAuth Start (Associates active user's workspace_id & Enforces HTTPS)
+  const handleConnectFacebook = async () => {
     setIsLoading(true);
+    let targetWorkspaceId = 'f0635313-586c-406c-bda7-03c81a1343d3';
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        targetWorkspaceId = session.user.id;
+      }
+    } catch (_) {}
 
     if (typeof window !== 'undefined') {
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -147,7 +156,7 @@ export default function RebuiltMetaIntegrationPage() {
       // If currently on HTTP in production, redirect browser to HTTPS first
       if (window.location.protocol === 'http:' && !isLocal) {
         const httpsOrigin = `https://${window.location.hostname.replace(':3000', '')}`;
-        window.location.href = `${httpsOrigin}/api/meta/auth?workspace_id=00000000-0000-0000-0000-000000000000`;
+        window.location.href = `${httpsOrigin}/api/meta/auth?workspace_id=${targetWorkspaceId}`;
         return;
       }
     }
@@ -161,7 +170,7 @@ export default function RebuiltMetaIntegrationPage() {
       targetBase = targetBase.replace(/^http:\/\//i, 'https://').replace(/:3000$/, '');
     }
 
-    window.location.href = `${targetBase}/api/meta/auth?workspace_id=00000000-0000-0000-0000-000000000000`;
+    window.location.href = `${targetBase}/api/meta/auth?workspace_id=${targetWorkspaceId}`;
   };
 
   // 2. Disconnect Account
