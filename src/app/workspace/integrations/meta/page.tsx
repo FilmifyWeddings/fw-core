@@ -137,11 +137,31 @@ export default function RebuiltMetaIntegrationPage() {
     }
   };
 
-  // 1. Connect Facebook OAuth Start
+  // 1. Connect Facebook OAuth Start (Enforces HTTPS in production)
   const handleConnectFacebook = () => {
     setIsLoading(true);
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in';
-    window.location.href = `${baseUrl}/api/meta/auth`;
+
+    if (typeof window !== 'undefined') {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      
+      // If currently on HTTP in production, redirect browser to HTTPS first
+      if (window.location.protocol === 'http:' && !isLocal) {
+        const httpsOrigin = `https://${window.location.hostname.replace(':3000', '')}`;
+        window.location.href = `${httpsOrigin}/api/meta/auth?workspace_id=00000000-0000-0000-0000-000000000000`;
+        return;
+      }
+    }
+
+    const envBase = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL;
+    let targetBase = envBase && envBase.startsWith('https://')
+      ? envBase
+      : (typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in');
+
+    if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+      targetBase = targetBase.replace(/^http:\/\//i, 'https://').replace(/:3000$/, '');
+    }
+
+    window.location.href = `${targetBase}/api/meta/auth?workspace_id=00000000-0000-0000-0000-000000000000`;
   };
 
   // 2. Disconnect Account

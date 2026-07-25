@@ -23,10 +23,28 @@ export default function FacebookConnect({
 
   const handleConnect = () => {
     setIsConnecting(true);
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
-    
-    // Redirect to backend OAuth route which builds the Meta dialog URL with CSRF state & scopes
-    window.location.href = `${baseUrl}/api/auth/facebook?workspace_id=${encodeURIComponent(workspaceId)}`;
+
+    if (typeof window !== 'undefined') {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      
+      // Force HTTPS for all production OAuth initiations
+      if (window.location.protocol === 'http:' && !isLocal) {
+        const httpsOrigin = `https://${window.location.hostname.replace(':3000', '')}`;
+        window.location.href = `${httpsOrigin}/api/meta/auth?workspace_id=${encodeURIComponent(workspaceId)}`;
+        return;
+      }
+    }
+
+    const envBase = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL;
+    let targetBase = envBase && envBase.startsWith('https://') 
+      ? envBase 
+      : (typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in');
+
+    if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+      targetBase = targetBase.replace(/^http:\/\//i, 'https://').replace(/:3000$/, '');
+    }
+
+    window.location.href = `${targetBase}/api/meta/auth?workspace_id=${encodeURIComponent(workspaceId)}`;
   };
 
   return (
@@ -38,7 +56,7 @@ export default function FacebookConnect({
         
         {/* Left Side: Meta Brand Icon & Status Info */}
         <div className="flex items-start sm:items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-500 text-white flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-[#1877F2] text-white flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
             <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
               <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
             </svg>
@@ -65,7 +83,7 @@ export default function FacebookConnect({
             <p className="text-xs text-slate-500 font-medium leading-relaxed">
               {isConnected
                 ? `OAuth active for ${connectedAccountName}. Auto-subscribing leadgen webhooks across all managed pages.`
-                : 'Connect Meta Business Account via OAuth 2.0 to auto-subscribe leadgen webhooks and sync leads to CRM.'}
+                : 'Connect Meta Business Account via HTTPS OAuth 2.0 to auto-subscribe leadgen webhooks and sync leads.'}
             </p>
           </div>
         </div>
@@ -102,7 +120,7 @@ export default function FacebookConnect({
               type="button"
               onClick={handleConnect}
               disabled={isConnecting}
-              className="px-5 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black shadow-md shadow-blue-500/20 transition flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto disabled:opacity-50"
+              className="px-5 py-3 rounded-xl bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-black shadow-md shadow-blue-500/20 transition flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto disabled:opacity-50"
             >
               {isConnecting ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -122,7 +140,7 @@ export default function FacebookConnect({
       <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-semibold flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span>OAuth Scopes: <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>leads_retrieval</code>, <code>pages_manage_metadata</code></span>
+          <span>HTTPS OAuth Enabled &middot; Scopes: <code>pages_show_list</code>, <code>leads_retrieval</code>, <code>pages_manage_metadata</code></span>
         </div>
         <div className="flex items-center gap-1 text-blue-600 hover:underline cursor-pointer">
           <Zap className="w-3 h-3" />

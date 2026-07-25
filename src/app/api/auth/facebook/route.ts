@@ -1,18 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 function getBaseUrl(req: NextRequest): string {
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
-  const proto = req.headers.get('x-forwarded-proto') || (host?.includes('localhost') || host?.includes('127.0.0.1') ? 'http' : 'https');
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
+  const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
 
-  if (host) {
+  if (process.env.NEXT_PUBLIC_BASE_URL && process.env.NEXT_PUBLIC_BASE_URL.startsWith('https://')) {
+    return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, '');
+  }
+  if (process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL.startsWith('https://')) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+  }
+
+  if (host && !isLocal) {
+    const cleanHost = host.split(':')[0];
+    return `https://${cleanHost}`;
+  }
+
+  if (host && isLocal) {
+    const proto = req.headers.get('x-forwarded-proto') || 'http';
     return `${proto}://${host}`;
   }
 
-  return (
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'http://143.244.133.235.nip.io:3000'
-  );
+  return 'https://studiocore.in';
 }
 
 /**
