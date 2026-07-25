@@ -180,7 +180,6 @@ export async function POST(req: NextRequest) {
             email: leadFields.email || `lead_${leadgen_id}@meta-admanager.com`,
             source: 'Facebook Lead Ads',
             status: 'new',
-            notes: `Instant Form Auto-Sync. Campaign: ${campaignName}, Page: ${pageName}, Form ID: ${form_id}`,
             created_at: new Date(created_time ? created_time * 1000 : Date.now()).toISOString(),
             raw_payload: {
               leadgen_id,
