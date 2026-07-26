@@ -143,21 +143,31 @@ export async function GET(req: NextRequest) {
       const formLeads = (leadsData || []).filter((l: any) => l.raw_payload?.form_id === f.form_id);
       const syncedCount = formLeads.length || f.leads_count || 0;
 
+      // Per-form last lead time
+      let formLastLeadTime: string | null = null;
+      if (formLeads.length > 0) {
+        const sorted = [...formLeads].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        formLastLeadTime = sorted[0].created_at;
+      }
+
       return {
         form_id: f.form_id,
         page_id: f.page_id,
         page_name: pageMap.get(f.page_id) || 'Facebook Page',
         form_name: f.form_name,
         status: (f.status || 'ACTIVE').toUpperCase(),
-        questions_count: 5,
+        questions_count: f.questions_count || 5,
         total_received: syncedCount,
         synced_count: syncedCount,
+        sync_count: syncedCount,
+        leads_count: syncedCount,
         pending_count: 0,
         failed_count: 0,
         duplicate_count: 0,
         is_active: true,
-        last_lead_received: lastLeadTime,
-        created_time: f.created_at || new Date().toISOString(),
+        is_enabled: f.is_enabled ?? true,
+        last_lead_received: formLastLeadTime || lastLeadTime,
+        created_time: f.created_time || f.created_at || new Date().toISOString(),
       };
     });
 

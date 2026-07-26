@@ -230,8 +230,17 @@ export async function POST(req: NextRequest) {
           const pageAccessToken = pageConfig.page_access_token || '';
           const pageName = pageConfig.page_name || 'Facebook Page';
 
-          // ── 2. FORM TOGGLE CHECK ──────────────────────────────────────────
+          // ── 2. FORM TOGGLE CHECK (checks both fb_lead_forms.is_enabled and fb_form_mappings.is_active) ──
           if (form_id) {
+            // Primary check: fb_lead_forms.is_enabled (the new UI toggle)
+            const { data: formEnabled } = await supabaseAdmin
+              .from('fb_lead_forms')
+              .select('is_enabled, form_name')
+              .eq('workspace_id', targetWorkspaceId)
+              .eq('form_id', form_id)
+              .maybeSingle();
+
+            // Also check legacy fb_form_mappings.is_active
             const { data: formSetting } = await supabaseAdmin
               .from('fb_form_mappings')
               .select('is_active, form_name')
@@ -239,7 +248,12 @@ export async function POST(req: NextRequest) {
               .eq('form_id', form_id)
               .maybeSingle();
 
-            if (formSetting && formSetting.is_active === false) {
+            const isFormDisabled =
+              (formEnabled && formEnabled.is_enabled === false) ||
+              (formSetting && formSetting.is_active === false);
+
+            if (isFormDisabled) {
+              const disabledFormName = formEnabled?.form_name || formSetting?.form_name || form_id;
               await logWebhookRequest({
                 request_id: requestId,
                 workspace_id: targetWorkspaceId,
@@ -251,7 +265,7 @@ export async function POST(req: NextRequest) {
                 client_ip: clientIp,
                 duration_ms: performance.now() - startTime,
                 status: 'SKIPPED',
-                error_message: `Lead Form "${formSetting.form_name || form_id}" is turned OFF by user toggle.`,
+                error_message: `Lead Form "${disabledFormName}" is turned OFF by user toggle.`,
               });
               skippedDuplicates.push({ leadgen_id, form_id, reason: 'Form sync turned OFF by user toggle' });
               continue;
