@@ -12,10 +12,12 @@ export async function GET(req: NextRequest) {
 
   const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
   if (!authResult.authorized && authResult.errorResponse) {
+    console.error('[STATUS API AUDIT] Authentication failed for requested workspace_id:', requestedWorkspaceId);
     return authResult.errorResponse;
   }
 
   const workspaceId = authResult.workspaceId;
+  console.log('[STATUS API AUDIT] Resolved workspaceId:', workspaceId);
 
   try {
     // 1. Query integration_credentials strictly for workspace
@@ -27,10 +29,11 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
 
     const isConnected = conn?.status === 'connected' && !!conn?.access_token;
+    console.log(`[STATUS API AUDIT] Workspace ${workspaceId} connection status: ${isConnected ? 'CONNECTED' : 'DISCONNECTED'}`);
 
     // IF DISCONNECTED: Return empty zero state immediately
     if (!isConnected) {
-      return NextResponse.json({
+      const emptyState = {
         success: true,
         connection: {
           is_connected: false,
@@ -52,10 +55,12 @@ export async function GET(req: NextRequest) {
         forms: [],
         error_logs: [],
         sync_logs: [],
-      });
+      };
+      console.log('[STATUS API AUDIT] Returning DISCONNECTED zero state:', JSON.stringify(emptyState, null, 2));
+      return NextResponse.json(emptyState);
     }
 
-    // 2. Fetch User Name dynamically from profiles table
+    // 2. Fetch User Profile
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('full_name, email')
@@ -82,27 +87,44 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Query active pages strictly for workspace
-    const { data: pagesData } = await supabaseAdmin
+    // 3. Query pages for workspace (Query ALL pages without is_active restriction to avoid filtering bugs)
+    const { data: pagesData, error: pageErr } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
-      .eq('workspace_id', workspaceId)
-      .eq('is_active', true);
+      .eq('workspace_id', workspaceId);
+
+    console.log(`[STATUS API AUDIT] Raw Supabase fb_page_configs query result for workspaceId ${workspaceId}:`);
+    console.log(JSON.stringify(pagesData, null, 2));
+
+    if (pageErr) {
+      console.error('[STATUS API DB ERROR] fb_page_configs query failed:', pageErr.message, pageErr);
+    }
 
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
       page_name: p.page_name,
       page_category: p.page_category,
       page_access_token: p.page_access_token || '',
-      is_active: true,
+      is_active: p.is_active ?? true,
     }));
 
-    const pageMap = new Map((pagesData || []).map((p: any) => [p.page_id, p.page_name]));
-    const businessName = pages[0]?.page_name || 'Meta Account';
+    console.log(`[STATUS API AUDIT] Mapped ${pages.length} page(s) for workspace ${workspaceId}. Zero filtering applied.`);
 
-    // 4. Query forms strictly for workspace
-    const { data: formsData } = await supabaseAdmin
-      .from('fb_lead_forms').select('*').eq('workspace_id', workspaceId);
+    const pageMap = new Map((pagesData || []).map((p: any) => [p.page_id, p.page_name]));
+    const businessName = pages[0]?.page_name || metaUserName || 'Meta Account';
+
+    // 4. Query forms for workspace
+    const { data: formsData, error: formErr } = await supabaseAdmin
+      .from('fb_lead_forms')
+      .select('*')
+      .eq('workspace_id', workspaceId);
+
+    console.log(`[STATUS API AUDIT] Raw Supabase fb_lead_forms query result for workspaceId ${workspaceId}:`);
+    console.log(JSON.stringify(formsData, null, 2));
+
+    if (formErr) {
+      console.error('[STATUS API DB ERROR] fb_lead_forms query failed:', formErr.message, formErr);
+    }
 
     const { data: leadsData } = await supabaseAdmin
       .from('leads')
@@ -139,7 +161,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    const finalResponse = {
       success: true,
       connection: {
         is_connected: true,
@@ -162,7 +184,12 @@ export async function GET(req: NextRequest) {
       forms,
       error_logs: [],
       sync_logs: [],
-    });
+    };
+
+    console.log('[STATUS API AUDIT] FINAL JSON RETURNED TO FRONTEND:');
+    console.log(JSON.stringify(finalResponse, null, 2));
+
+    return NextResponse.json(finalResponse);
 
   } catch (err: any) {
     console.error('[Meta Status API Exception]:', err.message);
