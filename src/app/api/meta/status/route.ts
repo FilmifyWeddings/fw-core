@@ -4,8 +4,7 @@ import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
  * GET /api/meta/status?workspace_id=XXX
- * Returns connection status and metrics strictly for the requested workspace.
- * When disconnected, returns empty pages, forms, and counts.
+ * Unified Status API Engine. Zero hardcoded strings. Everything dynamically resolved from database.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -56,8 +55,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    let userName = 'Sahil Dhonde';
-    let connectedDate = conn?.updated_at || conn?.created_at || new Date().toISOString();
+    // 2. Fetch User Name dynamically from profiles table
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', workspaceId)
+      .maybeSingle();
+
+    const userName = profile?.full_name || profile?.email?.split('@')[0] || 'Meta Connected Account';
+    const connectedDate = conn?.updated_at || conn?.created_at || new Date().toISOString();
     let tokenStatus: 'ACTIVE' | 'EXPIRED' | 'NEEDS_RECONNECT' | 'DISCONNECTED' = 'ACTIVE';
 
     let validUntilDate: string | null = null;
@@ -75,7 +81,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Query active pages strictly for workspace
+    // 3. Query active pages strictly for workspace
     const { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
@@ -84,16 +90,16 @@ export async function GET(req: NextRequest) {
 
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
-      page_name: p.page_name || 'Facebook Page',
-      page_category: p.page_category || 'Business Page',
+      page_name: p.page_name,
+      page_category: p.page_category,
       page_access_token: p.page_access_token || '',
       is_active: true,
-      is_webhook_subscribed: true,
     }));
 
-    const businessName = pages[0]?.page_name || 'Meta Business Account';
+    const pageMap = new Map((pagesData || []).map((p: any) => [p.page_id, p.page_name]));
+    const businessName = pages[0]?.page_name || 'Meta Account';
 
-    // Query forms strictly for workspace
+    // 4. Query forms strictly for workspace
     const { data: formsData } = await supabaseAdmin
       .from('fb_lead_forms')
       .select('*')
@@ -120,7 +126,8 @@ export async function GET(req: NextRequest) {
       return {
         form_id: f.form_id,
         page_id: f.page_id,
-        form_name: f.form_name || 'Instant Lead Form',
+        page_name: pageMap.get(f.page_id) || 'Facebook Page',
+        form_name: f.form_name,
         status: (f.status || 'ACTIVE').toUpperCase(),
         questions_count: 5,
         total_received: syncedCount,

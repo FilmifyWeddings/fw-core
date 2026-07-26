@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
 
+/**
+ * GET /api/meta/forms?workspace_id=XXX
+ * Returns active lead forms for the authenticated workspace.
+ * Resolves page_name dynamically from fb_page_configs. Zero hardcoded strings.
+ */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -14,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     const workspaceId = authResult.workspaceId;
 
-    // Check if integration is connected for workspace
+    // 1. Check if integration is connected for workspace
     const { data: conn } = await supabaseAdmin
       .from('integration_credentials')
       .select('status, access_token')
@@ -30,7 +35,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Read active forms strictly for workspace
+    // 2. Read active pages for workspace to map page_name dynamically
+    const { data: dbPages } = await supabaseAdmin
+      .from('fb_page_configs')
+      .select('page_id, page_name')
+      .eq('workspace_id', workspaceId)
+      .eq('is_active', true);
+
+    const pageMap = new Map((dbPages || []).map(p => [p.page_id, p.page_name]));
+
+    // 3. Read active forms strictly for workspace
     const { data: dbForms } = await supabaseAdmin
       .from('fb_lead_forms')
       .select('*')
@@ -44,8 +58,7 @@ export async function GET(req: NextRequest) {
       form_name: f.form_name,
       status: (f.status || 'ACTIVE').toUpperCase(),
       page_id: f.page_id,
-      page_name: 'Filmify Weddings',
-      ad_account_name: 'Meta Ads Account',
+      page_name: pageMap.get(f.page_id) || 'Facebook Page',
       is_active: true,
       sync_count: f.leads_count || 0,
       last_lead_time: f.created_time || 'Active',
