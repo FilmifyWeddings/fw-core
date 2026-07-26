@@ -191,19 +191,50 @@ export default function MetaIntegrationPage() {
   };
 
   // Handle Disconnect Action
-  const handleDisconnect = async () => {
+    const handleDisconnect = async () => {
     setShowDisconnectModal(false);
     setIsSyncing(true);
     try {
-      await fetch('/api/meta/sync', {
+      // 1. Call Backend Hard Disconnect API
+      await fetch('/api/meta/disconnect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'disconnect', workspace_id: workspaceId }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('sb-token') || '' : ''}`
+        },
+        body: JSON.stringify({ workspace_id: workspaceId }),
       });
+
+      // 2. Clear Local & Session Storage Completely
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('fw_meta_connected');
+        localStorage.removeItem('fw_meta_pages');
+        localStorage.removeItem('fw_meta_account_name');
+        sessionStorage.clear();
+      }
+
+      // 3. Clear React State
       setIsConnected(false);
       setPages([]);
       setLeadForms([]);
-      showToast('Meta Integration Disconnected successfully.');
+      setConnectedAccountName('');
+      setAdAccountId('');
+      setTotalLeadsSynced(0);
+      setTodaysLeadsCount(0);
+
+      // 4. Strip Query Parameters from URL bar
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', '/workspace/integrations/meta');
+      }
+
+      showToast('Meta Integration Completely Disconnected ✓');
+
+      // 5. Force Page Reload to guarantee clean unauthenticated state
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/workspace/integrations/meta';
+        }
+      }, 500);
     } catch (err: any) {
       showToast('Failed to disconnect integration.');
     } finally {
