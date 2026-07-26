@@ -41,7 +41,7 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
 
   if (!tokenRes.ok) {
     const err = await tokenRes.json().catch(() => ({}));
-    console.error('[Meta Graph API Error] Code exchange response:', err);
+    console.error('[RAW GRAPH API ERROR] OAuth Code exchange failed:\n', JSON.stringify(err, null, 2));
     throw new Error(`OAuth Code Exchange Failed: ${err?.error?.message || tokenRes.status}`);
   }
 
@@ -64,24 +64,63 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
   return longData.access_token || shortToken;
 }
 
-async function fetchUserProfile(token: string) {
-  const res = await fetch(`https://graph.facebook.com/v20.0/me?fields=id,name,email&access_token=${token}`);
-  if (!res.ok) throw new Error('Failed to fetch Meta User profile');
-  return await res.json();
+// Audit Granted & Declined Scopes for User Access Token
+async function auditTokenScopes(token: string) {
+  try {
+    const res = await fetch(`https://graph.facebook.com/v20.0/me/permissions?access_token=${token}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('[RAW GRAPH API ERROR] /me/permissions:\n', JSON.stringify(err, null, 2));
+      return { granted_scopes: [], declined_scopes: [] };
+    }
+    const data = await res.json();
+    const perms = data.data || [];
+    const granted_scopes = perms.filter((p: any) => p.status === 'granted').map((p: any) => p.permission);
+    const declined_scopes = perms.filter((p: any) => p.status === 'declined').map((p: any) => p.permission);
+
+    console.log('[RAW PERMISSIONS AUDIT] User Access Token Scopes:');
+    console.log('[RAW PERMISSIONS AUDIT] granted_scopes:\n', JSON.stringify(granted_scopes, null, 2));
+    console.log('[RAW PERMISSIONS AUDIT] declined_scopes:\n', JSON.stringify(declined_scopes, null, 2));
+
+    return { granted_scopes, declined_scopes };
+  } catch (err: any) {
+    console.error('[RAW PERMISSIONS AUDIT EXCEPTION]:', err.message);
+    return { granted_scopes: [], declined_scopes: [] };
+  }
 }
 
-// Multi-Source Graph API Discovery Engine for Facebook Pages
+async function fetchUserProfile(token: string) {
+  const res = await fetch(`https://graph.facebook.com/v20.0/me?fields=id,name,email&access_token=${token}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('[RAW GRAPH API ERROR] /me profile:\n', JSON.stringify(err, null, 2));
+    throw new Error('Failed to fetch Meta User profile');
+  }
+  const prof = await res.json();
+  console.log('[RAW GRAPH API RESPONSE] /me User Profile:\n', JSON.stringify(prof, null, 2));
+  return prof;
+}
+
+// Multi-Source Graph API Discovery Engine with Explicit RAW JSON Response Logging
 async function fetchUserPages(token: string) {
   console.log('[Meta Discovery Engine] Querying Facebook Pages from all Graph API sources...');
   const pagesMap = new Map<string, any>();
 
-  // Source 1: Standard /me/accounts
+  // Source 1: Standard GET /me/accounts
   try {
+    console.log('[RAW GRAPH API QUERY] Executing GET https://graph.facebook.com/v20.0/me/accounts...');
     const res = await fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${token}`);
-    if (res.ok) {
-      const data = await res.json();
-      console.log(`[Meta Discovery Engine] /me/accounts returned ${(data.data || []).length} page(s)`);
-      (data.data || []).forEach((p: any) => {
+    const data = await res.json().catch(() => ({}));
+
+    // PRINT COMPLETE RAW JSON RESPONSE AS REQUESTED
+    console.log('[RAW GRAPH API RESPONSE] GET /me/accounts:\n', JSON.stringify(data, null, 2));
+
+    if (!res.ok || data.error) {
+      console.error('[RAW GRAPH API ERROR] GET /me/accounts Failed:\n', JSON.stringify(data.error || data, null, 2));
+    } else {
+      const pageList = data.data || [];
+      console.log(`[RAW GRAPH API AUDIT] GET /me/accounts returned ${pageList.length} page(s).`);
+      pageList.forEach((p: any) => {
         pagesMap.set(p.id, {
           page_id: p.id,
           page_name: p.name,
@@ -92,15 +131,19 @@ async function fetchUserPages(token: string) {
       });
     }
   } catch (err: any) {
-    console.warn('[Meta Discovery Engine] Source 1 error:', err.message);
+    console.error('[RAW GRAPH API EXCEPTION] Source 1 GET /me/accounts:', err.message);
   }
 
-  // Source 2: Meta Business Manager (/me/businesses -> owned_pages & client_pages)
+  // Source 2: Meta Business Manager GET /me/businesses
   try {
+    console.log('[RAW GRAPH API QUERY] Executing GET https://graph.facebook.com/v20.0/me/businesses...');
     const bizRes = await fetch(`https://graph.facebook.com/v20.0/me/businesses?fields=id,name,client_pages{id,name,category,access_token},owned_pages{id,name,category,access_token}&access_token=${token}`);
-    if (bizRes.ok) {
-      const bizData = await bizRes.json();
-      (bizData.data || []).forEach((biz: any) => {
+    const bizData = await bizRes.json().catch(() => ({}));
+
+    console.log('[RAW GRAPH API RESPONSE] GET /me/businesses:\n', JSON.stringify(bizData, null, 2));
+
+    if (bizRes.ok && bizData.data) {
+      bizData.data.forEach((biz: any) => {
         const owned = biz.owned_pages?.data || [];
         const client = biz.client_pages?.data || [];
         [...owned, ...client].forEach((op: any) => {
@@ -117,45 +160,23 @@ async function fetchUserPages(token: string) {
       });
     }
   } catch (err: any) {
-    console.warn('[Meta Discovery Engine] Source 2 error:', err.message);
+    console.error('[RAW GRAPH API EXCEPTION] Source 2 GET /me/businesses:', err.message);
   }
 
-  // Source 3: Ad Accounts -> Lead Forms -> Page Discovery
-  try {
-    const adRes = await fetch(`https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,leadgen_forms{id,name,page{id,name}}&access_token=${token}`);
-    if (adRes.ok) {
-      const adData = await adRes.json();
-      (adData.data || []).forEach((adAcc: any) => {
-        const forms = adAcc.leadgen_forms?.data || [];
-        forms.forEach((f: any) => {
-          if (f.page?.id && !pagesMap.has(f.page.id)) {
-            pagesMap.set(f.page.id, {
-              page_id: f.page.id,
-              page_name: f.page.name || 'Facebook Page',
-              page_category: 'Business Page',
-              page_access_token: token,
-              picture_url: null,
-            });
-          }
-        });
-      });
-    }
-  } catch (err: any) {
-    console.warn('[Meta Discovery Engine] Source 3 error:', err.message);
-  }
-
-  // Source 4: Target Page Direct Query Fallback (Page 110156851793416 / Filmify Weddings)
+  // Source 3: Direct Target Page Query Fallback
   if (pagesMap.size === 0) {
-    console.log('[Meta Discovery Engine] Direct query fallback to Page 110156851793416 (Filmify Weddings)...');
+    console.log('[RAW GRAPH API QUERY] Direct Query Fallback to Page ID: 110156851793416 (Filmify Weddings)...');
     try {
-      const targetPageRes = await fetch(`https://graph.facebook.com/v20.0/110156851793416?fields=id,name,category,access_token&access_token=${token}`);
-      if (targetPageRes.ok) {
-        const tp = await targetPageRes.json();
-        pagesMap.set(tp.id, {
-          page_id: tp.id,
-          page_name: tp.name || 'Filmify Weddings',
-          page_category: tp.category || 'Wedding Service',
-          page_access_token: tp.access_token || token,
+      const targetRes = await fetch(`https://graph.facebook.com/v20.0/110156851793416?fields=id,name,category,access_token&access_token=${token}`);
+      const targetData = await targetRes.json().catch(() => ({}));
+      console.log('[RAW GRAPH API RESPONSE] GET /110156851793416:\n', JSON.stringify(targetData, null, 2));
+
+      if (targetRes.ok && targetData.id) {
+        pagesMap.set(targetData.id, {
+          page_id: targetData.id,
+          page_name: targetData.name || 'Filmify Weddings',
+          page_category: targetData.category || 'Wedding Service',
+          page_access_token: targetData.access_token || token,
           picture_url: null,
         });
       }
@@ -166,16 +187,19 @@ async function fetchUserPages(token: string) {
   return Array.from(pagesMap.values());
 }
 
-// Fetch Lead Forms for a Page
+// Fetch Lead Forms for a Page with RAW JSON Logging
 async function fetchLeadFormsForPage(pageId: string, pageAccessToken: string) {
-  console.log(`[Meta Graph API] Querying leadgen_forms for Page ID: ${pageId}...`);
+  console.log(`[RAW GRAPH API QUERY] GET /${pageId}/leadgen_forms...`);
   try {
     const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?fields=id,name,status,leads_count,created_time,questions&access_token=${pageAccessToken}`);
-    if (!res.ok) {
-      console.warn(`[Meta Callback] Forms fetch warning for page ${pageId}: ${res.status}`);
+    const data = await res.json().catch(() => ({}));
+    console.log(`[RAW GRAPH API RESPONSE] GET /${pageId}/leadgen_forms:\n`, JSON.stringify(data, null, 2));
+
+    if (!res.ok || data.error) {
+      console.error(`[RAW GRAPH API ERROR] GET /${pageId}/leadgen_forms:\n`, JSON.stringify(data.error || data, null, 2));
       return [];
     }
-    const data = await res.json();
+
     const formsList = (data.data || []).map((f: any) => ({
       form_id: f.id,
       form_name: f.name || 'Instant Lead Form',
@@ -184,10 +208,9 @@ async function fetchLeadFormsForPage(pageId: string, pageAccessToken: string) {
       questions_count: f.questions ? f.questions.length : 0,
       created_time: f.created_time || new Date().toISOString(),
     }));
-    console.log(`[Meta Graph API] Page ${pageId} returned ${formsList.length} Lead Form(s).`);
     return formsList;
-  } catch (err) {
-    console.error(`[Meta Callback] Exception fetching forms for page ${pageId}:`, err);
+  } catch (err: any) {
+    console.error(`[RAW GRAPH API EXCEPTION] GET /${pageId}/leadgen_forms:`, err.message);
     return [];
   }
 }
@@ -203,7 +226,8 @@ async function subscribePageWebhook(pageId: string, pageAccessToken: string): Pr
         access_token: pageAccessToken,
       }).toString(),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    console.log(`[RAW GRAPH API RESPONSE] POST /${pageId}/subscribed_apps:\n`, JSON.stringify(data, null, 2));
     return res.ok && !data.error;
   } catch (_) {
     return false;
@@ -250,10 +274,11 @@ export async function GET(req: NextRequest) {
   try {
     const redirectUri = `${baseUrl}/api/meta/callback`;
     const userToken = await exchangeCodeForLongLivedToken(code, redirectUri);
+    const scopeAudit = await auditTokenScopes(userToken);
     const userProfile = await fetchUserProfile(userToken);
 
-    // 1. Save Connection Token in integration_credentials
-    await supabaseAdmin
+    // 1. Save Connection Token in integration_credentials with raw audit details
+    const { data: credResult, error: credErr } = await supabaseAdmin
       .from('integration_credentials')
       .upsert({
         user_id: workspaceId,
@@ -264,9 +289,17 @@ export async function GET(req: NextRequest) {
           meta_user_name: userProfile.name || 'Meta Account',
           meta_user_email: userProfile.email || '',
           meta_user_id: userProfile.id || '',
+          granted_scopes: scopeAudit.granted_scopes,
+          declined_scopes: scopeAudit.declined_scopes,
         },
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,provider' });
+      }, { onConflict: 'user_id,provider' })
+      .select('*');
+
+    console.log('[Supabase DB Write Audit] integration_credentials upsert result:\n', JSON.stringify(credResult, null, 2));
+    if (credErr) {
+      console.error('[Supabase DB Error] integration_credentials upsert failed:', credErr.message, credErr.details);
+    }
 
     // 2. Save Token in profiles
     await supabaseAdmin
@@ -286,9 +319,9 @@ export async function GET(req: NextRequest) {
       // Subscribe Webhook
       await subscribePageWebhook(page.page_id, page.page_access_token);
 
-      // Save Page into fb_page_configs (Strict Workspace Composite Key)
-      console.log(`[Supabase DB Write] Saving page "${page.page_name}" (${page.page_id}) for workspace ${workspaceId}...`);
-      await supabaseAdmin
+      // Save Page into fb_page_configs with explicit Database Error Audit Logging
+      console.log(`[Supabase DB Write Audit] Upserting page "${page.page_name}" (${page.page_id}) into fb_page_configs...`);
+      const { data: pageResult, error: pageErr } = await supabaseAdmin
         .from('fb_page_configs')
         .upsert({
           workspace_id: workspaceId,
@@ -299,17 +332,23 @@ export async function GET(req: NextRequest) {
           page_access_token: page.page_access_token,
           is_active: true,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id,page_id' });
+        }, { onConflict: 'workspace_id,page_id' })
+        .select('*');
+
+      console.log(`[Supabase DB Write Audit] fb_page_configs upsert result for ${page.page_id}:\n`, JSON.stringify(pageResult, null, 2));
+      if (pageErr) {
+        console.error(`[Supabase DB ERROR] fb_page_configs upsert FAILED for page ${page.page_id}:`, pageErr.message, pageErr.details, pageErr.code);
+      }
 
       // Fetch Lead Forms for this Page
       const forms = await fetchLeadFormsForPage(page.page_id, page.page_access_token);
       totalFormsCount += forms.length;
 
       for (const form of forms) {
-        console.log(`[Supabase DB Write] Saving lead form "${form.form_name}" (${form.form_id}) into fb_lead_forms & fb_form_mappings...`);
+        console.log(`[Supabase DB Write Audit] Upserting form "${form.form_name}" (${form.form_id}) into fb_lead_forms & fb_form_mappings...`);
 
-        // SAVE FORM INTO fb_lead_forms (Read by GET /api/meta/status & GET /api/meta/forms)
-        await supabaseAdmin
+        // SAVE FORM INTO fb_lead_forms
+        const { data: formResult, error: formErr } = await supabaseAdmin
           .from('fb_lead_forms')
           .upsert({
             workspace_id: workspaceId,
@@ -321,7 +360,13 @@ export async function GET(req: NextRequest) {
             created_time: form.created_time,
             is_active: true,
             updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id,form_id' });
+          }, { onConflict: 'workspace_id,form_id' })
+          .select('*');
+
+        console.log(`[Supabase DB Write Audit] fb_lead_forms upsert result for form ${form.form_id}:\n`, JSON.stringify(formResult, null, 2));
+        if (formErr) {
+          console.error(`[Supabase DB ERROR] fb_lead_forms upsert FAILED for form ${form.form_id}:`, formErr.message, formErr.details);
+        }
 
         // ALSO SAVE FORM INTO fb_form_mappings
         await supabaseAdmin
