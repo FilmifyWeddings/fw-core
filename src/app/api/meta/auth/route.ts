@@ -4,7 +4,6 @@ function getBaseUrl(req: NextRequest): string {
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
   const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
 
-  // Environment variable override if configured with https://
   if (process.env.NEXT_PUBLIC_BASE_URL && process.env.NEXT_PUBLIC_BASE_URL.startsWith('https://')) {
     return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, '');
   }
@@ -12,7 +11,6 @@ function getBaseUrl(req: NextRequest): string {
     return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
   }
 
-  // Force HTTPS for all non-localhost production environments
   if (host && !isLocal) {
     const cleanHost = host.split(':')[0];
     return `https://${cleanHost}`;
@@ -29,9 +27,7 @@ function getBaseUrl(req: NextRequest): string {
 /**
  * GET /api/meta/auth?workspace_id=XXX
  *
- * Meta OAuth 2.0 Entry Point.
- * Requests all required enterprise permissions for Meta Lead Ads integration.
- * Forces HTTPS for all production OAuth flows.
+ * Meta OAuth Entry Point for Meta Lead Ads with Forced Account Selection.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -47,11 +43,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Ensure redirect_uri strictly uses https:// in production
   const redirectUri = `${baseUrl}/api/meta/callback`;
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');
 
-  // Full Enterprise Required Permissions Scope
   const scopes = [
     'public_profile',
     'email',
@@ -61,7 +55,6 @@ export async function GET(req: NextRequest) {
     'ads_management',
     'business_management',
     'leads_retrieval',
-    'pages_manage_ads',
   ].join(',');
 
   const oauthUrl = new URL('https://www.facebook.com/v20.0/dialog/oauth');
@@ -70,6 +63,9 @@ export async function GET(req: NextRequest) {
   oauthUrl.searchParams.set('scope', scopes);
   oauthUrl.searchParams.set('state', state);
   oauthUrl.searchParams.set('response_type', 'code');
+  // CRITICAL FIX: Force Facebook Account selection dialog
+  oauthUrl.searchParams.set('auth_type', 'rerequest,reauthenticate');
+  oauthUrl.searchParams.set('prompt', 'select_account');
 
   return NextResponse.redirect(oauthUrl.toString());
 }

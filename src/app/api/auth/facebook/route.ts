@@ -27,8 +27,8 @@ function getBaseUrl(req: NextRequest): string {
 /**
  * GET /api/auth/facebook?workspace_id=XXX
  *
- * Meta OAuth 2.0 Entry Point.
- * Redirects user to official Meta Facebook OAuth consent dialog.
+ * Meta OAuth 2.0 Entry Point with Forced Account Selection.
+ * Forces Facebook to prompt account choice and re-authenticate without silently reusing active sessions.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -44,29 +44,29 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Redirect URI registered in Meta Developer Portal
   const redirectUri = `${baseUrl}/api/auth/facebook/callback`;
-
-  // Encode workspace_id in OAuth state parameter (CSRF protection)
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');
 
-  // Exact required scopes
   const scopes = [
     'public_profile',
+    'email',
     'pages_show_list',
     'pages_read_engagement',
     'leads_retrieval',
     'pages_manage_metadata',
-    'pages_manage_ads',
+    'ads_management',
+    'ads_read',
   ].join(',');
 
-  // Meta OAuth Dialog URL (v19.0 / v20.0)
   const oauthUrl = new URL('https://www.facebook.com/v19.0/dialog/oauth');
   oauthUrl.searchParams.set('client_id', appId);
   oauthUrl.searchParams.set('redirect_uri', redirectUri);
   oauthUrl.searchParams.set('scope', scopes);
   oauthUrl.searchParams.set('state', state);
   oauthUrl.searchParams.set('response_type', 'code');
+  // CRITICAL FIX: Force account selection & re-authentication to prevent silent session reuse across workspaces
+  oauthUrl.searchParams.set('auth_type', 'rerequest,reauthenticate');
+  oauthUrl.searchParams.set('prompt', 'select_account');
 
   return NextResponse.redirect(oauthUrl.toString());
 }
