@@ -16,7 +16,7 @@ function getBaseUrl(req: NextRequest): string {
 /**
  * GET /api/meta/auth?workspace_id=XXX
  *
- * Canonical Meta OAuth Entry Point.
+ * Canonical Meta OAuth Entry Point. Points STRICTLY to single production callback /api/meta/callback.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
   const baseUrl = getBaseUrl(req);
 
-  // Exact Canonical Redirect URI
+  // SINGLE UNIFIED PRODUCTION REDIRECT URI
   const redirectUri = `${baseUrl}/api/meta/callback`;
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');
 

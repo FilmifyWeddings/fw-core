@@ -89,7 +89,7 @@ function ConnectTab({
     setBypassError('');
     setBypassSuccess('');
     try {
-      const res = await fetch('/api/auth/facebook/bypass', {
+      const res = await fetch('/api/meta/auth/bypass', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,7 +120,7 @@ function ConnectTab({
   const pagesCount   = searchParams.get('pages_count');
 
   // The OAuth login URL — redirects to our backend which redirects to Facebook
-  const oauthStartUrl = `/api/auth/facebook?workspace_id=${workspaceId}`;
+  const oauthStartUrl = `/api/meta/auth?workspace_id=${workspaceId}`;
 
   const handleDisconnect = async () => {
     if (!confirm('Facebook connection hata dein? Saare page configs aur tokens remove ho jayenge.')) return;
@@ -305,7 +305,7 @@ function ConnectTab({
         <ol className="space-y-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
           {[
             <span key="1"><a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">developers.facebook.com <ExternalLink className="w-2.5 h-2.5 inline" /></a> → App बनाएं → <strong>.env.local</strong> में FACEBOOK_APP_ID और FACEBOOK_APP_SECRET डालें</span>,
-            <span key="2">App Settings → <strong>Valid OAuth Redirect URIs</strong> में add करें: <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/api/auth/facebook/callback</code></span>,
+            <span key="2">App Settings → <strong>Valid OAuth Redirect URIs</strong> में add करें: <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/api/meta/callback</code></span>,
             <span key="3">App → <strong>Webhooks</strong> → Subscribe: Callback URL = <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">.../api/webhooks/facebook-leads?workspace_id=YOUR_ID</code>, Verify Token = <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">sahil_fw_verify_token_2026</code>, Field = <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">leadgen</code></span>,
           ].map((step, i) => (
             <li key={i} className="flex items-start gap-2">
