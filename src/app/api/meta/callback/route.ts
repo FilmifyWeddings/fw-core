@@ -184,6 +184,11 @@ export async function GET(req: NextRequest) {
         provider: 'meta',
         status: 'connected',
         access_token: userToken,
+        config: {
+          meta_user_name: userProfile.name || 'Meta Account',
+          meta_user_email: userProfile.email || '',
+          meta_user_id: userProfile.id || '',
+        },
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,provider' });
 

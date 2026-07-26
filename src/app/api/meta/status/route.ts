@@ -62,7 +62,8 @@ export async function GET(req: NextRequest) {
       .eq('id', workspaceId)
       .maybeSingle();
 
-    const userName = profile?.full_name || profile?.email?.split('@')[0] || 'Meta Connected Account';
+    const metaUserName = conn?.config?.meta_user_name || profile?.full_name || 'Connected Meta Account';
+    const metaUserEmail = conn?.config?.meta_user_email || profile?.email || '';
     const connectedDate = conn?.updated_at || conn?.created_at || new Date().toISOString();
     let tokenStatus: 'ACTIVE' | 'EXPIRED' | 'NEEDS_RECONNECT' | 'DISCONNECTED' = 'ACTIVE';
 
@@ -145,7 +146,8 @@ export async function GET(req: NextRequest) {
       success: true,
       connection: {
         is_connected: true,
-        user_name: userName,
+        user_name: metaUserName,
+        user_email: metaUserEmail,
         business_name: businessName,
         connected_date: connectedDate,
         token_status: tokenStatus,

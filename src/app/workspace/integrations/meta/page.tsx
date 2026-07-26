@@ -80,7 +80,7 @@ export default function MetaIntegrationPage() {
 
   // Connected Data States
   const [connectedAccountName, setConnectedAccountName] = useState<string>('Filmify Weddings');
-  const [connectedUserEmail, setConnectedUserEmail] = useState<string>('admin@filmifyweddings.com');
+  const [connectedUserEmail, setConnectedUserEmail] = useState<string>('');
   const [adAccountId, setAdAccountId] = useState<string>('act_110156851793416');
   const [pages, setPages] = useState<ConnectedPage[]>([]);
   const [leadForms, setLeadForms] = useState<LeadForm[]>([]);
@@ -171,7 +171,8 @@ export default function MetaIntegrationPage() {
 
         if (statusData.success && statusData.connection?.is_connected) {
           setIsConnected(true);
-          setConnectedAccountName(statusData.connection.business_name || 'Meta Business Account');
+          setConnectedAccountName(statusData.connection.user_name || statusData.connection.business_name || 'Connected Meta Account');
+          setConnectedUserEmail(statusData.connection.user_email || '');
           setPages(statusData.pages || []);
           setLeadForms(statusData.forms || []);
           setTotalLeadsSynced(statusData.counts?.total_leads || 0);
