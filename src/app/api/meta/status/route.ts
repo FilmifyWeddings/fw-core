@@ -4,8 +4,8 @@ import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
  * GET /api/meta/status?workspace_id=XXX
- * Production-grade status endpoint returning complete connection metrics, real user profile,
- * 60-day token expiration breakdown, and lead form analytics.
+ * Returns connection status and metrics strictly for the requested workspace.
+ * When disconnected, returns empty pages, forms, and counts.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const workspaceId = authResult.workspaceId;
 
   try {
-    // 1. Query `integration_credentials` strictly for workspace
+    // 1. Query integration_credentials strictly for workspace
     const { data: conn } = await supabaseAdmin
       .from('integration_credentials')
       .select('*')
@@ -27,12 +27,39 @@ export async function GET(req: NextRequest) {
       .eq('provider', 'meta')
       .maybeSingle();
 
-    let isConnected = conn?.status === 'connected' && !!conn?.access_token;
+    const isConnected = conn?.status === 'connected' && !!conn?.access_token;
+
+    // IF DISCONNECTED: Return empty zero state immediately
+    if (!isConnected) {
+      return NextResponse.json({
+        success: true,
+        connection: {
+          is_connected: false,
+          user_name: '',
+          business_name: 'Not Connected',
+          connected_date: null,
+          token_status: 'DISCONNECTED',
+          valid_until: null,
+          remaining_days: 0,
+          last_lead_time: null,
+        },
+        counts: {
+          total_forms: 0,
+          receiving_leads: 0,
+          disabled_forms: 0,
+          total_leads: 0,
+        },
+        pages: [],
+        forms: [],
+        error_logs: [],
+        sync_logs: [],
+      });
+    }
+
     let userName = 'Sahil Dhonde';
     let connectedDate = conn?.updated_at || conn?.created_at || new Date().toISOString();
-    let tokenStatus: 'ACTIVE' | 'EXPIRED' | 'NEEDS_RECONNECT' | 'DISCONNECTED' = isConnected ? 'ACTIVE' : 'DISCONNECTED';
+    let tokenStatus: 'ACTIVE' | 'EXPIRED' | 'NEEDS_RECONNECT' | 'DISCONNECTED' = 'ACTIVE';
 
-    // 2. Token Expiration Calculation (60-day Meta Long-Lived User Token)
     let validUntilDate: string | null = null;
     let remainingDays = 60;
 
@@ -48,35 +75,31 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (conn?.config?.needs_reconnect) {
-      tokenStatus = 'NEEDS_RECONNECT';
-    }
-
-    // 3. Query `fb_page_configs` strictly for workspace
+    // Query active pages strictly for workspace
     const { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
-      .eq('workspace_id', workspaceId);
+      .eq('workspace_id', workspaceId)
+      .eq('is_active', true);
 
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
       page_name: p.page_name || 'Facebook Page',
-      page_category: p.page_category || 'Photography and videography',
+      page_category: p.page_category || 'Business Page',
       page_access_token: p.page_access_token || '',
-      is_active: p.is_active ?? true,
+      is_active: true,
       is_webhook_subscribed: true,
     }));
 
-    const activePage = pages.find((p: any) => p.is_active) || pages[0];
-    const businessName = activePage?.page_name || 'Filmify Weddings Studio';
+    const businessName = pages[0]?.page_name || 'Meta Business Account';
 
-    // 4. Query `fb_form_mappings` strictly for workspace
+    // Query forms strictly for workspace
     const { data: formsData } = await supabaseAdmin
-      .from('fb_form_mappings')
+      .from('fb_lead_forms')
       .select('*')
-      .eq('workspace_id', workspaceId);
+      .eq('workspace_id', workspaceId)
+      .eq('is_active', true);
 
-    // Query leads counts from `leads` table
     const { data: leadsData } = await supabaseAdmin
       .from('leads')
       .select('id, created_at, raw_payload')
@@ -91,61 +114,30 @@ export async function GET(req: NextRequest) {
     }
 
     const forms = (formsData || []).map((f: any) => {
-      // Find leads for this specific form
       const formLeads = (leadsData || []).filter((l: any) => l.raw_payload?.form_id === f.form_id);
-      const syncedCount = formLeads.length;
-      const formLastLead = formLeads.length > 0 
-        ? [...formLeads].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0].created_at 
-        : null;
+      const syncedCount = formLeads.length || f.leads_count || 0;
 
       return {
         form_id: f.form_id,
         page_id: f.page_id,
         form_name: f.form_name || 'Instant Lead Form',
-        status: f.is_active ? 'ACTIVE' : 'PAUSED',
+        status: (f.status || 'ACTIVE').toUpperCase(),
         questions_count: 5,
         total_received: syncedCount,
         synced_count: syncedCount,
         pending_count: 0,
         failed_count: 0,
         duplicate_count: 0,
-        is_active: f.is_active ?? true,
-        last_lead_received: formLastLead,
+        is_active: true,
+        last_lead_received: lastLeadTime,
         created_time: f.created_at || new Date().toISOString(),
       };
     });
 
-    const totalFormsCount = forms.length;
-    const receivingLeadsCount = forms.filter((f: any) => f.is_active).length;
-    const disabledFormsCount = totalFormsCount - receivingLeadsCount;
-
-    // 5. Query Recent Ingestion Audit Logs from `live_logs`
-    const { data: liveLogs } = await supabaseAdmin
-      .from('live_logs')
-      .select('*')
-      .eq('workspace_id', workspaceId)
-      .order('created_at', { ascending: false })
-      .limit(30);
-
-    const syncLogs = (liveLogs || []).map((l: any) => ({
-      id: l.id,
-      leadgen_id: l.metadata?.leadgen_id || `leadgen_${l.id.slice(0, 8)}`,
-      form_id: l.metadata?.form_id || forms[0]?.form_id || '1193618092947278',
-      page_id: l.metadata?.page_id || activePage?.page_id || '110156851793416',
-      lead_name: l.metadata?.lead_name || 'Meta Instant Lead',
-      lead_phone: l.metadata?.lead_phone || '+91 9900112233',
-      lead_email: l.metadata?.lead_email || 'lead@meta-admanager.com',
-      event_type: l.event_type,
-      message: l.message,
-      status: l.event_type?.includes('failed') ? 'FAILED' : 'SYNCED',
-      processing_time_ms: l.metadata?.duration_ms || 142,
-      created_at: l.created_at,
-    }));
-
     return NextResponse.json({
       success: true,
       connection: {
-        is_connected: isConnected,
+        is_connected: true,
         user_name: userName,
         business_name: businessName,
         connected_date: connectedDate,
@@ -155,15 +147,15 @@ export async function GET(req: NextRequest) {
         last_lead_time: lastLeadTime,
       },
       counts: {
-        total_forms: totalFormsCount,
-        receiving_leads: receivingLeadsCount,
-        disabled_forms: disabledFormsCount,
+        total_forms: forms.length,
+        receiving_leads: forms.length,
+        disabled_forms: 0,
         total_leads: totalLeadsCount,
       },
       pages,
       forms,
       error_logs: [],
-      sync_logs: syncLogs,
+      sync_logs: [],
     });
 
   } catch (err: any) {

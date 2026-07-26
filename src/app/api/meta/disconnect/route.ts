@@ -4,8 +4,7 @@ import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
  * POST /api/meta/disconnect
- * Complete Fail-Safe Disconnect Handler.
- * Wipes out access tokens, pages, form mappings, and profiles for the verified workspace.
+ * Hard Disconnect Engine: Deletes access tokens, page configs, lead forms, and profile tokens for workspace.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,57 +18,44 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Meta Disconnect Engine] Hard-disconnecting Meta for workspace: ${workspaceId}...`);
 
-    // 1. Delete or invalidate integration_credentials
+    // 1. Delete integration_credentials
     await supabaseAdmin
       .from('integration_credentials')
       .delete()
       .eq('user_id', workspaceId)
       .eq('provider', 'meta');
 
-    await supabaseAdmin
-      .from('integration_credentials')
-      .update({ status: 'disconnected', access_token: null, updated_at: new Date().toISOString() })
-      .eq('user_id', workspaceId)
-      .eq('provider', 'meta');
-
-    // 2. Clear fb_page_configs (delete tokens & set inactive)
+    // 2. Delete fb_page_configs
     await supabaseAdmin
       .from('fb_page_configs')
-      .update({ is_active: false, page_access_token: '', updated_at: new Date().toISOString() })
+      .delete()
       .eq('workspace_id', workspaceId);
 
-    // 3. Clear fb_lead_forms & fb_form_mappings
+    // 3. Delete fb_lead_forms
     await supabaseAdmin
       .from('fb_lead_forms')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .delete()
       .eq('workspace_id', workspaceId);
 
     try {
       await supabaseAdmin
         .from('fb_form_mappings')
-        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .delete()
         .eq('workspace_id', workspaceId);
     } catch (err) {}
 
-    // 4. Clear profiles table meta_access_token
+    // 4. Wipe profile access token
     await supabaseAdmin
       .from('profiles')
       .update({ meta_access_token: null, updated_at: new Date().toISOString() })
       .eq('id', workspaceId);
 
-    // 5. Insert audit log
-    try {
-      await supabaseAdmin.from('live_logs').insert({
-        workspace_id: workspaceId,
-        event_type: 'meta_disconnected',
-        message: 'Meta Business Account disconnected completely. All tokens and active page subscriptions removed.',
-      });
-    } catch (logErr) {}
-
     return NextResponse.json({
       success: true,
       isConnected: false,
-      message: 'Meta Facebook integration completely removed for workspace.',
+      pages: [],
+      forms: [],
+      message: 'Meta Facebook integration completely deleted and reset for workspace.',
     });
 
   } catch (err: any) {
