@@ -467,6 +467,37 @@ export default function MetaIntegrationPage() {
           </div>
         </div>
 
+        
+        {/* Zero Pages Discovered Alert Banner */}
+        {isConnected && pages.length === 0 && (
+          <div className="bg-amber-50 rounded-3xl p-6 border border-amber-200 shadow-lg space-y-4 text-amber-900">
+            <div className="flex items-center gap-3 font-bold text-lg text-amber-800">
+              <AlertCircle className="w-6 h-6 text-amber-600 shrink-0" />
+              <span>Facebook Account Connected, but 0 Facebook Pages / Forms Discovered</span>
+            </div>
+            <p className="text-sm leading-relaxed text-amber-800/90">
+              Your Facebook account is connected as <strong>{connectedAccountName}</strong>, but Meta Graph API did not return any Facebook Pages under your account.
+            </p>
+            <div className="bg-white/80 p-4 rounded-2xl border border-amber-200/80 text-xs space-y-2 font-medium">
+              <p className="font-bold text-amber-900">Common Causes & Fixes:</p>
+              <ol className="list-decimal pl-4 space-y-1 text-slate-700">
+                <li><strong>Meta App in Development Mode:</strong> If your Meta Developer App is in Development Mode, only users added under <em>Facebook Developer Console &rarr; App Roles &rarr; Roles &rarr; Testers</em> can grant page access.</li>
+                <li><strong>Page Admin Permissions:</strong> Ensure your Facebook account has <em>Admin / Full Control</em> on the target Facebook Page.</li>
+                <li><strong>OAuth Permissions Checkbox:</strong> When logging into Facebook, make sure all checkboxes for "Select All Pages" are checked.</li>
+              </ol>
+            </div>
+            <div className="pt-2 flex items-center gap-3">
+              <button
+                onClick={handleConnectFacebook}
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Re-Authenticate Facebook & Grant Permissions</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Metrics Grid (8 Dynamic Enterprise Metric Cards) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {/* Card 1: Connected Account */}
