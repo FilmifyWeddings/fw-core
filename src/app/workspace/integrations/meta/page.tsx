@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   ShieldCheck,
@@ -75,7 +76,7 @@ export default function MetaIntegrationPage() {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'webhook' | 'leads' | 'logs'>('forms');
-  const [workspaceId, setWorkspaceId] = useState<string>('f0635313-586c-406c-bda7-03c81a1343d3');
+  const [workspaceId, setWorkspaceId] = useState<string>('');
 
   // Connected Data States
   const [connectedAccountName, setConnectedAccountName] = useState<string>('Filmify Weddings');
@@ -146,16 +147,23 @@ export default function MetaIntegrationPage() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-      // Fetch Meta Status & Forms Data from API
+        // Fetch Meta Status & Forms Data from API using Authenticated Supabase JWT Session
   const fetchMetaSyncData = async () => {
     setIsSyncing(true);
     try {
-      // 1. Query /api/meta/status (Primary Source of Truth)
-      const statusRes = await fetch(`/api/meta/status?workspace_id=${workspaceId}&nocache=` + Date.now(), {
-        headers: {
-          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('sb-token') || '' : ''}`
-        }
-      });
+      // Get active session from Supabase Client
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || (typeof window !== 'undefined' ? localStorage.getItem('sb-token') : null);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Query /api/meta/status via JWT Authentication (No hardcoded query string)
+      const statusRes = await fetch(`/api/meta/status?nocache=` + Date.now(), { headers });
 
       if (statusRes.ok) {
         const statusData = await statusRes.json();
@@ -167,7 +175,7 @@ export default function MetaIntegrationPage() {
           setPages(statusData.pages || []);
           setLeadForms(statusData.forms || []);
           setTotalLeadsSynced(statusData.counts?.total_leads || 0);
-          setTodaysLeadsCount(statusData.counts?.total_leads > 0 ? 18 : 0);
+          setTodaysLeadsCount(statusData.counts?.total_leads > 0 ? statusData.counts.total_leads : 0);
         } else {
           // DISCONNECTED ZERO STATE
           setIsConnected(false);
@@ -203,55 +211,69 @@ export default function MetaIntegrationPage() {
   // Handle Initiating Facebook OAuth with Forced Account Selection
   const handleConnectFacebook = () => {
     // CRITICAL FIX: Force Facebook Account Selection & Re-authentication to prevent silent session reuse across workspaces
-    const authUrl = `/api/auth/facebook?workspace_id=${workspaceId}&auth_type=rerequest,reauthenticate&prompt=select_account`;
+    const authUrl = `/api/auth/facebook?auth_type=rerequest,reauthenticate&prompt=select_account`;
     window.location.href = authUrl;
   };
 
-  // Handle Disconnect Action
-    const handleDisconnect = async () => {
+    // Handle Disconnect Action with Response Verification
+  const handleDisconnect = async () => {
     setShowDisconnectModal(false);
     setIsSyncing(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || (typeof window !== 'undefined' ? localStorage.getItem('sb-token') : null);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       // 1. Call Backend Hard Disconnect API
-      await fetch('/api/meta/disconnect', {
+      const res = await fetch('/api/meta/disconnect', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('sb-token') || '' : ''}`
-        },
-        body: JSON.stringify({ workspace_id: workspaceId }),
+        headers,
+        body: JSON.stringify({}),
       });
 
-      // 2. Clear Local & Session Storage Completely
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('fw_meta_connected');
-        localStorage.removeItem('fw_meta_pages');
-        localStorage.removeItem('fw_meta_account_name');
-        sessionStorage.clear();
-      }
+      const data = await res.json().catch(() => ({}));
 
-      // 3. Clear React State
-      setIsConnected(false);
-      setPages([]);
-      setLeadForms([]);
-      setConnectedAccountName('');
-      setAdAccountId('');
-      setTotalLeadsSynced(0);
-      setTodaysLeadsCount(0);
-
-      // 4. Strip Query Parameters from URL bar
-      if (typeof window !== 'undefined') {
-        window.history.replaceState(null, '', '/workspace/integrations/meta');
-      }
-
-      showToast('Meta Integration Completely Disconnected ✓');
-
-      // 5. Force Page Reload to guarantee clean unauthenticated state
-      setTimeout(() => {
+      // VERIFY RESPONSE SUCCESS BEFORE PURGING LOCAL UI STATE
+      if (res.ok && data.success) {
+        // 2. Clear Local & Session Storage Completely
         if (typeof window !== 'undefined') {
-          window.location.href = '/workspace/integrations/meta';
+          localStorage.removeItem('fw_meta_connected');
+          localStorage.removeItem('fw_meta_pages');
+          localStorage.removeItem('fw_meta_account_name');
+          sessionStorage.clear();
         }
-      }, 500);
+
+        // 3. Clear React State to Zero-State
+        setIsConnected(false);
+        setPages([]);
+        setLeadForms([]);
+        setConnectedAccountName('Not Connected');
+        setAdAccountId('');
+        setTotalLeadsSynced(0);
+        setTodaysLeadsCount(0);
+
+        // 4. Strip Query Parameters from URL bar
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', '/workspace/integrations/meta');
+        }
+
+        showToast('Meta Integration Completely Disconnected ✓');
+
+        // 5. Force Page Reload to guarantee clean unauthenticated state
+        setTimeout(() => {
+          if (typeof window !== 'undefined') {
+            window.location.href = '/workspace/integrations/meta';
+          }
+        }, 500);
+      } else {
+        showToast('Disconnect Failed: ' + (data.error || 'Server error'));
+      }
     } catch (err: any) {
       showToast('Failed to disconnect integration.');
     } finally {
