@@ -43,7 +43,8 @@ interface ConnectedPage {
 
 interface LeadForm {
   form_id: string;
-  name: string;
+  name?: string;
+  form_name?: string;
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
   page_id: string;
   page_name?: string;
@@ -145,31 +146,99 @@ export default function MetaIntegrationPage() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Fetch Meta Sync Data from API
+    // Fetch Meta Status & Forms Data from API
   const fetchMetaSyncData = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch(`/api/meta/sync?workspace_id=${workspaceId}&nocache=` + Date.now());
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
+      // 1. Query /api/meta/status (Primary Source of Truth)
+      const statusRes = await fetch(`/api/meta/status?workspace_id=${workspaceId}&nocache=` + Date.now(), {
+        headers: {
+          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('sb-token') || '' : ''}`
+        }
+      });
+
+      let loadedForms: LeadForm[] = [];
+
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        console.log('[Meta UI Debug] /api/meta/status response:', statusData);
+
+        if (statusData.success && (statusData.connection?.is_connected || statusData.connection?.is_connected === undefined)) {
           setIsConnected(true);
-          setConnectedAccountName(data.accountName || 'Filmify Weddings');
-          setAdAccountId(data.adAccountId || 'act_110156851793416');
-          setPages(data.pages || []);
-          if (data.leadForms && data.leadForms.length > 0) {
-            setLeadForms(data.leadForms);
+          if (statusData.connection?.business_name) {
+            setConnectedAccountName(statusData.connection.business_name);
           }
-          if (data.totalLeadsSynced) setTotalLeadsSynced(data.totalLeadsSynced);
+          if (statusData.pages && statusData.pages.length > 0) {
+            setPages(statusData.pages);
+          }
+          if (statusData.forms && statusData.forms.length > 0) {
+            loadedForms = statusData.forms.map((f: any) => ({
+              form_id: f.form_id,
+              name: f.form_name || f.name || 'Meta Lead Form',
+              form_name: f.form_name || f.name || 'Meta Lead Form',
+              status: (f.status || 'ACTIVE').toUpperCase() as any,
+              page_id: f.page_id || '110156851793416',
+              page_name: 'Filmify Weddings',
+              ad_account_name: 'Filmify Weddings Ad Account',
+              is_active: f.is_active ?? true,
+              sync_count: f.synced_count || f.sync_count || 0,
+              last_lead_time: f.last_lead_received || 'Active',
+              questions_count: f.questions_count || 5,
+            }));
+            setLeadForms(loadedForms);
+          }
         }
       }
 
-      // Fetch dedicated /api/meta/forms endpoint in parallel
-      const formsRes = await fetch(`/api/meta/forms?page_id=110156851793416&workspace_id=${workspaceId}&nocache=` + Date.now());
-      if (formsRes.ok) {
-        const formsData = await formsRes.json();
-        if (formsData.success && formsData.forms && formsData.forms.length > 0) {
-          setLeadForms(formsData.forms);
+      // 2. Query /api/meta/forms in parallel if status forms was empty
+      if (loadedForms.length === 0) {
+        const formsRes = await fetch(`/api/meta/forms?page_id=110156851793416&workspace_id=${workspaceId}&nocache=` + Date.now());
+        if (formsRes.ok) {
+          const formsData = await formsRes.json();
+          console.log('[Meta UI Debug] /api/meta/forms response:', formsData);
+          if (formsData.success && formsData.forms && formsData.forms.length > 0) {
+            loadedForms = formsData.forms.map((f: any) => ({
+              form_id: f.form_id,
+              name: f.name || f.form_name || 'Meta Lead Form',
+              form_name: f.form_name || f.name || 'Meta Lead Form',
+              status: (f.status || 'ACTIVE').toUpperCase() as any,
+              page_id: f.page_id || '110156851793416',
+              page_name: 'Filmify Weddings',
+              ad_account_name: 'Filmify Weddings Ad Account',
+              is_active: true,
+              sync_count: f.sync_count || f.leads_count || 0,
+              last_lead_time: f.last_lead_time || 'Active',
+              questions_count: 5,
+            }));
+            setLeadForms(loadedForms);
+          }
+        }
+      }
+
+      // 3. Fallback Query /api/meta/sync
+      const syncRes = await fetch(`/api/meta/sync?workspace_id=${workspaceId}&nocache=` + Date.now());
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        console.log('[Meta UI Debug] /api/meta/sync response:', syncData);
+        if (syncData.success) {
+          setIsConnected(true);
+          if (syncData.pages && syncData.pages.length > 0) setPages(syncData.pages);
+          if (loadedForms.length === 0 && syncData.leadForms && syncData.leadForms.length > 0) {
+            setLeadForms(syncData.leadForms.map((f: any) => ({
+              form_id: f.form_id,
+              name: f.name || f.form_name || 'Meta Lead Form',
+              form_name: f.form_name || f.name || 'Meta Lead Form',
+              status: (f.status || 'ACTIVE').toUpperCase() as any,
+              page_id: f.page_id || '110156851793416',
+              page_name: 'Filmify Weddings',
+              ad_account_name: 'Filmify Weddings Ad Account',
+              is_active: true,
+              sync_count: f.sync_count || 0,
+              last_lead_time: f.last_lead_time || 'Active',
+              questions_count: 5,
+            })));
+          }
+          if (syncData.totalLeadsSynced) setTotalLeadsSynced(syncData.totalLeadsSynced);
         }
       }
     } catch (err: any) {
@@ -306,12 +375,16 @@ export default function MetaIntegrationPage() {
     showToast('Copied to clipboard!');
   };
 
-  // Filtered Lead Forms
+    // Filtered Lead Forms with Debug Console Tracing
   const filteredForms = leadForms.filter(f => {
-    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase()) || f.form_id.includes(searchQuery);
-    const matchesStatus = statusFilter === 'ALL' || f.status === statusFilter;
+    const displayName = f.name || f.form_name || 'Meta Lead Form';
+    const formId = f.form_id || '';
+    const matchesSearch = displayName.toLowerCase().includes(searchQuery.toLowerCase()) || formId.includes(searchQuery);
+    const matchesStatus = statusFilter === 'ALL' || (f.status || 'ACTIVE').toUpperCase() === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  console.log('[Meta UI Debug] State leadForms count:', leadForms.length, '| Rendered filteredForms count:', filteredForms.length);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans p-4 sm:p-6 lg:p-8">
@@ -488,7 +561,7 @@ export default function MetaIntegrationPage() {
               <FileText className="w-5 h-5 text-violet-600" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-slate-900">{leadForms.length || 18}</span>
+              <span className="text-3xl font-extrabold text-slate-900">{leadForms.length}</span>
               <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                 All Synced
               </span>
@@ -496,7 +569,7 @@ export default function MetaIntegrationPage() {
             <div className="pt-2 flex items-center justify-between text-xs border-t border-slate-100">
               <span className="text-slate-500">Active Forms</span>
               <span className="font-semibold text-slate-900">
-                {leadForms.filter(f => f.status === 'ACTIVE').length || 18} Active
+                {leadForms.filter(f => (f.status || 'ACTIVE').toUpperCase() === 'ACTIVE').length} Active
               </span>
             </div>
           </div>
@@ -708,7 +781,7 @@ export default function MetaIntegrationPage() {
                       </div>
 
                       <h4 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-                        {form.name}
+                        {form.name || form.form_name || 'Meta Lead Form'}
                       </h4>
                       <p className="text-xs text-slate-500">Page: Filmify Weddings</p>
                     </div>
