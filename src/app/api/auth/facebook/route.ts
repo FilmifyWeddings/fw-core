@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
     'pages_read_engagement',
     'leads_retrieval',
     'pages_manage_metadata',
+    'business_management',
     'ads_management',
     'ads_read',
   ].join(',');

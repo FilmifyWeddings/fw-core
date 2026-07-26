@@ -100,6 +100,9 @@ export default function MetaIntegrationPage() {
   const [testWebhookResult, setTestWebhookResult] = useState<any>(null);
   const [isTestingWebhook, setIsTestingWebhook] = useState<boolean>(false);
   const [selectedFormForPreview, setSelectedFormForPreview] = useState<LeadForm | null>(null);
+  const [showManualPageModal, setShowManualPageModal] = useState<boolean>(false);
+  const [inputPageId, setInputPageId] = useState<string>('');
+  const [isConnectingPage, setIsConnectingPage] = useState<boolean>(false);
 
   const webhookCallbackUrl = 'https://studiocore.in/api/webhooks/meta-leads';
   const webhookVerifyToken = 'fw_verify_token_2026';
@@ -347,7 +350,48 @@ export default function MetaIntegrationPage() {
     showToast('Copied to clipboard!');
   };
 
-    // Filtered Lead Forms with Debug Console Tracing
+    
+  // Handle Manual Page ID Connect
+  const handleManualConnectPage = async () => {
+    if (!inputPageId.trim()) {
+      showToast('Please enter a valid Facebook Page ID or Username.');
+      return;
+    }
+    setIsConnectingPage(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || (typeof window !== 'undefined' ? localStorage.getItem('sb-token') : null);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/facebook/connect-page', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ page_id: inputPageId.trim() }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        showToast(`Connected Page "${data.page_name}" with ${data.forms_count} Lead Forms! ✓`);
+        setShowManualPageModal(false);
+        setInputPageId('');
+        fetchMetaSyncData();
+      } else {
+        showToast('Page Connect Error: ' + (data.error || 'Page not found'));
+      }
+    } catch (err: any) {
+      showToast('Failed to connect page: ' + err.message);
+    } finally {
+      setIsConnectingPage(false);
+    }
+  };
+
+  // Filtered Lead Forms with Debug Console Tracing
   const filteredForms = leadForms.filter(f => {
     const displayName = f.name || f.form_name || 'Meta Lead Form';
     const formId = f.form_id || '';
@@ -979,6 +1023,56 @@ export default function MetaIntegrationPage() {
           )}
         </div>
       </div>
+
+      
+      {/* Manual Page Connect Modal */}
+      {showManualPageModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-600" />
+                Connect Facebook Page
+              </h3>
+              <button onClick={() => setShowManualPageModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Facebook Page ID or Page Username
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 110156851793416 or filmifyweddings"
+                value={inputPageId}
+                onChange={(e) => setInputPageId(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+              <p className="text-xs text-slate-500">
+                Find your Page ID under <em>Facebook Page &rarr; About &rarr; Page ID</em>.
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowManualPageModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleManualConnectPage}
+                disabled={isConnectingPage}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 shadow-md transition-all disabled:opacity-50"
+              >
+                {isConnectingPage ? 'Connecting Page...' : 'Fetch & Connect Page'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Disconnect Confirmation Modal */}
       {showDisconnectModal && (
