@@ -46,10 +46,7 @@ export async function GET(req: NextRequest) {
 
     // 3. Read active forms strictly for workspace
     const { data: dbForms } = await supabaseAdmin
-      .from('fb_lead_forms')
-      .select('*')
-      .eq('workspace_id', workspaceId)
-      .eq('is_active', true)
+      .from('fb_lead_forms').select('*').eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false });
 
     const forms = (dbForms || []).map(f => ({

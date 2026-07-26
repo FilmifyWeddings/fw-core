@@ -325,7 +325,6 @@ export async function GET(req: NextRequest) {
         .from('fb_page_configs')
         .upsert({
           workspace_id: workspaceId,
-          tenant_id: workspaceId,
           page_id: page.page_id,
           page_name: page.page_name,
           page_category: page.page_category,
@@ -355,11 +354,7 @@ export async function GET(req: NextRequest) {
             page_id: page.page_id,
             form_id: form.form_id,
             form_name: form.form_name,
-            status: form.status,
-            leads_count: form.sync_count || 0,
-            created_time: form.created_time,
-            is_active: true,
-            updated_at: new Date().toISOString(),
+            status: form.status, leads_count: form.sync_count || 0, created_time: form.created_time, updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' })
           .select('*');
 
@@ -373,7 +368,6 @@ export async function GET(req: NextRequest) {
           .from('fb_form_mappings')
           .upsert({
             workspace_id: workspaceId,
-            tenant_id: workspaceId,
             page_id: page.page_id,
             form_id: form.form_id,
             form_name: form.form_name,

@@ -102,10 +102,7 @@ export async function GET(req: NextRequest) {
 
     // 4. Query forms strictly for workspace
     const { data: formsData } = await supabaseAdmin
-      .from('fb_lead_forms')
-      .select('*')
-      .eq('workspace_id', workspaceId)
-      .eq('is_active', true);
+      .from('fb_lead_forms').select('*').eq('workspace_id', workspaceId);
 
     const { data: leadsData } = await supabaseAdmin
       .from('leads')
