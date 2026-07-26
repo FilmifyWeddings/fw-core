@@ -291,7 +291,7 @@ export async function GET(req: NextRequest) {
           page_access_token: page.page_access_token,
           is_active: true,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'page_id' });
+        }, { onConflict: 'workspace_id,page_id' });
 
       if (pageErr) {
         console.error(`[Supabase DB Error] fb_page_configs upsert for ${page.page_id}:`, pageErr.message);
@@ -314,7 +314,7 @@ export async function GET(req: NextRequest) {
             is_active: true,
             is_tagging_enabled: true,
             updated_at: new Date().toISOString(),
-          }, { onConflict: 'form_id' });
+          }, { onConflict: 'workspace_id,form_id' });
 
         if (formErr) {
           console.error(`[Supabase DB Error] fb_form_mappings upsert for ${form.form_id}:`, formErr.message);

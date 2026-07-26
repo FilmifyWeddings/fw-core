@@ -146,7 +146,7 @@ export async function POST(req: NextRequest) {
         raw_payload: {
           leadgen_id: leadgenId,
           form_id: form_id || leadItem.form_id,
-          page_id: page_id || '110156851793416',
+          page_id: page_id,
           campaign_name: leadItem.campaign_name || 'Meta Ad Campaign',
           ad_name: leadItem.ad_name || 'Instant Lead Form Ad',
         },
