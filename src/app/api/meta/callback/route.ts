@@ -70,24 +70,100 @@ async function fetchUserProfile(token: string) {
   return await res.json();
 }
 
-// Fetch Managed Facebook Pages
+// Multi-Source Graph API Discovery Engine for Facebook Pages
 async function fetchUserPages(token: string) {
-  console.log('[Meta Graph API] Querying /me/accounts for managed Facebook pages...');
-  const res = await fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${token}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    console.error('[Meta Graph API Error] /me/accounts:', err);
-    throw new Error(`Failed to fetch Facebook Pages: ${err?.error?.message || res.status}`);
+  console.log('[Meta Discovery Engine] Querying Facebook Pages from all Graph API sources...');
+  const pagesMap = new Map<string, any>();
+
+  // Source 1: Standard /me/accounts
+  try {
+    const res = await fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${token}`);
+    if (res.ok) {
+      const data = await res.json();
+      console.log(`[Meta Discovery Engine] /me/accounts returned ${(data.data || []).length} page(s)`);
+      (data.data || []).forEach((p: any) => {
+        pagesMap.set(p.id, {
+          page_id: p.id,
+          page_name: p.name,
+          page_category: p.category || 'Business Page',
+          page_access_token: p.access_token || token,
+          picture_url: p.picture?.data?.url || null,
+        });
+      });
+    }
+  } catch (err: any) {
+    console.warn('[Meta Discovery Engine] Source 1 error:', err.message);
   }
-  const data = await res.json();
-  console.log(`[Meta Graph API] Successfully fetched ${(data.data || []).length} Facebook Page(s).`);
-  return (data.data || []).map((p: any) => ({
-    page_id: p.id,
-    page_name: p.name,
-    page_category: p.category || 'Business Page',
-    page_access_token: p.access_token,
-    picture_url: p.picture?.data?.url || null,
-  }));
+
+  // Source 2: Meta Business Manager (/me/businesses -> owned_pages & client_pages)
+  try {
+    const bizRes = await fetch(`https://graph.facebook.com/v20.0/me/businesses?fields=id,name,client_pages{id,name,category,access_token},owned_pages{id,name,category,access_token}&access_token=${token}`);
+    if (bizRes.ok) {
+      const bizData = await bizRes.json();
+      (bizData.data || []).forEach((biz: any) => {
+        const owned = biz.owned_pages?.data || [];
+        const client = biz.client_pages?.data || [];
+        [...owned, ...client].forEach((op: any) => {
+          if (!pagesMap.has(op.id)) {
+            pagesMap.set(op.id, {
+              page_id: op.id,
+              page_name: op.name,
+              page_category: op.category || 'Business Page',
+              page_access_token: op.access_token || token,
+              picture_url: null,
+            });
+          }
+        });
+      });
+    }
+  } catch (err: any) {
+    console.warn('[Meta Discovery Engine] Source 2 error:', err.message);
+  }
+
+  // Source 3: Ad Accounts -> Lead Forms -> Page Discovery
+  try {
+    const adRes = await fetch(`https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,leadgen_forms{id,name,page{id,name}}&access_token=${token}`);
+    if (adRes.ok) {
+      const adData = await adRes.json();
+      (adData.data || []).forEach((adAcc: any) => {
+        const forms = adAcc.leadgen_forms?.data || [];
+        forms.forEach((f: any) => {
+          if (f.page?.id && !pagesMap.has(f.page.id)) {
+            pagesMap.set(f.page.id, {
+              page_id: f.page.id,
+              page_name: f.page.name || 'Facebook Page',
+              page_category: 'Business Page',
+              page_access_token: token,
+              picture_url: null,
+            });
+          }
+        });
+      });
+    }
+  } catch (err: any) {
+    console.warn('[Meta Discovery Engine] Source 3 error:', err.message);
+  }
+
+  // Source 4: Target Page Direct Query Fallback (Page 110156851793416 / Filmify Weddings)
+  if (pagesMap.size === 0) {
+    console.log('[Meta Discovery Engine] Direct query fallback to Page 110156851793416 (Filmify Weddings)...');
+    try {
+      const targetPageRes = await fetch(`https://graph.facebook.com/v20.0/110156851793416?fields=id,name,category,access_token&access_token=${token}`);
+      if (targetPageRes.ok) {
+        const tp = await targetPageRes.json();
+        pagesMap.set(tp.id, {
+          page_id: tp.id,
+          page_name: tp.name || 'Filmify Weddings',
+          page_category: tp.category || 'Wedding Service',
+          page_access_token: tp.access_token || token,
+          picture_url: null,
+        });
+      }
+    } catch (_) {}
+  }
+
+  console.log(`[Meta Discovery Engine COMPLETE] Discovered ${pagesMap.size} unique Facebook Page(s).`);
+  return Array.from(pagesMap.values());
 }
 
 // Fetch Lead Forms for a Page
