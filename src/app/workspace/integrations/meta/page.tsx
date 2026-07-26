@@ -208,10 +208,11 @@ export default function MetaIntegrationPage() {
     fetchMetaSyncData();
   }, [workspaceId]);
 
-  // Handle Initiating Facebook OAuth with Forced Account Selection
-  const handleConnectFacebook = () => {
-    // CRITICAL FIX: Force Facebook Account Selection & Re-authentication to prevent silent session reuse across workspaces
-    const authUrl = `/api/auth/facebook?auth_type=rerequest,reauthenticate&prompt=select_account`;
+    // Handle Initiating Facebook OAuth with Forced Account Selection & Session Workspace Binding
+  const handleConnectFacebook = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const activeWorkspaceId = session?.user?.id || workspaceId || '';
+    const authUrl = `/api/auth/facebook?workspace_id=${activeWorkspaceId}&auth_type=rerequest,reauthenticate&prompt=select_account`;
     window.location.href = authUrl;
   };
 

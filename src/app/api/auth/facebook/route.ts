@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyMetaAuth } from '@/lib/meta-auth';
 
 function getBaseUrl(req: NextRequest): string {
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
@@ -9,23 +10,23 @@ function getBaseUrl(req: NextRequest): string {
     return `${proto}://${host}`;
   }
 
-  // Canonical HTTPS origin for StudioCore production
   return 'https://studiocore.in';
 }
 
 /**
  * GET /api/auth/facebook?workspace_id=XXX
- *
- * Canonical Meta OAuth Entry Point. Points STRICTLY to single production callback /api/meta/callback.
+ * Canonical Meta OAuth Entry Point. Enforces JWT authentication to bind workspace_id securely.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspace_id') || '00000000-0000-0000-0000-000000000000';
+  const requestedWorkspaceId = searchParams.get('workspace_id');
+
+  const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
+  const workspaceId = authResult.workspaceId || '00000000-0000-0000-0000-000000000000';
 
   const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
   const baseUrl = getBaseUrl(req);
 
-  // UNIFIED PRODUCTION REDIRECT URI
   const redirectUri = `${baseUrl}/api/meta/callback`;
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');
 
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
     'ads_read',
   ].join(',');
 
-  const oauthUrl = new URL('https://www.facebook.com/v19.0/dialog/oauth');
+  const oauthUrl = new URL('https://www.facebook.com/v20.0/dialog/oauth');
   oauthUrl.searchParams.set('client_id', appId);
   oauthUrl.searchParams.set('redirect_uri', redirectUri);
   oauthUrl.searchParams.set('scope', scopes);

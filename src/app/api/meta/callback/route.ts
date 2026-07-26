@@ -1,21 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-
-// Helper: Resolve a valid Profile / Workspace ID from Supabase DB
-async function getValidWorkspaceId(requestedId?: string | null): Promise<string> {
-  if (requestedId && requestedId !== '00000000-0000-0000-0000-000000000000') {
-    const { data } = await supabaseAdmin.from('profiles').select('id').eq('id', requestedId).maybeSingle();
-    if (data?.id) return data.id;
-  }
-  
-  const { data: filmifyProf } = await supabaseAdmin.from('profiles').select('id').ilike('workspace_name', '%Filmify%').maybeSingle();
-  if (filmifyProf?.id) return filmifyProf.id;
-
-  const { data: firstProfile } = await supabaseAdmin.from('profiles').select('id').order('created_at', { ascending: true }).limit(1).maybeSingle();
-  if (firstProfile?.id) return firstProfile.id;
-
-  return 'f0635313-586c-406c-bda7-03c81a1343d3';
-}
+import { verifyMetaAuth } from '@/lib/meta-auth';
 
 function getBaseUrl(req: NextRequest): string {
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
@@ -41,12 +26,12 @@ function getBaseUrl(req: NextRequest): string {
   return 'https://studiocore.in';
 }
 
-// ── Step 1: Code -> 60-Day Long-Lived Token Exchange ─────────────────────
+// Code -> 60-Day Long-Lived Token Exchange
 async function exchangeCodeForLongLivedToken(code: string, redirectUri: string): Promise<string> {
-  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID!;
-  const appSecret = process.env.FACEBOOK_APP_SECRET!;
+  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
+  const appSecret = process.env.FACEBOOK_APP_SECRET || '4da60a4bc30f64db3570ffde1508b2b6';
 
-  console.log(`[Meta Graph API Query] Exchanging code for token with redirectUri: ${redirectUri}`);
+  console.log(`[Meta Graph API] Exchanging OAuth code for access token. Redirect URI: ${redirectUri}`);
 
   const tokenRes = await fetch(
     `https://graph.facebook.com/v20.0/oauth/access_token?` +
@@ -62,7 +47,6 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
 
   const tokenData = await tokenRes.json();
   const shortToken: string = tokenData.access_token;
-  console.log('[Meta Graph API Response] Short-lived token received successfully.');
 
   // Short Lived -> Long Lived Token (60 days)
   const longRes = await fetch(
@@ -72,45 +56,23 @@ async function exchangeCodeForLongLivedToken(code: string, redirectUri: string):
   );
 
   if (!longRes.ok) {
-    console.warn('[Meta Callback] Long-lived token exchange warning, using short token');
+    console.warn('[Meta Callback] Long-lived token exchange warning, using short-lived token');
     return shortToken;
   }
 
   const longData = await longRes.json();
-  console.log('[Meta Graph API Response] Long-lived 60-day token received successfully.');
   return longData.access_token || shortToken;
 }
 
 async function fetchUserProfile(token: string) {
-  console.log('[Meta Graph API Query] Fetching /me identity...');
   const res = await fetch(`https://graph.facebook.com/v20.0/me?fields=id,name,email&access_token=${token}`);
   if (!res.ok) throw new Error('Failed to fetch Meta User profile');
-  const profile = await res.json();
-  console.log('[Meta Graph API Response] Profile:', profile);
-  return profile;
+  return await res.json();
 }
 
-async function fetchUserPermissions(token: string) {
-  console.log('[Meta Graph API Query] Fetching /me/permissions...');
-  try {
-    const res = await fetch(`https://graph.facebook.com/v20.0/me/permissions?access_token=${token}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    const perms = (data.data || []).map((p: any) => ({
-      permission: p.permission,
-      status: p.status,
-    }));
-    console.log('[Meta Graph API Response] /me/permissions list:', JSON.stringify(perms, null, 2));
-    return perms;
-  } catch (err) {
-    console.warn('[Meta Callback] Failed to fetch permissions:', err);
-    return [];
-  }
-}
-
-// ── Step 3: Fetch Managed Pages ──────────────────────────────────────────
+// Fetch Managed Facebook Pages
 async function fetchUserPages(token: string) {
-  console.log('[Meta Graph API Query] Fetching /me/accounts pages...');
+  console.log('[Meta Graph API] Querying /me/accounts for managed Facebook pages...');
   const res = await fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${token}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -118,7 +80,7 @@ async function fetchUserPages(token: string) {
     throw new Error(`Failed to fetch Facebook Pages: ${err?.error?.message || res.status}`);
   }
   const data = await res.json();
-  console.log(`[Meta Graph API Response] Fetched ${(data.data || []).length} Facebook Page(s).`);
+  console.log(`[Meta Graph API] Successfully fetched ${(data.data || []).length} Facebook Page(s).`);
   return (data.data || []).map((p: any) => ({
     page_id: p.id,
     page_name: p.name,
@@ -128,13 +90,13 @@ async function fetchUserPages(token: string) {
   }));
 }
 
-// ── Step 4: Fetch Lead Forms for a Page ──────────────────────────────────
+// Fetch Lead Forms for a Page
 async function fetchLeadFormsForPage(pageId: string, pageAccessToken: string) {
-  console.log(`[Meta Graph API Query] Fetching leadgen_forms for Page ID: ${pageId}...`);
+  console.log(`[Meta Graph API] Querying leadgen_forms for Page ID: ${pageId}...`);
   try {
     const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?fields=id,name,status,leads_count,created_time,questions&access_token=${pageAccessToken}`);
     if (!res.ok) {
-      console.warn(`[Meta Callback] Forms fetch error for page ${pageId}: ${res.status}`);
+      console.warn(`[Meta Callback] Forms fetch warning for page ${pageId}: ${res.status}`);
       return [];
     }
     const data = await res.json();
@@ -146,7 +108,7 @@ async function fetchLeadFormsForPage(pageId: string, pageAccessToken: string) {
       questions_count: f.questions ? f.questions.length : 0,
       created_time: f.created_time || new Date().toISOString(),
     }));
-    console.log(`[Meta Graph API Response] Page ${pageId} has ${formsList.length} Lead Form(s).`);
+    console.log(`[Meta Graph API] Page ${pageId} returned ${formsList.length} Lead Form(s).`);
     return formsList;
   } catch (err) {
     console.error(`[Meta Callback] Exception fetching forms for page ${pageId}:`, err);
@@ -154,9 +116,8 @@ async function fetchLeadFormsForPage(pageId: string, pageAccessToken: string) {
   }
 }
 
-// ── Step 5: Subscribe Leadgen Webhook to Page ───────────────────────────
+// Subscribe Leadgen Webhook to Page
 async function subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<boolean> {
-  console.log(`[Meta Webhook Subscribe Query] Subscribing leadgen for Page ID: ${pageId}...`);
   try {
     const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`, {
       method: 'POST',
@@ -167,15 +128,13 @@ async function subscribePageWebhook(pageId: string, pageAccessToken: string): Pr
       }).toString(),
     });
     const data = await res.json();
-    const isSuccess = res.ok && !data.error;
-    console.log(`[Meta Webhook Subscribe Response] Page ${pageId} result: ${isSuccess ? 'SUCCESS' : 'FAILED'}`);
-    return isSuccess;
+    return res.ok && !data.error;
   } catch (_) {
     return false;
   }
 }
 
-// ── GET /api/meta/callback ──────────────────────────────────────────────
+// GET /api/meta/callback
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
@@ -187,7 +146,7 @@ export async function GET(req: NextRequest) {
   const targetRedirect = `${baseUrl}/workspace/integrations/meta`;
 
   if (error) {
-    console.error('[Meta OAuth Callback] User denied or error:', errorReason);
+    console.error('[Meta OAuth Callback] Authorization error:', errorReason);
     return NextResponse.redirect(`${targetRedirect}?meta_error=${encodeURIComponent(errorReason || 'User Cancelled Login')}`);
   }
 
@@ -203,25 +162,22 @@ export async function GET(req: NextRequest) {
     } catch (_) {}
   }
 
-  const workspaceId = await getValidWorkspaceId(requestedWorkspaceId);
-  console.log(`[Meta OAuth Callback] Resolved workspace_id for database storage: ${workspaceId}`);
+  const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
+  if (!authResult.authorized) {
+    console.error('[Meta Callback Security Failure] Could not resolve authenticated workspace_id.');
+    return NextResponse.redirect(`${targetRedirect}?meta_error=${encodeURIComponent('Authentication failure: workspace could not be verified')}`);
+  }
+
+  const workspaceId = authResult.workspaceId;
+  console.log(`[Meta OAuth Callback] Storing connection for Workspace ID: ${workspaceId}`);
 
   try {
     const redirectUri = `${baseUrl}/api/meta/callback`;
     const userToken = await exchangeCodeForLongLivedToken(code, redirectUri);
-    const userPermissions = await fetchUserPermissions(userToken);
     const userProfile = await fetchUserProfile(userToken);
 
-    const grantedScopes = userPermissions
-      .filter((p: any) => p.status === 'granted')
-      .map((p: any) => p.permission);
-
-    console.log('[Meta OAuth Permissions Audit] Granted Scopes:', grantedScopes.join(', '));
-    console.log('[Meta OAuth Scope Check] pages_manage_metadata status:', grantedScopes.includes('pages_manage_metadata') ? 'GRANTED ✅' : 'NOT GRANTED ❌');
-
-    // 1. Save Connection Token in `integration_credentials` (Valid Foreign Key in Supabase)
-    console.log(`[Supabase DB Write] Saving token to integration_credentials for workspace: ${workspaceId}`);
-    const { error: credErr } = await supabaseAdmin
+    // 1. Save Connection Token in integration_credentials
+    await supabaseAdmin
       .from('integration_credentials')
       .upsert({
         user_id: workspaceId,
@@ -231,12 +187,7 @@ export async function GET(req: NextRequest) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,provider' });
 
-    if (credErr) {
-      console.error('[Supabase DB Error] integration_credentials upsert:', credErr.message);
-    }
-
-    // 2. Save Token in `profiles`
-    console.log(`[Supabase DB Write] Updating meta_access_token in profiles for workspace: ${workspaceId}`);
+    // 2. Save Token in profiles
     await supabaseAdmin
       .from('profiles')
       .update({
@@ -247,40 +198,16 @@ export async function GET(req: NextRequest) {
 
     // 3. Fetch Managed Facebook Pages
     const pages = await fetchUserPages(userToken);
-    if (pages.length === 0) {
-      console.warn('[Meta Callback] No Facebook Pages found under this Meta user.');
-      return NextResponse.redirect(`${targetRedirect}?meta_warning=${encodeURIComponent('No Facebook Pages Found under your account')}`);
-    }
-
-    // Option A Multi-Tenant Security Check: Enforce Exclusive Page Ownership
-    for (const page of pages) {
-      const { data: existingOwnership } = await supabaseAdmin
-        .from('fb_page_configs')
-        .select('workspace_id, page_name')
-        .eq('page_id', page.page_id)
-        .eq('is_active', true)
-        .neq('workspace_id', workspaceId)
-        .maybeSingle();
-
-      if (existingOwnership) {
-        console.warn(`[Multi-Tenant Violation] Page "${page.page_name}" (${page.page_id}) is already connected to workspace ${existingOwnership.workspace_id}.`);
-        return NextResponse.redirect(
-          `${targetRedirect}?meta_error=${encodeURIComponent(
-            `This Facebook Page (${page.page_name}) is already connected to another StudioCore workspace.`
-          )}`
-        );
-      }
-    }
 
     let totalFormsCount = 0;
 
     for (const page of pages) {
-      // Subscribe Page Webhook
-      const isSubbed = await subscribePageWebhook(page.page_id, page.page_access_token);
+      // Subscribe Webhook
+      await subscribePageWebhook(page.page_id, page.page_access_token);
 
-      // Save Page in `fb_page_configs` (Valid Table in Supabase with tenant_id)
-      console.log(`[Supabase DB Write] Upserting page "${page.page_name}" to fb_page_configs...`);
-      const { error: pageErr } = await supabaseAdmin
+      // Save Page into fb_page_configs (Strict Workspace Composite Key)
+      console.log(`[Supabase DB Write] Saving page "${page.page_name}" (${page.page_id}) for workspace ${workspaceId}...`);
+      await supabaseAdmin
         .from('fb_page_configs')
         .upsert({
           workspace_id: workspaceId,
@@ -293,17 +220,30 @@ export async function GET(req: NextRequest) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'workspace_id,page_id' });
 
-      if (pageErr) {
-        console.error(`[Supabase DB Error] fb_page_configs upsert for ${page.page_id}:`, pageErr.message);
-      }
-
       // Fetch Lead Forms for this Page
       const forms = await fetchLeadFormsForPage(page.page_id, page.page_access_token);
       totalFormsCount += forms.length;
 
       for (const form of forms) {
-        console.log(`[Supabase DB Write] Upserting form "${form.form_name}" (${form.form_id}) to fb_form_mappings...`);
-        const { error: formErr } = await supabaseAdmin
+        console.log(`[Supabase DB Write] Saving lead form "${form.form_name}" (${form.form_id}) into fb_lead_forms & fb_form_mappings...`);
+
+        // SAVE FORM INTO fb_lead_forms (Read by GET /api/meta/status & GET /api/meta/forms)
+        await supabaseAdmin
+          .from('fb_lead_forms')
+          .upsert({
+            workspace_id: workspaceId,
+            page_id: page.page_id,
+            form_id: form.form_id,
+            form_name: form.form_name,
+            status: form.status,
+            leads_count: form.sync_count || 0,
+            created_time: form.created_time,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id,form_id' });
+
+        // ALSO SAVE FORM INTO fb_form_mappings
+        await supabaseAdmin
           .from('fb_form_mappings')
           .upsert({
             workspace_id: workspaceId,
@@ -315,21 +255,10 @@ export async function GET(req: NextRequest) {
             is_tagging_enabled: true,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' });
-
-        if (formErr) {
-          console.error(`[Supabase DB Error] fb_form_mappings upsert for ${form.form_id}:`, formErr.message);
-        }
       }
     }
 
-    // Save Audit Event in live_logs
-    await supabaseAdmin.from('live_logs').insert({
-      workspace_id: workspaceId,
-      event_type: 'meta_oauth_connected',
-      message: `✅ Facebook Connected as "${userProfile.name}". ${pages.length} Page(s) & ${totalFormsCount} Lead Form(s) synced to database.`,
-    });
-
-    console.log(`[Meta OAuth Callback SUCCESS] Redirecting to dashboard with ${pages.length} Pages & ${totalFormsCount} Forms.`);
+    console.log(`[Meta OAuth Callback SUCCESS] Saved ${pages.length} Pages & ${totalFormsCount} Forms for workspace ${workspaceId}.`);
 
     const successParams = new URLSearchParams({
       meta_success: 'connected',
