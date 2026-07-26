@@ -498,7 +498,7 @@ export default function MetaIntegrationPage() {
             </div>
             <div className="pt-2 flex items-center justify-between text-xs border-t border-slate-100">
               <span className="text-slate-500">Page ID</span>
-              <span className="font-mono text-slate-700 font-medium">110156851793416</span>
+              <span className="font-mono text-slate-700 font-medium">{pages[0]?.page_id || 'None'}</span>
             </div>
           </div>
 
@@ -625,7 +625,7 @@ export default function MetaIntegrationPage() {
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>Lead Forms ({leadForms.length || 18})</span>
+              <span>Lead Forms ({leadForms.length})</span>
             </button>
 
             <button
@@ -637,7 +637,7 @@ export default function MetaIntegrationPage() {
               }`}
             >
               <Globe className="w-4 h-4" />
-              <span>Connected Pages ({pages.length || 1})</span>
+              <span>Connected Pages ({pages.length})</span>
             </button>
 
             <button
@@ -731,7 +731,7 @@ export default function MetaIntegrationPage() {
                       <h4 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2">
                         {form.name || form.form_name || 'Meta Lead Form'}
                       </h4>
-                      <p className="text-xs text-slate-500">Page: Filmify Weddings</p>
+                      <p className="text-xs text-slate-500">Page: {form.page_name || 'Facebook Page'}</p>
                     </div>
 
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
@@ -756,32 +756,41 @@ export default function MetaIntegrationPage() {
           {/* TAB 2: CONNECTED PAGES */}
           {activeTab === 'pages' && (
             <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm flex items-start gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-blue-500/20 shrink-0">
-                    FW
-                  </div>
-
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-lg font-bold text-slate-900">Filmify Weddings</h4>
-                      <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Active & Connected
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">Wedding Service / Business Page</p>
-                    <p className="text-xs font-mono text-slate-400">Page ID: 110156851793416</p>
-
-                    <div className="pt-2 flex items-center gap-3 text-xs">
-                      <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Webhook Subscribed
-                      </span>
-                      <span className="text-slate-400">•</span>
-                      <span className="text-slate-600">Page Access Token Active</span>
-                    </div>
-                  </div>
+              {pages.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-sm space-y-2">
+                  <Globe className="w-10 h-10 mx-auto text-slate-300" />
+                  <p>No Facebook Pages connected to this workspace.</p>
                 </div>
-              </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {pages.map((pg) => (
+                    <div key={pg.page_id} className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm flex items-start gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-blue-500/20 shrink-0 uppercase">
+                        {pg.page_name ? pg.page_name.slice(0, 2) : 'FB'}
+                      </div>
+
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-lg font-bold text-slate-900">{pg.page_name}</h4>
+                          <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Active & Connected
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500">{pg.page_category || 'Facebook Business Page'}</p>
+                        <p className="text-xs font-mono text-slate-400">Page ID: {pg.page_id}</p>
+
+                        <div className="pt-2 flex items-center gap-3 text-xs">
+                          <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Webhook Subscribed
+                          </span>
+                          <span className="text-slate-400">•</span>
+                          <span className="text-slate-600">Page Access Token Active</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -909,7 +918,7 @@ export default function MetaIntegrationPage() {
               <p className="text-slate-500">// Real-Time Meta Integration Execution & OAuth Logs</p>
               <p>[{new Date().toISOString()}] INFO: Meta Marketing API v19.0 Engine initialized for workspace {workspaceId}</p>
               <p>[{new Date().toISOString()}] INFO: Long-lived token 60-day status verified (Active)</p>
-              <p>[{new Date().toISOString()}] INFO: Page 110156851793416 (Filmify Weddings) leadgen_forms query completed (18 forms synced)</p>
+              <p>[{new Date().toISOString()}] INFO: Meta pages & forms query completed for workspace {workspaceId}</p>
               <p>[{new Date().toISOString()}] SUCCESS: Webhook endpoint /api/webhooks/meta-leads online with zero errors</p>
             </div>
           )}
