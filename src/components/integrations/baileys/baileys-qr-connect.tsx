@@ -1,109 +1,103 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { motion, useMotionValue, useTransform, useSpring } from 'framer-motion';
 import { CheckCircle2, RefreshCw, Zap, Users, Send, LayoutTemplate, MessageCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type ConnState = 'disconnected' | 'connecting' | 'open' | 'error';
 
 const WA_SVG = (
-  <svg className="fill-current" viewBox="0 0 24 24" width="20" height="20">
+  <svg className="fill-current" viewBox="0 0 24 24" width="100%" height="100%">
     <path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z" />
   </svg>
 );
 
-// ─── Features Data ─────────────────────────────────────────────────────────────
-const FEATURES = [
-  {
-    icon: <MessageCircle className="w-5 h-5" />,
-    color: 'bg-emerald-50 text-[#00a884] border-emerald-100',
-    badge: 'bg-emerald-100 text-emerald-700',
-    label: 'Instant Welcome',
-    desc: 'Auto-send a personalised welcome message the moment a new lead comes in from Facebook, your website, or any source.',
-    tag: 'Auto-trigger',
-  },
-  {
-    icon: <Zap className="w-5 h-5" />,
-    color: 'bg-amber-50 text-amber-600 border-amber-100',
-    badge: 'bg-amber-100 text-amber-700',
-    label: 'Instant Follow-ups',
-    desc: 'Schedule smart follow-up sequences — 1 hour, 1 day, 3 days — so no client ever falls through the cracks.',
-    tag: 'Time-based',
-  },
-  {
-    icon: <Users className="w-5 h-5" />,
-    color: 'bg-violet-50 text-violet-600 border-violet-100',
-    badge: 'bg-violet-100 text-violet-700',
-    label: 'Group Auto Message',
-    desc: 'Automatically add new clients to WhatsApp groups or send targeted messages to your existing contact groups.',
-    tag: 'Group broadcast',
-  },
-  {
-    icon: <Send className="w-5 h-5" />,
-    color: 'bg-sky-50 text-sky-600 border-sky-100',
-    badge: 'bg-sky-100 text-sky-700',
-    label: 'Bulk Message Send',
-    desc: 'Send campaign messages to hundreds of clients at once — promotions, seasonal offers, event reminders — all from your CRM.',
-    tag: 'Bulk campaigns',
-  },
-  {
-    icon: <LayoutTemplate className="w-5 h-5" />,
-    color: 'bg-rose-50 text-rose-500 border-rose-100',
-    badge: 'bg-rose-100 text-rose-700',
-    label: 'Message Templates',
-    desc: 'Create and save reusable message templates with smart tokens like {name}, {phone}, {event_date} for every workflow.',
-    tag: 'Reusable',
-  },
-];
+// ─── 3D Tilt Card wrapper ─────────────────────────────────────────────────────
+function TiltCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const rotateX = useSpring(useTransform(y, [-0.5, 0.5], [6, -6]), { stiffness: 300, damping: 30 });
+  const rotateY = useSpring(useTransform(x, [-0.5, 0.5], [-6, 6]), { stiffness: 300, damping: 30 });
+  const scale = useSpring(1, { stiffness: 300, damping: 30 });
 
-// ─── Feature Card ──────────────────────────────────────────────────────────────
-function FeatureCard({ icon, color, badge, label, desc, tag }: typeof FEATURES[0]) {
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    x.set((e.clientX - rect.left) / rect.width - 0.5);
+    y.set((e.clientY - rect.top) / rect.height - 0.5);
+  };
+
   return (
-    <div className="bg-white rounded-2xl border border-[#e9edef] p-5 flex flex-col gap-3 hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start justify-between gap-2">
-        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${color}`}>
-          {icon}
-        </div>
-        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${badge}`}>{tag}</span>
-      </div>
-      <div>
-        <h3 className="text-sm font-bold text-[#111b21] leading-snug">{label}</h3>
-        <p className="text-xs text-[#667781] mt-1 leading-relaxed">{desc}</p>
-      </div>
-    </div>
+    <motion.div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => scale.set(1.02)}
+      onMouseLeave={() => { x.set(0); y.set(0); scale.set(1); }}
+      style={{ rotateX, rotateY, scale, transformPerspective: 800 }}
+      className={`cursor-default ${className}`}
+    >
+      {children}
+    </motion.div>
   );
 }
 
+// ─── Feature pill for the horizontal row ──────────────────────────────────────
+const FEATURES = [
+  { icon: <MessageCircle className="w-5 h-5" />, bg: 'bg-emerald-100', color: 'text-emerald-600', label: 'Instant Welcome', sub: 'Send personalized welcome messages.' },
+  { icon: <Zap className="w-5 h-5" />,           bg: 'bg-amber-100',   color: 'text-amber-600',   label: 'Instant Follow-ups', sub: 'Automate follow-ups and never miss out.' },
+  { icon: <Users className="w-5 h-5" />,          bg: 'bg-violet-100',  color: 'text-violet-600',  label: 'Group Auto Messages', sub: 'Send updates to groups automatically.' },
+  { icon: <Send className="w-5 h-5" />,           bg: 'bg-sky-100',     color: 'text-sky-600',     label: 'Bulk Message Send', sub: 'Broadcast to many leads in one click.' },
+  { icon: <LayoutTemplate className="w-5 h-5" />, bg: 'bg-rose-100',    color: 'text-rose-500',    label: 'Message Templates', sub: 'Create & use templates for fast replies.' },
+];
+
 // ─── QR Panel ─────────────────────────────────────────────────────────────────
 function QrPanel({ qrString }: { qrString: string | null }) {
+  const [countdown, setCountdown] = useState(60);
+
+  useEffect(() => {
+    if (!qrString) return;
+    setCountdown(60);
+    const t = setInterval(() => setCountdown(c => (c > 0 ? c - 1 : 0)), 1000);
+    return () => clearInterval(t);
+  }, [qrString]);
+
   const qrUrl = qrString
     ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`
     : null;
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="w-[260px] h-[260px] sm:w-[280px] sm:h-[280px] rounded-xl border border-[#e9edef] bg-white shadow-sm flex items-center justify-center overflow-hidden">
+      {/* QR box with subtle glow */}
+      <div
+        className="relative w-[220px] h-[220px] sm:w-[260px] sm:h-[260px] rounded-2xl bg-white flex items-center justify-center overflow-hidden"
+        style={{ boxShadow: qrUrl ? '0 0 0 4px rgba(0,168,132,0.12), 0 8px 32px rgba(0,168,132,0.10)' : '0 2px 16px rgba(0,0,0,0.06)' }}
+      >
         {!qrUrl ? (
           <div className="flex flex-col items-center gap-3 p-4">
-            <div className="w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center">
+            <div className="w-12 h-12 rounded-full bg-[#00a884] text-white p-3 flex items-center justify-center">
               {WA_SVG}
             </div>
             <RefreshCw className="w-5 h-5 text-[#00a884] animate-spin" />
-            <span className="text-xs text-[#667781] text-center">Generating QR code…<br />Please wait</span>
+            <span className="text-xs text-[#667781] text-center">Generating QR code…</span>
           </div>
         ) : (
-          <img
-            src={qrUrl}
-            alt="Scan with WhatsApp"
-            width={280}
-            height={280}
-            draggable={false}
-            className="block"
-          />
+          <img src={qrUrl} alt="Scan with WhatsApp" width={260} height={260} draggable={false} className="block rounded-xl" />
         )}
       </div>
+
+      {/* Countdown */}
       {qrUrl && (
-        <p className="text-[10px] text-[#667781] text-center">QR refreshes automatically · Keep this window open</p>
+        <div className="flex items-center gap-1.5 text-[11px] text-[#667781]">
+          <RefreshCw className="w-3 h-3 text-[#00a884]" />
+          <span>
+            QR refreshes in{' '}
+            <span className="font-bold text-[#00a884]">
+              {String(Math.floor(countdown / 60)).padStart(2, '0')}:{String(countdown % 60).padStart(2, '0')}
+            </span>
+          </span>
+        </div>
       )}
     </div>
   );
@@ -220,12 +214,15 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   return (
     <div
-      className="font-sans text-[#111b21] flex flex-col items-center justify-start gap-6 px-4 py-6 sm:px-6 lg:px-12"
-      style={{ background: '#FAF8F5', minHeight: '100%' }}
+      className="font-sans text-[#111b21] flex flex-col items-center justify-start gap-6 px-4 py-8 sm:px-6 lg:px-10"
+      style={{
+        background: 'linear-gradient(135deg, #f0fdf8 0%, #f8fffe 40%, #f0f9f6 100%)',
+        minHeight: '100%',
+      }}
     >
-      {/* WhatsApp logo header */}
+      {/* WA Logo header */}
       <div className="w-full max-w-5xl flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-full bg-[#00a884] text-white flex items-center justify-center shadow-sm shrink-0">
+        <div className="w-8 h-8 rounded-full bg-[#00a884] text-white p-1.5 flex items-center justify-center shadow-md shadow-emerald-200">
           {WA_SVG}
         </div>
         <span className="text-xl font-bold text-[#00a884] tracking-tight">WhatsApp</span>
@@ -233,112 +230,148 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
       <div className="w-full max-w-5xl space-y-5">
 
-        {/* ── CONNECTED ── */}
+        {/* ─── CONNECTED ─── */}
         {connState === 'open' && (
-          <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-5">
-            <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mx-auto border border-emerald-100 text-[#00a884]">
-              <CheckCircle2 className="w-8 h-8" />
+          <TiltCard>
+            <div className="bg-white rounded-3xl border border-emerald-100 p-8 shadow-md text-center space-y-5">
+              <motion.div
+                initial={{ scale: 0 }} animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto border-2 border-emerald-200 text-[#00a884]"
+              >
+                <CheckCircle2 className="w-9 h-9" />
+              </motion.div>
+              <div>
+                <h2 className="text-xl font-bold text-[#111b21]">WhatsApp Connected!</h2>
+                {phoneNumber && (
+                  <p className="mt-2 text-sm font-mono font-bold text-[#00a884] bg-emerald-50 px-4 py-1 rounded-full border border-emerald-200 inline-block">
+                    +{phoneNumber}
+                  </p>
+                )}
+                <p className="text-xs text-[#667781] mt-2">All automations are now active and running.</p>
+              </div>
+              <button onClick={handleDisconnect} className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 font-bold text-xs transition-all">
+                Disconnect Device
+              </button>
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-[#111b21]">WhatsApp Connected!</h2>
-              {phoneNumber && (
-                <p className="mt-2 text-sm font-mono font-bold text-[#00a884] bg-emerald-50 px-4 py-1 rounded-full border border-emerald-200 inline-block">
-                  +{phoneNumber}
-                </p>
-              )}
-              <p className="text-xs text-[#667781] mt-2">Your device is linked. All automations are now active.</p>
-            </div>
-            <button onClick={handleDisconnect} className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all">
-              Disconnect Device
-            </button>
-          </div>
+          </TiltCard>
         )}
 
-        {/* ── DISCONNECTED ── */}
+        {/* ─── DISCONNECTED ─── */}
         {connState === 'disconnected' && (
-          <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-4">
-            <h2 className="text-lg font-bold text-[#111b21]">WhatsApp Disconnected</h2>
+          <div className="bg-white rounded-3xl border border-[#e9edef] p-8 shadow-sm text-center space-y-4">
+            <h2 className="text-lg font-bold text-[#111b21]">Session Disconnected</h2>
             <p className="text-xs text-[#667781]">Your session was reset. Click below to re-link your device.</p>
-            <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all">
+            <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all shadow-md shadow-emerald-200">
               Link a Device
             </button>
           </div>
         )}
 
-        {/* ── SCAN CARD ── */}
+        {/* ─── SCAN CARD ─── */}
         {(connState === 'connecting' || connState === 'error') && (
-          <div className="bg-white rounded-2xl border border-[#e9edef] px-6 sm:px-8 py-8 shadow-sm">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <TiltCard>
+            <div className="bg-white rounded-3xl border border-[#e9edef] px-6 sm:px-10 py-8 shadow-lg shadow-emerald-50/60">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
 
-              {/* Steps */}
-              <div className="lg:col-span-7 space-y-6">
-                <h1 className="text-2xl sm:text-[28px] font-[400] leading-tight text-[#111b21]">Scan to log in</h1>
-                <ol className="space-y-5 text-sm text-[#111b21] leading-relaxed">
-                  <li className="flex items-start gap-3">
-                    <span className="mt-0.5 w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-semibold flex items-center justify-center shrink-0">1</span>
-                    <span>Open <strong>WhatsApp</strong> on your phone.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="mt-0.5 w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-semibold flex items-center justify-center shrink-0">2</span>
-                    <span>
-                      On <strong>Android</strong>, tap the three dots menu and select <strong>Linked Devices</strong>.<br />
-                      On <strong>iPhone</strong>, go to <strong>Settings</strong> and select <strong>Linked Devices</strong>.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="mt-0.5 w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-semibold flex items-center justify-center shrink-0">3</span>
-                    <span>Tap <strong>Link a Device</strong> and point your phone's camera at the QR code.</span>
-                  </li>
-                </ol>
-              </div>
+                {/* Left: Steps */}
+                <div className="lg:col-span-7 space-y-6">
+                  <h1 className="text-2xl sm:text-[28px] font-semibold leading-tight text-[#111b21]">Scan to log in</h1>
+                  <ol className="space-y-5 text-sm text-[#111b21] leading-relaxed">
+                    <li className="flex items-start gap-3">
+                      <span className="mt-0.5 w-6 h-6 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-bold flex items-center justify-center shrink-0 bg-slate-50">1</span>
+                      <span>Open <strong>WhatsApp</strong> on your phone.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="mt-0.5 w-6 h-6 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-bold flex items-center justify-center shrink-0 bg-slate-50">2</span>
+                      <span>
+                        On <strong>Android</strong>, tap the three dots menu and select <strong>Linked Devices</strong>.<br />
+                        On <strong>iPhone</strong>, go to <strong>Settings</strong> and select <strong>Linked Devices</strong>.
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="mt-0.5 w-6 h-6 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-bold flex items-center justify-center shrink-0 bg-slate-50">3</span>
+                      <span>Tap <strong>Link a Device</strong> and point your phone's camera at the QR code.</span>
+                    </li>
+                  </ol>
+                </div>
 
-              {/* QR — only real Baileys QR, spinner until it arrives */}
-              <div className="lg:col-span-5 flex items-start justify-center">
-                <QrPanel qrString={qrString} />
+                {/* Right: QR */}
+                <div className="lg:col-span-5 flex items-center justify-center">
+                  <QrPanel qrString={qrString} />
+                </div>
               </div>
             </div>
-          </div>
+          </TiltCard>
         )}
 
-        {/* ── FEATURES SHOWCASE ── */}
+        {/* ─── FEATURES SECTION ─── */}
         <div className="space-y-4">
-          {/* Header */}
-          <div className="flex items-center gap-3 pt-2">
-            <div className="h-px flex-1 bg-[#e9edef]" />
-            <div className="flex items-center gap-2 text-xs font-bold text-[#667781] whitespace-nowrap">
-              <div className="w-5 h-5 rounded-full bg-[#00a884] text-white flex items-center justify-center shrink-0">
+          {/* Section divider */}
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#e9edef]" />
+            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-[#e9edef] shadow-sm">
+              <div className="w-4 h-4 rounded-full bg-[#00a884] text-white p-0.5 flex items-center justify-center">
                 {WA_SVG}
               </div>
-              What you can do after connecting
+              <span className="text-[11px] font-bold text-[#667781] whitespace-nowrap">What you can do after connecting</span>
             </div>
-            <div className="h-px flex-1 bg-[#e9edef]" />
+            <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#e9edef]" />
           </div>
 
-          {/* 5 Feature Cards — 2-col on tablet, single col on mobile */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {/* 5 Feature Pills — horizontal scroll on mobile, flex wrap on desktop */}
+          <div className="flex gap-4 overflow-x-auto pb-2 sm:grid sm:grid-cols-2 lg:grid-cols-5 sm:overflow-visible">
             {FEATURES.map((f) => (
-              <FeatureCard key={f.label} {...f} />
+              <motion.div
+                key={f.label}
+                whileHover={{ y: -4, boxShadow: '0 12px 32px rgba(0,168,132,0.12)' }}
+                transition={{ duration: 0.2 }}
+                className="bg-white rounded-2xl border border-[#e9edef] p-4 flex flex-col items-center text-center gap-2.5 min-w-[140px] sm:min-w-0 cursor-default"
+              >
+                <div className={`w-11 h-11 rounded-2xl ${f.bg} ${f.color} flex items-center justify-center`}>
+                  {f.icon}
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold text-[#111b21] leading-snug">{f.label}</p>
+                  <p className="text-[10px] text-[#667781] mt-0.5 leading-relaxed">{f.sub}</p>
+                </div>
+              </motion.div>
             ))}
+          </div>
 
-            {/* CTA card */}
-            <div className="bg-[#00a884] rounded-2xl p-5 flex flex-col justify-between gap-4 text-white sm:col-span-2 xl:col-span-1">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">StudioCore CRM</p>
-                <h3 className="text-base font-extrabold mt-1 leading-snug">
-                  Connect once.<br />Automate everything.
-                </h3>
-                <p className="text-xs opacity-80 mt-2 leading-relaxed">
-                  Link your WhatsApp device and let StudioCore handle client messaging automatically — so you focus on shooting, not follow-ups.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-xs font-bold">
-                <div className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center">
+          {/* CTA Banner */}
+          <motion.div
+            whileHover={{ scale: 1.01 }}
+            transition={{ duration: 0.2 }}
+            className="relative rounded-2xl overflow-hidden"
+            style={{ background: 'linear-gradient(90deg, #00a884 0%, #00c897 50%, #00a884 100%)' }}
+          >
+            {/* Animated shimmer */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent"
+              animate={{ x: ['-100%', '100%'] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+            />
+            <div className="relative flex flex-col sm:flex-row items-center justify-between px-6 py-5 gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-white/20 text-white p-2 flex items-center justify-center shrink-0">
                   {WA_SVG}
                 </div>
-                <span className="opacity-90">Powered by Baileys Gateway</span>
+                <div>
+                  <p className="text-white font-extrabold text-sm sm:text-base leading-snug">
+                    Connected once. Automate everything.
+                  </p>
+                  <p className="text-white/80 text-xs mt-0.5">
+                    Let your WhatsApp do more with StudioCore CRM.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-white/20 border border-white/30 rounded-full px-4 py-2 text-white text-xs font-bold whitespace-nowrap shrink-0">
+                <Zap className="w-3.5 h-3.5" />
+                Powered by StudioCore Gateway
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
 
       </div>

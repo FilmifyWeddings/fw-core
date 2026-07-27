@@ -217,11 +217,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          {/* RLS Badge */}
-          <div className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[9px] text-zinc-600 dark:text-zinc-500 font-mono">
-            <Lock className="w-3 h-3 text-emerald-500" />
-            RLS Bound
-          </div>
+          {/* Security badge - internal reference hidden from public display */}
         </div>
       </div>
 
@@ -251,14 +247,6 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      {/* ═══ STATUS BAR FOOTER ═══ */}
-      <div className="flex-shrink-0 flex items-center justify-between px-5 py-2 border-t border-zinc-200 dark:border-zinc-900 bg-zinc-100/60 dark:bg-zinc-950/60 text-[9px] text-zinc-500 dark:text-zinc-600 font-mono">
-        <span className="flex items-center gap-1.5">
-          <ShieldCheck className="w-3 h-3 text-emerald-600" />
-          BRAHMASTRA LAW 1 — tenant_id RLS bound · workspace/{userId?.slice(0, 8) || '--------'}
-        </span>
-        <span>WhatsApp Socket Gateway · Baileys Engine v2</span>
-      </div>
 
     </div>
   );
