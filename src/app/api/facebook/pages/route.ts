@@ -160,3 +160,38 @@ export async function DELETE(req: NextRequest) {
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
 }
+
+/**
+ * PATCH /api/facebook/pages
+ * Updates page is_active toggle status for authenticated workspace.
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const authResult = await verifyMetaAuth(req, body.workspace_id);
+    if (!authResult.authorized && authResult.errorResponse) {
+      return authResult.errorResponse;
+    }
+
+    const workspaceId = authResult.workspaceId;
+    const { page_id, is_active } = body;
+
+    if (!page_id || typeof is_active !== 'boolean') {
+      return NextResponse.json({ error: 'page_id and is_active (boolean) required' }, { status: 400 });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('fb_page_configs')
+      .update({ is_active, updated_at: new Date().toISOString() })
+      .eq('workspace_id', workspaceId)
+      .eq('page_id', page_id)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    return NextResponse.json({ success: true, is_active, page: data });
+  } catch (err: any) {
+    console.error('[FB Toggle Page Exception]:', err.message);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}

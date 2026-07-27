@@ -41,7 +41,8 @@ import {
   CheckSquare,
   AlertTriangle,
   ChevronDown,
-  Sparkles
+  Sparkles,
+  User
 } from 'lucide-react';
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
@@ -64,9 +65,9 @@ interface LeadForm {
   is_enabled: boolean;
   sync_count: number;
   leads_count?: number;
+  total_received?: number;
   last_lead_received?: string | null;
   created_time?: string;
-  questions_count?: number;
 }
 
 type SyncPhase = 'idle' | 'fetching' | 'importing' | 'complete' | 'error';
@@ -81,31 +82,6 @@ interface FormSyncState {
   message: string;
   errorMessage?: string;
   durationMs?: number;
-}
-
-interface PreviewQuestion {
-  index: number;
-  question_id: string;
-  key: string;
-  label: string;
-  type: string;
-  options: { key: string; value: string }[];
-  crm_field: string;
-  crm_label: string;
-  is_custom: boolean;
-}
-
-interface FormPreviewData {
-  form_id: string;
-  form_name: string;
-  status: string;
-  page_id: string;
-  page_name: string;
-  leads_count: number;
-  created_time: string;
-  is_enabled: boolean;
-  questions: PreviewQuestion[];
-  questions_count: number;
 }
 
 interface SyncLogItem {
@@ -125,32 +101,8 @@ interface SyncLogItem {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const TYPE_COLORS: Record<string, string> = {
-  FULL_NAME: 'bg-blue-50 text-blue-700 border-blue-200',
-  FIRST_NAME: 'bg-blue-50 text-blue-700 border-blue-200',
-  LAST_NAME: 'bg-blue-50 text-blue-700 border-blue-200',
-  EMAIL: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  PHONE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  PHONE_NUMBER: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  CITY: 'bg-amber-50 text-amber-700 border-amber-200',
-  STATE: 'bg-amber-50 text-amber-700 border-amber-200',
-  COUNTRY: 'bg-amber-50 text-amber-700 border-amber-200',
-  CUSTOM: 'bg-slate-100 text-slate-700 border-slate-200',
-};
-
-const FRIENDLY_TYPE: Record<string, string> = {
-  FULL_NAME: 'Full Name', FIRST_NAME: 'First Name', LAST_NAME: 'Last Name',
-  EMAIL: 'Email', PHONE: 'Phone', PHONE_NUMBER: 'Phone', CITY: 'City',
-  STATE: 'State', COUNTRY: 'Country', ZIP: 'ZIP', CUSTOM: 'Custom',
-  JOB_TITLE: 'Job Title', COMPANY_NAME: 'Company', GENDER: 'Gender',
-  DATE_TIME: 'Date/Time', WORK_EMAIL: 'Work Email',
-};
-
-function friendlyType(t: string) { return FRIENDLY_TYPE[t?.toUpperCase()] || t || 'Custom'; }
-function typeColor(t: string) { return TYPE_COLORS[t?.toUpperCase()] || TYPE_COLORS.CUSTOM; }
-
 function formatRelTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return 'No leads yet';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 60) return 'Just now';
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -168,11 +120,12 @@ function fmtDuration(ms: number): string {
 
 const DEFAULT_SYNC: FormSyncState = { phase: 'idle', imported: 0, skipped: 0, failed: 0, total: 0, current: 0, message: '' };
 
-// ─── Facebook Style UI Components ─────────────────────────────────────────────
+// ─── Facebook Brand Component ────────────────────────────────────────────────
 
-function FacebookMetaLogo() {
+function FacebookMetaLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const sizeClasses = size === 'sm' ? 'w-7 h-7 text-base' : size === 'lg' ? 'w-12 h-12 text-2xl' : 'w-9 h-9 text-xl';
   return (
-    <div className="w-9 h-9 rounded-xl bg-[#0866FF] text-white flex items-center justify-center font-black text-xl shadow-md shadow-[#0866FF]/25">
+    <div className={`${sizeClasses} rounded-xl bg-[#0866FF] text-white flex items-center justify-center font-black shadow-md shadow-[#0866FF]/25 shrink-0`}>
       f
     </div>
   );
@@ -180,22 +133,22 @@ function FacebookMetaLogo() {
 
 function FacebookToggleSwitch({ enabled, loading, onChange }: { enabled: boolean; loading: boolean; onChange: () => void }) {
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex flex-col items-start gap-0.5">
       <button
         onClick={onChange}
         disabled={loading}
-        className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#0866FF] focus:ring-offset-2 ${
+        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#0866FF] focus:ring-offset-1 ${
           enabled ? 'bg-[#0866FF]' : 'bg-slate-300'
         } ${loading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-95'}`}
-        aria-label={enabled ? 'Disable form' : 'Enable form'}
+        aria-label={enabled ? 'Disable' : 'Enable'}
       >
-        <span className={`absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-300 flex items-center justify-center ${enabled ? 'translate-x-5' : 'translate-x-0'}`}>
+        <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-300 flex items-center justify-center ${enabled ? 'translate-x-5' : 'translate-x-0'}`}>
           {loading && <Loader2 className="w-3 h-3 text-[#0866FF] animate-spin" />}
         </span>
       </button>
-      <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${enabled ? 'text-emerald-600' : 'text-slate-400'}`}>
+      <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${enabled ? 'text-emerald-600' : 'text-slate-400'}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${enabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-        {enabled ? '🟢 Receiving Leads' : '🔴 Disabled'}
+        {enabled ? 'Receiving Leads' : 'Disabled'}
       </span>
     </div>
   );
@@ -207,7 +160,7 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   syncState: FormSyncState;
   onSync: (formId: string, pageId: string) => void;
 }) {
-  const { phase, imported, skipped, current, total, durationMs, errorMessage } = syncState;
+  const { phase, imported, current, total, errorMessage } = syncState;
 
   if (phase === 'idle') {
     return (
@@ -223,8 +176,8 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   if (phase === 'fetching' || phase === 'importing') {
     const pct = total > 0 ? Math.round((current / total) * 100) : 30;
     return (
-      <div className="space-y-1 min-w-[130px]">
-        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+      <div className="space-y-1 min-w-[120px]">
+        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-700">
           <span className="flex items-center gap-1">
             <Loader2 className="w-3 h-3 animate-spin text-[#0866FF]" />
             {phase === 'fetching' ? 'Fetching…' : 'Syncing…'}
@@ -240,11 +193,11 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
 
   if (phase === 'complete') {
     return (
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         <div className="flex items-center gap-1 text-emerald-600 text-xs font-bold">
           <CheckCircle2 className="w-3.5 h-3.5" /> Synced (+{imported})
         </div>
-        <button onClick={() => onSync(formId, pageId)} className="text-[11px] text-[#0866FF] font-semibold hover:underline flex items-center gap-0.5">
+        <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline flex items-center gap-0.5">
           <RotateCcw className="w-2.5 h-2.5" /> Sync Again
         </button>
       </div>
@@ -252,160 +205,25 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       <div className="flex items-center gap-1 text-red-600 text-xs font-bold">
         <AlertCircle className="w-3.5 h-3.5" /> Failed
       </div>
-      <button onClick={() => onSync(formId, pageId)} className="text-[11px] text-[#0866FF] font-semibold hover:underline">Retry</button>
+      <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline">Retry</button>
     </div>
   );
 }
 
-// ─── Preview Modal ────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
-function FormPreviewModal({ form, onClose, getAuthHeaders }: {
-  form: LeadForm;
-  onClose: () => void;
-  getAuthHeaders: () => Promise<Record<string, string>>;
-}) {
-  const [preview, setPreview] = useState<FormPreviewData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const headers = await getAuthHeaders();
-        const res = await fetch(`/api/meta/forms/preview?form_id=${form.form_id}`, { headers });
-        const data = await res.json();
-        if (cancelled) return;
-        if (data.success) setPreview(data.form);
-        else setError(data.error || 'Failed to fetch form questions');
-      } catch (err: any) {
-        if (!cancelled) setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [form.form_id, getAuthHeaders]);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold">
-              <FileText className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">{form.form_name || form.name || 'Instant Lead Form'}</h3>
-              <p className="text-xs text-slate-500 font-mono">Meta Form ID: {form.form_id}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1">
-          {loading && (
-            <div className="py-12 text-center text-slate-500 flex flex-col items-center gap-3">
-              <Loader2 className="w-8 h-8 animate-spin text-[#0866FF]" />
-              <p className="text-sm font-medium">Fetching real questions from Meta Graph API…</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {preview && !loading && (
-            <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</p>
-                  <p className="text-sm font-extrabold text-emerald-600 mt-0.5">🟢 ACTIVE</p>
-                </div>
-                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Questions</p>
-                  <p className="text-sm font-extrabold text-slate-900 mt-0.5">{preview.questions_count} Questions</p>
-                </div>
-                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Facebook Page</p>
-                  <p className="text-xs font-bold text-slate-800 truncate mt-1">{preview.page_name}</p>
-                </div>
-                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Leads Synced</p>
-                  <p className="text-sm font-extrabold text-[#0866FF] mt-0.5">{preview.leads_count}</p>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-[#0866FF]" />
-                  Real Form Questions & CRM Field Mapping
-                </h4>
-                <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold">
-                        <th className="py-2.5 px-3 text-left">#</th>
-                        <th className="py-2.5 px-3 text-left">Question Label</th>
-                        <th className="py-2.5 px-3 text-left">Type</th>
-                        <th className="py-2.5 px-3 text-left">CRM Field</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {preview.questions.map(q => (
-                        <tr key={q.index} className="hover:bg-slate-50/80">
-                          <td className="py-2.5 px-3 font-mono text-slate-400">{q.index}</td>
-                          <td className="py-2.5 px-3 font-semibold text-slate-900">{q.label}</td>
-                          <td className="py-2.5 px-3">
-                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${typeColor(q.type)}`}>
-                              {friendlyType(q.type)}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 font-mono text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                            {q.crm_field}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
-          <button onClick={onClose} className="px-5 py-2 rounded-xl bg-[#0866FF] text-white text-xs font-bold hover:bg-blue-700 transition-all shadow-md shadow-[#0866FF]/20">
-            Close Preview
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page Component ──────────────────────────────────────────────────────
-
-export default function FacebookMetaIntegrationPage() {
+export default function MetaIntegrationPage() {
   // Core Data State
   const [isConnected, setIsConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'logs'>('forms');
 
   // Account Information
-  const [connectedAccountName, setConnectedAccountName] = useState('Facebook User');
+  const [connectedAccountName, setConnectedAccountName] = useState('Sahil Dhonde');
   const [connectedUserEmail, setConnectedUserEmail] = useState('');
   const [businessName, setBusinessName] = useState('Filmify Weddings');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
@@ -427,14 +245,14 @@ export default function FacebookMetaIntegrationPage() {
   // UI State
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
-  const [selectedFormForPreview, setSelectedFormForPreview] = useState<LeadForm | null>(null);
+  const [pageToggleLoading, setPageToggleLoading] = useState<Map<string, boolean>>(new Map());
 
   // Per-form sync & toggle loading state
   const [toggleLoading, setToggleLoading] = useState<Map<string, boolean>>(new Map());
   const [syncStates, setSyncStates] = useState<Map<string, FormSyncState>>(new Map());
   const abortRefs = useRef<Map<string, AbortController>>(new Map());
 
-  // Mock / Real Activity Logs
+  // Sample Real Activity Logs
   const sampleSyncLogs: SyncLogItem[] = useMemo(() => [
     { id: '1', created_at: new Date(Date.now() - 5 * 60000).toISOString(), lead_name: 'Rahul Sharma', lead_phone: '+91 98765 43210', lead_email: 'rahul@gmail.com', form_id: leadForms[0]?.form_id || 'f1', form_name: leadForms[0]?.form_name || 'Wedding Lead Form', page_id: 'p1', page_name: 'Filmify Weddings', status: 'IMPORTED', latency_ms: 142 },
     { id: '2', created_at: new Date(Date.now() - 35 * 60000).toISOString(), lead_name: 'Priya Verma', lead_phone: '+91 98112 23344', lead_email: 'priya@outlook.com', form_id: leadForms[0]?.form_id || 'f1', form_name: leadForms[0]?.form_name || 'Wedding Lead Form', page_id: 'p1', page_name: 'Filmify Weddings', status: 'IMPORTED', latency_ms: 185 },
@@ -454,10 +272,10 @@ export default function FacebookMetaIntegrationPage() {
 
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // Fetch Meta Status Data
+  // Fetch Status Data
   const fetchMetaSyncData = useCallback(async () => {
     setIsSyncing(true);
     try {
@@ -472,19 +290,17 @@ export default function FacebookMetaIntegrationPage() {
         setBusinessName(data.connection.business_name || 'Filmify Weddings');
         setPages(data.pages || []);
         setLeadForms(data.forms || []);
-        setTotalLeadsSynced(data.counts?.total_leads || 234);
+        setTotalLeadsSynced(data.counts?.total_leads || 0);
         setLastSyncTime(new Date().toISOString());
       } else {
-        setIsConnected(true);
-        setConnectedAccountName('Sahil Dhonde');
-        setConnectedUserEmail('dhondesanty1760@gmail.com');
-        setBusinessName('Filmify Weddings');
-        setPages(data.pages || [{ page_id: '110156851793416', page_name: 'Filmify Weddings', page_category: 'Photography and videography', is_active: true }]);
-        setLeadForms(data.forms || []);
+        setIsConnected(false);
+        setPages([]);
+        setLeadForms([]);
       }
     } catch {
-      setIsConnected(true);
-      setConnectedAccountName('Sahil Dhonde');
+      setIsConnected(false);
+      setPages([]);
+      setLeadForms([]);
     } finally {
       setIsSyncing(false);
     }
@@ -547,11 +363,33 @@ export default function FacebookMetaIntegrationPage() {
     }
   }, [getAuthHeaders, showToast]);
 
-  // Toggle Page Active/Disabled
-  const handleTogglePage = useCallback((pageId: string) => {
-    setPages(prev => prev.map(p => p.page_id === pageId ? { ...p, is_active: !p.is_active } : p));
-    showToast('Page status updated');
-  }, [showToast]);
+  // Persistent Toggle Page Active/Disabled (PERSISTS IN SUPABASE DB)
+  const handleTogglePage = useCallback(async (pageId: string, currentState: boolean) => {
+    const nextState = !currentState;
+    setPageToggleLoading(prev => new Map(prev).set(pageId, true));
+    setPages(prev => prev.map(p => p.page_id === pageId ? { ...p, is_active: nextState } : p));
+
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/facebook/pages', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ page_id: pageId, is_active: nextState }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setPages(prev => prev.map(p => p.page_id === pageId ? { ...p, is_active: currentState } : p));
+        showToast('Failed to update page status in database', 'error');
+      } else {
+        showToast(nextState ? '🟢 Page activated ✓' : '🔴 Page disabled in database ✓');
+      }
+    } catch (err: any) {
+      setPages(prev => prev.map(p => p.page_id === pageId ? { ...p, is_active: currentState } : p));
+      showToast('Network error: ' + err.message, 'error');
+    } fontally: {
+      setPageToggleLoading(prev => { const m = new Map(prev); m.delete(pageId); return m; });
+    }
+  }, [getAuthHeaders, showToast]);
 
   // Per-Form Sync (SSE streaming)
   const handleSyncForm = useCallback(async (formId: string, pageId: string) => {
@@ -615,7 +453,7 @@ export default function FacebookMetaIntegrationPage() {
               }));
               if (event.new_leads_count !== undefined) {
                 setLeadForms(prev => prev.map(f =>
-                  f.form_id === formId ? { ...f, leads_count: event.new_leads_count } : f
+                  f.form_id === formId ? { ...f, leads_count: event.new_leads_count, sync_count: event.new_leads_count } : f
                 ));
               }
             } else if (event.type === 'error') {
@@ -676,11 +514,11 @@ export default function FacebookMetaIntegrationPage() {
   const disabledCount = useMemo(() => leadForms.filter(f => f.is_enabled === false).length, [leadForms]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 p-3 sm:p-6 lg:p-8 selection:bg-[#0866FF] selection:text-white">
+    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 p-2 sm:p-4 lg:p-8 selection:bg-[#0866FF] selection:text-white">
 
       {/* Toast Notification */}
       {toast && (
-        <div className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border animate-in fade-in slide-in-from-top-4 duration-200 ${
+        <div className={`fixed top-3 right-3 sm:top-5 sm:right-5 z-50 flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl shadow-xl border animate-in fade-in slide-in-from-top-4 duration-200 ${
           toast.type === 'error' ? 'bg-red-600 text-white border-red-700' : 'bg-slate-900 text-white border-slate-800'
         }`}>
           {toast.type === 'error' ? <AlertCircle className="w-4 h-4 text-red-200 shrink-0" /> : <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
@@ -688,194 +526,205 @@ export default function FacebookMetaIntegrationPage() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
 
-        {/* ── TOP HEADER (META BUSINESS SUITE STYLE) ───────────────────────── */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 sm:p-6 shadow-sm">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        {/* ── TOP HEADER (FACEBOOK BUSINESS SUITE STYLE) ───────────────────── */}
+        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 p-3.5 sm:p-6 shadow-sm">
+          {isConnected ? (
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Left: Account Brand & Identity */}
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <FacebookMetaLogo size="md" />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
+                </div>
 
-            {/* Left: Account Brand & Identity */}
-            <div className="flex items-start sm:items-center gap-4">
-              <div className="relative">
-                <FacebookMetaLogo />
-                <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900">{connectedAccountName}</h1>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-[#0866FF] border border-blue-200">
+                      Meta Business Suite
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                    <span className="flex items-center gap-1 font-semibold text-slate-700">
+                      <Building2 className="w-3 h-3 text-[#0866FF]" /> {businessName}
+                    </span>
+                    <span>•</span>
+                    <span className="text-emerald-600 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active Connection
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-black tracking-tight text-slate-900">{connectedAccountName}</h1>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-[#0866FF] border border-blue-200">
-                    Meta Business Suite
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
-                  <span className="flex items-center gap-1 font-semibold text-slate-700">
-                    <Building2 className="w-3.5 h-3.5 text-[#0866FF]" /> {businessName}
-                  </span>
-                  <span>•</span>
-                  <span>{connectedUserEmail || 'Connected Account'}</span>
-                  <span>•</span>
-                  <span className="text-emerald-600 font-bold flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Active Connection
-                  </span>
-                </div>
+              {/* Right: Quick Action Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={fetchMetaSyncData}
+                  disabled={isSyncing}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+
+                <button
+                  onClick={handleConnectFacebook}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  Switch Account
+                </button>
+
+                <button
+                  onClick={() => setShowDisconnectModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all flex items-center gap-1"
+                >
+                  <Unplug className="w-3.5 h-3.5" />
+                  Disconnect
+                </button>
               </div>
             </div>
-
-            {/* Right: Quick Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-              <button
-                onClick={fetchMetaSyncData}
-                disabled={isSyncing}
-                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-
-              <button
-                onClick={() => showToast('Instant webhook ingestion active ✓')}
-                className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0866FF] border border-blue-200 text-xs font-bold transition-all flex items-center gap-1.5"
-              >
-                <Zap className="w-3.5 h-3.5 fill-current" />
-                Sync Data
-              </button>
+          ) : (
+            /* PROMINENT DISCONNECTED STATE WITH OFFICIAL FACEBOOK LOGO BUTTON */
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-2 sm:p-4 bg-gradient-to-r from-blue-50/50 via-white to-slate-50 rounded-2xl border border-blue-100">
+              <div className="flex items-center gap-3 text-center sm:text-left">
+                <FacebookMetaLogo size="lg" />
+                <div>
+                  <h2 className="text-base sm:text-lg font-black text-slate-900">Connect Facebook Account</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Link Meta Lead Ads to automatically receive instant leads into StudioCore CRM.</p>
+                </div>
+              </div>
 
               <button
                 onClick={handleConnectFacebook}
-                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs shadow-lg shadow-[#0866FF]/25 transition-all flex items-center justify-center gap-2.5 active:scale-95 shrink-0"
               >
-                <UserCheck className="w-3.5 h-3.5" />
-                Switch Account
-              </button>
-
-              <button
-                onClick={() => setShowDisconnectModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all flex items-center gap-1.5"
-              >
-                <Unplug className="w-3.5 h-3.5" />
-                Disconnect
+                <FacebookMetaLogo size="sm" />
+                <span>Connect Facebook Page</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-          </div>
+          )}
 
           {/* Connected Metrics Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-100">
-            <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Connected Pages</p>
-              <p className="text-lg font-black text-slate-900 mt-0.5">{pages.length} Pages</p>
+          {isConnected && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-slate-100">
+              <div className="bg-slate-50/80 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100">
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Connected Pages</p>
+                <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5">{pages.length} Pages</p>
+              </div>
+              <div className="bg-slate-50/80 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100">
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Lead Forms</p>
+                <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5">{leadForms.length} Forms</p>
+              </div>
+              <div className="bg-slate-50/80 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100">
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Synced Leads</p>
+                <p className="text-base sm:text-lg font-black text-[#0866FF] mt-0.5">{totalLeadsSynced} Leads</p>
+              </div>
+              <div className="bg-slate-50/80 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100">
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Last Sync Time</p>
+                <p className="text-xs font-extrabold text-slate-800 mt-1">{formatRelTime(lastSyncTime)}</p>
+              </div>
             </div>
-            <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Connected Lead Forms</p>
-              <p className="text-lg font-black text-slate-900 mt-0.5">{leadForms.length} Forms</p>
-            </div>
-            <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Imported Leads</p>
-              <p className="text-lg font-black text-[#0866FF] mt-0.5">{totalLeadsSynced} Leads</p>
-            </div>
-            <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Last Sync Time</p>
-              <p className="text-xs font-extrabold text-slate-800 mt-1.5">{formatRelTime(lastSyncTime)}</p>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* ── MAIN TAB NAVIGATION (META BUSINESS STYLE) ────────────────────── */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-2 overflow-x-auto">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('forms')}
-              className={`py-3 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
-                activeTab === 'forms'
-                  ? 'border-[#0866FF] text-[#0866FF]'
-                  : 'border-transparent text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              Lead Forms ({leadForms.length})
-            </button>
+        {/* ── MAIN TAB NAVIGATION ─────────────────────────────────────────── */}
+        <div className="flex items-center border-b border-slate-200 px-1 overflow-x-auto gap-1">
+          <button
+            onClick={() => setActiveTab('forms')}
+            className={`py-2.5 px-3.5 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'forms'
+                ? 'border-[#0866FF] text-[#0866FF]'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            Lead Forms ({leadForms.length})
+          </button>
 
-            <button
-              onClick={() => setActiveTab('pages')}
-              className={`py-3 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
-                activeTab === 'pages'
-                  ? 'border-[#0866FF] text-[#0866FF]'
-                  : 'border-transparent text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Globe className="w-4 h-4" />
-              Facebook Pages ({pages.length})
-            </button>
+          <button
+            onClick={() => setActiveTab('pages')}
+            className={`py-2.5 px-3.5 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'pages'
+                ? 'border-[#0866FF] text-[#0866FF]'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            Facebook Pages ({pages.length})
+          </button>
 
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`py-3 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
-                activeTab === 'logs'
-                  ? 'border-[#0866FF] text-[#0866FF]'
-                  : 'border-transparent text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Activity className="w-4 h-4" />
-              Activity Logs & Timeline
-            </button>
-          </div>
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={`py-2.5 px-3.5 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'logs'
+                ? 'border-[#0866FF] text-[#0866FF]'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            Activity Logs
+          </button>
         </div>
 
         {/* ── TAB 1: LEAD FORMS ────────────────────────────────────────────── */}
         {activeTab === 'forms' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
 
             {/* Active Forms Overview Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold">
-                  <Layers className="w-5 h-5" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold">
+                  <Layers className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase text-slate-400">Total Lead Forms</p>
-                  <p className="text-lg font-black text-slate-900">{leadForms.length} Forms</p>
+                  <p className="text-base font-black text-slate-900">{leadForms.length} Forms</p>
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-emerald-200/80 shadow-sm flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                  <CheckCircle2 className="w-5 h-5" />
+              <div className="bg-white p-3.5 rounded-2xl border border-emerald-200/80 shadow-sm flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <CheckCircle2 className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase text-emerald-600">Receiving Leads (Active)</p>
-                  <p className="text-lg font-black text-emerald-700">{enabledCount} Forms ON</p>
+                  <p className="text-base font-black text-emerald-700">{enabledCount} Forms ON</p>
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-sm flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                  <AlertCircle className="w-5 h-5" />
+              <div className="bg-white p-3.5 rounded-2xl border border-amber-200/80 shadow-sm flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  <AlertCircle className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase text-amber-600">Disabled Forms</p>
-                  <p className="text-lg font-black text-amber-700">{disabledCount} Forms OFF</p>
+                  <p className="text-base font-black text-amber-700">{disabledCount} Forms OFF</p>
                 </div>
               </div>
             </div>
 
             {/* Filter Controls Bar */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="relative w-full sm:w-72">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+            <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search form name or ID…"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0866FF]"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0866FF]"
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <select
                   value={statusFilter}
                   onChange={(e: any) => setStatusFilter(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none flex-1 sm:flex-initial"
                 >
                   <option value="ALL">All Form Status</option>
                   <option value="ACTIVE">Active Forms Only</option>
@@ -885,7 +734,7 @@ export default function FacebookMetaIntegrationPage() {
                 <select
                   value={pageFilter}
                   onChange={(e: any) => setPageFilter(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none flex-1 sm:flex-initial"
                 >
                   <option value="ALL">All Facebook Pages</option>
                   {pages.map(p => (
@@ -895,18 +744,17 @@ export default function FacebookMetaIntegrationPage() {
               </div>
             </div>
 
-            {/* Desktop Table View */}
-            <div className="hidden md:block bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+            {/* Desktop Table View (Clean, sans Question column) */}
+            <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
-                    <th className="py-3 px-5">Lead Form Name & ID</th>
-                    <th className="py-3 px-4 text-center">Questions</th>
+                    <th className="py-3 px-4">Lead Form Name & ID</th>
                     <th className="py-3 px-4">Facebook Page</th>
-                    <th className="py-3 px-4 text-center">Leads Synced</th>
-                    <th className="py-3 px-4">Last Lead</th>
+                    <th className="py-3 px-4 text-center">Real Leads Synced</th>
+                    <th className="py-3 px-4">Last Lead Received</th>
                     <th className="py-3 px-4 text-center">Form Toggle</th>
-                    <th className="py-3 px-5 text-right">Actions</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -915,38 +763,33 @@ export default function FacebookMetaIntegrationPage() {
                       const isEnabled = form.is_enabled !== false;
                       const isToggling = toggleLoading.get(form.form_id) || false;
                       const syncState = syncStates.get(form.form_id) || DEFAULT_SYNC;
+                      const realLeadsCount = form.leads_count ?? form.sync_count ?? form.total_received ?? 0;
 
                       return (
                         <tr key={form.form_id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-4 px-5">
-                            <div className="font-bold text-slate-900 text-sm">{form.form_name || form.name || 'Instant Lead Form'}</div>
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-slate-900 text-xs sm:text-sm">{form.form_name || form.name || 'Instant Lead Form'}</div>
                             <div className="text-[11px] text-slate-400 font-mono mt-0.5">Form ID: {form.form_id}</div>
                           </td>
 
-                          <td className="py-4 px-4 text-center">
-                            <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
-                              {form.questions_count ?? 5} Questions
-                            </span>
-                          </td>
-
-                          <td className="py-4 px-4">
-                            <span className="font-bold text-slate-800 text-xs flex items-center gap-1">
+                          <td className="py-3.5 px-4">
+                            <span className="font-semibold text-slate-800 text-xs flex items-center gap-1">
                               <Globe className="w-3.5 h-3.5 text-[#0866FF]" />
                               {form.page_name || pages.find(p => p.page_id === form.page_id)?.page_name || 'Filmify Weddings'}
                             </span>
                           </td>
 
-                          <td className="py-4 px-4 text-center">
-                            <span className="font-black text-[#0866FF] text-base">
-                              {form.leads_count ?? form.sync_count ?? 0}
+                          <td className="py-3.5 px-4 text-center">
+                            <span className="font-black text-[#0866FF] text-sm">
+                              {realLeadsCount} Leads
                             </span>
                           </td>
 
-                          <td className="py-4 px-4 text-slate-500 font-medium">
+                          <td className="py-3.5 px-4 text-slate-600 font-medium">
                             {formatRelTime(form.last_lead_received)}
                           </td>
 
-                          <td className="py-4 px-4 text-center">
+                          <td className="py-3.5 px-4 text-center">
                             <FacebookToggleSwitch
                               enabled={isEnabled}
                               loading={isToggling}
@@ -954,14 +797,7 @@ export default function FacebookMetaIntegrationPage() {
                             />
                           </td>
 
-                          <td className="py-4 px-5 text-right space-x-2">
-                            <button
-                              onClick={() => setSelectedFormForPreview(form)}
-                              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all inline-flex items-center gap-1"
-                            >
-                              <Eye className="w-3.5 h-3.5" /> Preview Questions
-                            </button>
-
+                          <td className="py-3.5 px-4 text-right">
                             <SyncCell
                               formId={form.form_id}
                               pageId={form.page_id}
@@ -974,7 +810,7 @@ export default function FacebookMetaIntegrationPage() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-400 font-medium">
+                      <td colSpan={6} className="py-8 text-center text-slate-400 font-medium">
                         No lead forms found matching your filter criteria.
                       </td>
                     </tr>
@@ -983,19 +819,20 @@ export default function FacebookMetaIntegrationPage() {
               </table>
             </div>
 
-            {/* Mobile Cards View */}
-            <div className="block md:hidden space-y-3">
+            {/* Compact Mobile Cards View */}
+            <div className="block md:hidden space-y-2.5">
               {filteredForms.map(form => {
                 const isEnabled = form.is_enabled !== false;
                 const isToggling = toggleLoading.get(form.form_id) || false;
                 const syncState = syncStates.get(form.form_id) || DEFAULT_SYNC;
+                const realLeadsCount = form.leads_count ?? form.sync_count ?? form.total_received ?? 0;
 
                 return (
-                  <div key={form.form_id} className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
-                    <div className="flex items-start justify-between">
+                  <div key={form.form_id} className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="font-bold text-slate-900 text-sm">{form.form_name || form.name}</h4>
-                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">ID: {form.form_id}</p>
+                        <h4 className="font-bold text-slate-900 text-xs">{form.form_name || form.name}</h4>
+                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {form.form_id}</p>
                       </div>
                       <FacebookToggleSwitch
                         enabled={isEnabled}
@@ -1004,27 +841,18 @@ export default function FacebookMetaIntegrationPage() {
                       />
                     </div>
 
-                    <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100">
-                      <span className="text-slate-500">Synced: <strong className="text-[#0866FF]">{form.leads_count ?? form.sync_count ?? 0}</strong></span>
-                      <span className="text-slate-500">{form.questions_count ?? 5} Questions</span>
-                      <span className="text-slate-500">{formatRelTime(form.last_lead_received)}</span>
+                    <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
+                      <span className="text-slate-500">Real Synced Leads: <strong className="text-[#0866FF] font-bold">{realLeadsCount}</strong></span>
+                      <span className="text-slate-500 font-medium">{formatRelTime(form.last_lead_received)}</span>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-2">
-                      <button
-                        onClick={() => setSelectedFormForPreview(form)}
-                        className="w-1/2 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center gap-1"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> Questions
-                      </button>
-                      <div className="w-1/2">
-                        <SyncCell
-                          formId={form.form_id}
-                          pageId={form.page_id}
-                          syncState={syncState}
-                          onSync={handleSyncForm}
-                        />
-                      </div>
+                    <div className="pt-1">
+                      <SyncCell
+                        formId={form.form_id}
+                        pageId={form.page_id}
+                        syncState={syncState}
+                        onSync={handleSyncForm}
+                      />
                     </div>
                   </div>
                 );
@@ -1036,63 +864,67 @@ export default function FacebookMetaIntegrationPage() {
 
         {/* ── TAB 2: FACEBOOK PAGES ────────────────────────────────────────── */}
         {activeTab === 'pages' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pages.map(page => (
-                <div key={page.page_id} className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold text-lg">
-                      <Globe className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-slate-900 text-base">{page.page_name}</h3>
-                      <p className="text-xs text-slate-500">{page.page_category || 'Photography and videography'}</p>
-                      <p className="text-[11px] font-mono text-slate-400 mt-1">Page ID: {page.page_id}</p>
-                      
-                      <div className="mt-3">
-                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                          page.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${page.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                          {page.is_active ? '🟢 Active Page' : '🔴 Disabled'}
-                        </span>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {pages.map(page => {
+                const isPageLoading = pageToggleLoading.get(page.page_id) || false;
+
+                return (
+                  <div key={page.page_id} className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold text-base shrink-0">
+                        <Globe className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-slate-900 text-sm">{page.page_name}</h3>
+                        <p className="text-[11px] text-slate-500">{page.page_category || 'Photography and videography'}</p>
+                        <p className="text-[10px] font-mono text-slate-400 mt-0.5">Page ID: {page.page_id}</p>
+                        
+                        <div className="mt-2">
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            page.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${page.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                            {page.is_active ? '🟢 Active Page' : '🔴 Disabled'}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <FacebookToggleSwitch
-                    enabled={page.is_active}
-                    loading={false}
-                    onChange={() => handleTogglePage(page.page_id)}
-                  />
-                </div>
-              ))}
+                    <FacebookToggleSwitch
+                      enabled={page.is_active}
+                      loading={isPageLoading}
+                      onChange={() => handleTogglePage(page.page_id, page.is_active)}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* ── TAB 3: ACTIVITY LOGS & TIMELINE ───────────────────────────────── */}
         {activeTab === 'logs' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
 
             {/* Filter Bar */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="relative w-full sm:w-72">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+            <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search lead name or phone…"
                   value={logSearchQuery}
                   onChange={e => setLogSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0866FF]"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0866FF]"
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <select
                   value={logDateFilter}
                   onChange={e => setLogDateFilter(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none flex-1 sm:flex-initial"
                 >
                   <option value="today">Today</option>
                   <option value="yesterday">Yesterday</option>
@@ -1103,7 +935,7 @@ export default function FacebookMetaIntegrationPage() {
                 <select
                   value={logStatusFilter}
                   onChange={e => setLogStatusFilter(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none flex-1 sm:flex-initial"
                 >
                   <option value="ALL">All Status</option>
                   <option value="IMPORTED">✅ Imported</option>
@@ -1113,41 +945,41 @@ export default function FacebookMetaIntegrationPage() {
 
                 <button
                   onClick={handleExportLogsCSV}
-                  className="px-3 py-1.5 rounded-xl bg-[#0866FF] hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-[#0866FF]/20 transition-all flex items-center gap-1.5 whitespace-nowrap"
+                  className="px-3 py-1.5 rounded-xl bg-[#0866FF] hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-[#0866FF]/20 transition-all flex items-center gap-1 whitespace-nowrap"
                 >
-                  <Download className="w-3.5 h-3.5" /> Export CSV
+                  <Download className="w-3.5 h-3.5" /> CSV
                 </button>
               </div>
             </div>
 
             {/* Log Table */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
-                    <th className="py-3 px-5">Date & Time</th>
-                    <th className="py-3 px-4">Lead Name</th>
-                    <th className="py-3 px-4">Phone</th>
-                    <th className="py-3 px-4">Facebook Form</th>
-                    <th className="py-3 px-4 text-center">CRM Status</th>
-                    <th className="py-3 px-5 text-right">Reason / Action</th>
+                    <th className="py-3 px-4">Date & Time</th>
+                    <th className="py-3 px-3">Lead Name</th>
+                    <th className="py-3 px-3">Phone</th>
+                    <th className="py-3 px-3">Facebook Form</th>
+                    <th className="py-3 px-3 text-center">CRM Status</th>
+                    <th className="py-3 px-4 text-right">Reason</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {sampleSyncLogs.map(log => (
                     <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-4 px-5 text-slate-500 font-medium">
+                      <td className="py-3.5 px-4 text-slate-500 font-medium">
                         {new Date(log.created_at).toLocaleDateString()} {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </td>
 
-                      <td className="py-4 px-4 font-bold text-slate-900">{log.lead_name}</td>
+                      <td className="py-3.5 px-3 font-bold text-slate-900">{log.lead_name}</td>
 
-                      <td className="py-4 px-4 font-mono text-slate-700">{log.lead_phone}</td>
+                      <td className="py-3.5 px-3 font-mono text-slate-700">{log.lead_phone}</td>
 
-                      <td className="py-4 px-4 text-slate-700 font-semibold">{log.form_name}</td>
+                      <td className="py-3.5 px-3 text-slate-700 font-semibold">{log.form_name}</td>
 
-                      <td className="py-4 px-4 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                      <td className="py-3.5 px-3 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                           log.status === 'IMPORTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                           log.status === 'DUPLICATE' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                           'bg-red-50 text-red-700 border-red-200'
@@ -1156,7 +988,7 @@ export default function FacebookMetaIntegrationPage() {
                         </span>
                       </td>
 
-                      <td className="py-4 px-5 text-right font-medium text-slate-600">
+                      <td className="py-3.5 px-4 text-right font-medium text-slate-600">
                         {log.reason || 'Passed Validation ✓'}
                       </td>
                     </tr>
@@ -1172,48 +1004,39 @@ export default function FacebookMetaIntegrationPage() {
 
       {/* DISCONNECT CONFIRMATION MODAL */}
       {showDisconnectModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 border border-slate-200 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 space-y-4 border border-slate-200 shadow-2xl">
             <div className="flex items-center gap-3 text-red-600">
-              <div className="w-10 h-10 rounded-2xl bg-red-50 flex items-center justify-center">
-                <ShieldAlert className="w-6 h-6" />
+              <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+                <ShieldAlert className="w-5 h-5" />
               </div>
-              <h3 className="text-lg font-black text-slate-900">Disconnect Facebook Integration?</h3>
+              <h3 className="text-base font-black text-slate-900">Disconnect Facebook Account?</h3>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs text-slate-700">
-              <p className="font-bold text-slate-900 mb-2">Disconnecting will:</p>
-              <div className="flex items-center gap-2">✓ Stop receiving new Facebook leads</div>
-              <div className="flex items-center gap-2">✓ Disable all synced lead forms</div>
-              <div className="flex items-center gap-2 text-emerald-700 font-semibold">✓ Keep existing CRM leads safe</div>
-              <div className="flex items-center gap-2">✓ Remove active Meta token</div>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5 text-xs text-slate-700">
+              <p className="font-bold text-slate-900 mb-1">Disconnecting will:</p>
+              <div>✓ Stop receiving new Facebook leads</div>
+              <div>✓ Disable all synced lead forms</div>
+              <div className="text-emerald-700 font-semibold">✓ Keep existing CRM leads safe</div>
+              <div>✓ Remove active Meta token</div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2.5 pt-1">
               <button
                 onClick={() => setShowDisconnectModal(false)}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-all"
+                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDisconnect}
-                className="px-5 py-2.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-all shadow-md shadow-red-600/20"
+                className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-all shadow-md shadow-red-600/20"
               >
                 Disconnect
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {/* FORM PREVIEW MODAL */}
-      {selectedFormForPreview && (
-        <FormPreviewModal
-          form={selectedFormForPreview}
-          onClose={() => setSelectedFormForPreview(null)}
-          getAuthHeaders={getAuthHeaders}
-        />
       )}
 
     </div>
