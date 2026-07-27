@@ -230,6 +230,7 @@ export default function MetaIntegrationPage() {
 
   const [pages, setPages] = useState<ConnectedPage[]>([]);
   const [leadForms, setLeadForms] = useState<LeadForm[]>([]);
+  const [realSyncLogs, setRealSyncLogs] = useState<SyncLogItem[]>([]);
   const [totalLeadsSynced, setTotalLeadsSynced] = useState(0);
 
   // Filters & Search
@@ -251,15 +252,6 @@ export default function MetaIntegrationPage() {
   const [toggleLoading, setToggleLoading] = useState<Map<string, boolean>>(new Map());
   const [syncStates, setSyncStates] = useState<Map<string, FormSyncState>>(new Map());
   const abortRefs = useRef<Map<string, AbortController>>(new Map());
-
-  // Sample Real Activity Logs
-  const sampleSyncLogs: SyncLogItem[] = useMemo(() => [
-    { id: '1', created_at: new Date(Date.now() - 5 * 60000).toISOString(), lead_name: 'Rahul Sharma', lead_phone: '+91 98765 43210', lead_email: 'rahul@gmail.com', form_id: leadForms[0]?.form_id || 'f1', form_name: leadForms[0]?.form_name || 'Wedding Lead Form', page_id: 'p1', page_name: 'Filmify Weddings', status: 'IMPORTED', latency_ms: 142 },
-    { id: '2', created_at: new Date(Date.now() - 35 * 60000).toISOString(), lead_name: 'Priya Verma', lead_phone: '+91 98112 23344', lead_email: 'priya@outlook.com', form_id: leadForms[0]?.form_id || 'f1', form_name: leadForms[0]?.form_name || 'Wedding Lead Form', page_id: 'p1', page_name: 'Filmify Weddings', status: 'IMPORTED', latency_ms: 185 },
-    { id: '3', created_at: new Date(Date.now() - 2 * 3600000).toISOString(), lead_name: 'Amit Patel', lead_phone: '+91 98765 43210', form_id: leadForms[1]?.form_id || 'f2', form_name: leadForms[1]?.form_name || 'Pre-wedding Shoot Form', page_id: 'p1', page_name: 'Filmify Weddings', status: 'DUPLICATE', reason: 'Duplicate Lead (Phone exists)' },
-    { id: '4', created_at: new Date(Date.now() - 5 * 3600000).toISOString(), lead_name: 'Ananya Roy', lead_phone: '+91 99887 76655', form_id: leadForms[0]?.form_id || 'f1', form_name: leadForms[0]?.form_name || 'Wedding Lead Form', page_id: 'p1', page_name: 'Filmify Weddings', status: 'IMPORTED', latency_ms: 210 },
-    { id: '5', created_at: new Date(Date.now() - 24 * 3600000).toISOString(), lead_name: 'Vikram Singh', lead_phone: '+91 97766 55443', form_id: leadForms[0]?.form_id || 'f1', form_name: leadForms[0]?.form_name || 'Wedding Lead Form', page_id: 'p1', page_name: 'Filmify Weddings', status: 'FAILED', reason: 'Phone Missing' },
-  ], [leadForms]);
 
   // Auth Header helper
   const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
@@ -290,18 +282,21 @@ export default function MetaIntegrationPage() {
         setBusinessName(data.connection.business_name || 'Filmify Weddings');
         setPages(data.pages || []);
         setLeadForms(data.forms || []);
+        setRealSyncLogs(data.sync_logs || []);
         setTotalLeadsSynced(data.counts?.total_leads || 0);
         setLastSyncTime(new Date().toISOString());
       } else {
         setIsConnected(false);
         setPages([]);
         setLeadForms([]);
+        setRealSyncLogs([]);
       }
     } catch {
       setIsConnected(false);
       setPages([]);
       setLeadForms([]);
-    } finally {
+      setRealSyncLogs([]);
+    } flexinally: {
       setIsSyncing(false);
     }
   }, [getAuthHeaders]);
@@ -324,7 +319,7 @@ export default function MetaIntegrationPage() {
       const res = await fetch('/api/meta/disconnect', { method: 'POST', headers, body: '{}' });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
-        setIsConnected(false); setPages([]); setLeadForms([]); setTotalLeadsSynced(0);
+        setIsConnected(false); setPages([]); setLeadForms([]); setRealSyncLogs([]); setTotalLeadsSynced(0);
         showToast('Meta Integration Disconnected ✓');
       } else {
         showToast('Disconnect Failed: ' + (data.error || 'Server error'), 'error');
@@ -386,7 +381,7 @@ export default function MetaIntegrationPage() {
     } catch (err: any) {
       setPages(prev => prev.map(p => p.page_id === pageId ? { ...p, is_active: currentState } : p));
       showToast('Network error: ' + err.message, 'error');
-    } fontally: {
+    } finally {
       setPageToggleLoading(prev => { const m = new Map(prev); m.delete(pageId); return m; });
     }
   }, [getAuthHeaders, showToast]);
@@ -456,6 +451,7 @@ export default function MetaIntegrationPage() {
                   f.form_id === formId ? { ...f, leads_count: event.new_leads_count, sync_count: event.new_leads_count } : f
                 ));
               }
+              fetchMetaSyncData();
             } else if (event.type === 'error') {
               setSyncStates(prev => new Map(prev).set(formId, {
                 ...DEFAULT_SYNC, phase: 'error',
@@ -470,20 +466,24 @@ export default function MetaIntegrationPage() {
         setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: err.message }));
       }
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, fetchMetaSyncData]);
 
-  // CSV Export for Activity Logs
+  // CSV Export for Real Activity Logs
   const handleExportLogsCSV = () => {
-    if (sampleSyncLogs.length === 0) return;
-    const headers = ['Date', 'Time', 'Lead Name', 'Phone', 'Email', 'Form', 'Page', 'Status', 'Reason'];
-    const rows = sampleSyncLogs.map(l => [
+    if (realSyncLogs.length === 0) {
+      showToast('No activity logs available to export', 'error');
+      return;
+    }
+    const headers = ['Date', 'Time', 'Lead Name', 'Phone', 'Email', 'Form ID', 'Form Name', 'Page Name', 'Status', 'Reason'];
+    const rows = realSyncLogs.map(l => [
       new Date(l.created_at).toLocaleDateString(),
       new Date(l.created_at).toLocaleTimeString(),
       `"${l.lead_name}"`,
       `"${l.lead_phone}"`,
       `"${l.lead_email || ''}"`,
-      `"${l.form_name || l.form_id}"`,
-      `"${l.page_name || l.page_id}"`,
+      `"${l.form_id || ''}"`,
+      `"${l.form_name || ''}"`,
+      `"${l.page_name || ''}"`,
       l.status,
       `"${l.reason || 'Passed'}"`
     ]);
@@ -492,11 +492,11 @@ export default function MetaIntegrationPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `meta_activity_logs_${Date.now()}.csv`);
+    link.setAttribute('download', `meta_real_activity_logs_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Activity logs exported as CSV ✓');
+    showToast('Real activity logs exported as CSV ✓');
   };
 
   // Filtered Forms
@@ -509,6 +509,17 @@ export default function MetaIntegrationPage() {
       return matchSearch && matchStatus && matchPage;
     });
   }, [leadForms, searchQuery, statusFilter, pageFilter]);
+
+  // Filtered Logs
+  const filteredLogs = useMemo(() => {
+    return realSyncLogs.filter(l => {
+      const matchSearch = (l.lead_name || '').toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+                          (l.lead_phone || '').includes(logSearchQuery) ||
+                          (l.form_name || '').toLowerCase().includes(logSearchQuery.toLowerCase());
+      const matchStatus = logStatusFilter === 'ALL' || l.status === logStatusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [realSyncLogs, logSearchQuery, logStatusFilter]);
 
   const enabledCount = useMemo(() => leadForms.filter(f => f.is_enabled !== false).length, [leadForms]);
   const disabledCount = useMemo(() => leadForms.filter(f => f.is_enabled === false).length, [leadForms]);
@@ -631,42 +642,42 @@ export default function MetaIntegrationPage() {
           )}
         </div>
 
-        {/* ── MAIN TAB NAVIGATION ─────────────────────────────────────────── */}
-        <div className="flex items-center border-b border-slate-200 px-1 overflow-x-auto gap-1">
+        {/* ── MAIN TAB NAVIGATION (PERFECT 3-COLUMN EQUAL GRID FOR MOBILE) ────── */}
+        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-200/60 rounded-2xl border border-slate-200/80 shadow-inner">
           <button
             onClick={() => setActiveTab('forms')}
-            className={`py-2.5 px-3.5 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            className={`py-2 px-1.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
               activeTab === 'forms'
-                ? 'border-[#0866FF] text-[#0866FF]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                ? 'bg-white text-[#0866FF] shadow-sm font-extrabold'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
-            Lead Forms ({leadForms.length})
+            <Layers className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Forms ({leadForms.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('pages')}
-            className={`py-2.5 px-3.5 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            className={`py-2 px-1.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
               activeTab === 'pages'
-                ? 'border-[#0866FF] text-[#0866FF]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                ? 'bg-white text-[#0866FF] shadow-sm font-extrabold'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
             }`}
           >
-            <Globe className="w-3.5 h-3.5" />
-            Facebook Pages ({pages.length})
+            <Globe className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Pages ({pages.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('logs')}
-            className={`py-2.5 px-3.5 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            className={`py-2 px-1.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
               activeTab === 'logs'
-                ? 'border-[#0866FF] text-[#0866FF]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                ? 'bg-white text-[#0866FF] shadow-sm font-extrabold'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
             }`}
           >
-            <Activity className="w-3.5 h-3.5" />
-            Activity Logs
+            <Activity className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Activity Logs</span>
           </button>
         </div>
 
@@ -744,7 +755,7 @@ export default function MetaIntegrationPage() {
               </div>
             </div>
 
-            {/* Desktop Table View (Clean, sans Question column) */}
+            {/* Desktop Table View */}
             <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -903,7 +914,7 @@ export default function MetaIntegrationPage() {
           </div>
         )}
 
-        {/* ── TAB 3: ACTIVITY LOGS & TIMELINE ───────────────────────────────── */}
+        {/* ── TAB 3: REAL ACTIVITY LOGS & TIMELINE ─────────────────────────── */}
         {activeTab === 'logs' && (
           <div className="space-y-4">
 
@@ -913,7 +924,7 @@ export default function MetaIntegrationPage() {
                 <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search lead name or phone…"
+                  placeholder="Search lead name, phone or form…"
                   value={logSearchQuery}
                   onChange={e => setLogSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0866FF]"
@@ -937,7 +948,7 @@ export default function MetaIntegrationPage() {
                   onChange={e => setLogStatusFilter(e.target.value)}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none flex-1 sm:flex-initial"
                 >
-                  <option value="ALL">All Status</option>
+                  <option value="ALL">All Log Status</option>
                   <option value="IMPORTED">✅ Imported</option>
                   <option value="DUPLICATE">🟡 Duplicate</option>
                   <option value="FAILED">🔴 Failed</option>
@@ -958,41 +969,49 @@ export default function MetaIntegrationPage() {
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
                     <th className="py-3 px-4">Date & Time</th>
-                    <th className="py-3 px-3">Lead Name</th>
-                    <th className="py-3 px-3">Phone</th>
-                    <th className="py-3 px-3">Facebook Form</th>
-                    <th className="py-3 px-3 text-center">CRM Status</th>
-                    <th className="py-3 px-4 text-right">Reason</th>
+                    <th className="py-3 px-3">Activity Event / Lead Name</th>
+                    <th className="py-3 px-3">Phone / Source</th>
+                    <th className="py-3 px-3">Facebook Form / Page</th>
+                    <th className="py-3 px-3 text-center">Status</th>
+                    <th className="py-3 px-4 text-right">Audit Result</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {sampleSyncLogs.map(log => (
-                    <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 text-slate-500 font-medium">
-                        {new Date(log.created_at).toLocaleDateString()} {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
+                  {filteredLogs.length > 0 ? (
+                    filteredLogs.map(log => (
+                      <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-4 text-slate-500 font-medium whitespace-nowrap">
+                          {new Date(log.created_at).toLocaleDateString()} {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </td>
 
-                      <td className="py-3.5 px-3 font-bold text-slate-900">{log.lead_name}</td>
+                        <td className="py-3.5 px-3 font-bold text-slate-900">{log.lead_name}</td>
 
-                      <td className="py-3.5 px-3 font-mono text-slate-700">{log.lead_phone}</td>
+                        <td className="py-3.5 px-3 font-mono text-slate-700">{log.lead_phone}</td>
 
-                      <td className="py-3.5 px-3 text-slate-700 font-semibold">{log.form_name}</td>
+                        <td className="py-3.5 px-3 text-slate-700 font-semibold">{log.form_name || 'System Engine'}</td>
 
-                      <td className="py-3.5 px-3 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          log.status === 'IMPORTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          log.status === 'DUPLICATE' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                          'bg-red-50 text-red-700 border-red-200'
-                        }`}>
-                          {log.status === 'IMPORTED' ? '✅ Imported' : log.status === 'DUPLICATE' ? '🟡 Duplicate' : '🔴 Failed'}
-                        </span>
-                      </td>
+                        <td className="py-3.5 px-3 text-center">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            log.status === 'IMPORTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            log.status === 'DUPLICATE' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-red-50 text-red-700 border-red-200'
+                          }`}>
+                            {log.status === 'IMPORTED' ? '✅ Imported' : log.status === 'DUPLICATE' ? '🟡 Duplicate' : '🔴 Failed'}
+                          </span>
+                        </td>
 
-                      <td className="py-3.5 px-4 text-right font-medium text-slate-600">
-                        {log.reason || 'Passed Validation ✓'}
+                        <td className="py-3.5 px-4 text-right font-medium text-slate-600">
+                          {log.reason || 'Passed Verification ✓'}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 font-medium">
+                        No activity logs found matching your filter criteria.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
