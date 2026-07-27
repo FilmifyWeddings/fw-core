@@ -7,7 +7,7 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Kanban, Clock, User, MessageSquare, RefreshCw, Users, Database
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, MessageSquare, RefreshCw, Users, Database
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -116,7 +116,7 @@ export function LeadTable({
     }
   }, [activeLeadId, leads]);
 
-  const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'tasks'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'tasks'>('table');
   const [phoneActionMenuLeadId, setPhoneActionMenuLeadId] = useState<string | null>(null);
   const [syncingLeadId, setSyncingLeadId] = useState<string | null>(null);
   
@@ -163,113 +163,6 @@ export function LeadTable({
   const [draggedColIdx, setDraggedColIdx] = useState<number | null>(null);
   const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
 
-  // Kanban Card Drag and Drop State
-  const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
-  const [draggedLeadSourceStage, setDraggedLeadSourceStage] = useState<string | null>(null);
-  const [activeDropStageId, setActiveDropStageId] = useState<string | null>(null);
-
-  const handleLeadDragStart = (e: React.DragEvent, leadId: string, stageId: string) => {
-    setDraggedLeadId(leadId);
-    setDraggedLeadSourceStage(stageId);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', leadId);
-  };
-
-  const handleLeadDragEnd = () => {
-    setDraggedLeadId(null);
-    setDraggedLeadSourceStage(null);
-    setActiveDropStageId(null);
-  };
-
-  const handleStageDragOver = (e: React.DragEvent, stageId: string) => {
-    e.preventDefault();
-    if (draggedLeadSourceStage !== stageId) {
-      setActiveDropStageId(stageId);
-    }
-  };
-
-  const handleStageDragLeave = (e: React.DragEvent, stageId: string) => {
-    e.preventDefault();
-    if (activeDropStageId === stageId) {
-      setActiveDropStageId(null);
-    }
-  };
-
-  const handleStageDrop = async (e: React.DragEvent, nextStageId: string) => {
-    e.preventDefault();
-    const leadId = e.dataTransfer.getData('text/plain') || draggedLeadId;
-    if (!leadId || draggedLeadSourceStage === nextStageId) {
-      handleLeadDragEnd();
-      return;
-    }
-
-    const leadToMove = leads.find(l => l.id === leadId);
-    if (!leadToMove) {
-      handleLeadDragEnd();
-      return;
-    }
-
-    const selectedStage = stages.find(s => s.id === nextStageId);
-    const resolvedStatus = (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
-                            selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
-                            selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
-                            selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
-                            selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
-                            selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
-                            leadToMove.status) as LeadStatus;
-
-    const oldStageId = leadToMove.stage_id || leadToMove.status;
-
-    // Optimistic UI Update
-    setLeads(prev => prev.map(l => l.id === leadId ? { 
-      ...l, 
-      stage_id: nextStageId, 
-      status: resolvedStatus, 
-      updated_at: new Date().toISOString() 
-    } : l));
-
-    if (onLeadUpdate) {
-      onLeadUpdate(leadId, { 
-        stage_id: nextStageId, 
-        status: resolvedStatus 
-      });
-    }
-
-    // Background API patch to Supabase & insert log to live_logs for auditing
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const actorId = session?.user?.id || leadToMove.workspace_id || '00000000-0000-0000-0000-000000000000';
-      const tenantId = leadToMove.workspace_id || leadToMove.tenant_id || actorId;
-
-      await supabase
-        .from('leads')
-        .update({ 
-          stage_id: nextStageId, 
-          status: resolvedStatus, 
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', leadId);
-
-      await supabase
-        .from('live_logs')
-        .insert({
-          workspace_id: tenantId,
-          lead_id: leadId,
-          event_type: 'lead_stage_transition',
-          message: `Lead '${leadToMove.name || 'Unspecified'}' stage dragged from '${draggedLeadSourceStage}' to '${selectedStage?.name || nextStageId}' by user ID ${actorId}.`,
-          metadata: {
-            action_by_user_id: actorId,
-            old_stage_id: oldStageId,
-            new_stage_id: nextStageId,
-            timestamp: new Date().toISOString()
-          }
-        });
-    } catch (err) {
-      console.error('Audit drag-drop logging failed:', err);
-    }
-
-    handleLeadDragEnd();
-  };
 
   const handleGoogleContactsSync = async (lead: Lead) => {
     if (lead.google_synced) return;
@@ -1328,17 +1221,6 @@ export function LeadTable({
             >
               <LayoutGrid className="w-3.5 h-3.5" />
               Grid Table
-            </button>
-            <button 
-              onClick={() => setViewMode('kanban')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
-                viewMode === 'kanban' 
-                  ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
-                  : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
-              }`}
-            >
-              <Kanban className="w-3.5 h-3.5" />
-              Kanban Board
             </button>
             <button 
               onClick={() => setViewMode('tasks')}
@@ -2473,146 +2355,6 @@ export function LeadTable({
               </div>
             )}
           </div>
-        </div>
-      ) : viewMode === 'kanban' ? (
-        
-        /* ---------------------------------------------------- */
-        /* KANBAN BOARD VIEW                                    */
-        /* ---------------------------------------------------- */
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-start overflow-x-auto pb-6 text-slate-800 dark:text-zinc-300">
-          {stages.map(stage => {
-            const stageLeads = filteredLeads.filter(l => {
-              if (l.stage_id === stage.id) return true;
-              if (!l.stage_id) {
-                const stageName = stage.name.toLowerCase();
-                const leadStatus = l.status.toLowerCase();
-                if (leadStatus === stage.id) return true;
-                if (leadStatus === stageName) return true;
-                if (stageName === 'inquiry' && leadStatus === 'new') return true;
-                if (stageName === 'contacted' && leadStatus === 'contacted') return true;
-                if (stageName === 'meeting scheduled' && leadStatus === 'warm') return true;
-                if (stageName === 'proposal sent' && leadStatus === 'hot') return true;
-                if (stageName === 'contract signed' && leadStatus === 'closed') return true;
-                if (stageName === 'closed/lost' && leadStatus === 'lost') return true;
-              }
-              return false;
-            });
-
-            const dotColor = stage.color || (
-              stage.id === 'new' ? '#3b82f6' :
-              stage.id === 'contacted' ? '#8b5cf6' :
-              stage.id === 'warm' ? '#ec4899' :
-              stage.id === 'hot' ? '#f59e0b' :
-              stage.id === 'closed' ? '#10b981' :
-              stage.id === 'lost' ? '#6b7280' : '#71717a'
-            );
-
-            return (
-              <div 
-                key={stage.id} 
-                onDragOver={(e) => handleStageDragOver(e, stage.id)}
-                onDragLeave={(e) => handleStageDragLeave(e, stage.id)}
-                onDrop={(e) => handleStageDrop(e, stage.id)}
-                className={`rounded-2xl border transition-all duration-200 p-3.5 space-y-3 shrink-0 min-w-[200px] shadow-sm ${
-                  activeDropStageId === stage.id 
-                    ? 'border-orange-500/50 bg-orange-500/5 dark:bg-orange-500/10 scale-[0.99]' 
-                    : 'border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/20'
-                }`}
-              >
-                
-                {/* Stage Header */}
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-zinc-900">
-                  <div className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
-                    <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{stage.name}</span>
-                  </div>
-                </div>
-
-                {/* Cards Container */}
-                <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
-                  {stageLeads.length === 0 ? (
-                    <div className="py-8 text-center text-[10px] text-slate-400 dark:text-zinc-600 italic border border-dashed border-slate-200 dark:border-zinc-900 rounded-xl">
-                      Empty stage
-                    </div>
-                  ) : (
-                    stageLeads.map(lead => {
-                      const mockOwner = getMockOwner(lead);
-                      const leadColor = lead.custom_color;
-                      
-                      return (
-                        <div
-                          key={lead.id}
-                          onClick={() => setSelectedLead(lead)}
-                          draggable
-                          onDragStart={(e) => handleLeadDragStart(e, lead.id, stage.id)}
-                          onDragEnd={handleLeadDragEnd}
-                          className={`p-3 rounded-xl border border-slate-200 dark:border-zinc-900 hover:border-slate-350 dark:hover:border-zinc-800 bg-slate-50 dark:bg-zinc-950/70 hover:bg-slate-100 dark:hover:bg-zinc-950 hover:scale-[1.01] cursor-pointer transition-all space-y-3 relative group shadow-sm ${
-                            draggedLeadId === lead.id ? 'opacity-40 border-dashed border-orange-500/50' : ''
-                          }`}
-                        >
-                          {/* Card Body */}
-                          <div>
-                            <span 
-                              style={{ color: leadColor || 'inherit' }}
-                              className="text-xs font-bold text-slate-800 dark:text-white block truncate"
-                            >
-                              {lead.name || 'Unspecified'}
-                            </span>
-                            <span className="text-[9px] text-slate-400 dark:text-zinc-650 block mt-1">{getIngestionTime(lead.created_at)}</span>
-                          </div>
-
-                          {/* Quick details based on column settings */}
-                          <div className="space-y-1 text-[10px] text-slate-500 dark:text-zinc-550 border-t border-slate-200 dark:border-zinc-900 pt-2 font-mono">
-                            {isColVisible('contact') && (
-                              <div className="truncate flex items-center gap-1.5"><Phone className="w-2.5 h-2.5 text-zinc-700" /> {lead.phone}</div>
-                            )}
-                            {isColVisible('source') && (
-                              <div className="capitalize truncate flex items-center gap-1.5"><ExternalLink className="w-2.5 h-2.5 text-zinc-700" /> {lead.source}</div>
-                            )}
-                            {isColVisible('owner') && (
-                              <div className="truncate flex items-center gap-1.5"><User className="w-2.5 h-2.5 text-zinc-700" /> {lead.raw_payload?.lead_owner || mockOwner.name}</div>
-                            )}
-                            {isColVisible('date') && (
-                              <div className="truncate flex items-center gap-1.5"><Calendar className="w-2.5 h-2.5 text-zinc-700" /> {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>
-                            )}
-                          </div>
-
-                          {/* Drag/Shift Stage Selector Shortcut */}
-                          <div className="opacity-0 group-hover:opacity-100 absolute top-2 right-2 transition-opacity" onClick={(e)=>e.stopPropagation()}>
-                            <select
-                              value={lead.stage_id || lead.status}
-                              onChange={(e) => {
-                                const nextStageId = e.target.value;
-                                const selectedStage = stages.find(s => s.id === nextStageId);
-                                if (onLeadUpdate) {
-                                  onLeadUpdate(lead.id, {
-                                    stage_id: nextStageId,
-                                    status: (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
-                                             selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
-                                             selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
-                                             selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
-                                             selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
-                                             selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
-                                             lead.status) as LeadStatus
-                                  });
-                                }
-                              }}
-                              className="bg-zinc-900 border border-zinc-800 text-white text-[9px] rounded p-0.5 cursor-pointer focus:outline-none"
-                            >
-                              {stages.map(s => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-              </div>
-            );
-          })}
         </div>
       ) : (
         

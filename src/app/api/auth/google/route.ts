@@ -50,11 +50,11 @@ export async function GET(req: NextRequest) {
   const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');
 
   // Scopes needed: Drive (read spreadsheets), Sheets (read/write), Contacts (create)
+  // Note: contacts.labels is deprecated by Google — use contactGroups via People API instead
   const scopes = [
     'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/contacts',
-    'https://www.googleapis.com/auth/contacts.labels',
   ].join(' ');
 
   // Build Google OAuth Authorize URL
