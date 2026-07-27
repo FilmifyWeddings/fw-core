@@ -10,7 +10,7 @@ export default function WhatsAppDevicePage() {
   const { userId } = useBhamstra();
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
+    <div className="w-full min-h-full bg-[#FAF8F5]">
       <BaileysQrConnect workspaceId={userId || MOCK_WORKSPACE_ID} />
     </div>
   );

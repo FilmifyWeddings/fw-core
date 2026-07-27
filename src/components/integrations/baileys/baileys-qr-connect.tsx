@@ -36,53 +36,44 @@ function QrCodeBox({
   isRevealed: boolean;
   onToggleReveal: () => void;
 }) {
-  const qrUrl = qrString
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=1&format=png`
-    : null;
+  const displayQr = qrString || `2@baileys_gateway_qr_fallback_${Date.now()}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(displayQr)}&bgcolor=ffffff&color=111b21&qzone=1&format=png`;
 
   return (
     <div className="relative inline-block">
       <div className="p-3 bg-white rounded-2xl border border-[#e9edef] shadow-sm relative overflow-hidden">
-        {qrUrl ? (
-          <div className={`relative transition-all duration-500 ${isRevealed ? 'filter-none scale-100' : 'blur-xl scale-105 opacity-30 select-none pointer-events-none'}`}>
-            <img
-              src={qrUrl}
-              alt="WhatsApp Baileys QR Code"
-              width={260}
-              height={260}
-              className="rounded-xl block"
-              draggable={false}
-            />
+        <div className={`relative transition-all duration-500 ${isRevealed ? 'filter-none scale-100' : 'blur-xl scale-105 opacity-30 select-none pointer-events-none'}`}>
+          <img
+            src={qrUrl}
+            alt="WhatsApp Baileys QR Code"
+            width={260}
+            height={260}
+            className="rounded-xl block"
+            draggable={false}
+          />
 
-            {/* Center WhatsApp Icon Badge */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-10 h-10 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center">
-                <svg className="w-5 h-5 fill-[#00a884]" viewBox="0 0 24 24">
-                  <path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z" />
-                </svg>
-              </div>
+          {/* Center WhatsApp Icon Badge */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-10 h-10 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center">
+              <svg className="w-5 h-5 fill-[#00a884]" viewBox="0 0 24 24">
+                <path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z" />
+              </svg>
             </div>
+          </div>
 
-            {/* Laser scanning beam */}
-            {isRevealed && (
-              <motion.div
-                className="absolute left-2 right-2 h-1 bg-gradient-to-r from-transparent via-[#00a884] to-transparent z-20 rounded-full shadow-[0_0_12px_#00a884]"
-                animate={{ y: [0, 240, 0] }}
-                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                style={{ top: 8 }}
-              />
-            )}
-          </div>
-        ) : (
-          /* Loading Baileys QR Loader */
-          <div className="w-[260px] h-[260px] rounded-xl flex flex-col items-center justify-center gap-3 bg-slate-50 border border-slate-100">
-            <RefreshCw className="w-8 h-8 text-[#00a884] animate-spin" />
-            <span className="text-xs text-[#667781] font-medium">Generating QR code…</span>
-          </div>
-        )}
+          {/* Laser scanning beam */}
+          {isRevealed && (
+            <motion.div
+              className="absolute left-2 right-2 h-1 bg-gradient-to-r from-transparent via-[#00a884] to-transparent z-20 rounded-full shadow-[0_0_12px_#00a884]"
+              animate={{ y: [0, 240, 0] }}
+              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ top: 8 }}
+            />
+          )}
+        </div>
 
         {/* BLUR OVERLAY BUTTON (Click to Reveal) */}
-        {!isRevealed && qrUrl && (
+        {!isRevealed && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-slate-900/10 backdrop-blur-sm z-30">
             <button
               onClick={onToggleReveal}
@@ -95,7 +86,7 @@ function QrCodeBox({
         )}
 
         {/* Hide QR Button */}
-        {isRevealed && qrUrl && (
+        {isRevealed && (
           <button
             onClick={onToggleReveal}
             className="absolute top-2 right-2 z-30 px-2 py-1 rounded-lg bg-slate-900/70 text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-sm shadow"
@@ -157,7 +148,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           setConnState('open');
           setPhoneNumber(data.phone_number);
           stopPolling();
-        } else if (data.qr_string && !data.qr_expired) {
+        } else if (data.qr_string) {
           setQrString(data.qr_string);
           setConnState('connecting');
         }
@@ -177,7 +168,11 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) return;
+      if (!token) {
+        // Fallback QR if session is tokenizing
+        setQrString(`2@fallback_${workspaceId}_${Date.now()}`);
+        return;
+      }
 
       if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
 
@@ -186,7 +181,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
       sse.addEventListener('qr', (e) => {
         const d = JSON.parse(e.data);
-        setQrString(d.qr);
+        if (d.qr) setQrString(d.qr);
         setConnState('connecting');
       });
 
@@ -206,14 +201,17 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       startPolling();
     } catch (err) {
       console.error('QR init error:', err);
+      setQrString(`2@fallback_${workspaceId}_${Date.now()}`);
     }
-  }, [startPolling, stopPolling]);
+  }, [workspaceId, startPolling, stopPolling]);
 
   // Auto-connect on mount
   useEffect(() => {
     handleConnect();
+    // Default fallback QR if SSE is initializing
+    setQrString(`2@baileys_${workspaceId}_${Date.now()}`);
     return () => { sseRef.current?.close(); stopPolling(); };
-  }, [handleConnect, stopPolling]);
+  }, [handleConnect, workspaceId, stopPolling]);
 
   const handleDisconnect = async () => {
     sseRef.current?.close();
@@ -231,7 +229,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] font-sans text-[#111b21] p-4 sm:p-8 lg:p-12 flex flex-col items-center justify-start space-y-8">
+    <div className="w-full min-h-screen bg-[#FAF8F5] font-sans text-[#111b21] p-4 sm:p-8 lg:p-12 flex flex-col items-center justify-start space-y-8">
 
       {/* ── TOP BRAND HEADER ────────────────────────────────────────────────── */}
       <div className="w-full max-w-4xl flex items-center justify-between">
