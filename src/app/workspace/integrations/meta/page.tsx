@@ -296,7 +296,7 @@ export default function MetaIntegrationPage() {
       setPages([]);
       setLeadForms([]);
       setRealSyncLogs([]);
-    } flexinally: {
+    } finally {
       setIsSyncing(false);
     }
   }, [getAuthHeaders]);
@@ -643,41 +643,41 @@ export default function MetaIntegrationPage() {
         </div>
 
         {/* ── MAIN TAB NAVIGATION (PERFECT 3-COLUMN EQUAL GRID FOR MOBILE) ────── */}
-        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-200/60 rounded-2xl border border-slate-200/80 shadow-inner">
+        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/60 rounded-2xl border border-slate-200/80 shadow-inner">
           <button
             onClick={() => setActiveTab('forms')}
-            className={`py-2 px-1.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+            className={`py-2 px-1 rounded-xl font-bold text-[10px] sm:text-xs transition-all flex items-center justify-center gap-1 ${
               activeTab === 'forms'
                 ? 'bg-white text-[#0866FF] shadow-sm font-extrabold'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
             }`}
           >
             <Layers className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Forms ({leadForms.length})</span>
+            <span className="whitespace-nowrap">Forms ({leadForms.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('pages')}
-            className={`py-2 px-1.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+            className={`py-2 px-1 rounded-xl font-bold text-[10px] sm:text-xs transition-all flex items-center justify-center gap-1 ${
               activeTab === 'pages'
                 ? 'bg-white text-[#0866FF] shadow-sm font-extrabold'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
             }`}
           >
             <Globe className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Pages ({pages.length})</span>
+            <span className="whitespace-nowrap">Pages ({pages.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('logs')}
-            className={`py-2 px-1.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+            className={`py-2 px-1 rounded-xl font-bold text-[10px] sm:text-xs transition-all flex items-center justify-center gap-1 ${
               activeTab === 'logs'
                 ? 'bg-white text-[#0866FF] shadow-sm font-extrabold'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
             }`}
           >
             <Activity className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Activity Logs</span>
+            <span className="whitespace-nowrap">Activity Logs</span>
           </button>
         </div>
 
@@ -914,7 +914,7 @@ export default function MetaIntegrationPage() {
           </div>
         )}
 
-        {/* ── TAB 3: REAL ACTIVITY LOGS & TIMELINE ─────────────────────────── */}
+        {/* ── TAB 3: REAL META LEAD INGESTION LOGS ─────────────────────────── */}
         {activeTab === 'logs' && (
           <div className="space-y-4">
 
@@ -948,7 +948,7 @@ export default function MetaIntegrationPage() {
                   onChange={e => setLogStatusFilter(e.target.value)}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none flex-1 sm:flex-initial"
                 >
-                  <option value="ALL">All Log Status</option>
+                  <option value="ALL">All Status</option>
                   <option value="IMPORTED">✅ Imported</option>
                   <option value="DUPLICATE">🟡 Duplicate</option>
                   <option value="FAILED">🔴 Failed</option>
@@ -963,17 +963,17 @@ export default function MetaIntegrationPage() {
               </div>
             </div>
 
-            {/* Log Table */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            {/* Desktop Log Table */}
+            <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
                     <th className="py-3 px-4">Date & Time</th>
-                    <th className="py-3 px-3">Activity Event / Lead Name</th>
-                    <th className="py-3 px-3">Phone / Source</th>
-                    <th className="py-3 px-3">Facebook Form / Page</th>
+                    <th className="py-3 px-3">Lead Name</th>
+                    <th className="py-3 px-3">Phone</th>
+                    <th className="py-3 px-3">Facebook Form</th>
                     <th className="py-3 px-3 text-center">Status</th>
-                    <th className="py-3 px-4 text-right">Audit Result</th>
+                    <th className="py-3 px-4 text-right">Reason / Result</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -988,7 +988,7 @@ export default function MetaIntegrationPage() {
 
                         <td className="py-3.5 px-3 font-mono text-slate-700">{log.lead_phone}</td>
 
-                        <td className="py-3.5 px-3 text-slate-700 font-semibold">{log.form_name || 'System Engine'}</td>
+                        <td className="py-3.5 px-3 text-slate-700 font-semibold">{log.form_name || 'Meta Form'}</td>
 
                         <td className="py-3.5 px-3 text-center">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
@@ -1008,12 +1008,43 @@ export default function MetaIntegrationPage() {
                   ) : (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-slate-400 font-medium">
-                        No activity logs found matching your filter criteria.
+                        No Meta lead activity logs found.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Responsive Activity Cards (PERFECT FOR PHONES) */}
+            <div className="block md:hidden space-y-2.5">
+              {filteredLogs.length > 0 ? (
+                filteredLogs.map(log => (
+                  <div key={log.id} className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-slate-900 text-xs">{log.lead_name}</span>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        log.status === 'IMPORTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        log.status === 'DUPLICATE' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        'bg-red-50 text-red-700 border-red-200'
+                      }`}>
+                        {log.status === 'IMPORTED' ? '✅ Imported' : log.status === 'DUPLICATE' ? '🟡 Duplicate' : '🔴 Failed'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] font-mono text-slate-600">{log.lead_phone}</div>
+
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100">
+                      <span className="truncate">Form: <strong className="text-slate-800 font-semibold">{log.form_name || 'Meta Lead Form'}</strong></span>
+                      <span className="shrink-0 font-medium">{formatRelTime(log.created_at)}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="bg-white p-6 rounded-xl border border-slate-200 text-center text-slate-400 text-xs font-medium">
+                  No Meta lead activity logs found.
+                </div>
+              )}
             </div>
 
           </div>

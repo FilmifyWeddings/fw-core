@@ -4,7 +4,7 @@ import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
  * GET /api/meta/status?workspace_id=XXX
- * Returns Meta Connection Status, Profile Info, Pages Count, Lead Forms List, Real Activity Logs.
+ * Returns Meta Connection Status, Profile Info, Pages Count, Lead Forms List, Real Meta Lead Ingestion Logs.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -120,6 +120,8 @@ export async function GET(req: NextRequest) {
       lastLeadTime = sorted[0].created_at;
     }
 
+    const formMap = new Map((formsData || []).map((f: any) => [f.form_id, f.form_name]));
+
     const forms = (formsData || []).map((f: any) => {
       const formLeads = metaLeads.filter((l: any) => l.raw_payload?.form_id === f.form_id || l.raw_payload?.lead_form_id === f.form_id);
       const syncedCount = Math.max(formLeads.length, f.leads_count || 0, f.sync_count || 0);
@@ -151,15 +153,14 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 5. Query REAL Activity Audit Logs from `live_logs` and `leads`
+    // 5. Query STRICT META LEAD INGESTION LOGS (Excludes internal CRM stage drags)
     const { data: dbLiveLogs } = await supabaseAdmin
       .from('live_logs')
       .select('*')
       .eq('workspace_id', workspaceId)
+      .in('event_type', ['meta_oauth_connected', 'leadgen_ingestion_success', 'leadgen_duplicate_skipped', 'leadgen_ingestion_failed'])
       .order('created_at', { ascending: false })
       .limit(30);
-
-    const formMap = new Map((formsData || []).map((f: any) => [f.form_id, f.form_name]));
 
     const leadActivityLogs = (metaLeads || []).map((l: any) => {
       const fId = l.raw_payload?.form_id || l.raw_payload?.lead_form_id;
@@ -182,25 +183,26 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const systemActivityLogs = (dbLiveLogs || []).map((log: any) => ({
+    const metaEventsLogs = (dbLiveLogs || []).map((log: any) => ({
       id: `sys_${log.id}`,
       created_at: log.created_at,
       lead_name: log.event_type === 'meta_oauth_connected' ? 'Facebook Account Connected' :
-                 log.event_type === 'meta_disconnected' ? 'Account Disconnected' :
-                 log.event_type === 'leadgen_ingestion_success' ? 'New Lead Ingested' :
-                 log.message || 'System Activity Event',
-      lead_phone: log.event_type || 'System Event',
+                 log.event_type === 'leadgen_duplicate_skipped' ? 'Duplicate Lead Skipped' :
+                 log.event_type === 'leadgen_ingestion_failed' ? 'Lead Ingestion Failed' :
+                 'Meta Lead Webhook Event',
+      lead_phone: log.event_type,
       lead_email: '',
-      form_id: log.metadata?.form_id || 'System',
-      form_name: log.metadata?.form_name || 'Facebook Integration Engine',
-      page_id: log.metadata?.page_id || pages[0]?.page_id || '110156851793416',
+      form_id: log.metadata?.form_id || 'Form',
+      form_name: formMap.get(log.metadata?.form_id) || 'Meta Lead Form',
+      page_id: log.metadata?.page_id || pages[0]?.page_id || 'Page',
       page_name: businessName,
-      status: log.event_type?.includes('failed') || log.event_type?.includes('error') ? 'FAILED' as const : 'IMPORTED' as const,
-      reason: log.message || 'Passed System Verification ✓',
+      status: log.event_type === 'leadgen_duplicate_skipped' ? 'DUPLICATE' as const :
+              log.event_type === 'leadgen_ingestion_failed' ? 'FAILED' as const : 'IMPORTED' as const,
+      reason: log.message || 'Meta Webhook Audit Event ✓',
       latency_ms: log.metadata?.duration_ms || 120,
     }));
 
-    const allRealSyncLogs = [...leadActivityLogs, ...systemActivityLogs].sort(
+    const allRealSyncLogs = [...leadActivityLogs, ...metaEventsLogs].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
