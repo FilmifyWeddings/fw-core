@@ -439,18 +439,21 @@ export async function generateQrServerless(
   timeoutMs = 55_000
 ): Promise<void> {
   const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
-  
-  // 1. Tell worker to start the pairing flow (if available)
+
+  // 1. Tell worker to start the pairing flow (fire-and-forget, non-blocking)
   try {
     await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr`, { method: 'POST' }).catch(() => {});
   } catch {
-    /* fallback to serverless QR generation */
+    /* worker not available — polling DB for QR written by external process */
   }
 
-  // 2. Poll / Seed DB to retrieve status and stream live QR
+  // 2. Poll DB for REAL QR from Baileys worker — never generate fake QRs
   const startTime = Date.now();
+  let lastQr: string | null = null;
 
   while (Date.now() - startTime < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
     const { data } = await supabaseAdmin
       .from('baileys_sessions')
       .select('conn_state, qr_string, qr_expires_at, phone_number')
@@ -462,29 +465,21 @@ export async function generateQrServerless(
       return;
     }
 
-    if (data?.qr_string && (!data.qr_expires_at || new Date(data.qr_expires_at) > new Date())) {
-      onQr(data.qr_string);
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      continue;
+    if (data?.qr_string && data.qr_string !== lastQr) {
+      const qrExpired = data.qr_expires_at ? new Date(data.qr_expires_at) < new Date() : false;
+      if (!qrExpired) {
+        lastQr = data.qr_string;
+        onQr(data.qr_string);
+      }
     }
 
-    // Generate fresh serverless QR code if no valid QR exists
-    const newQr = `2@${Buffer.from(workspaceId).toString('base64')},${Date.now()},${Math.random().toString(36).substring(2, 9)}`;
-    const expiresAt = new Date(Date.now() + 60000).toISOString();
-
-    await supabaseAdmin
-      .from('baileys_sessions')
-      .upsert({
-        workspace_id: workspaceId,
-        conn_state: 'connecting',
-        qr_string: newQr,
-        qr_expires_at: expiresAt,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id' });
-
-    onQr(newQr);
-    await new Promise(resolve => setTimeout(resolve, 2500));
+    if (data?.conn_state === 'disconnected' && !data?.qr_string) {
+      // Still waiting for worker to generate QR — keep polling silently
+      continue;
+    }
   }
+
+  onError('QR pairing timed out. Please try again.');
 }
 
 // ─── QUEUE PROCESSOR & POLL ENGINE (SELF-CONTAINED IN NEXT.JS RUNTIME) ─────────

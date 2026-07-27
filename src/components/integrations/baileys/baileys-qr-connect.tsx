@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { CheckCircle2, RefreshCw } from 'lucide-react';
+import { CheckCircle2, RefreshCw, Zap, Users, Send, LayoutTemplate, MessageCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type ConnState = 'disconnected' | 'connecting' | 'open' | 'error';
@@ -12,27 +12,86 @@ const WA_SVG = (
   </svg>
 );
 
-// ─── QR Panel: spinner until REAL QR arrives, then clean scannable image ──────
+// ─── Features Data ─────────────────────────────────────────────────────────────
+const FEATURES = [
+  {
+    icon: <MessageCircle className="w-5 h-5" />,
+    color: 'bg-emerald-50 text-[#00a884] border-emerald-100',
+    badge: 'bg-emerald-100 text-emerald-700',
+    label: 'Instant Welcome',
+    desc: 'Auto-send a personalised welcome message the moment a new lead comes in from Facebook, your website, or any source.',
+    tag: 'Auto-trigger',
+  },
+  {
+    icon: <Zap className="w-5 h-5" />,
+    color: 'bg-amber-50 text-amber-600 border-amber-100',
+    badge: 'bg-amber-100 text-amber-700',
+    label: 'Instant Follow-ups',
+    desc: 'Schedule smart follow-up sequences — 1 hour, 1 day, 3 days — so no client ever falls through the cracks.',
+    tag: 'Time-based',
+  },
+  {
+    icon: <Users className="w-5 h-5" />,
+    color: 'bg-violet-50 text-violet-600 border-violet-100',
+    badge: 'bg-violet-100 text-violet-700',
+    label: 'Group Auto Message',
+    desc: 'Automatically add new clients to WhatsApp groups or send targeted messages to your existing contact groups.',
+    tag: 'Group broadcast',
+  },
+  {
+    icon: <Send className="w-5 h-5" />,
+    color: 'bg-sky-50 text-sky-600 border-sky-100',
+    badge: 'bg-sky-100 text-sky-700',
+    label: 'Bulk Message Send',
+    desc: 'Send campaign messages to hundreds of clients at once — promotions, seasonal offers, event reminders — all from your CRM.',
+    tag: 'Bulk campaigns',
+  },
+  {
+    icon: <LayoutTemplate className="w-5 h-5" />,
+    color: 'bg-rose-50 text-rose-500 border-rose-100',
+    badge: 'bg-rose-100 text-rose-700',
+    label: 'Message Templates',
+    desc: 'Create and save reusable message templates with smart tokens like {name}, {phone}, {event_date} for every workflow.',
+    tag: 'Reusable',
+  },
+];
+
+// ─── Feature Card ──────────────────────────────────────────────────────────────
+function FeatureCard({ icon, color, badge, label, desc, tag }: typeof FEATURES[0]) {
+  return (
+    <div className="bg-white rounded-2xl border border-[#e9edef] p-5 flex flex-col gap-3 hover:shadow-md transition-shadow duration-200">
+      <div className="flex items-start justify-between gap-2">
+        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${color}`}>
+          {icon}
+        </div>
+        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${badge}`}>{tag}</span>
+      </div>
+      <div>
+        <h3 className="text-sm font-bold text-[#111b21] leading-snug">{label}</h3>
+        <p className="text-xs text-[#667781] mt-1 leading-relaxed">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── QR Panel ─────────────────────────────────────────────────────────────────
 function QrPanel({ qrString }: { qrString: string | null }) {
-  // Only render the QR image when we have an actual real QR string from Baileys/SSE
   const qrUrl = qrString
     ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`
     : null;
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="w-[280px] h-[280px] rounded-xl border border-[#e9edef] bg-white shadow-sm flex items-center justify-center overflow-hidden">
+      <div className="w-[260px] h-[260px] sm:w-[280px] sm:h-[280px] rounded-xl border border-[#e9edef] bg-white shadow-sm flex items-center justify-center overflow-hidden">
         {!qrUrl ? (
-          /* Spinner until REAL QR arrives — no dummy QR ever shown */
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3 p-4">
             <div className="w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center">
               {WA_SVG}
             </div>
             <RefreshCw className="w-5 h-5 text-[#00a884] animate-spin" />
-            <span className="text-xs text-[#667781] text-center px-4">Generating QR code…<br />Please wait</span>
+            <span className="text-xs text-[#667781] text-center">Generating QR code…<br />Please wait</span>
           </div>
         ) : (
-          /* Real Baileys QR — clean, no overlays, fully scannable */
           <img
             src={qrUrl}
             alt="Scan with WhatsApp"
@@ -44,7 +103,7 @@ function QrPanel({ qrString }: { qrString: string | null }) {
         )}
       </div>
       {qrUrl && (
-        <p className="text-[10px] text-[#667781]">QR refreshes automatically · Keep this window open</p>
+        <p className="text-[10px] text-[#667781] text-center">QR refreshes automatically · Keep this window open</p>
       )}
     </div>
   );
@@ -82,8 +141,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         const d = await res.json();
         if (d.conn_state === 'open' && d.phone_number) {
           setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); stopPolling();
-        } else if (d.qr_string) {
-          // Only set if it's a real Baileys QR (not empty/null)
+        } else if (d.qr_string && !d.qr_expired) {
           setQrString(d.qr_string); setConnState('connecting');
         }
       } catch { /* ignore */ }
@@ -130,7 +188,6 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             if (d.conn_state === 'open' && d.phone_number) {
               setConnState('open'); setPhoneNumber(d.phone_number); return;
             }
-            // Only set a QR if it's real and not expired
             if (d.qr_string && !d.qr_expired) {
               setQrString(d.qr_string); setConnState('connecting');
             }
@@ -163,20 +220,20 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   return (
     <div
-      className="font-sans text-[#111b21] flex flex-col items-center justify-start gap-8 px-4 py-8 sm:px-8 lg:px-16"
+      className="font-sans text-[#111b21] flex flex-col items-center justify-start gap-6 px-4 py-6 sm:px-6 lg:px-12"
       style={{ background: '#FAF8F5', minHeight: '100%' }}
     >
       {/* WhatsApp logo header */}
-      <div className="w-full max-w-4xl flex items-center gap-2.5">
+      <div className="w-full max-w-5xl flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-full bg-[#00a884] text-white flex items-center justify-center shadow-sm shrink-0">
           {WA_SVG}
         </div>
         <span className="text-xl font-bold text-[#00a884] tracking-tight">WhatsApp</span>
       </div>
 
-      <div className="w-full max-w-4xl space-y-5">
+      <div className="w-full max-w-5xl space-y-5">
 
-        {/* Connected */}
+        {/* ── CONNECTED ── */}
         {connState === 'open' && (
           <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-5">
             <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mx-auto border border-emerald-100 text-[#00a884]">
@@ -189,39 +246,33 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                   +{phoneNumber}
                 </p>
               )}
+              <p className="text-xs text-[#667781] mt-2">Your device is linked. All automations are now active.</p>
             </div>
-            <button
-              onClick={handleDisconnect}
-              className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all"
-            >
+            <button onClick={handleDisconnect} className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all">
               Disconnect Device
             </button>
           </div>
         )}
 
-        {/* Disconnected */}
+        {/* ── DISCONNECTED ── */}
         {connState === 'disconnected' && (
           <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-4">
             <h2 className="text-lg font-bold text-[#111b21]">WhatsApp Disconnected</h2>
             <p className="text-xs text-[#667781]">Your session was reset. Click below to re-link your device.</p>
-            <button
-              onClick={handleReconnect}
-              className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all"
-            >
+            <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all">
               Link a Device
             </button>
           </div>
         )}
 
-        {/* Scan Card */}
+        {/* ── SCAN CARD ── */}
         {(connState === 'connecting' || connState === 'error') && (
-          <div className="bg-white rounded-2xl border border-[#e9edef] px-8 py-8 shadow-sm">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+          <div className="bg-white rounded-2xl border border-[#e9edef] px-6 sm:px-8 py-8 shadow-sm">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-              {/* Left: Official WhatsApp steps */}
+              {/* Steps */}
               <div className="lg:col-span-7 space-y-6">
-                <h1 className="text-[28px] font-[400] leading-tight text-[#111b21]">Scan to log in</h1>
-
+                <h1 className="text-2xl sm:text-[28px] font-[400] leading-tight text-[#111b21]">Scan to log in</h1>
                 <ol className="space-y-5 text-sm text-[#111b21] leading-relaxed">
                   <li className="flex items-start gap-3">
                     <span className="mt-0.5 w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-semibold flex items-center justify-center shrink-0">1</span>
@@ -236,21 +287,59 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                   </li>
                   <li className="flex items-start gap-3">
                     <span className="mt-0.5 w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-semibold flex items-center justify-center shrink-0">3</span>
-                    <span>
-                      Tap <strong>Link a Device</strong> and point your phone's camera at the computer screen to scan the QR code.
-                    </span>
+                    <span>Tap <strong>Link a Device</strong> and point your phone's camera at the QR code.</span>
                   </li>
                 </ol>
               </div>
 
-              {/* Right: Real Baileys QR only — spinner until it arrives */}
-              <div className="lg:col-span-5 flex items-start justify-center pt-2">
+              {/* QR — only real Baileys QR, spinner until it arrives */}
+              <div className="lg:col-span-5 flex items-start justify-center">
                 <QrPanel qrString={qrString} />
               </div>
-
             </div>
           </div>
         )}
+
+        {/* ── FEATURES SHOWCASE ── */}
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center gap-3 pt-2">
+            <div className="h-px flex-1 bg-[#e9edef]" />
+            <div className="flex items-center gap-2 text-xs font-bold text-[#667781] whitespace-nowrap">
+              <div className="w-5 h-5 rounded-full bg-[#00a884] text-white flex items-center justify-center shrink-0">
+                {WA_SVG}
+              </div>
+              What you can do after connecting
+            </div>
+            <div className="h-px flex-1 bg-[#e9edef]" />
+          </div>
+
+          {/* 5 Feature Cards — 2-col on tablet, single col on mobile */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {FEATURES.map((f) => (
+              <FeatureCard key={f.label} {...f} />
+            ))}
+
+            {/* CTA card */}
+            <div className="bg-[#00a884] rounded-2xl p-5 flex flex-col justify-between gap-4 text-white sm:col-span-2 xl:col-span-1">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">StudioCore CRM</p>
+                <h3 className="text-base font-extrabold mt-1 leading-snug">
+                  Connect once.<br />Automate everything.
+                </h3>
+                <p className="text-xs opacity-80 mt-2 leading-relaxed">
+                  Link your WhatsApp device and let StudioCore handle client messaging automatically — so you focus on shooting, not follow-ups.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <div className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center">
+                  {WA_SVG}
+                </div>
+                <span className="opacity-90">Powered by Baileys Gateway</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
       </div>
     </div>
