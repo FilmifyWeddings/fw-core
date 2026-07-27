@@ -134,7 +134,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   return (
-    <div className="w-full min-h-screen bg-white dark:bg-[#070708] text-zinc-900 dark:text-white flex flex-col overflow-hidden font-sans">
+    <div className="w-full min-h-screen bg-[#FAF8F5] text-zinc-900 flex flex-col overflow-hidden font-sans">
       
       {/* ═══ TOPBAR ═══ */}
       <div className="flex-shrink-0 flex items-center justify-between px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/70 bg-white/90 dark:bg-[#070708]/90 backdrop-blur-lg z-30">
@@ -247,12 +247,8 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ═══ CONTENT AREA ═══ */}
-      <div className="flex-1 overflow-hidden relative">
-        <div className="absolute top-0 right-1/3 w-[600px] h-[400px] bg-emerald-500/4 dark:bg-emerald-500/4 rounded-full blur-[150px] pointer-events-none" />
-        
-        <div className="h-full overflow-y-auto">
-          {children}
-        </div>
+      <div className="flex-1 overflow-y-auto min-h-0 bg-[#FAF8F5]">
+        {children}
       </div>
 
       {/* ═══ STATUS BAR FOOTER ═══ */}

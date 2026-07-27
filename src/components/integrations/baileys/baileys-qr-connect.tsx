@@ -1,178 +1,153 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
-  CheckCircle2, RefreshCw, Smartphone, ShieldCheck,
-  Zap, Clock, AlertCircle, Eye, EyeOff, Laptop,
-  Lock, ArrowRight, Check, HelpCircle
+  CheckCircle2, RefreshCw, Eye, EyeOff, Laptop, Lock
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 type ConnState = 'disconnected' | 'connecting' | 'open' | 'error';
 
-// ─── Official WhatsApp Brand Mark ─────────────────────────────────────────────
-function WhatsAppWebLogo() {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-8 h-8 rounded-full bg-[#00a884] text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
-        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-          <path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z" />
-        </svg>
-      </div>
-      <span className="text-xl font-bold text-[#00a884] tracking-tight">WhatsApp</span>
-    </div>
-  );
-}
+// ─── WhatsApp SVG Icon ─────────────────────────────────────────────────────────
+const WA_SVG = (
+  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+    <path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z" />
+  </svg>
+);
 
-// ─── Real Baileys QR Code Renderer ────────────────────────────────────────────
-function QrCodeBox({
-  qrString,
-  isRevealed,
-  onToggleReveal
-}: {
+// ─── QR Code Panel ─────────────────────────────────────────────────────────────
+function QrPanel({ qrString, isLoading, isRevealed, onReveal }: {
   qrString: string | null;
+  isLoading: boolean;
   isRevealed: boolean;
-  onToggleReveal: () => void;
+  onReveal: () => void;
 }) {
-  const displayQr = qrString || `2@baileys_gateway_qr_fallback_${Date.now()}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(displayQr)}&bgcolor=ffffff&color=111b21&qzone=1&format=png`;
+  const qrUrl = qrString
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=264x264&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=1&format=png`
+    : null;
 
   return (
-    <div className="relative inline-block">
-      <div className="p-3 bg-white rounded-2xl border border-[#e9edef] shadow-sm relative overflow-hidden">
-        <div className={`relative transition-all duration-500 ${isRevealed ? 'filter-none scale-100' : 'blur-xl scale-105 opacity-30 select-none pointer-events-none'}`}>
-          <img
-            src={qrUrl}
-            alt="WhatsApp Baileys QR Code"
-            width={260}
-            height={260}
-            className="rounded-xl block"
-            draggable={false}
-          />
-
-          {/* Center WhatsApp Icon Badge */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-10 h-10 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center">
-              <svg className="w-5 h-5 fill-[#00a884]" viewBox="0 0 24 24">
-                <path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z" />
-              </svg>
+    <div className="flex flex-col items-center">
+      {/* QR Container */}
+      <div className="relative w-[288px] h-[288px] rounded-2xl border border-[#e9edef] bg-white shadow-sm overflow-hidden flex items-center justify-center">
+        {isLoading && !qrString ? (
+          /* Generating spinner */
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center">
+              {WA_SVG}
             </div>
+            <RefreshCw className="w-6 h-6 text-[#00a884] animate-spin" />
+            <span className="text-xs text-[#667781]">Generating QR code…</span>
           </div>
-
-          {/* Laser scanning beam */}
-          {isRevealed && (
-            <motion.div
-              className="absolute left-2 right-2 h-1 bg-gradient-to-r from-transparent via-[#00a884] to-transparent z-20 rounded-full shadow-[0_0_12px_#00a884]"
-              animate={{ y: [0, 240, 0] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ top: 8 }}
+        ) : qrUrl ? (
+          <>
+            {/* QR Image — blurred until user clicks */}
+            <img
+              src={qrUrl}
+              alt="Scan to log in"
+              width={264}
+              height={264}
+              draggable={false}
+              className={`block rounded-xl transition-all duration-500 ${isRevealed ? 'blur-0' : 'blur-xl opacity-40 scale-105'}`}
             />
-          )}
-        </div>
-
-        {/* BLUR OVERLAY BUTTON (Click to Reveal) */}
-        {!isRevealed && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-slate-900/10 backdrop-blur-sm z-30">
-            <button
-              onClick={onToggleReveal}
-              className="px-5 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-xs shadow-lg shadow-[#00a884]/30 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
-            >
-              <Eye className="w-4 h-4" />
-              Show QR Code
-            </button>
-          </div>
-        )}
-
-        {/* Hide QR Button */}
-        {isRevealed && (
-          <button
-            onClick={onToggleReveal}
-            className="absolute top-2 right-2 z-30 px-2 py-1 rounded-lg bg-slate-900/70 text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-sm shadow"
-          >
-            <EyeOff className="w-3 h-3" /> Hide
-          </button>
-        )}
+            {/* Center WA badge */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-10 h-10 rounded-full bg-white shadow border border-slate-100 flex items-center justify-center text-[#00a884]">
+                {WA_SVG}
+              </div>
+            </div>
+            {/* Scanning beam (only when revealed) */}
+            {isRevealed && (
+              <motion.div
+                className="absolute left-3 right-3 h-1 bg-gradient-to-r from-transparent via-[#00a884] to-transparent rounded-full"
+                animate={{ y: [0, 248, 0] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ top: 10 }}
+              />
+            )}
+            {/* Blur overlay → Show QR button */}
+            {!isRevealed && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/20 backdrop-blur-sm">
+                <button
+                  onClick={onReveal}
+                  className="px-5 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] active:scale-95 text-white text-xs font-bold flex items-center gap-2 shadow-lg transition-all"
+                >
+                  <Eye className="w-4 h-4" />
+                  Show QR Code
+                </button>
+              </div>
+            )}
+            {/* Hide button (when revealed) */}
+            {isRevealed && (
+              <button
+                onClick={onReveal}
+                className="absolute top-2 right-2 z-10 px-2 py-1 rounded-lg bg-black/60 text-white text-[10px] font-semibold flex items-center gap-1"
+              >
+                <EyeOff className="w-3 h-3" /> Hide
+              </button>
+            )}
+          </>
+        ) : null}
       </div>
     </div>
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-interface BaileysQrConnectProps {
-  workspaceId: string;
-}
+// ─── Main ──────────────────────────────────────────────────────────────────────
+interface BaileysQrConnectProps { workspaceId: string; }
 
 export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const [connState, setConnState] = useState<ConnState>('connecting');
   const [qrString, setQrString] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+  const [isQrLoading, setIsQrLoading] = useState(true);
   const [isQrRevealed, setIsQrRevealed] = useState(false);
   const [stayLoggedIn, setStayLoggedIn] = useState(true);
 
   const sseRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollStartRef = useRef<number>(0);
+  const startedRef = useRef(false);
 
   const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
 
-  const startPolling = useCallback((runImmediately = false) => {
+  const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    pollStartRef.current = Date.now();
+    const t0 = Date.now();
 
-    const fetchStatus = async () => {
+    const tick = async () => {
+      if (Date.now() - t0 > 55_000) { stopPolling(); return; }
       try {
-        if (Date.now() - pollStartRef.current > 45000) {
-          stopPolling();
-          return;
-        }
-
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-
         const res = await fetch('/api/integrations/baileys/qr-status', {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
+          headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
         });
         if (!res.ok) return;
-
-        const data = await res.json();
-        if (data.conn_state === 'open') {
-          setConnState('open');
-          setPhoneNumber(data.phone_number);
-          stopPolling();
-        } else if (data.qr_string) {
-          setQrString(data.qr_string);
-          setConnState('connecting');
+        const d = await res.json();
+        if (d.conn_state === 'open' && d.phone_number) {
+          setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); stopPolling();
+        } else if (d.qr_string) {
+          setQrString(d.qr_string); setIsQrLoading(false); setConnState('connecting');
         }
-      } catch (err) {
-        console.error('Polling error:', err);
-      }
+      } catch { /* ignore */ }
     };
 
-    if (runImmediately) fetchStatus();
-    pollRef.current = setInterval(fetchStatus, 2000);
+    tick();
+    pollRef.current = setInterval(tick, 2500);
   }, [stopPolling]);
 
-  // Connect via SSE automatically on mount
-  const handleConnect = useCallback(async () => {
-    setConnState('connecting');
+  const initSSE = useCallback(async () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) {
-        // Fallback QR if session is tokenizing
-        setQrString(`2@fallback_${workspaceId}_${Date.now()}`);
-        return;
-      }
+      if (!token) { startPolling(); return; }
 
       if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
 
@@ -181,153 +156,157 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
       sse.addEventListener('qr', (e) => {
         const d = JSON.parse(e.data);
-        if (d.qr) setQrString(d.qr);
-        setConnState('connecting');
+        if (d.qr) { setQrString(d.qr); setIsQrLoading(false); setConnState('connecting'); }
       });
 
       sse.addEventListener('connected', (e) => {
         const d = JSON.parse(e.data);
-        setConnState('open');
-        setPhoneNumber(d.phone);
-        setQrString(null);
-        sse.close();
-        stopPolling();
+        setConnState('open'); setPhoneNumber(d.phone); setQrString(null);
+        sse.close(); stopPolling();
       });
 
-      sse.onerror = () => {
-        startPolling(true);
-      };
+      sse.onerror = () => { startPolling(); };
 
+      // Simultaneously poll as backup
       startPolling();
-    } catch (err) {
-      console.error('QR init error:', err);
-      setQrString(`2@fallback_${workspaceId}_${Date.now()}`);
-    }
-  }, [workspaceId, startPolling, stopPolling]);
+    } catch { startPolling(); }
+  }, [startPolling, stopPolling]);
 
-  // Auto-connect on mount
+  // On mount — check existing session first, then start SSE
   useEffect(() => {
-    handleConnect();
-    // Default fallback QR if SSE is initializing
-    setQrString(`2@baileys_${workspaceId}_${Date.now()}`);
+    const init = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          const res = await fetch('/api/integrations/baileys/qr-status', {
+            headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+          });
+          if (res.ok) {
+            const d = await res.json();
+            if (d.conn_state === 'open' && d.phone_number) {
+              setConnState('open'); setPhoneNumber(d.phone_number); return;
+            }
+            if (d.qr_string) {
+              setQrString(d.qr_string); setIsQrLoading(false); setConnState('connecting');
+            }
+          }
+        }
+      } catch { /* ignore */ }
+      initSSE();
+    };
+    init();
     return () => { sseRef.current?.close(); stopPolling(); };
-  }, [handleConnect, workspaceId, stopPolling]);
+  }, [initSSE, stopPolling]);
 
   const handleDisconnect = async () => {
-    sseRef.current?.close();
-    stopPolling();
+    sseRef.current?.close(); stopPolling();
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
       await fetch('/api/integrations/baileys/qr-status', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
       });
     }
-    setConnState('disconnected');
-    setQrString(null);
-    setPhoneNumber(null);
+    setConnState('disconnected'); setQrString(null); setPhoneNumber(null);
+    startedRef.current = false;
   };
 
-  return (
-    <div className="w-full min-h-screen bg-[#FAF8F5] font-sans text-[#111b21] p-4 sm:p-8 lg:p-12 flex flex-col items-center justify-start space-y-8">
+  const handleReconnect = () => {
+    startedRef.current = false;
+    setConnState('connecting'); setQrString(null); setIsQrLoading(true); setIsQrRevealed(false);
+    initSSE();
+  };
 
-      {/* ── TOP BRAND HEADER ────────────────────────────────────────────────── */}
-      <div className="w-full max-w-4xl flex items-center justify-between">
-        <WhatsAppWebLogo />
+  // ─── UI ────────────────────────────────────────────────────────────────────
+  return (
+    <div
+      className="font-sans text-[#111b21] flex flex-col items-center justify-start gap-8 px-4 py-8 sm:px-8 lg:px-16"
+      style={{ background: '#FAF8F5', minHeight: '100%' }}
+    >
+      {/* WhatsApp logo header */}
+      <div className="w-full max-w-4xl flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-full bg-[#00a884] text-white flex items-center justify-center shadow-sm shrink-0">
+          {WA_SVG}
+        </div>
+        <span className="text-xl font-bold text-[#00a884] tracking-tight">WhatsApp</span>
       </div>
 
-      <div className="w-full max-w-4xl space-y-6">
+      <div className="w-full max-w-4xl space-y-5">
 
-        {/* ── TOP DOWNLOAD BANNER (MATCHES WHATSAPP WEB IMAGE) ──────────────── */}
-        <div className="bg-white rounded-2xl border border-[#e9edef] p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4 text-left">
-            <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
-              <Laptop className="w-6 h-6" />
+        {/* Download Banner */}
+        <div className="bg-white rounded-2xl border border-[#e9edef] px-5 py-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 border border-slate-200">
+              <Laptop className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm sm:text-base font-bold text-[#111b21]">Download WhatsApp for Windows</h2>
-              <p className="text-xs text-[#667781] mt-0.5">Get extra features like voice and video calling, screen sharing and more.</p>
+              <p className="text-sm font-bold text-[#111b21]">Download WhatsApp for Windows</p>
+              <p className="text-[11px] text-[#667781] mt-0.5">Get extra features like voice and video calling, screen sharing and more.</p>
             </div>
           </div>
-
-          <button className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-xs shadow-sm transition-all shrink-0">
+          <button className="px-5 py-2 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-xs shadow-sm transition-all shrink-0">
             Download ↓
           </button>
         </div>
 
-        {/* ── CONNECTED DASHBOARD ──────────────────────────────────────────── */}
-        {connState === 'open' ? (
-          <div className="bg-white rounded-3xl border border-[#e9edef] p-8 shadow-sm text-center space-y-6">
-            <div className="w-16 h-16 rounded-full bg-emerald-50 text-[#00a884] flex items-center justify-center mx-auto border border-emerald-100">
-              <CheckCircle2 className="w-10 h-10" />
+        {/* Connected State */}
+        {connState === 'open' && (
+          <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-5">
+            <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mx-auto border border-emerald-100 text-[#00a884]">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
-
             <div>
-              <h2 className="text-2xl font-bold text-[#111b21]">WhatsApp Connected!</h2>
+              <h2 className="text-xl font-bold text-[#111b21]">WhatsApp Connected!</h2>
               {phoneNumber && (
-                <p className="mt-2 text-sm font-mono font-bold text-[#00a884] bg-emerald-50 px-4 py-1 rounded-full border border-emerald-200 inline-block">
-                  +{phoneNumber}
-                </p>
+                <p className="mt-2 text-sm font-mono font-bold text-[#00a884] bg-emerald-50 px-4 py-1 rounded-full border border-emerald-200 inline-block">+{phoneNumber}</p>
               )}
             </div>
-
-            <div className="pt-4 border-t border-slate-100 flex justify-center">
-              <button
-                onClick={handleDisconnect}
-                className="px-5 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all"
-              >
-                Disconnect Device
-              </button>
-            </div>
+            <button onClick={handleDisconnect} className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all">
+              Disconnect Device
+            </button>
           </div>
-        ) : (
-          /* ── MAIN "SCAN TO LOG IN" CARD (EXACT WHATSAPP WEB UI MATCH) ────── */
-          <div className="bg-white rounded-3xl border border-[#e9edef] p-8 sm:p-10 shadow-sm">
+        )}
+
+        {/* Disconnected State */}
+        {connState === 'disconnected' && (
+          <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-4">
+            <h2 className="text-lg font-bold text-[#111b21]">WhatsApp Disconnected</h2>
+            <p className="text-xs text-[#667781]">Your session was reset. Click below to re-link your device.</p>
+            <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all">
+              Link a Device
+            </button>
+          </div>
+        )}
+
+        {/* Main Scan Card */}
+        {(connState === 'connecting' || connState === 'error') && (
+          <div className="bg-white rounded-2xl border border-[#e9edef] px-8 py-8 shadow-sm">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
 
-              {/* Left Column: 3 Steps */}
-              <div className="lg:col-span-7 space-y-6">
-                <h1 className="text-3xl font-normal text-[#111b21] tracking-tight">
-                  Scan to log in
-                </h1>
+              {/* Left: Instructions */}
+              <div className="lg:col-span-7 space-y-5">
+                <h1 className="text-[28px] font-[400] leading-tight text-[#111b21]">Scan to log in</h1>
 
-                <ol className="space-y-4 text-xs sm:text-sm text-[#111b21] leading-relaxed">
-                  <li className="flex items-start gap-3">
-                    <span className="w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-xs font-semibold flex items-center justify-center shrink-0 mt-0.5">
-                      1
-                    </span>
-                    <span>Scan the QR code with your phone's camera</span>
-                  </li>
-
-                  <li className="flex items-start gap-3">
-                    <span className="w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-xs font-semibold flex items-center justify-center shrink-0 mt-0.5">
-                      2
-                    </span>
-                    <span className="flex items-center gap-1 flex-wrap">
-                      Tap the link to open <strong>WhatsApp</strong>
-                      <span className="w-4 h-4 rounded-full bg-[#00a884] text-white inline-flex items-center justify-center p-0.5">
-                        <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
-                          <path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z" />
-                        </svg>
+                <ol className="space-y-4 text-sm text-[#111b21]">
+                  {[
+                    "Scan the QR code with your phone's camera",
+                    <span key="2">Tap the link to open <strong>WhatsApp</strong> <span className="inline-flex w-4 h-4 rounded-full bg-[#00a884] text-white items-center justify-center" style={{verticalAlign:'middle'}}><svg className="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M12.031 2c-5.456 0-9.88 4.424-9.88 9.88 0 2.14.68 4.12 1.83 5.75L2 22l4.49-1.93c1.57 1.01 3.44 1.59 5.54 1.59 5.46 0 9.88-4.42 9.88-9.88 0-5.46-4.42-9.88-9.88-9.88zm5.77 14.15c-.24.68-1.2 1.25-1.95 1.34-.51.06-1.18.1-3.43-.84-2.88-1.2-4.74-4.14-4.88-4.33-.14-.19-1.18-1.57-1.18-2.99 0-1.42.74-2.12 1.01-2.41.24-.26.54-.33.72-.33.18 0 .36.01.51.01.17 0 .41-.06.64.49.24.57.82 2.01.89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.3.38-.43.51-.14.14-.29.29-.12.58.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.14.46.12.63-.07.17-.19.74-.86.94-1.15.2-.29.4-.24.67-.14.27.1.1.71 2.37 1.77.27.14.45.21.52.33.07.12.07.68-.17 1.36z"/></svg></span></span>,
+                    "Scan the QR code again to link to your account",
+                  ].map((text, i) => (
+                    <li key={i} className="flex items-start gap-3">
+                      <span className="mt-0.5 w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-[11px] font-semibold flex items-center justify-center shrink-0">
+                        {i + 1}
                       </span>
-                    </span>
-                  </li>
-
-                  <li className="flex items-start gap-3">
-                    <span className="w-5 h-5 rounded-full border border-[#8696a0] text-[#667781] text-xs font-semibold flex items-center justify-center shrink-0 mt-0.5">
-                      3
-                    </span>
-                    <span>Scan the QR code again to link to your account</span>
-                  </li>
+                      <span>{text}</span>
+                    </li>
+                  ))}
                 </ol>
 
-                <div className="pt-1">
-                  <a href="#" className="text-[#00a884] text-xs font-semibold hover:underline inline-flex items-center gap-0.5">
-                    Need help? ↗
-                  </a>
-                </div>
+                <a href="#" className="text-[#00a884] text-xs font-semibold hover:underline flex items-center gap-0.5">
+                  Need help? ↗
+                </a>
 
-                <div className="pt-6 border-t border-[#e9edef] flex items-center justify-between text-xs">
+                <div className="pt-5 border-t border-[#e9edef] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                   <label className="flex items-center gap-2 cursor-pointer text-[#111b21] select-none">
                     <input
                       type="checkbox"
@@ -335,21 +314,21 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                       onChange={e => setStayLoggedIn(e.target.checked)}
                       className="w-4 h-4 rounded border-[#8696a0] text-[#00a884] focus:ring-[#00a884]"
                     />
-                    <span>Stay logged in on this browser ⓘ</span>
+                    Stay logged in on this browser ⓘ
                   </label>
-
-                  <a href="#" className="text-[#00a884] font-semibold hover:underline">
+                  <a href="#" className="text-[#00a884] font-semibold hover:underline whitespace-nowrap">
                     Log in with phone number &gt;
                   </a>
                 </div>
               </div>
 
-              {/* Right Column: Baileys QR Code Container */}
-              <div className="lg:col-span-5 flex flex-col items-center justify-center">
-                <QrCodeBox
+              {/* Right: QR Code */}
+              <div className="lg:col-span-5 flex items-center justify-center">
+                <QrPanel
                   qrString={qrString}
+                  isLoading={isQrLoading}
                   isRevealed={isQrRevealed}
-                  onToggleReveal={() => setIsQrRevealed(r => !r)}
+                  onReveal={() => setIsQrRevealed(r => !r)}
                 />
               </div>
 
@@ -357,25 +336,22 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           </div>
         )}
 
-        {/* ── FOOTER (EXACT WHATSAPP WEB FOOTER) ──────────────────────────── */}
-        <div className="text-center space-y-2 text-xs text-[#667781] pt-4">
-          <p>
+        {/* Footer */}
+        <div className="text-center space-y-1.5 pt-2">
+          <p className="text-xs text-[#667781]">
             Don't have a WhatsApp account?{' '}
-            <a href="https://www.whatsapp.com" target="_blank" rel="noreferrer" className="text-[#00a884] font-semibold hover:underline">
+            <a href="https://www.whatsapp.com" target="_blank" rel="noreferrer" className="text-[#00a884] font-semibold underline underline-offset-2">
               Get started ↗
             </a>
           </p>
-
           <p className="flex items-center justify-center gap-1 text-xs text-[#667781]">
-            <Lock className="w-3.5 h-3.5 text-[#667781]" />
+            <Lock className="w-3.5 h-3.5" />
             Your personal messages are end-to-end encrypted
           </p>
-
-          <p className="text-[10px] text-[#8696a0]">Terms & Privacy Policy</p>
+          <p className="text-[10px] text-[#8696a0]">Terms &amp; Privacy Policy</p>
         </div>
 
       </div>
-
     </div>
   );
 }
