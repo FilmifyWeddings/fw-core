@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { CheckCircle2, RefreshCw, Lock } from 'lucide-react';
+import { CheckCircle2, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type ConnState = 'disconnected' | 'connecting' | 'open' | 'error';
@@ -13,11 +12,9 @@ const WA_SVG = (
   </svg>
 );
 
-// ─── Clean QR Panel — no overlays, no hide button, fully scannable ─────────────
-function QrPanel({ qrString, isLoading }: {
-  qrString: string | null;
-  isLoading: boolean;
-}) {
+// ─── QR Panel: spinner until REAL QR arrives, then clean scannable image ──────
+function QrPanel({ qrString }: { qrString: string | null }) {
+  // Only render the QR image when we have an actual real QR string from Baileys/SSE
   const qrUrl = qrString
     ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`
     : null;
@@ -25,32 +22,29 @@ function QrPanel({ qrString, isLoading }: {
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="w-[280px] h-[280px] rounded-xl border border-[#e9edef] bg-white shadow-sm flex items-center justify-center overflow-hidden">
-        {isLoading && !qrString ? (
+        {!qrUrl ? (
+          /* Spinner until REAL QR arrives — no dummy QR ever shown */
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center">
               {WA_SVG}
             </div>
             <RefreshCw className="w-5 h-5 text-[#00a884] animate-spin" />
-            <span className="text-xs text-[#667781]">Generating QR…</span>
+            <span className="text-xs text-[#667781] text-center px-4">Generating QR code…<br />Please wait</span>
           </div>
-        ) : qrUrl ? (
-          // Clean QR image — no overlays, no badges, fully scannable
+        ) : (
+          /* Real Baileys QR — clean, no overlays, fully scannable */
           <img
             src={qrUrl}
             alt="Scan with WhatsApp"
             width={280}
             height={280}
             draggable={false}
-            className="block rounded-xl"
+            className="block"
           />
-        ) : null}
+        )}
       </div>
-
-      {/* Refresh hint */}
-      {qrString && (
-        <p className="text-[10px] text-[#667781] text-center">
-          QR refreshes automatically · Keep this window open
-        </p>
+      {qrUrl && (
+        <p className="text-[10px] text-[#667781]">QR refreshes automatically · Keep this window open</p>
       )}
     </div>
   );
@@ -63,8 +57,6 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const [connState, setConnState] = useState<ConnState>('connecting');
   const [qrString, setQrString] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
-  const [isQrLoading, setIsQrLoading] = useState(true);
-  const [stayLoggedIn, setStayLoggedIn] = useState(true);
 
   const sseRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -77,7 +69,6 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     const t0 = Date.now();
-
     const tick = async () => {
       if (Date.now() - t0 > 55_000) { stopPolling(); return; }
       try {
@@ -92,11 +83,11 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         if (d.conn_state === 'open' && d.phone_number) {
           setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); stopPolling();
         } else if (d.qr_string) {
-          setQrString(d.qr_string); setIsQrLoading(false); setConnState('connecting');
+          // Only set if it's a real Baileys QR (not empty/null)
+          setQrString(d.qr_string); setConnState('connecting');
         }
       } catch { /* ignore */ }
     };
-
     tick();
     pollRef.current = setInterval(tick, 2500);
   }, [stopPolling]);
@@ -104,30 +95,23 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const initSSE = useCallback(async () => {
     if (startedRef.current) return;
     startedRef.current = true;
-
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) { startPolling(); return; }
-
       if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
-
       const sse = new EventSource(`/api/integrations/baileys/qr-init?token=${encodeURIComponent(token)}`);
       sseRef.current = sse;
-
       sse.addEventListener('qr', (e) => {
         const d = JSON.parse(e.data);
-        if (d.qr) { setQrString(d.qr); setIsQrLoading(false); setConnState('connecting'); }
+        if (d.qr) { setQrString(d.qr); setConnState('connecting'); }
       });
-
       sse.addEventListener('connected', (e) => {
         const d = JSON.parse(e.data);
         setConnState('open'); setPhoneNumber(d.phone); setQrString(null);
         sse.close(); stopPolling();
       });
-
       sse.onerror = () => { startPolling(); };
-
       startPolling();
     } catch { startPolling(); }
   }, [startPolling, stopPolling]);
@@ -146,8 +130,9 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             if (d.conn_state === 'open' && d.phone_number) {
               setConnState('open'); setPhoneNumber(d.phone_number); return;
             }
-            if (d.qr_string) {
-              setQrString(d.qr_string); setIsQrLoading(false); setConnState('connecting');
+            // Only set a QR if it's real and not expired
+            if (d.qr_string && !d.qr_expired) {
+              setQrString(d.qr_string); setConnState('connecting');
             }
           }
         }
@@ -172,7 +157,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   const handleReconnect = () => {
     startedRef.current = false;
-    setConnState('connecting'); setQrString(null); setIsQrLoading(true);
+    setConnState('connecting'); setQrString(null);
     initSSE();
   };
 
@@ -191,7 +176,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
       <div className="w-full max-w-4xl space-y-5">
 
-        {/* Connected State */}
+        {/* Connected */}
         {connState === 'open' && (
           <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-5">
             <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mx-auto border border-emerald-100 text-[#00a884]">
@@ -205,7 +190,10 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                 </p>
               )}
             </div>
-            <button onClick={handleDisconnect} className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all">
+            <button
+              onClick={handleDisconnect}
+              className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all"
+            >
               Disconnect Device
             </button>
           </div>
@@ -216,7 +204,10 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           <div className="bg-white rounded-2xl border border-[#e9edef] p-8 shadow-sm text-center space-y-4">
             <h2 className="text-lg font-bold text-[#111b21]">WhatsApp Disconnected</h2>
             <p className="text-xs text-[#667781]">Your session was reset. Click below to re-link your device.</p>
-            <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all">
+            <button
+              onClick={handleReconnect}
+              className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all"
+            >
               Link a Device
             </button>
           </div>
@@ -227,7 +218,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           <div className="bg-white rounded-2xl border border-[#e9edef] px-8 py-8 shadow-sm">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
 
-              {/* Left: Updated official WhatsApp steps */}
+              {/* Left: Official WhatsApp steps */}
               <div className="lg:col-span-7 space-y-6">
                 <h1 className="text-[28px] font-[400] leading-tight text-[#111b21]">Scan to log in</h1>
 
@@ -250,46 +241,16 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                     </span>
                   </li>
                 </ol>
-
-                <div className="pt-5 border-t border-[#e9edef] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                  <label className="flex items-center gap-2 cursor-pointer text-[#111b21] select-none">
-                    <input
-                      type="checkbox"
-                      checked={stayLoggedIn}
-                      onChange={e => setStayLoggedIn(e.target.checked)}
-                      className="w-4 h-4 rounded border-[#8696a0] text-[#00a884] focus:ring-[#00a884]"
-                    />
-                    Stay logged in on this browser ⓘ
-                  </label>
-                  <a href="#" className="text-[#00a884] font-semibold hover:underline whitespace-nowrap">
-                    Log in with phone number &gt;
-                  </a>
-                </div>
               </div>
 
-              {/* Right: Clean scannable QR — no overlays */}
+              {/* Right: Real Baileys QR only — spinner until it arrives */}
               <div className="lg:col-span-5 flex items-start justify-center pt-2">
-                <QrPanel qrString={qrString} isLoading={isQrLoading} />
+                <QrPanel qrString={qrString} />
               </div>
 
             </div>
           </div>
         )}
-
-        {/* Footer */}
-        <div className="text-center space-y-1.5 pt-2">
-          <p className="text-xs text-[#667781]">
-            Don't have a WhatsApp account?{' '}
-            <a href="https://www.whatsapp.com" target="_blank" rel="noreferrer" className="text-[#00a884] font-semibold underline underline-offset-2">
-              Get started ↗
-            </a>
-          </p>
-          <p className="flex items-center justify-center gap-1 text-xs text-[#667781]">
-            <Lock className="w-3.5 h-3.5" />
-            Your personal messages are end-to-end encrypted
-          </p>
-          <p className="text-[10px] text-[#8696a0]">Terms &amp; Privacy Policy</p>
-        </div>
 
       </div>
     </div>
