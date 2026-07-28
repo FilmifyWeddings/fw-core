@@ -54,6 +54,12 @@ interface ConnectedPage {
   is_active: boolean;
 }
 
+interface WhatsAppGroup {
+  id: string;
+  group_name: string;
+  group_description?: string;
+}
+
 interface LeadForm {
   form_id: string;
   form_name?: string;
@@ -63,6 +69,7 @@ interface LeadForm {
   page_name?: string;
   is_active: boolean;
   is_enabled: boolean;
+  contact_group_id?: string | null;
   sync_count: number;
   leads_count?: number;
   total_received?: number;
@@ -407,6 +414,8 @@ export default function MetaIntegrationPage() {
 
   // Per-form sync & toggle loading state
   const [toggleLoading, setToggleLoading] = useState<Map<string, boolean>>(new Map());
+  const [mappingLoading, setMappingLoading] = useState<Map<string, boolean>>(new Map());
+  const [whatsappGroups, setWhatsappGroups] = useState<WhatsAppGroup[]>([]);
   const [syncStates, setSyncStates] = useState<Map<string, FormSyncState>>(new Map());
   const abortRefs = useRef<Map<string, AbortController>>(new Map());
 
@@ -442,6 +451,14 @@ export default function MetaIntegrationPage() {
         setRealSyncLogs(data.sync_logs || []);
         setTotalLeadsSynced(data.counts?.total_leads || 0);
         setLastSyncTime(new Date().toISOString());
+
+        // Fetch available WhatsApp Contact Groups
+        const { data: groupsData } = await supabase
+          .from('whatsapp_contact_groups')
+          .select('id, group_name, group_description');
+        if (groupsData) {
+          setWhatsappGroups(groupsData || []);
+        }
       } else {
         setIsConnected(false);
         setPages([]);
@@ -514,6 +531,32 @@ export default function MetaIntegrationPage() {
       setToggleLoading(prev => { const m = new Map(prev); m.delete(formId); return m; });
     }
   }, [getAuthHeaders, showToast]);
+
+  // Update Form WhatsApp Contact Group Mapping
+  const handleUpdateGroupMapping = useCallback(async (formId: string, groupId: string | null) => {
+    setMappingLoading(prev => new Map(prev).set(formId, true));
+    setLeadForms(prev => prev.map(f => f.form_id === formId ? { ...f, contact_group_id: groupId } : f));
+
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/meta/forms/mapping', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ form_id: formId, contact_group_id: groupId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Failed to update WhatsApp group mapping', 'error');
+      } else {
+        const selectedGroup = whatsappGroups.find(g => g.id === groupId);
+        showToast(groupId ? `💬 Form mapped to WhatsApp Group: ${selectedGroup?.group_name || 'Selected Group'}` : 'Form unmapped from WhatsApp Group');
+      }
+    } catch (err: any) {
+      showToast('Network error: ' + err.message, 'error');
+    } finally {
+      setMappingLoading(prev => { const m = new Map(prev); m.delete(formId); return m; });
+    }
+  }, [getAuthHeaders, showToast, whatsappGroups]);
 
   // Persistent Toggle Page Active/Disabled (PERSISTS IN SUPABASE DB)
   const handleTogglePage = useCallback(async (pageId: string, currentState: boolean) => {
@@ -921,6 +964,7 @@ export default function MetaIntegrationPage() {
                     <th className="py-3 px-4">Facebook Page</th>
                     <th className="py-3 px-4 text-center">Real Leads Synced</th>
                     <th className="py-3 px-4">Last Lead Received</th>
+                    <th className="py-3 px-4 text-center">WhatsApp Contact Group</th>
                     <th className="py-3 px-4 text-center">Form Toggle</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
@@ -930,6 +974,7 @@ export default function MetaIntegrationPage() {
                     filteredForms.map(form => {
                       const isEnabled = form.is_enabled !== false;
                       const isToggling = toggleLoading.get(form.form_id) || false;
+                      const isMapping = mappingLoading.get(form.form_id) || false;
                       const syncState = syncStates.get(form.form_id) || DEFAULT_SYNC;
                       const realLeadsCount = form.leads_count ?? form.sync_count ?? form.total_received ?? 0;
 
@@ -955,6 +1000,25 @@ export default function MetaIntegrationPage() {
 
                           <td className="py-3.5 px-4 text-slate-600 font-medium">
                             {formatRelTime(form.last_lead_received)}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="relative inline-flex items-center">
+                              <select
+                                value={form.contact_group_id || ''}
+                                disabled={isMapping}
+                                onChange={(e) => handleUpdateGroupMapping(form.form_id, e.target.value || null)}
+                                className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-semibold rounded-xl pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0866FF] cursor-pointer transition-all disabled:opacity-50"
+                              >
+                                <option value="">No Group (Default)</option>
+                                {whatsappGroups.map(g => (
+                                  <option key={g.id} value={g.id}>
+                                    💬 {g.group_name}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+                            </div>
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
@@ -985,7 +1049,7 @@ export default function MetaIntegrationPage() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 font-medium">
+                      <td colSpan={7} className="py-8 text-center text-slate-400 font-medium">
                         No lead forms found matching your filter criteria.
                       </td>
                     </tr>
@@ -999,6 +1063,7 @@ export default function MetaIntegrationPage() {
               {filteredForms.map(form => {
                 const isEnabled = form.is_enabled !== false;
                 const isToggling = toggleLoading.get(form.form_id) || false;
+                const isMapping = mappingLoading.get(form.form_id) || false;
                 const syncState = syncStates.get(form.form_id) || DEFAULT_SYNC;
                 const realLeadsCount = form.leads_count ?? form.sync_count ?? form.total_received ?? 0;
 
@@ -1019,6 +1084,28 @@ export default function MetaIntegrationPage() {
                     <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
                       <span className="text-slate-500">Real Synced Leads: <strong className="text-[#0866FF] font-bold">{realLeadsCount}</strong></span>
                       <span className="text-slate-500 font-medium">{formatRelTime(form.last_lead_received)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
+                      <span className="text-slate-500 font-semibold flex items-center gap-1">
+                        <Users className="w-3 h-3 text-[#0866FF]" /> WhatsApp Group:
+                      </span>
+                      <div className="relative inline-flex items-center">
+                        <select
+                          value={form.contact_group_id || ''}
+                          disabled={isMapping}
+                          onChange={(e) => handleUpdateGroupMapping(form.form_id, e.target.value || null)}
+                          className="appearance-none bg-slate-50 border border-slate-200 text-slate-800 text-[11px] font-semibold rounded-lg pl-2 pr-6 py-1 focus:outline-none focus:ring-1 focus:ring-[#0866FF]"
+                        >
+                          <option value="">No Group</option>
+                          {whatsappGroups.map(g => (
+                            <option key={g.id} value={g.id}>
+                              💬 {g.group_name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 pointer-events-none" />
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 pt-1">

@@ -86,6 +86,7 @@ export async function GET(req: NextRequest) {
           is_active: saved?.is_active ?? false,
           is_tagging_enabled: saved?.is_tagging_enabled ?? false,
           mapping_config: saved?.mapping_config ?? {},
+          contact_group_id: saved?.contact_group_id ?? null,
           is_saved: !!saved,
         };
       });
@@ -133,6 +134,7 @@ export async function GET(req: NextRequest) {
         is_active: saved?.is_active ?? false,
         is_tagging_enabled: saved?.is_tagging_enabled ?? false,
         mapping_config: saved?.mapping_config ?? {},
+        contact_group_id: saved?.contact_group_id ?? null,
         is_saved: !!saved,
       };
     });
@@ -156,6 +158,7 @@ export async function POST(req: NextRequest) {
     const {
       workspace_id, page_id, form_id, form_name,
       is_active, is_tagging_enabled, mapping_config,
+      contact_group_id,
     } = body;
 
     if (!workspace_id || !page_id || !form_id) {
@@ -172,6 +175,7 @@ export async function POST(req: NextRequest) {
         is_active: is_active ?? true,
         is_tagging_enabled: is_tagging_enabled ?? false,
         mapping_config: mapping_config || {},
+        contact_group_id: contact_group_id || null,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id,form_id' })
       .select()

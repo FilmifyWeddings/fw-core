@@ -8,7 +8,7 @@ import {
   Copy, Check, Database, Settings, ShieldCheck, ChevronDown,
   ToggleLeft, ToggleRight, Tag, Zap, Globe, FileText,
   ArrowRight, Plus, Trash2, Save, Info, ExternalLink,
-  Activity, Wifi, WifiOff, LogOut, Bell, BellOff,
+  Activity, Wifi, WifiOff, LogOut, Bell, BellOff, Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { SYSTEM_FIELDS } from '@/types';
@@ -422,6 +422,8 @@ function PagesTab({
   const [pageError, setPageError]       = useState('');
   const [importingForm, setImportingForm] = useState<string | null>(null);
   const [importResult, setImportResult]   = useState<Record<string, string>>({});
+  const [contactGroups, setContactGroups] = useState<any[]>([]);
+  const [assigningGroup, setAssigningGroup] = useState<string | null>(null);
 
   const fetchPages = useCallback(async () => {
     setLoadingPages(true); setPageError('');
@@ -445,6 +447,35 @@ function PagesTab({
     if (selectedPageId) fetchForms(selectedPageId);
     else setForms([]);
   }, [selectedPageId, fetchForms]);
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      const { data } = await supabase.from('whatsapp_contact_groups').select('id, group_name');
+      if (data) setContactGroups(data);
+    };
+    fetchGroups();
+  }, [workspaceId]);
+
+  const handleAssignGroup = async (form: any, contactGroupId: string) => {
+    if (!selectedPageId) return;
+    setAssigningGroup(form.form_id);
+    await fetch('/api/facebook/forms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspace_id: workspaceId,
+        page_id: selectedPageId,
+        form_id: form.form_id,
+        form_name: form.form_name,
+        is_active: form.is_active,
+        is_tagging_enabled: form.is_tagging_enabled,
+        mapping_config: form.mapping_config,
+        contact_group_id: contactGroupId || null,
+      }),
+    });
+    setAssigningGroup(null);
+    fetchForms(selectedPageId);
+  };
 
   // Auto-subscribe webhook when page is selected
   const subscribeWebhook = async (pageId: string) => {
@@ -487,6 +518,7 @@ function PagesTab({
         is_active:          !form.is_active,
         is_tagging_enabled: form.is_tagging_enabled,
         mapping_config:     form.mapping_config,
+        contact_group_id:   form.contact_group_id,
       }),
     });
     setTogglingForm(null);
@@ -694,6 +726,24 @@ function PagesTab({
                           }
                         </button>
                       </div>
+                    </div>
+                    {/* WhatsApp Group Assignment */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <select
+                        value={form.contact_group_id || ''}
+                        onChange={e => handleAssignGroup(form, e.target.value)}
+                        disabled={assigningGroup === form.form_id}
+                        className="flex-1 px-2.5 py-1.5 text-[10px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-emerald-400 disabled:opacity-50"
+                      >
+                        <option value="">No WhatsApp Group</option>
+                        {contactGroups.map(g => (
+                          <option key={g.id} value={g.id}>{g.group_name}</option>
+                        ))}
+                      </select>
+                      {assigningGroup === form.form_id && (
+                        <RefreshCw className="w-3 h-3 animate-spin text-zinc-400 shrink-0" />
+                      )}
                     </div>
                     {/* Status/Success Message */}
                     {importResult[form.form_id] && (

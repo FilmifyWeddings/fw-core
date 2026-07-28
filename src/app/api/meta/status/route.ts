@@ -101,6 +101,13 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('workspace_id', workspaceId);
 
+    const { data: mappingsData } = await supabaseAdmin
+      .from('fb_form_mappings')
+      .select('form_id, contact_group_id')
+      .eq('workspace_id', workspaceId);
+
+    const mappingMap = new Map((mappingsData || []).map((m: any) => [m.form_id, m.contact_group_id]));
+
     const { data: leadsData } = await supabaseAdmin
       .from('leads')
       .select('id, name, phone, email, created_at, source, raw_payload')
@@ -148,6 +155,7 @@ export async function GET(req: NextRequest) {
         duplicate_count: 0,
         is_active: true,
         is_enabled: f.is_enabled ?? true,
+        contact_group_id: mappingMap.get(f.form_id) || null,
         last_lead_received: formLastLeadTime || lastLeadTime,
         created_time: f.created_time || f.created_at || new Date().toISOString(),
       };
