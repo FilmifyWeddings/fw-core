@@ -7,6 +7,30 @@ const logger = pino({
   transport: { target: 'pino-pretty' },
 });
 
+// Custom reviver that handles BOTH Buffer serialization formats:
+// 1. { type: 'Buffer', data: '<base64>' }  — from BufferJSON.replacer / Baileys internals
+// 2. { type: 'Buffer', data: [num, ...] }   — from default JSON.stringify(Buffer)
+function bufferReviver(_: string, value: unknown): unknown {
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as any).type === 'Buffer' &&
+    (value as any).data !== undefined
+  ) {
+    const data = (value as any).data;
+    if (typeof data === 'string') {
+      // Base64 format from BufferJSON.replacer
+      return Buffer.from(data, 'base64');
+    }
+    if (Array.isArray(data)) {
+      // Decimal array format from default JSON.stringify(Buffer)
+      return Buffer.from(data as number[]);
+    }
+  }
+  return BufferJSON.reviver(_, value);
+}
+
 type SignalDataSet = {
   [key: string]: { [id: string]: any };
 };
@@ -41,8 +65,8 @@ export async function useSupabaseAuthState(
     }
 
     try {
-      const parsedCreds = JSON.parse(data.creds_json, BufferJSON.reviver);
-      const parsedKeys = JSON.parse(data.keys_json, BufferJSON.reviver);
+      const parsedCreds = JSON.parse(data.creds_json, bufferReviver);
+      const parsedKeys = JSON.parse(data.keys_json, bufferReviver);
 
       if (!parsedCreds || !parsedKeys) {
         logger.warn('Parsed auth state is empty — treating as missing');
