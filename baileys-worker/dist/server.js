@@ -86,6 +86,9 @@ let reconnectTimer = null;
 let lastQrTime = 0;
 let connectingTimeoutTimer = null;
 let saveCreds = null;
+// In-memory auth state shared across reconnects so 515 stream restart
+// uses the live mutated creds object instead of reading stale data from DB
+let currentAuthState = null;
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(state, extras = {}) {
     await supabase
@@ -718,11 +721,26 @@ async function startBaileysSocket(forceFresh = false) {
     if (forceFresh) {
         logger.info('🔄 Force-fresh mode: creating new credential state from scratch');
         await updateSessionState('connecting');
+        // Use authState's creds/keys so saveCreds persists the SAME object
+        // that Baileys mutates in-place via creds.update / keys.set
+        const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+        saveCreds = authState.saveCreds;
+        // Reset creds to fresh random keys even if DB had stale state
         const { initAuthCreds } = await import('@whiskeysockets/baileys');
         const freshCreds = initAuthCreds();
-        const freshKeys = {
+        for (const k of Object.keys(authState.state.creds)) {
+            delete authState.state.creds[k];
+        }
+        Object.assign(authState.state.creds, freshCreds);
+        // Clear the in-memory signal key cache by resetting keys store internals
+        // (SignalKeyStore.set() appends to an inaccessible closure — replace it)
+        const blankKeys = {
             get: async () => ({}),
             set: async () => { },
+        };
+        currentAuthState = {
+            creds: authState.state.creds,
+            keys: blankKeys,
         };
         let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
             version: [2, 3000, 1017531287],
@@ -737,8 +755,8 @@ async function startBaileysSocket(forceFresh = false) {
             version,
             logger: logger.child({ module: 'baileys' }),
             auth: {
-                creds: freshCreds,
-                keys: makeCacheableSignalKeyStore(freshKeys, logger.child({ module: 'keys' })),
+                creds: currentAuthState.creds,
+                keys: makeCacheableSignalKeyStore(currentAuthState.keys, logger.child({ module: 'keys' })),
             },
             printQRInTerminal: true,
             generateHighQualityLinkPreview: true,
@@ -747,16 +765,14 @@ async function startBaileysSocket(forceFresh = false) {
             syncFullHistory: false,
             shouldSyncHistoryMessage: () => false,
         });
-        // Wire up creds persistence so the newly-paired session is saved
-        const saver1 = await useSupabaseAuthState(supabase, WORKSPACE_ID);
-        saveCreds = saver1.saveCreds;
         sock.ev.on('creds.update', (update) => {
-            if (update.isNewLogin === true) {
-                logger.warn({ update }, '⚠️ isNewLogin detected in creds.update — forcing immediate DB flush');
+            const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
+            if (needsForceFlush) {
+                logger.warn({ update }, '⚠️ Creds upgrade detected (isNewLogin/registered/me) — forcing immediate DB flush');
                 saveCreds().then(() => {
-                    console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
+                    console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${WORKSPACE_ID}`);
                 }).catch((err) => {
-                    logger.error({ err }, 'Failed to force-flush creds on isNewLogin');
+                    logger.error({ err }, 'Failed to force-flush creds after pairing upgrade');
                 });
             }
             else {
@@ -765,10 +781,23 @@ async function startBaileysSocket(forceFresh = false) {
         });
     }
     else {
-        // Normal mode: load from Supabase (or initAuthCreds if empty)
+        // Reconnect mode: use in-memory creds if available (bypasses DB read
+        // so 515 stream restart never reloads stale auth state from Postgres)
+        if (currentAuthState) {
+            logger.info('🧠 Reusing in-memory auth state for reconnect (bypassing DB read)');
+            // saveCreds still points to the original persistAuthState from
+            // the first useSupabaseAuthState call — its closure still owns
+            // the live creds object that Baileys mutated in-place
+        }
+        else {
+            const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+            saveCreds = authState.saveCreds;
+            currentAuthState = {
+                creds: authState.state.creds,
+                keys: authState.state.keys,
+            };
+        }
         await updateSessionState('connecting');
-        const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
-        saveCreds = authState.saveCreds;
         let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
             version: [2, 3000, 1017531287],
             isLatest: false
@@ -783,8 +812,8 @@ async function startBaileysSocket(forceFresh = false) {
             version,
             logger: logger.child({ module: 'baileys' }),
             auth: {
-                creds: authState.state.creds,
-                keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: 'keys' })),
+                creds: currentAuthState.creds,
+                keys: makeCacheableSignalKeyStore(currentAuthState.keys, logger.child({ module: 'keys' })),
             },
             printQRInTerminal: true,
             generateHighQualityLinkPreview: true,
@@ -795,12 +824,13 @@ async function startBaileysSocket(forceFresh = false) {
         });
         // ── Event: creds.update — save creds on every update ──
         sock.ev.on('creds.update', (update) => {
-            if (update.isNewLogin === true) {
-                logger.warn({ update }, '⚠️ isNewLogin detected in creds.update — forcing immediate DB flush');
+            const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
+            if (needsForceFlush) {
+                logger.warn({ update }, '⚠️ Creds upgrade detected (isNewLogin/registered/me) — forcing immediate DB flush');
                 saveCreds().then(() => {
-                    console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
+                    console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${WORKSPACE_ID}`);
                 }).catch((err) => {
-                    logger.error({ err }, 'Failed to force-flush creds on isNewLogin');
+                    logger.error({ err }, 'Failed to force-flush creds after pairing upgrade');
                 });
             }
             else {
