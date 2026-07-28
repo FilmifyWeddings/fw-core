@@ -181,6 +181,7 @@ export async function processQueueAction(action, handler) {
             .from('baileys_action_queue')
             .update({
             status: 'failed',
+            error_message: errMsg,
             failure_reason: `[Attempt ${newAttemptCount}/${MAX_RETRIES}] ${errMsg}`,
             next_retry_at: null,
         })
@@ -220,6 +221,16 @@ export async function drainQueue(workspaceId, handler, batchSize = 3) {
         return; // Another drain cycle is already running for this workspace
     }
     try {
+        // Pre-flight check: if workspace session is disconnected, pause dispatches
+        const { data: session } = await supabaseAdmin
+            .from('baileys_sessions')
+            .select('conn_state, status')
+            .eq('workspace_id', workspaceId)
+            .maybeSingle();
+        if (session?.conn_state === 'disconnected' || session?.status === 'DISCONNECTED') {
+            console.warn(`[QueueProcessor] ⏸️ WhatsApp session is DISCONNECTED for workspace ${workspaceId} — pausing queue dispatches.`);
+            return;
+        }
         const now = new Date().toISOString();
         console.log("Worker polling at", now);
         // Fetch pending actions that are due (respects next_retry_at backoff)

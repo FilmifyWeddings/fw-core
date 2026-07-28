@@ -138,6 +138,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       const d = await res.json();
       if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
         setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
+      } else if (d.conn_state === 'disconnected' || d.status === 'DISCONNECTED') {
+        setConnState('disconnected'); setPhoneNumber(null); setQrString(null); setIsResetting(false);
       } else {
         setConnState('connecting'); setIsResetting(false);
         if (d.qr_string && !d.qr_expired) {
@@ -190,6 +192,9 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             const d = await res.json();
             if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
               setConnState('open'); setPhoneNumber(d.phone_number ?? null); return;
+            }
+            if (d.conn_state === 'disconnected' || d.status === 'DISCONNECTED') {
+              setConnState('disconnected'); setPhoneNumber(null); return;
             }
             setConnState('connecting');
             if (d.qr_string && !d.qr_expired) {

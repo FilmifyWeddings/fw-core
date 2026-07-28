@@ -275,6 +275,18 @@ export async function drainQueue(
   }
 
   try {
+    // Pre-flight check: if workspace session is disconnected, pause dispatches
+    const { data: session } = await supabaseAdmin
+      .from('baileys_sessions')
+      .select('conn_state, status')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    if (session?.conn_state === 'disconnected' || session?.status === 'DISCONNECTED') {
+      console.warn(`[QueueProcessor] ⏸️ WhatsApp session is DISCONNECTED for workspace ${workspaceId} — pausing queue dispatches.`);
+      return;
+    }
+
     const now = new Date().toISOString();
     console.log("Worker polling at", now);
 

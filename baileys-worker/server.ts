@@ -637,47 +637,105 @@ async function executeAction(action: {
   priority: number;
   created_at: string;
 }): Promise<{ success: boolean; waMessageId?: string | null; error?: string }> {
-  if (!sock) throw new Error('WhatsApp socket is not connected. Cannot process action.');
+  // ── PRE-SEND SESSION VALIDATION ──
+  if (!sock || !sock.user || !sock.user.id) {
+    logger.error({ actionId: action.id, workspaceId: action.workspace_id }, '🔴 [Pre-Send Check] WhatsApp session is unauthenticated or socket is null.');
+
+    await dbWriteCritical(
+      supabase
+        .from('baileys_sessions')
+        .update({
+          conn_state: 'disconnected',
+          status: 'DISCONNECTED',
+          error_info: 'WhatsApp Session Expired. Please reconnect QR code.',
+          last_status_change: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', action.workspace_id),
+      'presend-disconnect-update'
+    );
+
+    await dbWrite(
+      supabase.from('wa_instance_alerts').insert({
+        workspace_id: action.workspace_id,
+        alert_type: 'presend_session_expired',
+        message: 'Pre-send check failed: WhatsApp Session Expired. Please reconnect QR code.',
+        metadata: { action_id: action.id, action_type: action.action_type },
+      }),
+      'insert-presend-alert'
+    );
+
+    throw new Error('WhatsApp Session Expired. Please reconnect QR code.');
+  }
 
   let waMessageId: string | null = null;
 
-  // ── Dispatch: throws on failure so the processor marks it 'failed' ──────────
-  switch (action.action_type) {
-    case 'send_text': {
-      const { to, text } = action.payload as { to: string; text: string };
-      waMessageId = await sendTextMessage(to, text);
-      break;
+  try {
+    // ── Dispatch: throws on failure so the processor marks it 'failed' ──────────
+    switch (action.action_type) {
+      case 'send_text': {
+        const { to, text } = action.payload as { to: string; text: string };
+        waMessageId = await sendTextMessage(to, text);
+        break;
+      }
+      case 'send_media': {
+        const { to, mediaUrl, caption, mimeType } = action.payload as {
+          to: string; mediaUrl: string; caption: string; mimeType: string;
+        };
+        waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType);
+        break;
+      }
+      case 'send_template': {
+        const { to, templateId, variables } = action.payload as {
+          to: string; templateId: string; variables: Record<string, string>;
+        };
+        waMessageId = await sendTemplateMessage(to, templateId, variables);
+        break;
+      }
+      case 'group_dispatch': {
+        const { groupJid, leadData } = action.payload as {
+          groupJid: string; leadData: Record<string, unknown>;
+        };
+        await dispatchGroupCard(groupJid, leadData);
+        break;
+      }
+      case 'group_lead_alert': {
+        const { groupId, leadData, templateStr } = action.payload as {
+          groupId: string; leadData: Record<string, any>; templateStr: string;
+        };
+        waMessageId = await sendGroupAlert(groupId, leadData, templateStr);
+        break;
+      }
+      default:
+        logger.warn({ type: action.action_type }, 'Unknown action type — skipping');
     }
-    case 'send_media': {
-      const { to, mediaUrl, caption, mimeType } = action.payload as {
-        to: string; mediaUrl: string; caption: string; mimeType: string;
-      };
-      waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType);
-      break;
+  } catch (err: any) {
+    const errStr = String(err?.message || err);
+    const isDisconnectError = 
+      errStr.includes('401') || errStr.includes('403') || errStr.includes('428') || 
+      errStr.includes('515') || errStr.toLowerCase().includes('logged out') || 
+      errStr.toLowerCase().includes('connection closed') || errStr.toLowerCase().includes('not connected');
+
+    if (isDisconnectError) {
+      logger.error({ err: errStr, actionId: action.id }, '🔴 [Execute Action] Socket error indicates disconnected session!');
+      
+      await dbWriteCritical(
+        supabase
+          .from('baileys_sessions')
+          .update({
+            conn_state: 'disconnected',
+            status: 'DISCONNECTED',
+            error_info: 'WhatsApp Session Expired. Please reconnect QR code.',
+            last_status_change: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('workspace_id', action.workspace_id),
+        'execute-action-disconnect'
+      );
+
+      throw new Error('WhatsApp Session Expired. Please reconnect QR code.');
     }
-    case 'send_template': {
-      const { to, templateId, variables } = action.payload as {
-        to: string; templateId: string; variables: Record<string, string>;
-      };
-      waMessageId = await sendTemplateMessage(to, templateId, variables);
-      break;
-    }
-    case 'group_dispatch': {
-      const { groupJid, leadData } = action.payload as {
-        groupJid: string; leadData: Record<string, unknown>;
-      };
-      await dispatchGroupCard(groupJid, leadData);
-      break;
-    }
-    case 'group_lead_alert': {
-      const { groupId, leadData, templateStr } = action.payload as {
-        groupId: string; leadData: Record<string, any>; templateStr: string;
-      };
-      waMessageId = await sendGroupAlert(groupId, leadData, templateStr);
-      break;
-    }
-    default:
-      logger.warn({ type: action.action_type }, 'Unknown action type — skipping');
+    throw err;
   }
 
   // ── ACID: Write 'done' to DB immediately after successful dispatch ──────────
@@ -910,7 +968,11 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       },
       printQRInTerminal: true,
       generateHighQualityLinkPreview: true,
-      markOnlineOnConnect: false,
+      keepAliveIntervalMs: 10_000,
+      connectTimeoutMs: 60_000,
+      defaultQueryTimeoutMs: 60_000,
+      retryRequestDelayMs: 2500,
+      markOnlineOnConnect: true,
       browser: ['StudioCore', 'Chrome', '1.0.0'],
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
@@ -969,7 +1031,11 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       },
       printQRInTerminal: true,
       generateHighQualityLinkPreview: true,
-      markOnlineOnConnect: false,
+      keepAliveIntervalMs: 10_000,
+      connectTimeoutMs: 60_000,
+      defaultQueryTimeoutMs: 60_000,
+      retryRequestDelayMs: 2500,
+      markOnlineOnConnect: true,
       browser: ['StudioCore', 'Chrome', '1.0.0'],
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
@@ -1105,126 +1171,62 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       clearConnectingTimeout();
       const error = lastDisconnect?.error as Boom;
       const statusCode = error?.output?.statusCode;
-      const isRestartRequired = statusCode === DisconnectReason.restartRequired; // 515
-      const isReplaced = statusCode === DisconnectReason.connectionReplaced;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
-      const isTimedOut = statusCode === 408 || statusCode === 440;
-      const shouldReconnect = !isLoggedOut && !isReplaced;
 
-      // ── 515 Stream Error: WhatsApp wants a stream restart, NOT a session wipe ──
-      if (isRestartRequired) {
-        console.log('🔄 515 Stream Errored (restart required) — restarting socket in 1500ms to allow DB writes to commit');
-        logger.warn('🔄 515 — restarting Baileys socket in 1500ms with existing creds');
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => startBaileysSocket(false), 1500);
-        // Don't set disconnected state — the socket will reconnect transparently
-        return;
-      }
-
-      // Check if we have an established session or are still pairing
-      // (phone_number === null means we never connected)
-      const curSession = await dbWrite(
-        supabase
-          .from('baileys_sessions')
-          .select('phone_number, conn_state')
-          .eq('workspace_id', WORKSPACE_ID)
-          .maybeSingle(),
-        'select-close-state'
-      );
-      const hadEstablishedSession = !!((curSession as any)?.phone_number);
-
-      console.log('🔌 Connection CLOSED — statusCode:', statusCode, 'hadEstablishedSession:', hadEstablishedSession);
+      console.log('🔌 Connection CLOSED — statusCode:', statusCode, 'isLoggedOut:', isLoggedOut);
       logger.error({ 
         statusCode, 
-        shouldReconnect, 
-        isTimedOut,
-        hadEstablishedSession,
+        isLoggedOut,
         message: error?.message, 
-        stack: error?.stack,
         lastDisconnect 
       }, '🔌 Connection closed details');
 
-      const errMsg = error?.message || `Disconnected (code: ${statusCode})`;
+      if (!isLoggedOut) {
+        // NON-LOGGED-OUT DISCONNECT (temporary network drop, 515 stream restart, 408 timeout, 503, VPS reboot)
+        // DO NOT wipe credentials or set conn_state = 'disconnected' in DB! Keep session alive and auto-reconnect!
+        logger.info({ statusCode }, '♻️ Temporary network/socket drop — auto-reconnecting in 2.5s (preserving session)...');
+        console.log('♻️ Temporary WhatsApp network drop — auto-reconnecting with existing auth keys');
+
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => startBaileysSocket(false), 2500);
+        return;
+      }
+
+      // ONLY reach here if explicitly LOGGED OUT (401 / phone unlinked)
+      logger.warn('🚪 WhatsApp session LOGGED OUT / unlinked from mobile phone. Clearing credentials...');
+      console.log('🚪 Session logged out — wiping credentials and setting DISCONNECTED');
 
       await dbWriteCritical(
         supabase
           .from('baileys_sessions')
           .update({
             conn_state: 'disconnected',
-            error_info: errMsg,
+            status: 'DISCONNECTED',
+            qr_string: null,
+            qr_expires_at: null,
+            phone_number: null,
+            creds_json: null,
+            keys_json: null,
+            error_info: 'Logged out from mobile device — QR re-scan required',
             last_status_change: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           })
           .eq('workspace_id', WORKSPACE_ID),
-        'update-disconnected'
+        'update-logged-out'
       );
 
       await dbWrite(
         supabase.from('wa_instance_alerts').insert({
           workspace_id: WORKSPACE_ID,
           alert_type: 'disconnected',
-          message: `WhatsApp disconnected: ${errMsg}`,
-          metadata: { status_code: statusCode, is_logged_out: isLoggedOut, is_replaced: isReplaced },
+          message: 'WhatsApp logged out from mobile device — QR re-scan required.',
+          metadata: { status_code: statusCode, is_logged_out: true },
         }),
         'insert-disconnect-alert'
       );
 
-      if (isLoggedOut && !hadEstablishedSession) {
-        // 401/403 during pairing: handshake failed — wipe clean and emit fresh QR
-        logger.warn('🚪 401 during pairing — handshake rejected. Wiping session for fresh QR...');
-        console.log('🚪 401 during pairing — wiping session and regenerating QR');
-        await dbWriteCritical(
-          supabase
-            .from('baileys_sessions')
-            .update({
-              conn_state: 'disconnected',
-              qr_string: null,
-              qr_expires_at: null,
-              phone_number: null,
-              creds_json: null,
-              keys_json: null,
-              error_info: '401 during pairing — QR re-scan required',
-              last_status_change: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .eq('workspace_id', WORKSPACE_ID),
-          'update-401-pairing'
-        );
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => startBaileysSocket(true), 500);
-      } else if (isLoggedOut && hadEstablishedSession) {
-        // 401 during established session: device logged out remotely
-        logger.warn('🚪 Logged out (401) during active session. Clearing credentials...');
-        console.log('🚪 Session logged out — wiping credentials');
-        await dbWriteCritical(
-          supabase
-            .from('baileys_sessions')
-            .update({
-              conn_state: 'disconnected',
-              qr_string: null,
-              qr_expires_at: null,
-              phone_number: null,
-              creds_json: null,
-              keys_json: null,
-              error_info: 'Logged out — QR re-scan required',
-              last_status_change: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .eq('workspace_id', WORKSPACE_ID),
-          'update-logged-out'
-        );
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
-      } else if (isTimedOut && !hadEstablishedSession) {
-        // During QR pairing: timeout is expected — just wait for next init
-        logger.warn('⏱️ Pairing timed out (408/440) — no established session. Waiting for user to request fresh QR...');
-      } else if (isReplaced) {
-        logger.warn('⚠️ Connection replaced by another instance. Not reconnecting.');
-      } else if (shouldReconnect) {
-        logger.info('♻️  Reconnecting in 5s...');
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => startBaileysSocket(false), 5_000);
-      }
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
     }
   });
 
@@ -2105,6 +2107,98 @@ function startGoogleSheetsWatcher(): void {
   }, 10_000);
 }
 
+// ─── Active Session Heartbeat (60s check for zombie sockets) ──────────────────
+let heartbeatTimer: NodeJS.Timeout | null = null;
+
+async function runSessionHeartbeatCheck(): Promise<void> {
+  try {
+    const { data: session } = await supabase
+      .from('baileys_sessions')
+      .select('conn_state, status')
+      .eq('workspace_id', WORKSPACE_ID)
+      .maybeSingle();
+
+    const dbState = session?.conn_state;
+    const dbStatus = session?.status;
+
+    // Only perform check if DB thinks session is active
+    if (dbState === 'open' || dbStatus === 'CONNECTED') {
+      let isDead = false;
+      let reason = '';
+
+      if (!sock) {
+        isDead = true;
+        reason = 'Socket instance is null/undefined';
+      } else if (!sock.user || !sock.user.id) {
+        isDead = true;
+        reason = 'Socket unauthenticated (sock.user missing)';
+      } else {
+        const wsState = (sock as any).ws?.readyState;
+        // ws.OPEN is 1
+        if (wsState !== undefined && wsState !== 1) {
+          isDead = true;
+          reason = `WebSocket readyState is ${wsState} (not OPEN)`;
+        }
+      }
+
+      if (isDead) {
+        logger.error({ reason, dbState, dbStatus }, '🔴 [Heartbeat] Zombie WhatsApp session detected!');
+        console.log(`🔴 [Heartbeat] Zombie session detected: ${reason} — Wiping session & setting DISCONNECTED`);
+
+        await dbWriteCritical(
+          supabase
+            .from('baileys_sessions')
+            .update({
+              conn_state: 'disconnected',
+              status: 'DISCONNECTED',
+              phone_number: null,
+              qr_string: null,
+              creds_json: null,
+              keys_json: null,
+              error_info: `Zombie Session Heartbeat Failure: ${reason} — QR re-scan required`,
+              last_status_change: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('workspace_id', WORKSPACE_ID),
+          'heartbeat-disconnect-update'
+        );
+
+        await dbWrite(
+          supabase.from('wa_instance_alerts').insert({
+            workspace_id: WORKSPACE_ID,
+            alert_type: 'zombie_session_disconnected',
+            message: `Zombie Session Detected: ${reason}. System auto-disconnected to prompt QR scan.`,
+            metadata: { reason, detected_at: new Date().toISOString() },
+          }),
+          'insert-heartbeat-alert'
+        );
+
+        if (sock) {
+          try {
+            (sock.ev as any).removeAllListeners();
+            sock.end(undefined);
+          } catch {}
+          sock = null;
+        }
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
+      }
+    }
+  } catch (err: any) {
+    logger.error({ err: err?.message }, '⚠️ Error running session heartbeat check');
+  }
+}
+
+function startSessionHeartbeat(): void {
+  logger.info('💓 WhatsApp 60s Session Heartbeat starting...');
+  setTimeout(() => {
+    runSessionHeartbeatCheck().catch(err => logger.error({ err }, 'Initial heartbeat error'));
+    heartbeatTimer = setInterval(() => {
+      runSessionHeartbeatCheck().catch(err => logger.error({ err }, 'Session heartbeat error'));
+    }, 60_000);
+  }, 15_000);
+}
+
 // ─── Graceful Shutdown ───────────────────────────────────────────────────────
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, `🛑 Received ${signal} — initiating graceful shutdown...`);
@@ -2131,6 +2225,7 @@ async function shutdown(signal: string): Promise<void> {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (connectingTimeoutTimer) { clearTimeout(connectingTimeoutTimer); connectingTimeoutTimer = null; }
   if (delayedCheckTimer) { clearTimeout(delayedCheckTimer); delayedCheckTimer = null; }
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 
   // 4. Write disconnected state to DB
   try {
@@ -2163,6 +2258,9 @@ async function main(): Promise<void> {
 
   // ── Google Sheets background watcher (60s polling) ──
   startGoogleSheetsWatcher();
+
+  // ── Start Session Heartbeat watcher (60s check) ──
+  startSessionHeartbeat();
 
   // ── Start WhatsApp Baileys socket ──
   await startBaileysSocket();
