@@ -30,6 +30,21 @@ const logger = pino({
     level: process.env.LOG_LEVEL ?? 'info',
     transport: { target: 'pino-pretty' },
 });
+// ─── DB Timeout Helper ───────────────────────────────────────────────────────
+// Prevents hanging Supabase calls from blocking the Baileys event loop.
+// All DB writes inside socket event handlers MUST use this wrapper.
+async function dbWrite(thenable, label) {
+    try {
+        return await Promise.race([
+            thenable,
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`DB timeout: ${label}`)), 3_000)),
+        ]);
+    }
+    catch (err) {
+        logger.error({ err, label }, `⚠️ DB operation failed or timed out: ${label}`);
+        return undefined;
+    }
+}
 // ─── Config (Absolute Dotenv Paths) ─────────────────────────────────────────
 const envPaths = [
     path.resolve(__dirname, '.env'),
@@ -773,6 +788,7 @@ async function startBaileysSocket(forceFresh = false) {
     // ── Event: connection.update — handle QR, open, close ──
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
+        console.log('⚡ Connection state changed:', connection || 'qr_event');
         logger.info({ update }, '🔌 Received connection update event');
         // Start/clear connecting timeout based on QR activity
         if (qr) {
@@ -782,7 +798,8 @@ async function startBaileysSocket(forceFresh = false) {
             if (now - lastQrTime > 15_000) {
                 lastQrTime = now;
                 logger.info('📱 Storing fresh QR code in database...');
-                await supabase
+                console.log('📱 Storing fresh QR code for workspace');
+                await dbWrite(supabase
                     .from('baileys_sessions')
                     .upsert({
                     workspace_id: WORKSPACE_ID,
@@ -790,7 +807,7 @@ async function startBaileysSocket(forceFresh = false) {
                     qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
                     conn_state: 'connecting',
                     updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id' });
+                }, { onConflict: 'workspace_id' }), 'upsert-qr');
             }
             else {
                 logger.info('📱 QR update ignored (throttled)');
@@ -798,15 +815,17 @@ async function startBaileysSocket(forceFresh = false) {
         }
         if (connection === 'open') {
             clearConnectingTimeout();
+            console.log('🟢 SUCCESS: WhatsApp Connected for workspace!');
             logger.info('✅ WhatsApp connected!');
             const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
-            const { data: curSession } = await supabase
+            console.log('🔑 Phone number:', phoneNumber);
+            const curSession = await dbWrite(supabase
                 .from('baileys_sessions')
                 .select('reconnect_count')
                 .eq('workspace_id', WORKSPACE_ID)
-                .maybeSingle();
+                .maybeSingle(), 'select-reconnect-count');
             const curReconnects = (curSession?.reconnect_count ?? 0) + 1;
-            await supabase
+            await dbWrite(supabase
                 .from('baileys_sessions')
                 .upsert({
                 workspace_id: WORKSPACE_ID,
@@ -818,17 +837,15 @@ async function startBaileysSocket(forceFresh = false) {
                 reconnect_count: curReconnects,
                 last_status_change: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' });
+            }, { onConflict: 'workspace_id' }), 'upsert-open');
+            console.log('🟢 Session state set to "open" in database');
             if (curReconnects > 1) {
-                try {
-                    await supabase.from('wa_instance_alerts').insert({
-                        workspace_id: WORKSPACE_ID,
-                        alert_type: 'reconnected',
-                        message: `WhatsApp reconnected after ${curReconnects} reconnection(s).`,
-                        metadata: { phone_number: phoneNumber, reconnect_count: curReconnects },
-                    });
-                }
-                catch { }
+                await dbWrite(supabase.from('wa_instance_alerts').insert({
+                    workspace_id: WORKSPACE_ID,
+                    alert_type: 'reconnected',
+                    message: `WhatsApp reconnected after ${curReconnects} reconnection(s).`,
+                    metadata: { phone_number: phoneNumber, reconnect_count: curReconnects },
+                }), 'insert-reconnect-alert');
             }
         }
         if (connection === 'close') {
@@ -841,12 +858,13 @@ async function startBaileysSocket(forceFresh = false) {
             const shouldReconnect = !isLoggedOut && !isReplaced;
             // Check if we have an established session or are still pairing
             // (phone_number === null means we never connected)
-            const { data: curSession } = await supabase
+            const curSession = await dbWrite(supabase
                 .from('baileys_sessions')
                 .select('phone_number, conn_state')
                 .eq('workspace_id', WORKSPACE_ID)
-                .maybeSingle();
-            const hadEstablishedSession = !!curSession?.phone_number;
+                .maybeSingle(), 'select-close-state');
+            const hadEstablishedSession = !!(curSession?.phone_number);
+            console.log('🔌 Connection CLOSED — statusCode:', statusCode, 'hadEstablishedSession:', hadEstablishedSession);
             logger.error({
                 statusCode,
                 shouldReconnect,
@@ -857,7 +875,7 @@ async function startBaileysSocket(forceFresh = false) {
                 lastDisconnect
             }, '🔌 Connection closed details');
             const errMsg = error?.message || `Disconnected (code: ${statusCode})`;
-            await supabase
+            await dbWrite(supabase
                 .from('baileys_sessions')
                 .update({
                 conn_state: 'disconnected',
@@ -865,19 +883,17 @@ async function startBaileysSocket(forceFresh = false) {
                 last_status_change: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             })
-                .eq('workspace_id', WORKSPACE_ID);
-            try {
-                await supabase.from('wa_instance_alerts').insert({
-                    workspace_id: WORKSPACE_ID,
-                    alert_type: 'disconnected',
-                    message: `WhatsApp disconnected: ${errMsg}`,
-                    metadata: { status_code: statusCode, is_logged_out: isLoggedOut, is_replaced: isReplaced },
-                });
-            }
-            catch { }
+                .eq('workspace_id', WORKSPACE_ID), 'update-disconnected');
+            await dbWrite(supabase.from('wa_instance_alerts').insert({
+                workspace_id: WORKSPACE_ID,
+                alert_type: 'disconnected',
+                message: `WhatsApp disconnected: ${errMsg}`,
+                metadata: { status_code: statusCode, is_logged_out: isLoggedOut, is_replaced: isReplaced },
+            }), 'insert-disconnect-alert');
             if (isLoggedOut) {
                 logger.warn('🚪 Logged out (401). Clearing credentials and triggering fresh QR...');
-                await supabase
+                console.log('🚪 Logged out — wiping session from DB');
+                await dbWrite(supabase
                     .from('baileys_sessions')
                     .update({
                     conn_state: 'disconnected',
@@ -890,7 +906,7 @@ async function startBaileysSocket(forceFresh = false) {
                     last_status_change: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 })
-                    .eq('workspace_id', WORKSPACE_ID);
+                    .eq('workspace_id', WORKSPACE_ID), 'update-logged-out');
                 if (reconnectTimer)
                     clearTimeout(reconnectTimer);
                 reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
