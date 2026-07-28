@@ -51,18 +51,42 @@ const logger = pino({
 // ─── DB Timeout Helper ───────────────────────────────────────────────────────
 // Prevents hanging Supabase calls from blocking the Baileys event loop.
 // All DB writes inside socket event handlers MUST use this wrapper.
+const DB_TIMEOUT = 15_000; // 15s — Supabase can be slow under load
+
 async function dbWrite<T>(thenable: { then: Function }, label: string): Promise<T | undefined> {
   try {
     return await Promise.race([
       thenable as unknown as Promise<T>,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`DB timeout: ${label}`)), 3_000)
+        setTimeout(() => reject(new Error(`DB timeout: ${label}`)), DB_TIMEOUT)
       ),
     ]);
   } catch (err) {
     logger.error({ err, label }, `⚠️ DB operation failed or timed out: ${label}`);
     return undefined;
   }
+}
+
+// Critical DB write with retry — used for session state transitions (open/close).
+// Retries up to `maxRetries` times with linear backoff (1s, 2s, 3s).
+async function dbWriteCritical<T>(thenable: { then: Function }, label: string, maxRetries = 3): Promise<T | undefined> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await Promise.race([
+        thenable as unknown as Promise<T>,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`DB timeout: ${label}`)), DB_TIMEOUT)
+        ),
+      ]);
+    } catch (err) {
+      logger.error({ err, label, attempt }, `⚠️ DB critical write failed (${attempt}/${maxRetries}): ${label}`);
+      if (attempt < maxRetries) {
+        const delay = attempt * 1000; // 1s, 2s, 3s
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  return undefined;
 }
 
 // ─── Config (Absolute Dotenv Paths) ─────────────────────────────────────────
@@ -1007,7 +1031,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       // IMMEDIATE status write — set conn_state='open' right away so
       // the frontend polling loop sees the transition even if the
       // comprehensive upsert below is slow or times out
-      await dbWrite(
+      await dbWriteCritical(
         supabase
           .from('baileys_sessions')
           .upsert({
@@ -1046,7 +1070,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       );
       const curReconnects = ((curSession as any)?.reconnect_count ?? 0) + 1;
 
-      await dbWrite(
+      await dbWriteCritical(
         supabase
           .from('baileys_sessions')
           .upsert({
@@ -1122,7 +1146,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
 
       const errMsg = error?.message || `Disconnected (code: ${statusCode})`;
 
-      await dbWrite(
+      await dbWriteCritical(
         supabase
           .from('baileys_sessions')
           .update({
@@ -1149,7 +1173,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
         // 401/403 during pairing: handshake failed — wipe clean and emit fresh QR
         logger.warn('🚪 401 during pairing — handshake rejected. Wiping session for fresh QR...');
         console.log('🚪 401 during pairing — wiping session and regenerating QR');
-        await dbWrite(
+        await dbWriteCritical(
           supabase
             .from('baileys_sessions')
             .update({
@@ -1172,7 +1196,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
         // 401 during established session: device logged out remotely
         logger.warn('🚪 Logged out (401) during active session. Clearing credentials...');
         console.log('🚪 Session logged out — wiping credentials');
-        await dbWrite(
+        await dbWriteCritical(
           supabase
             .from('baileys_sessions')
             .update({
@@ -1406,12 +1430,21 @@ function startHealthServer(): http.Server {
           .eq('workspace_id', WORKSPACE_ID)
           .maybeSingle();
 
+        const socketAlive = !!sock;
+        const socketReadyState = (sock as any)?.ws?.readyState;
+        const socketAuthenticated = !!(sock as any)?.user?.id;
+        // Derive actual connection state from socket (not DB):
+        const socketConnState = socketAuthenticated ? 'open' : (socketReadyState === 1 ? 'connecting' : (socketAlive ? 'connecting' : 'disconnected'));
+
         res.writeHead(200);
         res.end(JSON.stringify({
           status: 'ok',
           worker: 'baileys',
           workspace_id: WORKSPACE_ID,
-          socket: sock ? 'alive' : 'null',
+          socket: socketAlive ? 'alive' : 'null',
+          socket_conn_state: socketConnState,
+          socket_authenticated: socketAuthenticated,
+          phone_number: (sock as any)?.user?.id?.split(':')[0] ?? null,
           session: data,
         }));
         return;

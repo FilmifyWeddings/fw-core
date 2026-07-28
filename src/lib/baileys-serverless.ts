@@ -466,6 +466,7 @@ export async function generateQrServerless(
   // 2. Poll DB for REAL QR from Baileys worker — never generate fake QRs
   const startTime = Date.now();
   let lastQr: string | null = null;
+  let lastHealthCheck = 0;
 
   while (Date.now() - startTime < timeoutMs) {
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -477,6 +478,7 @@ export async function generateQrServerless(
       .maybeSingle();
 
     if (data?.conn_state === 'open') {
+      console.log(`[generateQrServerless] ✅ DB shows conn_state=open for ${workspaceId}`);
       onConnected(data?.phone_number ?? '');
       return;
     }
@@ -493,8 +495,69 @@ export async function generateQrServerless(
       // Still waiting for worker to generate QR — keep polling silently
       continue;
     }
+
+    // Periodically check worker health as a fallback — if the socket is actually
+    // connected but the DB write failed (dbWrite timeout), we force-update the DB.
+    if (Date.now() - lastHealthCheck > 10_000) {
+      lastHealthCheck = Date.now();
+      try {
+        const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health`);
+        if (healthRes.ok) {
+          const health = await healthRes.json();
+          if (health.socket_conn_state === 'open') {
+            const hp = health.phone_number ?? '';
+            console.log(`[generateQrServerless] ⚠️ Worker reports connected but DB lags — force-updating for ${workspaceId}`);
+            await supabaseAdmin
+              .from('baileys_sessions')
+              .upsert({
+                workspace_id: workspaceId,
+                conn_state: 'open',
+                status: 'CONNECTED',
+                qr_string: null,
+                phone_number: hp || null,
+                last_connected: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id' });
+            onConnected(hp);
+            return;
+          }
+        }
+      } catch {
+        // worker not reachable — keep polling DB
+      }
+    }
   }
 
+  // ── Final fallback after timeout ──
+  // If the polling loop exhausted but the worker is actually connected, force
+  // the DB update one last time before giving up.
+  try {
+    const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health`);
+    if (healthRes.ok) {
+      const health = await healthRes.json();
+      if (health.socket_conn_state === 'open') {
+        const hp = health.phone_number ?? '';
+        console.log(`[generateQrServerless] ⏰ Timeout fallback — worker connected, force-updating DB for ${workspaceId}`);
+        await supabaseAdmin
+          .from('baileys_sessions')
+          .upsert({
+            workspace_id: workspaceId,
+            conn_state: 'open',
+            status: 'CONNECTED',
+            qr_string: null,
+            phone_number: hp || null,
+            last_connected: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id' });
+        onConnected(hp);
+        return;
+      }
+    }
+  } catch {
+    // worker not reachable
+  }
+
+  console.log(`[generateQrServerless] ❌ QR pairing timed out for ${workspaceId}`);
   onError('QR pairing timed out. Please try again.');
 }
 
