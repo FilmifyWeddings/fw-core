@@ -1689,13 +1689,30 @@ async function scheduleNextDelayedCheck(): Promise<void> {
 
   try {
     const now = new Date().toISOString();
+
+    // 1. DRAIN OVERDUE/DUE ACTIONS FIRST: Check if any pending action is due now or in the past
+    const { data: overdueAction } = await supabase
+      .from('baileys_action_queue')
+      .select('id')
+      .eq('workspace_id', WORKSPACE_ID)
+      .eq('status', 'pending')
+      .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (overdueAction) {
+      logger.info('⚡ Overdue or immediate pending action found — draining queue now');
+      await runQueueDrain().catch(err => logger.error({ err }, 'Queue drain error'));
+    }
+
+    // 2. Query for next future action
     const { data: nextAction } = await supabase
       .from('baileys_action_queue')
       .select('next_retry_at')
       .eq('workspace_id', WORKSPACE_ID)
       .eq('status', 'pending')
       .not('next_retry_at', 'is', null)
-      .gt('next_retry_at', now)
+      .gt('next_retry_at', new Date().toISOString())
       .order('next_retry_at', { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -1710,18 +1727,18 @@ async function scheduleNextDelayedCheck(): Promise<void> {
         await scheduleNextDelayedCheck();
       }, delayMs);
     } else {
-      // No delayed actions pending — check again in 5 minutes as a safety net
+      // Safety net: check again in 10 seconds
       delayedCheckTimer = setTimeout(async () => {
         delayedCheckTimer = null;
         await scheduleNextDelayedCheck();
-      }, 5 * 60 * 1000);
+      }, 10_000);
     }
   } catch (err) {
-    logger.error({ err }, 'scheduleNextDelayedCheck error — retrying in 60s');
+    logger.error({ err }, 'scheduleNextDelayedCheck error — retrying in 10s');
     delayedCheckTimer = setTimeout(() => {
       delayedCheckTimer = null;
       scheduleNextDelayedCheck();
-    }, 60_000);
+    }, 10_000);
   }
 }
 
@@ -2154,12 +2171,17 @@ async function main(): Promise<void> {
   // Only delayed-node actions need a timer; instant actions are driven by Realtime.
   await scheduleNextDelayedCheck();
 
+  // ── Periodic 10s Queue Drain Safety Net (Ensures scheduled actions are NEVER missed) ──
+  setInterval(() => {
+    runQueueDrain().catch(err => logger.error({ err }, 'Periodic queue drain error'));
+  }, 10_000);
+
   // ── Sweeper: recover stuck 'processing' rows every 60 seconds ──
   setInterval(() => {
     runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));
   }, 60_000);
 
-  logger.info('✅ Realtime listeners active. Dynamic delay scheduler running. Sweeper (60s) active.');
+  logger.info('✅ Realtime listeners active. Dynamic delay scheduler + 10s queue drainer running. Sweeper (60s) active.');
   logger.info('✅ Polling setInterval REMOVED — egress now driven by Realtime + scheduleNextDelayedCheck.');
 }
 
