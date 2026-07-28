@@ -40,7 +40,7 @@ interface ColumnConfig {
   id: string;
   label: string;
   visible: boolean;
-  type?: 'system' | 'meta' | 'custom-dropdown' | 'custom-color' | 'custom-text';
+  type?: 'system' | 'meta' | 'meta_question' | 'custom-dropdown' | 'custom-color' | 'custom-text' | string;
   options?: string[]; // for custom dropdowns
 }
 
@@ -163,6 +163,49 @@ export function LeadTable({
   const [showManageCols, setShowManageCols] = useState(false);
   const [draggedColIdx, setDraggedColIdx] = useState<number | null>(null);
   const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
+
+  // Auto-discover Meta Form Custom Questions from lead payloads
+  useEffect(() => {
+    if (!leads || leads.length === 0) return;
+
+    const systemKeys = new Set([
+      'name', 'email', 'phone', 'lead_owner', 'form_name', 'page_name', 
+      'source', 'stage_id', 'status', 'created_at', 'updated_at', 
+      'workspace_id', 'id', 'meta_lead_id', 'form_id', 'leadgen_id'
+    ]);
+    const discoveredKeys = new Set<string>();
+
+    leads.forEach(l => {
+      if (l.raw_payload) {
+        Object.keys(l.raw_payload).forEach(k => {
+          if (!systemKeys.has(k.toLowerCase()) && !k.startsWith('mock_')) {
+            discoveredKeys.add(k);
+          }
+        });
+      }
+    });
+
+    if (discoveredKeys.size === 0) return;
+
+    setColumns(prev => {
+      const existingIds = new Set(prev.map(c => c.id));
+      const newCols: ColumnConfig[] = [];
+
+      discoveredKeys.forEach(k => {
+        if (!existingIds.has(k)) {
+          const label = k.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          newCols.push({
+            id: k,
+            label,
+            visible: true,
+            type: 'meta_question'
+          });
+        }
+      });
+
+      return newCols.length > 0 ? [...prev, ...newCols] : prev;
+    });
+  }, [leads]);
 
 
   const handleGoogleContactsSync = async (lead: Lead) => {
@@ -1558,35 +1601,91 @@ export function LeadTable({
                   </div>
 
                   {/* Columns Toggles */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block mb-1">Visible Fields</span>
-                    {columns.map(col => (
-                      <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
-                        <button
-                          onClick={() => toggleColumn(col.id)}
-                          className="flex items-center gap-2 flex-1 text-left py-0.5"
-                        >
-                          <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
-                            col.visible 
-                              ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
-                              : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
-                          }`}>
-                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  <div className="space-y-3">
+                    {/* 1. Standard Fields */}
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block mb-1">Standard Table Columns</span>
+                      {columns.filter(c => !c.type || c.type === 'system').map(col => (
+                        <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
+                          <button
+                            onClick={() => toggleColumn(col.id)}
+                            className="flex items-center gap-2 flex-1 text-left py-0.5"
+                          >
+                            <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                              col.visible 
+                                ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
+                                : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
+                            }`}>
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            </div>
+                            <span className="truncate max-w-[170px] font-semibold">{col.label}</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 2. Meta Form Custom Questions Sync */}
+                    {columns.some(c => c.type === 'meta_question') && (
+                      <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider flex items-center gap-1">
+                            <Tag className="w-3 h-3" />
+                            Meta Form Custom Questions
+                          </span>
+                          <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                            Auto Synced
+                          </span>
+                        </div>
+                        {columns.filter(c => c.type === 'meta_question').map(col => (
+                          <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
+                            <button
+                              onClick={() => toggleColumn(col.id)}
+                              className="flex items-center gap-2 flex-1 text-left py-0.5"
+                            >
+                              <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                                col.visible 
+                                  ? 'bg-blue-600 border-transparent text-white' 
+                                  : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
+                              }`}>
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              </div>
+                              <span className="truncate max-w-[170px] font-semibold">{col.label}</span>
+                            </button>
                           </div>
-                          <span className="truncate max-w-[130px]">{col.label}</span>
-                        </button>
-                  {/* Custom column remove button */}
-                  {col.type && col.type.startsWith('custom_') && (
-                    <button 
-                      onClick={() => handleDeleteCustomColumn(col.id)}
-                      className="p-1 text-[#706E6A] hover:text-red-400 rounded transition-colors"
-                    >
-                      <Trash className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 3. Custom User Columns */}
+                    {columns.some(c => c.type && c.type.startsWith('custom_')) && (
+                      <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                        <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 tracking-wider block mb-1">Custom User Columns</span>
+                        {columns.filter(c => c.type && c.type.startsWith('custom_')).map(col => (
+                          <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
+                            <button
+                              onClick={() => toggleColumn(col.id)}
+                              className="flex items-center gap-2 flex-1 text-left py-0.5"
+                            >
+                              <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                                col.visible 
+                                  ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
+                                  : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
+                              }`}>
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              </div>
+                              <span className="truncate max-w-[140px] font-semibold">{col.label}</span>
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteCustomColumn(col.id)}
+                              className="p-1 text-[#706E6A] hover:text-red-400 rounded transition-colors"
+                            >
+                              <Trash className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
             {/* Custom columns adding form */}
             <div className="pt-3 border-t border-[#E8E5DF] dark:border-[#2C2926] space-y-2">
@@ -1780,11 +1879,16 @@ export function LeadTable({
           <col className="w-[50px]" />
           <col className="w-[220px]" />
           {columns.filter(col => col.visible).map(col => {
-            if (col.id === 'contact') return <col key={col.id} className="w-[280px]" />;
-            if (col.id === 'date') return <col key={col.id} className="w-[200px]" />;
-            return <col key={col.id} className="w-[220px]" />;
+            if (col.id === 'contact') return <col key={col.id} className="w-[260px]" />;
+            if (col.id === 'form_name') return <col key={col.id} className="w-[220px]" />;
+            if (col.id === 'status') return <col key={col.id} className="w-[160px]" />;
+            if (col.id === 'owner') return <col key={col.id} className="w-[170px]" />;
+            if (col.id === 'date') return <col key={col.id} className="w-[170px]" />;
+            if (col.id === 'source') return <col key={col.id} className="w-[150px]" />;
+            if (col.type === 'meta_question') return <col key={col.id} className="w-[200px]" />;
+            return <col key={col.id} className="w-[200px]" />;
           })}
-          <col className="w-[330px]" />
+          <col className="w-[280px]" />
         </colgroup>
 
         <thead>
@@ -1997,7 +2101,7 @@ export function LeadTable({
                                 );
                               case 'source':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                     <select
                                       value={lead.source}
                                       onChange={(e) => {
@@ -2007,12 +2111,12 @@ export function LeadTable({
                                           handleInlineLeadEdit({ source: e.target.value }, lead.id);
                                         }
                                       }}
-                                      className="bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] text-[11px] font-bold rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#D4AF37] cursor-pointer w-[140px] capitalize shadow-sm transition-all"
+                                      className="select-sheets text-xs font-semibold w-[140px] capitalize"
                                     >
                                       {customSources.map(src => (
                                         <option key={src} value={src} className="bg-white dark:bg-[#1C1A18] text-[#1A1A1A] dark:text-[#F5F5F5]">{src}</option>
                                       ))}
-                                      <option value="__add_new__" className="bg-white dark:bg-[#1C1A18] text-orange-400 font-bold">+ Add Custom</option>
+                                      <option value="__add_new__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-bold">+ Add Custom</option>
                                     </select>
                                   </MotionTd>
                                 );
@@ -2085,20 +2189,17 @@ export function LeadTable({
                                 const currentAssignedOwner = lead.raw_payload?.lead_owner || mockOwner.name || 'Unassigned';
                                 return (
                                   <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <div className="relative inline-flex items-center">
-                                      <select
-                                        value={currentAssignedOwner}
-                                        onChange={(e) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: e.target.value } }, lead.id)}
-                                        className="appearance-none bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs font-black rounded-full pl-3 pr-7 py-1.5 shadow-md hover:scale-105 transition-all cursor-pointer focus:outline-none"
-                                      >
-                                        {teamMembers.map(m => (
-                                          <option key={m.id || m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">
-                                            👤 {m.name} ({m.role || 'Team Member'})
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <ChevronDown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 absolute right-2.5 pointer-events-none" />
-                                    </div>
+                                    <select
+                                      value={currentAssignedOwner}
+                                      onChange={(e) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: e.target.value } }, lead.id)}
+                                      className="select-sheets text-xs font-semibold w-[160px]"
+                                    >
+                                      {teamMembers.map(m => (
+                                        <option key={m.id || m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">
+                                          👤 {m.name} ({m.role || 'Team Member'})
+                                        </option>
+                                      ))}
+                                    </select>
                                   </MotionTd>
                                 );
                               case 'company':
@@ -2238,18 +2339,17 @@ export function LeadTable({
                             }
                           }
 
-                          // 2. Facebook Form Field Ingested Auto-Columns
-                          if (col.type === 'meta') {
-                            const metaKey = col.id.replace('meta_', '');
-                            const rawMetaVal = lead.raw_payload?.[metaKey] ?? '-';
-                            // Auto-format ISO timestamps for readability
+                          // 2. Facebook Form Field & Custom Questions Ingested Auto-Columns
+                          if (col.type === 'meta' || col.type === 'meta_question') {
+                            const metaKey = col.id.replace(/^meta_/, '');
+                            const rawMetaVal = lead.raw_payload?.[col.id] ?? lead.raw_payload?.[metaKey] ?? '—';
                             let metaVal: string;
                             if (typeof rawMetaVal === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(rawMetaVal)) {
                               const parsedDate = new Date(rawMetaVal);
                               const fDate = parsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                               const fTime = parsedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
                               return (
-                                <MotionTd key={col.id} className="py-2 px-4">
+                                <MotionTd key={col.id} className="py-2.5 px-4 whitespace-nowrap">
                                   <div className="space-y-0.5 whitespace-nowrap leading-tight">
                                     <span className="block text-xs text-slate-800 dark:text-zinc-200 font-bold">{fDate}</span>
                                     <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">{fTime}</span>
@@ -2259,8 +2359,10 @@ export function LeadTable({
                             }
                             metaVal = String(rawMetaVal);
                             return (
-                              <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
-                                <span className="text-sm font-semibold text-slate-800 dark:text-zinc-200">{metaVal}</span>
+                              <MotionTd key={col.id} className="py-2.5 px-4 whitespace-nowrap">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 border border-slate-200/60 dark:border-zinc-700/50">
+                                  {metaVal}
+                                </span>
                               </MotionTd>
                             );
                           }

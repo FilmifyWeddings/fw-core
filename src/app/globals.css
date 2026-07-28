@@ -58,6 +58,52 @@ body {
   background: #94a3b8;
 }
 
+/* Google Sheets Style Minimal Dropdown UI */
+.select-sheets {
+  appearance: none;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.375rem 1.75rem 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.4rem center;
+  background-size: 0.85rem;
+}
+
+.select-sheets:hover {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.select-sheets:focus {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+}
+
+.dark .select-sheets {
+  background-color: #18181b;
+  border-color: #27272a;
+  color: #e4e4e7;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+}
+
+.dark .select-sheets:hover {
+  background-color: #27272a;
+  border-color: #3f3f46;
+}
+
+.dark .select-sheets:focus {
+  border-color: #52525b;
+  box-shadow: 0 0 0 2px rgba(82, 82, 91, 0.4);
+}
+
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
 }

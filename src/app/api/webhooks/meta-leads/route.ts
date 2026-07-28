@@ -233,6 +233,8 @@ export async function POST(req: NextRequest) {
 
           // ── 2. FORM TOGGLE CHECK (checks both fb_lead_forms.is_enabled and fb_form_mappings.is_active) ──
           let contactGroupId: string | null = null;
+          let resolvedFormName: string | null = null;
+
           if (form_id) {
             // Primary check: fb_lead_forms.is_enabled (the new UI toggle)
             const { data: formEnabled } = await supabaseAdmin
@@ -253,6 +255,7 @@ export async function POST(req: NextRequest) {
             if (formSetting) {
               contactGroupId = formSetting.contact_group_id || null;
             }
+            resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
 
             const isFormDisabled =
               (formEnabled && formEnabled.is_enabled === false) ||
@@ -412,11 +415,13 @@ export async function POST(req: NextRequest) {
             raw_payload: {
               leadgen_id,
               form_id,
+              form_name: resolvedFormName || (form_id ? `Form ${form_id}` : 'Meta Lead Form'),
               page_id,
               page_name: pageName,
               campaign_name: campaignName,
               adset_name: adsetName,
               ad_name: adName,
+              ...leadFields
             },
           };
 

@@ -221,6 +221,8 @@ export async function POST(req: NextRequest) {
         }
       });
 
+      rawPayload.form_name = formName || (resolvedFormId ? `Form ${resolvedFormId}` : 'Meta Lead Form');
+      rawPayload.form_id   = resolvedFormId;
       leadData.raw_payload      = rawPayload;
       leadData.raw_meta_payload = fullRawMeta;
 
