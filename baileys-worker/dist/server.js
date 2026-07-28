@@ -852,10 +852,21 @@ async function startBaileysSocket(forceFresh = false) {
             clearConnectingTimeout();
             const error = lastDisconnect?.error;
             const statusCode = error?.output?.statusCode;
+            const isRestartRequired = statusCode === DisconnectReason.restartRequired; // 515
             const isReplaced = statusCode === DisconnectReason.connectionReplaced;
             const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
             const isTimedOut = statusCode === 408 || statusCode === 440;
             const shouldReconnect = !isLoggedOut && !isReplaced;
+            // ── 515 Stream Error: WhatsApp wants a stream restart, NOT a session wipe ──
+            if (isRestartRequired) {
+                console.log('🔄 515 Stream Errored (restart required) — restarting socket immediately without wiping session');
+                logger.warn('🔄 515 — restarting Baileys socket immediately with existing creds');
+                if (reconnectTimer)
+                    clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(() => startBaileysSocket(false), 500);
+                // Don't set disconnected state — the socket will reconnect transparently
+                return;
+            }
             // Check if we have an established session or are still pairing
             // (phone_number === null means we never connected)
             const curSession = await dbWrite(supabase
@@ -890,9 +901,32 @@ async function startBaileysSocket(forceFresh = false) {
                 message: `WhatsApp disconnected: ${errMsg}`,
                 metadata: { status_code: statusCode, is_logged_out: isLoggedOut, is_replaced: isReplaced },
             }), 'insert-disconnect-alert');
-            if (isLoggedOut) {
-                logger.warn('🚪 Logged out (401). Clearing credentials and triggering fresh QR...');
-                console.log('🚪 Logged out — wiping session from DB');
+            if (isLoggedOut && !hadEstablishedSession) {
+                // 401/403 during pairing: handshake failed — wipe clean and emit fresh QR
+                logger.warn('🚪 401 during pairing — handshake rejected. Wiping session for fresh QR...');
+                console.log('🚪 401 during pairing — wiping session and regenerating QR');
+                await dbWrite(supabase
+                    .from('baileys_sessions')
+                    .update({
+                    conn_state: 'disconnected',
+                    qr_string: null,
+                    qr_expires_at: null,
+                    phone_number: null,
+                    creds_json: null,
+                    keys_json: null,
+                    error_info: '401 during pairing — QR re-scan required',
+                    last_status_change: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                    .eq('workspace_id', WORKSPACE_ID), 'update-401-pairing');
+                if (reconnectTimer)
+                    clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(() => startBaileysSocket(true), 500);
+            }
+            else if (isLoggedOut && hadEstablishedSession) {
+                // 401 during established session: device logged out remotely
+                logger.warn('🚪 Logged out (401) during active session. Clearing credentials...');
+                console.log('🚪 Session logged out — wiping credentials');
                 await dbWrite(supabase
                     .from('baileys_sessions')
                     .update({
@@ -914,12 +948,9 @@ async function startBaileysSocket(forceFresh = false) {
             else if (isTimedOut && !hadEstablishedSession) {
                 // During QR pairing: timeout is expected — just wait for next init
                 logger.warn('⏱️ Pairing timed out (408/440) — no established session. Waiting for user to request fresh QR...');
-                // Don't auto-reconnect. The front-end polling will trigger /init-qr or /force-reset.
-                // The connecting timeout timer will also auto-force-reset after 15s.
             }
             else if (isReplaced) {
                 logger.warn('⚠️ Connection replaced by another instance. Not reconnecting.');
-                // Don't reconnect — another worker took over
             }
             else if (shouldReconnect) {
                 logger.info('♻️  Reconnecting in 5s...');
