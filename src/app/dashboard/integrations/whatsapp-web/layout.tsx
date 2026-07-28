@@ -6,14 +6,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, ScanQrCode, Zap, FileText, MessageSquare, Layers,
   ShieldCheck, Wifi, WifiOff, RefreshCw, Building2,
-  ChevronDown, Check, Sparkles, Lock, Globe, Send, BarChart3
+  ChevronDown, Check, Sparkles, Lock, Globe, Send, BarChart3, Activity, Server
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
-type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics';
+type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health';
 type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] = [
@@ -58,6 +58,12 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     label: 'Contact Groups',
     icon: <MessageSquare className="w-4 h-4" />,
     path: '/dashboard/integrations/whatsapp-web/groups'
+  },
+  {
+    id: 'system-health',
+    label: 'System Health',
+    icon: <Activity className="w-4 h-4" />,
+    path: '/dashboard/integrations/whatsapp-web/system-health'
   }
 ];
 
@@ -75,6 +81,8 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
 
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+  const [workerStatus, setWorkerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [pollerStatus, setPollerStatus] = useState<'running' | 'stopped' | 'checking'>('checking');
 
   let activeTab: WaTab = 'device';
   if (pathname === '/dashboard/integrations/whatsapp-web/single-send') activeTab = 'single-send';
@@ -83,6 +91,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows') activeTab = 'workflows';
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows/analytics') activeTab = 'analytics';
   else if (pathname === '/dashboard/integrations/whatsapp-web/groups') activeTab = 'groups';
+  else if (pathname === '/dashboard/integrations/whatsapp-web/system-health') activeTab = 'system-health';
 
   const shootCategory = (searchParams.get('category') || 'all') as ShootCategory;
   const activeCategory = SHOOT_CATEGORIES.find(c => c.value === shootCategory) || SHOOT_CATEGORIES[0];
@@ -98,9 +107,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  // Sync WA connection status from DB
-  // NOTE: integration_credentials only tracks meta/google/custom_website.
-  // WhatsApp (Baileys) connection state lives in baileys_sessions.conn_state.
+  // Sync WA connection status from DB + worker health + queue poller status
   useEffect(() => {
     if (!userId) return;
     const checkStatus = async () => {
@@ -112,14 +119,12 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
           .maybeSingle();
 
         if (error) {
-          // RLS or network error — fail gracefully
           console.warn('[WhatsApp layout] baileys_sessions fetch error:', error.message);
           setWsStatus('disconnected');
           return;
         }
 
         if (!data) {
-          // No session row found — device has never been linked
           setWsStatus('disconnected');
           return;
         }
@@ -130,7 +135,25 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
         setWsStatus('disconnected');
       }
     };
+
+    const checkWorker = async () => {
+      try {
+        const res = await fetch('/api/system/health');
+        if (res.ok) {
+          const health = await res.json();
+          setWorkerStatus(health.checks?.worker?.status === 'ok' ? 'online' : 'offline');
+          setPollerStatus(health.checks?.queuePoller?.status === 'running' ? 'running' : 'stopped');
+          return;
+        }
+      } catch {}
+      setWorkerStatus('offline');
+      setPollerStatus('stopped');
+    };
+
     checkStatus();
+    checkWorker();
+    const interval = setInterval(() => { checkStatus(); checkWorker(); }, 15000);
+    return () => clearInterval(interval);
   }, [userId]);
 
   return (
@@ -199,6 +222,30 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
               </AnimatePresence>
             </div>
           )}
+
+          {/* Worker Status Pill */}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${
+            workerStatus === 'online'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+              : workerStatus === 'checking'
+              ? 'bg-zinc-100/50 border-zinc-300 text-zinc-500'
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+          }`} title="Baileys Worker">
+            {workerStatus === 'online' ? <><Server className="w-3 h-3" /> Worker Online</>
+              : workerStatus === 'checking' ? <><RefreshCw className="w-3 h-3 animate-spin" /> Worker...</>
+              : <><Server className="w-3 h-3" /> Worker Offline</>}
+          </div>
+
+          {/* Poller Status Pill */}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${
+            pollerStatus === 'running'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+          }`} title="Queue Processor">
+            {pollerStatus === 'running'
+              ? <><Activity className="w-3 h-3" /> Processor Running</>
+              : <><Activity className="w-3 h-3" /> Processor Stopped</>}
+          </div>
 
           {/* Connection Status Pill */}
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${

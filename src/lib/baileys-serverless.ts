@@ -373,6 +373,10 @@ export async function sendMessageServerless(
 
     // ── Call Standalone Worker Bridge ──────────────────────────────────────────
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+    const sendTo = normalizeJid(payload.to);
+    const sendType = payload.type;
+    console.log(`[send] ➡️ Sending ${sendType} to ${sendTo} via worker 127.0.0.1:${WORKER_PORT}...`);
+
     try {
       const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/send`, {
         method: 'POST',
@@ -380,8 +384,8 @@ export async function sendMessageServerless(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          to: normalizeJid(payload.to),
-          type: payload.type,
+          to: sendTo,
+          type: sendType,
           text: payload.text,
           mediaUrl: payload.mediaUrl,
           caption: payload.caption,
@@ -398,14 +402,17 @@ export async function sendMessageServerless(
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
-        return { success: false, error: errBody.error || `Worker returned HTTP ${res.status}` };
+        const errMsg = errBody.error || `Worker returned HTTP ${res.status}`;
+        console.error(`[send] ❌ Worker rejected: ${errMsg}`);
+        return { success: false, error: errMsg };
       }
 
       const resData = await res.json();
+      console.log(`[send] ✅ Worker accepted. WA ID: ${resData.waMessageId || 'N/A'}`);
       return { success: true, waMessageId: resData.waMessageId };
     } catch (err: any) {
-      console.error('[send] Failed to call worker /send API:', err.message);
-      return { success: false, error: `Worker connection issue: ${err.message}` };
+      console.error(`[send] ❌ Failed to reach worker at 127.0.0.1:${WORKER_PORT}:`, err.message);
+      return { success: false, error: `Worker at 127.0.0.1:${WORKER_PORT} unreachable: ${err.message}. Ensure Baileys Worker is running under PM2.` };
     }
 
   } finally {
@@ -844,6 +851,18 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
           console.log(`[poller] Draining ${actions.length} actions for workspace ${workspaceId}...`);
 
           for (const action of actions) {
+            const actionId = action.id;
+            const actionType = action.action_type;
+            const stepDesc = `${actionType}[${actionId.slice(0, 8)}]`;
+
+            // Log: Attempting to claim
+            await supabaseAdmin.from('live_logs').insert({
+              workspace_id: workspaceId,
+              event_type: 'queue_action_claimed',
+              message: `⏳ ${stepDesc} — Claiming action (attempt ${action.attempt_count + 1})`,
+              metadata: { action_id: actionId, action_type: actionType, attempt: action.attempt_count + 1, payload: action.payload }
+            });
+
             // Claim action
             const { data: claimed, error: claimErr } = await supabaseAdmin
               .from('baileys_action_queue')
@@ -852,16 +871,34 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
                 attempt_count: action.attempt_count + 1,
                 processed_at: new Date().toISOString()
               })
-              .eq('id', action.id)
+              .eq('id', actionId)
               .eq('status', 'pending')
               .select();
 
-            if (claimErr || !claimed || claimed.length === 0) continue;
+            if (claimErr || !claimed || claimed.length === 0) {
+              // Log: Claim failed (another processor got it)
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: workspaceId,
+                event_type: 'queue_action_claim_skipped',
+                message: `⏭️ ${stepDesc} — Already claimed by another processor`,
+                metadata: { action_id: actionId, action_type: actionType }
+              });
+              continue;
+            }
+
+            // Log: Claimed successfully, starting execution
+            await supabaseAdmin.from('live_logs').insert({
+              workspace_id: workspaceId,
+              event_type: 'queue_action_executing',
+              message: `▶️ ${stepDesc} — Executing via ${actionType} handler`,
+              metadata: { action_id: actionId, action_type: actionType }
+            });
 
             try {
               const result = await processSingleQueuedAction(supabaseAdmin, action);
               if (!result.success) throw new Error(result.error || 'Execution returned success=false');
 
+              // Log: Execution succeeded
               await supabaseAdmin
                 .from('baileys_action_queue')
                 .update({
@@ -869,17 +906,25 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
                   result_message_id: result.waMessageId || null,
                   error_message: null
                 })
-                .eq('id', action.id);
+                .eq('id', actionId);
 
               await supabaseAdmin.from('live_logs').insert({
                 workspace_id: workspaceId,
                 event_type: 'queue_action_done',
-                message: `Action ${action.action_type} [${action.id}] completed successfully.`,
-                metadata: { action_id: action.id, wa_message_id: result.waMessageId }
+                message: `✅ ${stepDesc} — Sent successfully. WA ID: ${result.waMessageId || 'N/A'}`,
+                metadata: { action_id: actionId, wa_message_id: result.waMessageId, attempts: action.attempt_count + 1 }
               });
             } catch (err: any) {
               const errMsg = err.message || String(err);
               const newAttemptCount = action.attempt_count + 1;
+
+              // Log: Execution failed
+              await supabaseAdmin.from('live_logs').insert({
+                workspace_id: workspaceId,
+                event_type: 'queue_action_error',
+                message: `❌ ${stepDesc} — Failed: ${errMsg}`,
+                metadata: { action_id: actionId, action_type: actionType, error: errMsg, attempt: newAttemptCount }
+              });
 
               if (newAttemptCount >= 5) {
                 await supabaseAdmin
@@ -889,13 +934,13 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
                     error_message: `[Attempt ${newAttemptCount}/5] PERMANENTLY FAILED: ${errMsg}`,
                     next_retry_at: null
                   })
-                  .eq('id', action.id);
+                  .eq('id', actionId);
 
                 await supabaseAdmin.from('live_logs').insert({
                   workspace_id: workspaceId,
                   event_type: 'queue_action_failed',
-                  message: `⚠️ Action ${action.action_type} [${action.id}] permanently failed after 5 attempts.`,
-                  metadata: { action_id: action.id, error: errMsg }
+                  message: `🚫 ${stepDesc} — Permanently failed after ${newAttemptCount} attempts. Manual retry required.`,
+                  metadata: { action_id: actionId, error: errMsg, total_attempts: newAttemptCount }
                 });
               } else {
                 const jitter = Math.floor(Math.random() * 5000);
@@ -909,13 +954,13 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
                     error_message: `[Attempt ${newAttemptCount}/5] Failed: ${errMsg}`,
                     next_retry_at: nextRetryAt
                   })
-                  .eq('id', action.id);
+                  .eq('id', actionId);
 
                 await supabaseAdmin.from('live_logs').insert({
                   workspace_id: workspaceId,
                   event_type: 'queue_action_retry_scheduled',
-                  message: `↩️ Action ${action.action_type} [${action.id}] failed. Retry in ${Math.round(delayMs / 1000)}s.`,
-                  metadata: { action_id: action.id, error: errMsg, next_retry_at: nextRetryAt }
+                  message: `↩️ ${stepDesc} — Retry scheduled in ${Math.round(delayMs / 1000)}s (attempt ${newAttemptCount}/5)`,
+                  metadata: { action_id: actionId, error: errMsg, next_retry_at: nextRetryAt, attempt: newAttemptCount }
                 });
               }
             }
