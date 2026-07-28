@@ -6,14 +6,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, ScanQrCode, Zap, FileText, MessageSquare, Layers,
   ShieldCheck, Wifi, WifiOff, RefreshCw, Building2,
-  ChevronDown, Check, Sparkles, Lock, Globe, Send, BarChart3, Activity, Server
+  ChevronDown, Check, Sparkles, Lock, Globe, Send, BarChart3, Activity, Server, Inbox
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
-type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health';
+type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health' | 'message-queue';
 type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] = [
@@ -60,6 +60,12 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     path: '/dashboard/integrations/whatsapp-web/groups'
   },
   {
+    id: 'message-queue',
+    label: 'Message Queue',
+    icon: <Inbox className="w-4 h-4" />,
+    path: '/dashboard/integrations/whatsapp-web/message-queue'
+  },
+  {
     id: 'system-health',
     label: 'System Health',
     icon: <Activity className="w-4 h-4" />,
@@ -91,6 +97,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows') activeTab = 'workflows';
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows/analytics') activeTab = 'analytics';
   else if (pathname === '/dashboard/integrations/whatsapp-web/groups') activeTab = 'groups';
+  else if (pathname === '/dashboard/integrations/whatsapp-web/message-queue') activeTab = 'message-queue';
   else if (pathname === '/dashboard/integrations/whatsapp-web/system-health') activeTab = 'system-health';
 
   const shootCategory = (searchParams.get('category') || 'all') as ShootCategory;

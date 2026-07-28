@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
+import { useSupabaseAuthState } from './supabase-auth-state.js';
 // Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
 globalThis.WebSocket = ws;
 const __filename = fileURLToPath(import.meta.url);
@@ -52,22 +53,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABAS
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const WORKSPACE_ID = process.env.WORKER_WORKSPACE_ID || '37c63a54-d4f1-4b99-b546-3d965cd23a37';
 const PORT = parseInt(process.env.WORKER_PORT ?? '3002', 10); // use WORKER_PORT to avoid collision with Next.js on 3000
-const AUTH_ROOT = '/var/www/fw-core/.baileys_auth';
-function getAuthPath(workspaceId) {
-    let root = AUTH_ROOT;
-    try {
-        if (!fs.existsSync(root)) {
-            fs.mkdirSync(root, { recursive: true });
-        }
-    }
-    catch (e) {
-        root = path.join(__dirname, '.baileys_auth');
-        if (!fs.existsSync(root)) {
-            fs.mkdirSync(root, { recursive: true });
-        }
-    }
-    return path.join(root, workspaceId);
-}
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
     logger.fatal('Missing required env vars: SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_WORKSPACE_ID');
     process.exit(1);
@@ -83,7 +68,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 // ─── Active Socket Reference ─────────────────────────────────────────────────
 let sock = null;
 let reconnectTimer = null;
-let isFirstStartup = true;
 let lastQrTime = 0;
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(state, extras = {}) {
@@ -644,22 +628,7 @@ function startActionQueueListener() {
 async function startBaileysSocket() {
     logger.info('🚀 Starting Baileys socket...');
     await updateSessionState('connecting');
-    const authDir = getAuthPath(WORKSPACE_ID);
-    // Programmatically wipe stuck session state: clear creds.json before loading multi-file auth (only on first startup)
-    if (isFirstStartup) {
-        isFirstStartup = false;
-        const credsPath = path.join(authDir, 'creds.json');
-        if (fs.existsSync(credsPath)) {
-            try {
-                fs.unlinkSync(credsPath);
-                logger.info('🗑️ Stuck session credentials wiped from auth directory on first startup to ensure fresh handshake.');
-            }
-            catch (e) {
-                logger.error({ err: e }, 'Failed to wipe stuck credentials during startup');
-            }
-        }
-    }
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    const { state, saveCreds } = await useSupabaseAuthState(supabase, WORKSPACE_ID);
     let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
         version: [2, 3000, 1017531287],
         isLatest: false
@@ -717,16 +686,38 @@ async function startBaileysSocket() {
         if (connection === 'open') {
             logger.info('✅ WhatsApp connected!');
             const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
+            // Fetch current reconnect_count to increment
+            const { data: curSession } = await supabase
+                .from('baileys_sessions')
+                .select('reconnect_count')
+                .eq('workspace_id', WORKSPACE_ID)
+                .maybeSingle();
+            const curReconnects = (curSession?.reconnect_count ?? 0) + 1;
             await supabase
                 .from('baileys_sessions')
                 .upsert({
                 workspace_id: WORKSPACE_ID,
                 conn_state: 'open',
-                qr_string: null, // Clear QR after connect
+                qr_string: null,
                 phone_number: phoneNumber,
                 last_connected: new Date().toISOString(),
+                error_info: null,
+                reconnect_count: curReconnects,
+                last_status_change: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             }, { onConflict: 'workspace_id' });
+            // Create reconnection alert if reconnect_count > 1
+            if (curReconnects > 1) {
+                try {
+                    await supabase.from('wa_instance_alerts').insert({
+                        workspace_id: WORKSPACE_ID,
+                        alert_type: 'reconnected',
+                        message: `WhatsApp reconnected after ${curReconnects} reconnection(s).`,
+                        metadata: { phone_number: phoneNumber, reconnect_count: curReconnects },
+                    });
+                }
+                catch { }
+            }
         }
         if (connection === 'close') {
             const error = lastDisconnect?.error;
@@ -741,18 +732,28 @@ async function startBaileysSocket() {
                 stack: error?.stack,
                 lastDisconnect
             }, '🔌 Connection closed details');
-            await updateSessionState('disconnected');
+            const errMsg = error?.message || `Disconnected (code: ${statusCode})`;
+            await supabase
+                .from('baileys_sessions')
+                .update({
+                conn_state: 'disconnected',
+                error_info: errMsg,
+                last_status_change: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+                .eq('workspace_id', WORKSPACE_ID);
+            // Create disconnection alert
+            try {
+                await supabase.from('wa_instance_alerts').insert({
+                    workspace_id: WORKSPACE_ID,
+                    alert_type: 'disconnected',
+                    message: `WhatsApp disconnected: ${errMsg}`,
+                    metadata: { status_code: statusCode, is_logged_out: isLoggedOut, is_replaced: isReplaced },
+                });
+            }
+            catch { }
             if (isLoggedOut) {
-                logger.warn('🚪 Logged out (401). Wiping credentials folder and triggering fresh QR...');
-                const authDir = getAuthPath(WORKSPACE_ID);
-                if (fs.existsSync(authDir)) {
-                    try {
-                        fs.rmSync(authDir, { recursive: true, force: true });
-                    }
-                    catch (e) {
-                        logger.error({ err: e }, 'Failed to wipe auth folder');
-                    }
-                }
+                logger.warn('🚪 Logged out (401). Clearing Supabase credentials and triggering fresh QR...');
                 await supabase
                     .from('baileys_sessions')
                     .update({
@@ -760,6 +761,10 @@ async function startBaileysSocket() {
                     qr_string: null,
                     qr_expires_at: null,
                     phone_number: null,
+                    creds_json: null,
+                    keys_json: null,
+                    error_info: 'Logged out — QR re-scan required',
+                    last_status_change: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 })
                     .eq('workspace_id', WORKSPACE_ID);
@@ -984,16 +989,21 @@ function startHealthServer() {
                     catch { }
                     sock = null;
                 }
-                // 2. Wipe auth folder
-                const authDir = getAuthPath(WORKSPACE_ID);
-                if (fs.existsSync(authDir)) {
-                    try {
-                        fs.rmSync(authDir, { recursive: true, force: true });
-                    }
-                    catch (e) {
-                        logger.error({ err: e }, 'Failed to wipe auth folder on init-qr');
-                    }
-                }
+                // 2. Clear auth state in Supabase
+                await supabase
+                    .from('baileys_sessions')
+                    .update({
+                    conn_state: 'disconnected',
+                    qr_string: null,
+                    qr_expires_at: null,
+                    phone_number: null,
+                    creds_json: null,
+                    keys_json: null,
+                    error_info: null,
+                    last_status_change: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                    .eq('workspace_id', WORKSPACE_ID);
                 // 3. Mark state as connecting
                 await supabase
                     .from('baileys_sessions')
@@ -1003,6 +1013,8 @@ function startHealthServer() {
                     qr_string: null,
                     qr_expires_at: null,
                     phone_number: null,
+                    error_info: null,
+                    last_status_change: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'workspace_id' });
                 // 4. Start new socket

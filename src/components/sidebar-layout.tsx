@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { SUITE_REGISTRY, type SubAppSlug } from '@/types';
+import { WhatsappStatusBadge } from '@/components/whatsapp-status-badge';
 
 const FacebookIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg 
@@ -58,6 +59,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userId, setUserId] = useState<string>('');
 
   const subApp = getSubAppFromPath(pathname);
   const suiteApp = subApp ? SUITE_REGISTRY.apps.find(a => a.slug === subApp) : null;
@@ -79,6 +81,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUserEmail(session.user.email || 'user@studio.com');
+        setUserId(session.user.id);
         
         // Fetch profile workspace name
         const { data: profile } = await supabase
@@ -607,6 +610,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
         {/* Bottom Toggle Switches & Profile Widget */}
         <div className={`border-t border-zinc-200 dark:border-zinc-900/60 space-y-2.5 bg-zinc-50 dark:bg-zinc-950/40 transition-all duration-200 ${collapsed ? 'p-1.5' : 'p-3'}`}>
+          
+          {/* WhatsApp Connection Status */}
+          {!collapsed && userId && (
+            <WhatsappStatusBadge workspaceId={userId} className="px-2 py-1.5" />
+          )}
+          {collapsed && userId && (
+            <div className="flex justify-center">
+              <WhatsappStatusBadge workspaceId={userId} showLabel={false} />
+            </div>
+          )}
           
           {/* Light/Dark Mode Switcher */}
           <div className="px-1 py-0.5">

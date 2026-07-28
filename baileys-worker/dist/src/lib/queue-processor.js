@@ -90,11 +90,12 @@ function describeBackoff(attemptCount) {
 }
 // ── Anti-ban WhatsApp Delay (Law 5) ──────────────────────────────────────────
 /**
- * Waits a random 10–30 second delay between WhatsApp message dispatches.
+ * Waits a configurable delay between WhatsApp message dispatches.
+ * Defaults to a randomized 10-30s delay. Can be overridden via action payload.delayMs.
  * Prevents account banning from bulk sending patterns.
  */
-async function applyWhatsAppRateLimit() {
-    const delay = WA_MIN_DELAY_MS + Math.floor(Math.random() * (WA_MAX_DELAY_MS - WA_MIN_DELAY_MS));
+async function applyWhatsAppRateLimit(customDelayMs) {
+    const delay = customDelayMs ?? (WA_MIN_DELAY_MS + Math.floor(Math.random() * (WA_MAX_DELAY_MS - WA_MIN_DELAY_MS)));
     await new Promise(resolve => setTimeout(resolve, delay));
 }
 // ── Core Queue Processing Engine ──────────────────────────────────────────────
@@ -128,13 +129,28 @@ async function processQueueAction(action, handler) {
         console.warn(`[QueueProcessor] Action ${id} already claimed by another processor — skipping.`);
         return;
     }
+    // ── Step 2: Skip cancelled actions ────────────────────────────────────────
+    const { data: recheckStatus } = await supabase_1.supabaseAdmin
+        .from('baileys_action_queue')
+        .select('status')
+        .eq('id', id)
+        .maybeSingle();
+    if (recheckStatus?.status === 'cancelled') {
+        await supabase_1.supabaseAdmin.from('live_logs').insert({
+            workspace_id,
+            event_type: 'queue_action_skipped',
+            message: `⏭️ Action ${action.action_type} [${id}] was cancelled — skipping.`,
+            metadata: { action_id: id, action_type: action.action_type },
+        });
+        return;
+    }
     try {
-        // ── Step 2: Execute the action via the provided handler ──────────────────
+        // ── Step 3: Execute the action via the provided handler ──────────────────
         const result = await handler(action);
         if (!result.success) {
             throw new Error(result.error || 'Handler returned failure without error message');
         }
-        // ── Step 3: Mark as DONE ─────────────────────────────────────────────────
+        // ── Step 4: Mark as DONE ─────────────────────────────────────────────────
         // The handler (executeAction) may have already written 'done' to the DB as an
         // ACID guarantee immediately after sock.sendMessage succeeded. Check first.
         const { data: currentRow } = await supabase_1.supabaseAdmin
@@ -235,12 +251,23 @@ async function drainQueue(workspaceId, handler, batchSize = 3) {
             return; // Nothing to process
         console.log(`[QueueProcessor] 🎯 Processing ${actions.length} actions for workspace ${workspaceId}`);
         // Process actions sequentially (not parallel) to respect WhatsApp rate limits
-        for (const action of actions) {
+        for (let i = 0; i < actions.length; i++) {
+            const action = actions[i];
+            // Skip cancelled items
+            const { data: skipCheck } = await supabase_1.supabaseAdmin
+                .from('baileys_action_queue')
+                .select('status')
+                .eq('id', action.id)
+                .maybeSingle();
+            if (skipCheck?.status === 'cancelled')
+                continue;
             await processQueueAction(action, handler);
-            // Apply Law 5 anti-ban delay between WhatsApp message dispatches
+            // Apply configurable anti-ban delay between WhatsApp message dispatches
+            // Check action payload for user-defined delayMs, otherwise use default
             const isWhatsAppAction = ['send_text', 'send_media', 'send_template', 'group_dispatch'].includes(action.action_type);
-            if (isWhatsAppAction && actions.indexOf(action) < actions.length - 1) {
-                await applyWhatsAppRateLimit();
+            if (isWhatsAppAction && i < actions.length - 1) {
+                const userDelayMs = action.payload?.delayMs;
+                await applyWhatsAppRateLimit(userDelayMs ? Number(userDelayMs) : undefined);
             }
         }
     }
