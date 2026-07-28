@@ -305,3 +305,58 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: err.message || 'Template update failed' }, { status: 500 });
   }
 }
+
+// DELETE: Remove a WhatsApp template (supports both tenant_whatsapp_templates and whatsapp_templates)
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const workspaceId = searchParams.get('workspace_id');
+  const templateId = searchParams.get('template_id');
+
+  if (!workspaceId || !templateId) {
+    return NextResponse.json({ error: 'Missing workspace_id or template_id parameter' }, { status: 400 });
+  }
+
+  try {
+    // 1. Try delete from tenant_whatsapp_templates first
+    const { error: tenantDeleteError } = await supabaseAdmin
+      .from('tenant_whatsapp_templates')
+      .delete()
+      .eq('id', templateId)
+      .eq('tenant_id', workspaceId);
+
+    if (!tenantDeleteError) {
+      await supabaseAdmin.from('live_logs').insert({
+        workspace_id: workspaceId,
+        event_type: 'sync_templates_success',
+        message: `WhatsApp template deleted from tenant storage.`,
+        metadata: { templateId }
+      });
+
+      return NextResponse.json({ success: true, message: 'Template deleted successfully.' });
+    }
+
+    // 2. Fallback to legacy whatsapp_templates table
+    const { error: dbErr } = await supabaseAdmin
+      .from('whatsapp_templates')
+      .delete()
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId);
+
+    if (dbErr) {
+      console.error('Database template delete error:', dbErr);
+      throw dbErr;
+    }
+
+    await supabaseAdmin.from('live_logs').insert({
+      workspace_id: workspaceId,
+      event_type: 'sync_templates_success',
+      message: `WhatsApp template deleted from legacy storage.`,
+      metadata: { templateId }
+    });
+
+    return NextResponse.json({ success: true, message: 'Template deleted successfully.' });
+  } catch (err: any) {
+    console.error('Template delete error:', err);
+    return NextResponse.json({ success: false, error: err.message || 'Template deletion failed' }, { status: 500 });
+  }
+}

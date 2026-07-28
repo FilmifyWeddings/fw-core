@@ -59,6 +59,10 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [fetchingGroups, setFetchingGroups] = useState(false);
   const [copiedJid, setCopiedJid] = useState<string | null>(null);
 
+  // Delete confirmation state
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<string | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+
   // Builder form states
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState(false);
@@ -512,17 +516,26 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   };
 
   // Delete Handler
-  const handleDeleteTemplate = async (templateId: string) => {
-    if (!confirm('Are you sure you want to delete this template?')) return;
+  const handleDeleteTemplate = (template: TemplateRow) => {
+    setDeleteConfirmTarget(template.id);
+    setDeleteConfirmName(template.name);
+  };
+
+  const confirmDeleteTemplate = async () => {
+    if (!deleteConfirmTarget) return;
     setLoading(true);
     try {
-      const { error: deleteErr } = await supabase
-        .from('whatsapp_templates')
-        .delete()
-        .eq('id', templateId);
-
-      if (deleteErr) throw deleteErr;
-      loadTemplates();
+      const res = await fetch(`/api/templates?workspace_id=${workspaceId}&template_id=${deleteConfirmTarget}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDeleteConfirmTarget(null);
+        setDeleteConfirmName('');
+        loadTemplates();
+      } else {
+        alert(data.error || 'Delete operation failed.');
+      }
     } catch (err: any) {
       alert(err.message || 'Delete operation failed.');
     } finally {
@@ -880,7 +893,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button 
-                          onClick={() => handleDeleteTemplate(template.id)}
+                          onClick={() => handleDeleteTemplate(template)}
                           className="p-1.5 text-zinc-500 hover:text-rose-400 transition-colors"
                           title="Delete Template"
                         >
@@ -1298,6 +1311,69 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                 </div>
 
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirmTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-zinc-150 dark:border-zinc-900 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
+                    <Trash2 className="w-4 h-4 text-rose-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-zinc-900 dark:text-white">Delete Template</h3>
+                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500">This action cannot be undone</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setDeleteConfirmTarget(null); setDeleteConfirmName(''); }}
+                  className="p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5">
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                  Are you sure you want to delete <span className="font-bold text-zinc-900 dark:text-white">"{deleteConfirmName}"</span>? This will permanently remove this template and cannot be recovered.
+                </p>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-zinc-200 dark:border-zinc-900 p-4 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => { setDeleteConfirmTarget(null); setDeleteConfirmName(''); }}
+                  className="px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={confirmDeleteTemplate}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-rose-500 to-red-600 rounded-xl shadow-lg shadow-rose-500/20 hover:opacity-95 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {loading ? (
+                    <>Deleting...</>
+                  ) : (
+                    <><Trash2 className="w-3 h-3" /> Delete</>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
