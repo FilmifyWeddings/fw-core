@@ -1,3 +1,4 @@
+import { BufferJSON } from '@whiskeysockets/baileys';
 import pino from 'pino';
 const logger = pino({
     level: process.env.LOG_LEVEL ?? 'info',
@@ -21,8 +22,8 @@ export async function useSupabaseAuthState(supabase, workspaceId) {
             return false;
         }
         try {
-            const parsedCreds = JSON.parse(data.creds_json);
-            const parsedKeys = JSON.parse(data.keys_json);
+            const parsedCreds = JSON.parse(data.creds_json, BufferJSON.reviver);
+            const parsedKeys = JSON.parse(data.keys_json, BufferJSON.reviver);
             if (!parsedCreds || !parsedKeys) {
                 logger.warn('Parsed auth state is empty — treating as missing');
                 return false;
@@ -39,8 +40,8 @@ export async function useSupabaseAuthState(supabase, workspaceId) {
     }
     async function persistAuthState() {
         try {
-            const credsJson = JSON.stringify(creds);
-            const keysJson = JSON.stringify(keysCache);
+            const credsJson = JSON.stringify(creds, BufferJSON.replacer);
+            const keysJson = JSON.stringify(keysCache, BufferJSON.replacer);
             const { error } = await supabase
                 .from('baileys_sessions')
                 .upsert({

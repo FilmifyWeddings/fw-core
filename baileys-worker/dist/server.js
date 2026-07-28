@@ -675,6 +675,8 @@ async function initiateForceReset() {
         qr_string: null,
         qr_expires_at: null,
         phone_number: null,
+        creds_json: null,
+        keys_json: null,
         error_info: null,
         last_status_change: new Date().toISOString(),
         updated_at: new Date().toISOString(),
