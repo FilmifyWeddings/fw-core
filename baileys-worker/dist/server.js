@@ -80,11 +80,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
     },
 });
 // (In-Memory Store chat cache removed to comply with ESM build of @whiskeysockets/baileys)
-// ─── Active Socket Reference ─────────────────────────────────────────────────
+// ─── Active Socket & Creds Persistence ──────────────────────────────────────
 let sock = null;
 let reconnectTimer = null;
 let lastQrTime = 0;
 let connectingTimeoutTimer = null;
+let saveCreds = null;
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(state, extras = {}) {
     await supabase
@@ -747,15 +748,27 @@ async function startBaileysSocket(forceFresh = false) {
             shouldSyncHistoryMessage: () => false,
         });
         // Wire up creds persistence so the newly-paired session is saved
-        const { saveCreds } = await useSupabaseAuthState(supabase, WORKSPACE_ID);
-        sock.ev.on('creds.update', () => {
-            saveCreds();
+        const saver1 = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+        saveCreds = saver1.saveCreds;
+        sock.ev.on('creds.update', (update) => {
+            if (update.isNewLogin === true) {
+                logger.warn({ update }, '⚠️ isNewLogin detected in creds.update — forcing immediate DB flush');
+                saveCreds().then(() => {
+                    console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
+                }).catch((err) => {
+                    logger.error({ err }, 'Failed to force-flush creds on isNewLogin');
+                });
+            }
+            else {
+                saveCreds();
+            }
         });
     }
     else {
         // Normal mode: load from Supabase (or initAuthCreds if empty)
         await updateSessionState('connecting');
-        const { state, saveCreds } = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+        const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+        saveCreds = authState.saveCreds;
         let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
             version: [2, 3000, 1017531287],
             isLatest: false
@@ -770,8 +783,8 @@ async function startBaileysSocket(forceFresh = false) {
             version,
             logger: logger.child({ module: 'baileys' }),
             auth: {
-                creds: state.creds,
-                keys: makeCacheableSignalKeyStore(state.keys, logger.child({ module: 'keys' })),
+                creds: authState.state.creds,
+                keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: 'keys' })),
             },
             printQRInTerminal: true,
             generateHighQualityLinkPreview: true,
@@ -781,8 +794,18 @@ async function startBaileysSocket(forceFresh = false) {
             shouldSyncHistoryMessage: () => false,
         });
         // ── Event: creds.update — save creds on every update ──
-        sock.ev.on('creds.update', () => {
-            saveCreds();
+        sock.ev.on('creds.update', (update) => {
+            if (update.isNewLogin === true) {
+                logger.warn({ update }, '⚠️ isNewLogin detected in creds.update — forcing immediate DB flush');
+                saveCreds().then(() => {
+                    console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
+                }).catch((err) => {
+                    logger.error({ err }, 'Failed to force-flush creds on isNewLogin');
+                });
+            }
+            else {
+                saveCreds();
+            }
         });
     }
     // ── Event: connection.update — handle QR, open, close ──
@@ -815,6 +838,18 @@ async function startBaileysSocket(forceFresh = false) {
         }
         if (connection === 'open') {
             clearConnectingTimeout();
+            // Force-flush creds to DB on new login so 515 stream restart
+            // doesn't find stale/unpaired creds
+            if (update.isNewLogin && saveCreds) {
+                logger.warn('⚠️ isNewLogin in connection.update — force-flushing creds to DB');
+                try {
+                    await saveCreds();
+                    console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
+                }
+                catch (err) {
+                    logger.error({ err }, 'Failed to flush creds on isNewLogin (connection.update)');
+                }
+            }
             console.log('🟢 SUCCESS: WhatsApp Connected for workspace!');
             logger.info('✅ WhatsApp connected!');
             const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
@@ -859,11 +894,11 @@ async function startBaileysSocket(forceFresh = false) {
             const shouldReconnect = !isLoggedOut && !isReplaced;
             // ── 515 Stream Error: WhatsApp wants a stream restart, NOT a session wipe ──
             if (isRestartRequired) {
-                console.log('🔄 515 Stream Errored (restart required) — restarting socket immediately without wiping session');
-                logger.warn('🔄 515 — restarting Baileys socket immediately with existing creds');
+                console.log('🔄 515 Stream Errored (restart required) — restarting socket in 1500ms to allow DB writes to commit');
+                logger.warn('🔄 515 — restarting Baileys socket in 1500ms with existing creds');
                 if (reconnectTimer)
                     clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(() => startBaileysSocket(false), 500);
+                reconnectTimer = setTimeout(() => startBaileysSocket(false), 1500);
                 // Don't set disconnected state — the socket will reconnect transparently
                 return;
             }
