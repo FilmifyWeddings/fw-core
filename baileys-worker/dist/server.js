@@ -868,6 +868,17 @@ async function startBaileysSocket(forceFresh = false) {
         }
         if (connection === 'open') {
             clearConnectingTimeout();
+            // IMMEDIATE status write — set conn_state='open' right away so
+            // the frontend polling loop sees the transition even if the
+            // comprehensive upsert below is slow or times out
+            await dbWrite(supabase
+                .from('baileys_sessions')
+                .upsert({
+                workspace_id: WORKSPACE_ID,
+                conn_state: 'open',
+                status: 'CONNECTED',
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id' }), 'upsert-open-status');
             // Force-flush creds to DB on new login so 515 stream restart
             // doesn't find stale/unpaired creds
             if (update.isNewLogin && saveCreds) {

@@ -138,8 +138,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         });
         if (!res.ok) return;
         const d = await res.json();
-        if (d.conn_state === 'open' && d.phone_number) {
-          setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); setIsResetting(false); stopPolling();
+        if (d.conn_state === 'open') {
+          setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
         } else if (d.qr_string && !d.qr_expired) {
           setQrString(d.qr_string); setConnState('connecting'); setIsResetting(false);
         }
@@ -165,7 +165,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       });
       sse.addEventListener('connected', (e) => {
         const d = JSON.parse(e.data);
-        setConnState('open'); setPhoneNumber(d.phone); setQrString(null); setIsResetting(false);
+        setConnState('open'); setPhoneNumber(d.phone ?? null); setQrString(null); setIsResetting(false);
         sse.close(); stopPolling();
       });
       sse.onerror = () => { startPolling(); };
@@ -184,8 +184,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           });
           if (res.ok) {
             const d = await res.json();
-            if (d.conn_state === 'open' && d.phone_number) {
-              setConnState('open'); setPhoneNumber(d.phone_number); return;
+            if (d.conn_state === 'open') {
+              setConnState('open'); setPhoneNumber(d.phone_number ?? null); return;
             }
             if (d.qr_string && !d.qr_expired) {
               setQrString(d.qr_string); setConnState('connecting');
@@ -270,11 +270,15 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
               </motion.div>
               <div>
                 <h2 className="text-xl font-bold text-[#111b21]">WhatsApp Connected!</h2>
-                {phoneNumber && (
-                  <p className="mt-2 text-sm font-mono font-bold text-[#00a884] bg-emerald-50 px-4 py-1 rounded-full border border-emerald-200 inline-block">
-                    +{phoneNumber}
-                  </p>
-                )}
+                  {phoneNumber ? (
+                    <p className="mt-2 text-sm font-mono font-bold text-[#00a884] bg-emerald-50 px-4 py-1 rounded-full border border-emerald-200 inline-block">
+                      +{phoneNumber}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-[#667781] font-mono">
+                      Device linked
+                    </p>
+                  )}
                 <p className="text-xs text-[#667781] mt-2">All automations are now active and running.</p>
               </div>
               <div className="flex items-center gap-2">
