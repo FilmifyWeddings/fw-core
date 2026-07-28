@@ -1,4 +1,3 @@
-"use strict";
 /**
  * ============================================================
  * BRAHMASTRA ASYNC QUEUE PROCESSOR — src/lib/queue-processor.ts
@@ -32,15 +31,7 @@
  *     duplicate processors from running simultaneously.
  * ============================================================
  */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.computeNextRetryAt = computeNextRetryAt;
-exports.describeBackoff = describeBackoff;
-exports.applyWhatsAppRateLimit = applyWhatsAppRateLimit;
-exports.processQueueAction = processQueueAction;
-exports.drainQueue = drainQueue;
-exports.sweepExpiredRetries = sweepExpiredRetries;
-exports.getQueueStats = getQueueStats;
-const supabase_1 = require("./supabase");
+import { supabaseAdmin } from './supabase.js';
 // ── Configuration Constants ───────────────────────────────────────────────────
 const MAX_RETRIES = 5; // After 5 attempts → permanently FAILED
 const BASE_DELAY_MS = 15_000; // 15 seconds base backoff delay
@@ -71,7 +62,7 @@ function releaseLock(workspaceId) {
  * @param attemptCount - Number of attempts already made (0-indexed)
  * @returns ISO timestamp of when the next retry should be attempted
  */
-function computeNextRetryAt(attemptCount) {
+export function computeNextRetryAt(attemptCount) {
     const jitter = Math.floor(Math.random() * JITTER_CAP_MS);
     const delayMs = BASE_DELAY_MS * Math.pow(BACKOFF_MULTIPLIER, attemptCount) + jitter;
     const nextRetryAt = new Date(Date.now() + delayMs);
@@ -80,7 +71,7 @@ function computeNextRetryAt(attemptCount) {
 /**
  * Returns a human-readable description of the current backoff delay.
  */
-function describeBackoff(attemptCount) {
+export function describeBackoff(attemptCount) {
     const delayMs = BASE_DELAY_MS * Math.pow(BACKOFF_MULTIPLIER, attemptCount);
     if (delayMs < 60_000)
         return `${Math.round(delayMs / 1000)}s`;
@@ -94,7 +85,7 @@ function describeBackoff(attemptCount) {
  * Defaults to a randomized 10-30s delay. Can be overridden via action payload.delayMs.
  * Prevents account banning from bulk sending patterns.
  */
-async function applyWhatsAppRateLimit(customDelayMs) {
+export async function applyWhatsAppRateLimit(customDelayMs) {
     const delay = customDelayMs ?? (WA_MIN_DELAY_MS + Math.floor(Math.random() * (WA_MAX_DELAY_MS - WA_MIN_DELAY_MS)));
     await new Promise(resolve => setTimeout(resolve, delay));
 }
@@ -106,11 +97,11 @@ async function applyWhatsAppRateLimit(customDelayMs) {
  * @param action - The queue action to process
  * @param handler - The function that actually executes the action (WhatsApp socket, etc.)
  */
-async function processQueueAction(action, handler) {
+export async function processQueueAction(action, handler) {
     const { id, workspace_id, attempt_count } = action;
     const newAttemptCount = attempt_count + 1;
     // ── Step 1: Mark as PROCESSING (optimistic lock in DB) ────────────────────
-    const { data: claimedRows, error: lockError } = await supabase_1.supabaseAdmin
+    const { data: claimedRows, error: lockError } = await supabaseAdmin
         .from('baileys_action_queue')
         .update({
         status: 'processing',
@@ -130,13 +121,13 @@ async function processQueueAction(action, handler) {
         return;
     }
     // ── Step 2: Skip cancelled actions ────────────────────────────────────────
-    const { data: recheckStatus } = await supabase_1.supabaseAdmin
+    const { data: recheckStatus } = await supabaseAdmin
         .from('baileys_action_queue')
         .select('status')
         .eq('id', id)
         .maybeSingle();
     if (recheckStatus?.status === 'cancelled') {
-        await supabase_1.supabaseAdmin.from('live_logs').insert({
+        await supabaseAdmin.from('live_logs').insert({
             workspace_id,
             event_type: 'queue_action_skipped',
             message: `⏭️ Action ${action.action_type} [${id}] was cancelled — skipping.`,
@@ -153,13 +144,13 @@ async function processQueueAction(action, handler) {
         // ── Step 4: Mark as DONE ─────────────────────────────────────────────────
         // The handler (executeAction) may have already written 'done' to the DB as an
         // ACID guarantee immediately after sock.sendMessage succeeded. Check first.
-        const { data: currentRow } = await supabase_1.supabaseAdmin
+        const { data: currentRow } = await supabaseAdmin
             .from('baileys_action_queue')
             .select('status')
             .eq('id', id)
             .maybeSingle();
         if (currentRow?.status !== 'done') {
-            await supabase_1.supabaseAdmin
+            await supabaseAdmin
                 .from('baileys_action_queue')
                 .update({
                 status: 'done',
@@ -169,7 +160,7 @@ async function processQueueAction(action, handler) {
                 .eq('id', id);
         }
         // Log success to live_logs
-        await supabase_1.supabaseAdmin.from('live_logs').insert({
+        await supabaseAdmin.from('live_logs').insert({
             workspace_id,
             event_type: 'queue_action_done',
             message: `Action ${action.action_type} [${id}] completed successfully.`,
@@ -186,7 +177,7 @@ async function processQueueAction(action, handler) {
         // ── Step 4: Permanent FAILURE — no auto-retry ────────────────────────────
         // Per architecture decision: failed actions must be manually retried via the UI.
         // Auto-retry caused infinite loop bugs when messages were sent but DB write failed.
-        await supabase_1.supabaseAdmin
+        await supabaseAdmin
             .from('baileys_action_queue')
             .update({
             status: 'failed',
@@ -195,7 +186,7 @@ async function processQueueAction(action, handler) {
         })
             .eq('id', id);
         // Log failure to live_logs
-        await supabase_1.supabaseAdmin.from('live_logs').insert({
+        await supabaseAdmin.from('live_logs').insert({
             workspace_id,
             event_type: 'queue_action_failed',
             message: `❌ Action ${action.action_type} [${id}] failed after attempt ${newAttemptCount}. Manual retry required.`,
@@ -223,7 +214,7 @@ async function processQueueAction(action, handler) {
  * @param handler - The action handler (WhatsApp socket dispatcher)
  * @param batchSize - Max actions to process per poll cycle (default: 3)
  */
-async function drainQueue(workspaceId, handler, batchSize = 3) {
+export async function drainQueue(workspaceId, handler, batchSize = 3) {
     // Acquire workspace-level processing lock
     if (!acquireLock(workspaceId)) {
         return; // Another drain cycle is already running for this workspace
@@ -232,7 +223,7 @@ async function drainQueue(workspaceId, handler, batchSize = 3) {
         const now = new Date().toISOString();
         console.log("Worker polling at", now);
         // Fetch pending actions that are due (respects next_retry_at backoff)
-        const { data: actions, error } = await supabase_1.supabaseAdmin
+        const { data: actions, error } = await supabaseAdmin
             .from('baileys_action_queue')
             .select('*')
             .eq('workspace_id', workspaceId)
@@ -254,7 +245,7 @@ async function drainQueue(workspaceId, handler, batchSize = 3) {
         for (let i = 0; i < actions.length; i++) {
             const action = actions[i];
             // Skip cancelled items
-            const { data: skipCheck } = await supabase_1.supabaseAdmin
+            const { data: skipCheck } = await supabaseAdmin
                 .from('baileys_action_queue')
                 .select('status')
                 .eq('id', action.id)
@@ -284,12 +275,12 @@ async function drainQueue(workspaceId, handler, batchSize = 3) {
  *
  * @param workspaceId - Workspace to sweep
  */
-async function sweepExpiredRetries(workspaceId) {
+export async function sweepExpiredRetries(workspaceId) {
     const now = new Date().toISOString();
     // Note: drainQueue already handles next_retry_at via the .or() filter.
     // This sweeper is a safety net for orphaned 'processing' rows (worker crashed mid-action).
     const STUCK_PROCESSING_TIMEOUT = new Date(Date.now() - PROCESSING_LOCK_TTL_MS * 2).toISOString();
-    const { data: stuckActions, error } = await supabase_1.supabaseAdmin
+    const { data: stuckActions, error } = await supabaseAdmin
         .from('baileys_action_queue')
         .select('id, attempt_count, failure_reason')
         .eq('workspace_id', workspaceId)
@@ -298,8 +289,8 @@ async function sweepExpiredRetries(workspaceId) {
     if (error || !stuckActions || stuckActions.length === 0)
         return 0;
     // Reset stuck 'processing' rows back to 'pending' for retry
-    const stuckIds = stuckActions.map(a => a.id);
-    const { error: resetError } = await supabase_1.supabaseAdmin
+    const stuckIds = stuckActions.map((a) => a.id);
+    const { error: resetError } = await supabaseAdmin
         .from('baileys_action_queue')
         .update({
         status: 'pending',
@@ -318,17 +309,17 @@ async function sweepExpiredRetries(workspaceId) {
 /**
  * Returns queue health metrics for the admin dashboard.
  */
-async function getQueueStats(workspaceId) {
-    const { data } = await supabase_1.supabaseAdmin
+export async function getQueueStats(workspaceId) {
+    const { data } = await supabaseAdmin
         .from('baileys_action_queue')
         .select('status, action_type, next_retry_at')
         .eq('workspace_id', workspaceId);
     const rows = data || [];
     return {
-        pending: rows.filter(r => r.status === 'pending').length,
-        processing: rows.filter(r => r.status === 'processing').length,
-        done: rows.filter(r => r.status === 'done').length,
-        failed: rows.filter(r => r.status === 'failed').length,
-        nextAction: rows.find(r => r.status === 'pending'),
+        pending: rows.filter((r) => r.status === 'pending').length,
+        processing: rows.filter((r) => r.status === 'processing').length,
+        done: rows.filter((r) => r.status === 'done').length,
+        failed: rows.filter((r) => r.status === 'failed').length,
+        nextAction: rows.find((r) => r.status === 'pending'),
     };
 }

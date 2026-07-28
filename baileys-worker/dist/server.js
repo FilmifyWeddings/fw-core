@@ -570,8 +570,7 @@ async function runQueueDrain() {
         return;
     }
     try {
-        // @ts-expect-error — compiled by separate tsc step to dist/src/lib/queue-processor.js
-        const { drainQueue } = await import('./src/lib/queue-processor.js');
+        const { drainQueue } = await import('./src/queue-processor.js');
         await drainQueue(WORKSPACE_ID, executeAction, 3);
     }
     catch (err) {
@@ -580,8 +579,7 @@ async function runQueueDrain() {
 }
 async function runSweeper() {
     try {
-        // @ts-expect-error — compiled by separate tsc step to dist/src/lib/queue-processor.js
-        const { sweepExpiredRetries } = await import('./src/lib/queue-processor.js');
+        const { sweepExpiredRetries } = await import('./src/queue-processor.js');
         const recovered = await sweepExpiredRetries(WORKSPACE_ID);
         if (recovered > 0)
             logger.info({ recovered }, '🧹 Sweeper recovered stuck actions');
@@ -626,13 +624,22 @@ function startActionQueueListener() {
     runQueueDrain().then(() => scheduleNextDelayedCheck());
 }
 // ─── Connection Timeout Monitor ──────────────────────────────────────────────
-// If connecting for >15s without a QR or open event, kill and regenerate fresh QR
+// Wait 60s for user to scan QR before timing out. Pairing handshake can take
+// 10-25s after scan, so 15s was too aggressive and killed active pairings.
 function startConnectingTimeout() {
     clearConnectingTimeout();
     connectingTimeoutTimer = setTimeout(async () => {
-        logger.warn('⏰ Connection stuck in "connecting" for 15s — force-resetting socket for fresh QR...');
+        // Only fire if we're STILL connecting after the full window
+        const { data: cur } = await supabase
+            .from('baileys_sessions')
+            .select('conn_state')
+            .eq('workspace_id', WORKSPACE_ID)
+            .maybeSingle();
+        if (cur?.conn_state === 'open')
+            return; // already connected — skip reset
+        logger.warn('⏰ Connection stuck in "connecting" for 60s — force-resetting socket for fresh QR...');
         await initiateForceReset();
-    }, 15_000);
+    }, 60_000);
 }
 function clearConnectingTimeout() {
     if (connectingTimeoutTimer) {

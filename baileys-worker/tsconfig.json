@@ -15,7 +15,9 @@
   },
   "include": [
     "server.ts",
-    "supabase-auth-state.ts"
+    "supabase-auth-state.ts",
+    "src/queue-processor.ts",
+    "src/supabase.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }
