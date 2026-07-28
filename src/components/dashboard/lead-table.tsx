@@ -7,7 +7,7 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, MessageSquare, RefreshCw, Users, Database
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, MessageSquare, RefreshCw, Users, Database, Globe
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -48,7 +48,8 @@ interface ColumnConfig {
 const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'contact', label: 'Contact Details', visible: true, type: 'system' },
   { id: 'source', label: 'Lead Source', visible: true, type: 'system' },
-  { id: 'status', label: 'Deal Stage', visible: true, type: 'system' },
+  { id: 'form_name', label: 'Form Name', visible: true, type: 'system' },
+  { id: 'status', label: 'Status', visible: true, type: 'system' },
   { id: 'owner', label: 'Lead Owner', visible: true, type: 'system' },
   { id: 'company', label: 'Company', visible: false, type: 'system' },
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
@@ -336,6 +337,17 @@ export function LeadTable({
   const [contactGroups, setContactGroups] = useState<any[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
+  // Custom Status & Team Members state
+  const [teamMembers, setTeamMembers] = useState<any[]>([
+    { id: '1', name: 'Chad Thunderclock', email: 'dhondesanty1760@gmail.com', role: 'Admin' },
+    { id: '2', name: 'Sahil Dhonde', email: 'sahil@filmifyweddings.com', role: 'Manager' },
+    { id: '3', name: 'Sushant Nawale', email: 'sushant@filmifyweddings.com', role: 'Lead Owner' },
+    { id: '4', name: 'Rahul Sharma', email: 'rahul@filmifyweddings.com', role: 'Team Member' }
+  ]);
+  const [showAddStatusModal, setShowAddStatusModal] = useState(false);
+  const [newStatusName, setNewStatusName] = useState('');
+  const [newStatusColor, setNewStatusColor] = useState('#ef4444');
+
   // Comments state in details drawer
   const [newCommentText, setNewCommentText] = useState('');  // Synced bottom horizontal scrollbar & header side-effect
   useEffect(() => {
@@ -489,12 +501,12 @@ export function LeadTable({
       const customsAndSystems = prev.filter(c => c.type !== 'meta');
       
       const metas: ColumnConfig[] = keysArray.map(key => {
-        // Preserve visibility preference if it already exists
+        // Preserve visibility preference if it already exists, otherwise default to visible: true
         const existing = prev.find(p => p.id === `meta_${key}`);
         return {
           id: `meta_${key}`,
           label: key.replace(/_/g, ' ').toUpperCase(),
-          visible: existing ? existing.visible : false,
+          visible: existing ? existing.visible : true,
           type: 'meta'
         };
       });
@@ -1619,16 +1631,149 @@ export function LeadTable({
     </div>
   </div>
 </div>
-
 </div>
 
-{/* Main View Mode rendering */}
-{viewMode === 'table' ? (
-  
-  /* ---------------------------------------------------- */
-  /* GRID TABLE VIEW                                      */
-  /* ---------------------------------------------------- */
-  <div className="w-full relative transition-all">
+  {/* Main View Mode rendering */}
+  {viewMode === 'table' ? (
+    <>
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* MOBILE / TABLET RESPONSIVE 3D CARD GRID (< 768px)             */}
+      {/* ───────────────────────────────────────────────────────────── */}
+    <div className="block md:hidden space-y-3.5 p-3">
+      {paginatedLeads.length === 0 ? (
+        <div className="py-12 text-center text-zinc-500 bg-white dark:bg-zinc-900/50 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <AlertCircle className="w-8 h-8 mx-auto text-amber-500 mb-2" />
+          <p className="text-xs font-bold">No photography leads match your filter criteria</p>
+        </div>
+      ) : (
+        paginatedLeads.map((lead) => {
+          const isSelected = selectedLeadIds.includes(lead.id);
+          const currentStage = stages.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
+          const stBadgeStyle = (() => {
+            const s = (currentStage.name || '').toLowerCase();
+            if (s.includes('hot') || s.includes('proposal')) return { bg: 'bg-red-500/15 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-300 font-extrabold', border: 'border-red-500/40 shadow-red-500/20', dot: 'bg-red-500' };
+            if (s.includes('cool') || s.includes('warm') || s.includes('meeting')) return { bg: 'bg-cyan-500/15 dark:bg-cyan-900/30', text: 'text-cyan-600 dark:text-cyan-300 font-extrabold', border: 'border-cyan-500/40 shadow-cyan-500/20', dot: 'bg-cyan-500' };
+            if (s.includes('won') || s.includes('signed') || s.includes('closed')) return { bg: 'bg-emerald-500/15 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-300 font-extrabold', border: 'border-emerald-500/40 shadow-emerald-500/20', dot: 'bg-emerald-500' };
+            if (s.includes('lost')) return { bg: 'bg-rose-950/20 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400 font-extrabold', border: 'border-rose-800/40', dot: 'bg-rose-500' };
+            if (s.includes('contacted')) return { bg: 'bg-violet-500/15 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-300 font-extrabold', border: 'border-violet-500/40', dot: 'bg-violet-500' };
+            return { bg: 'bg-indigo-500/15 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-300 font-extrabold', border: 'border-indigo-500/40', dot: 'bg-indigo-500' };
+          })();
+
+          const currentAssignedOwner = lead.raw_payload?.lead_owner || getMockOwner(lead).name || 'Unassigned';
+          const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Form';
+
+          return (
+            <div 
+              key={lead.id}
+              onClick={() => {
+                setSelectedLead(lead);
+                setDrawerMode('full');
+              }}
+              className={`bg-white dark:bg-zinc-900/90 border border-slate-200/90 dark:border-zinc-800/80 rounded-2xl p-4 shadow-lg space-y-3 transition-all cursor-pointer relative overflow-hidden ${
+                isSelected ? 'ring-2 ring-orange-500' : ''
+              }`}
+            >
+              {/* Header: Name, Avatar, Form Name */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white font-black text-sm flex items-center justify-center shadow-md shrink-0">
+                    {(lead.name || 'L').charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-900 dark:text-white text-sm leading-snug">{lead.name || 'Unspecified Lead'}</h4>
+                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5">
+                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    </p>
+                  </div>
+                </div>
+
+                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shrink-0">
+                  <Globe className="w-3 h-3 text-blue-500" />
+                  {formNameVal}
+                </span>
+              </div>
+
+              {/* Direct 1-Tap Quick Action Row */}
+              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-zinc-950/70 p-2.5 rounded-xl border border-slate-200/60 dark:border-zinc-850" onClick={(e) => e.stopPropagation()}>
+                <a href={`tel:${lead.phone}`} className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-zinc-200 hover:text-emerald-500 truncate">
+                  <Phone className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span className="truncate">{lead.phone || 'No phone'}</span>
+                </a>
+                <a href={`https://wa.me/${lead.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-zinc-200 hover:text-green-500 truncate justify-end">
+                  <MessageSquare className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                  <span>WhatsApp</span>
+                </a>
+              </div>
+
+              {/* 3D Curved Dropdowns: Status & Lead Owner */}
+              <div className="grid grid-cols-2 gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                {/* Status Dropdown */}
+                <div className="space-y-1">
+                  <span className="text-[9px] uppercase font-black text-slate-400 block">Status</span>
+                  <div className="relative flex items-center">
+                    <select
+                      value={lead.stage_id || lead.status}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_custom_status__') {
+                          setShowAddStatusModal(true);
+                        } else {
+                          const nextStageId = e.target.value;
+                          const foundStage = stages.find(s => s.id === nextStageId);
+                          if (onLeadUpdate) {
+                            onLeadUpdate(lead.id, { stage_id: nextStageId, status: (foundStage?.name || nextStageId) as any });
+                          }
+                        }
+                      }}
+                      className={`w-full appearance-none text-xs font-black rounded-xl pl-3 pr-6 py-1.5 border shadow-sm ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}
+                    >
+                      {stages.map(s => <option key={s.id} value={s.id} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">{s.name}</option>)}
+                      <option value="__add_custom_status__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-black">+ Add Custom Status</option>
+                    </select>
+                    <ChevronDown className={`w-3 h-3 absolute right-2 pointer-events-none opacity-70 ${stBadgeStyle.text}`} />
+                  </div>
+                </div>
+
+                {/* Lead Owner Dropdown */}
+                <div className="space-y-1">
+                  <span className="text-[9px] uppercase font-black text-slate-400 block">Lead Owner</span>
+                  <div className="relative flex items-center">
+                    <select
+                      value={currentAssignedOwner}
+                      onChange={(e) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: e.target.value } }, lead.id)}
+                      className="w-full appearance-none bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs font-black rounded-xl pl-3 pr-6 py-1.5 shadow-sm"
+                    >
+                      {teamMembers.map(m => (
+                        <option key={m.id || m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">👤 {m.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-amber-600 dark:text-amber-400 absolute right-2 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Auto Ingested Meta Fields Grid */}
+              {Object.keys(lead.raw_payload || {}).length > 0 && (
+                <div className="pt-2 border-t border-slate-100 dark:border-zinc-850">
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(lead.raw_payload || {}).map(([k, v]) => {
+                      if (['name', 'email', 'phone', 'lead_owner', 'form_name', 'page_name'].includes(k.toLowerCase())) return null;
+                      return (
+                        <span key={k} className="text-[10px] font-medium bg-slate-100 dark:bg-zinc-800/80 px-2.5 py-1 rounded-lg text-slate-700 dark:text-zinc-300 border border-slate-200/60 dark:border-zinc-700/50">
+                          <strong className="text-slate-900 dark:text-white uppercase text-[9px] mr-1">{k.replace(/_/g, ' ')}:</strong> {String(v)}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+
+    {/* DESKTOP GRID TABLE VIEW (MD AND UP) */}
+    <div className="hidden md:block w-full relative transition-all">
       <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
         
         <colgroup>
@@ -1871,39 +2016,89 @@ export function LeadTable({
                                     </select>
                                   </MotionTd>
                                 );
-                              case 'status':
+                              case 'form_name':
+                                const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Lead Form';
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
-                                    <select
-                                      value={lead.stage_id || lead.status}
-                                      onChange={(e) => {
-                                        const nextStageId = e.target.value;
-                                        const selectedStage = stages.find(s => s.id === nextStageId);
-                                        if (onLeadUpdate) {
-                                          onLeadUpdate(lead.id, {
-                                            stage_id: nextStageId,
-                                            status: (selectedStage?.name?.toLowerCase() === 'inquiry' ? 'new' :
-                                                     selectedStage?.name?.toLowerCase() === 'contacted' ? 'contacted' :
-                                                     selectedStage?.name?.toLowerCase() === 'meeting scheduled' ? 'warm' :
-                                                     selectedStage?.name?.toLowerCase() === 'proposal sent' ? 'hot' :
-                                                     selectedStage?.name?.toLowerCase() === 'contract signed' ? 'closed' :
-                                                     selectedStage?.name?.toLowerCase() === 'closed/lost' ? 'lost' :
-                                                     lead.status) as LeadStatus
-                                          });
-                                        }
-                                      }}
-                                      className="bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] text-[11px] font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#D4AF37] cursor-pointer w-28 shadow-sm transition-all"
-                                    >
-                                      {stages.map(s => (
-                                        <option key={s.id} value={s.id} className="bg-white dark:bg-[#1C1A18] text-[#1A1A1A] dark:text-[#F5F5F5]">{s.name}</option>
-                                      ))}
-                                    </select>
+                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25 shadow-xs">
+                                      <Globe className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                      {formNameVal}
+                                    </span>
+                                  </MotionTd>
+                                );
+                              case 'status':
+                                const currentStage = stages.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
+                                const stBadgeStyle = (() => {
+                                  const s = (currentStage.name || '').toLowerCase();
+                                  if (s.includes('hot') || s.includes('proposal')) {
+                                    return { bg: 'bg-red-500/15 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-300 font-extrabold', border: 'border-red-500/40 shadow-sm shadow-red-500/20', dot: 'bg-red-500' };
+                                  }
+                                  if (s.includes('cool') || s.includes('warm') || s.includes('meeting')) {
+                                    return { bg: 'bg-cyan-500/15 dark:bg-cyan-900/30', text: 'text-cyan-600 dark:text-cyan-300 font-extrabold', border: 'border-cyan-500/40 shadow-sm shadow-cyan-500/20', dot: 'bg-cyan-500' };
+                                  }
+                                  if (s.includes('won') || s.includes('signed') || s.includes('closed')) {
+                                    return { bg: 'bg-emerald-500/15 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-300 font-extrabold', border: 'border-emerald-500/40 shadow-sm shadow-emerald-500/20', dot: 'bg-emerald-500' };
+                                  }
+                                  if (s.includes('lost')) {
+                                    return { bg: 'bg-rose-950/20 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400 font-extrabold', border: 'border-rose-800/40 shadow-sm', dot: 'bg-rose-500' };
+                                  }
+                                  if (s.includes('contacted')) {
+                                    return { bg: 'bg-violet-500/15 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-300 font-extrabold', border: 'border-violet-500/40 shadow-sm', dot: 'bg-violet-500' };
+                                  }
+                                  return { bg: 'bg-indigo-500/15 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-300 font-extrabold', border: 'border-indigo-500/40 shadow-sm', dot: 'bg-indigo-500' };
+                                })();
+
+                                return (
+                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <div className="relative inline-flex items-center">
+                                      <span className={`w-2 h-2 rounded-full absolute left-3 z-10 ${stBadgeStyle.dot}`} />
+                                      <select
+                                        value={lead.stage_id || lead.status}
+                                        onChange={(e) => {
+                                          if (e.target.value === '__add_custom_status__') {
+                                            setShowAddStatusModal(true);
+                                          } else {
+                                            const nextStageId = e.target.value;
+                                            const foundStage = stages.find(s => s.id === nextStageId);
+                                            if (onLeadUpdate) {
+                                              onLeadUpdate(lead.id, {
+                                                stage_id: nextStageId,
+                                                status: (foundStage?.name || nextStageId) as any
+                                              });
+                                            }
+                                          }
+                                        }}
+                                        className={`appearance-none text-xs font-black rounded-full pl-6 pr-7 py-1.5 border shadow-md transition-all cursor-pointer focus:outline-none hover:scale-105 active:scale-95 ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}
+                                      >
+                                        {stages.map(s => (
+                                          <option key={s.id} value={s.id} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">
+                                            {s.name}
+                                          </option>
+                                        ))}
+                                        <option value="__add_custom_status__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-black">+ Add Custom Status</option>
+                                      </select>
+                                      <ChevronDown className={`w-3.5 h-3.5 absolute right-2.5 pointer-events-none opacity-70 ${stBadgeStyle.text}`} />
+                                    </div>
                                   </MotionTd>
                                 );
                               case 'owner':
+                                const currentAssignedOwner = lead.raw_payload?.lead_owner || mockOwner.name || 'Unassigned';
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
-                                    <span className="text-sm text-slate-800 dark:text-zinc-200 font-semibold block">{lead.raw_payload?.lead_owner || mockOwner.name}</span>
+                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <div className="relative inline-flex items-center">
+                                      <select
+                                        value={currentAssignedOwner}
+                                        onChange={(e) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: e.target.value } }, lead.id)}
+                                        className="appearance-none bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs font-black rounded-full pl-3 pr-7 py-1.5 shadow-md hover:scale-105 transition-all cursor-pointer focus:outline-none"
+                                      >
+                                        {teamMembers.map(m => (
+                                          <option key={m.id || m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">
+                                            👤 {m.name} ({m.role || 'Team Member'})
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <ChevronDown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 absolute right-2.5 pointer-events-none" />
+                                    </div>
                                   </MotionTd>
                                 );
                               case 'company':
@@ -2356,26 +2551,26 @@ export function LeadTable({
             )}
           </div>
         </div>
-      ) : (
-        
-        /* ---------------------------------------------------- */
-        /* TEAM TASKS GRID VIEW                                 */
-        /* ---------------------------------------------------- */
-        <div className="p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 shadow-xl dark:shadow-2xl space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
-            <div>
-              <h3 className="text-sm font-black uppercase text-orange-500 tracking-wider">Workspace Team Tasks Command Grid</h3>
-              <p className="text-[10px] text-zinc-500 font-mono mt-0.5">Vector Isolation: Personal, Project-Specific, Field Assignments</p>
-            </div>
+      </>
+    ) : (
+      
+      /* ---------------------------------------------------- */
+      /* TEAM TASKS GRID VIEW                                 */
+      /* ---------------------------------------------------- */
+      <div className="p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 shadow-xl dark:shadow-2xl space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
+          <div>
+            <h3 className="text-sm font-black uppercase text-orange-500 tracking-wider">Workspace Team Tasks Command Grid</h3>
+            <p className="text-[10px] text-zinc-500 font-mono mt-0.5">Vector Isolation: Personal, Project-Specific, Field Assignments</p>
           </div>
-          <TeamTasksManager 
-            workspaceId={leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000'} 
-            userEmail={userEmail} 
-          />
         </div>
-      )}
-
+        <TeamTasksManager 
+          workspaceId={leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000'} 
+          userEmail={userEmail} 
+        />
       </div>
+    )}
+  </div>
 
       {/* Bulk Actions Sliding Dock */}
       <AnimatePresenceComponent>
@@ -2855,6 +3050,95 @@ export function LeadTable({
                   className="px-3 py-1.5 bg-orange-500 hover:bg-orange-400 text-black font-extrabold rounded-lg"
                 >
                   Save Option
+                </button>
+              </div>
+            </MotionDiv>
+          </>
+        )}
+      </AnimatePresenceComponent>
+
+      {/* 3D Add Custom Status Modal */}
+      <AnimatePresenceComponent>
+        {showAddStatusModal && (
+          <>
+            <MotionDiv 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAddStatusModal(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99990]" 
+            />
+            <MotionDiv
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-5 rounded-2xl shadow-2xl z-[99995] space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-orange-500" /> Add Custom Status
+                </h4>
+                <button onClick={() => setShowAddStatusModal(false)} className="text-zinc-400 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Status Name</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. Hot Lead 🔥, VIP Won 🎉"
+                    value={newStatusName}
+                    onChange={(e) => setNewStatusName(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-2.5 rounded-xl font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Badge Theme Color</label>
+                  <div className="flex gap-2">
+                    {['#ef4444', '#06b6d4', '#10b981', '#f43f5e', '#8b5cf6', '#6366f1', '#f59e0b'].map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setNewStatusColor(c)}
+                        style={{ backgroundColor: c }}
+                        className={`w-6 h-6 rounded-full border-2 transition-all ${newStatusColor === c ? 'scale-125 border-white shadow-md' : 'border-transparent opacity-80'}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!newStatusName.trim()) return;
+                    const newStageObj = {
+                      id: newStatusName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                      name: newStatusName.trim(),
+                      color: newStatusColor,
+                      position: stages.length
+                    };
+                    const updated = [...stages, newStageObj];
+                    if (onPreferencesChange) {
+                      onPreferencesChange({ stages: updated });
+                    }
+                    setShowAddStatusModal(false);
+                    setNewStatusName('');
+                    try {
+                      const uId = leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000';
+                      await supabase.from('crm_stages').insert({
+                        workspace_id: uId,
+                        name: newStageObj.name,
+                        color: newStageObj.color,
+                        position: newStageObj.position
+                      });
+                    } catch (_) {}
+                  }}
+                  className="w-full py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold rounded-xl shadow-lg transition-all"
+                >
+                  Save New Status
                 </button>
               </div>
             </MotionDiv>

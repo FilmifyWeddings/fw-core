@@ -70,12 +70,12 @@ const MOCK_LEADS: Lead[] = [
 ];
 
 const DEFAULT_STAGES = [
-  { id: 'new', name: 'Inquiry', color: '#3b82f6', position: 0 },
+  { id: 'new', name: 'Inquiry / New', color: '#6366f1', position: 0 },
   { id: 'contacted', name: 'Contacted', color: '#8b5cf6', position: 1 },
-  { id: 'warm', name: 'Meeting Scheduled', color: '#ec4899', position: 2 },
-  { id: 'hot', name: 'Proposal Sent', color: '#f59e0b', position: 3 },
-  { id: 'closed', name: 'Contract Signed', color: '#10b981', position: 4 },
-  { id: 'lost', name: 'Closed/Lost', color: '#6b7280', position: 5 }
+  { id: 'cool', name: 'Cool / Warm', color: '#06b6d4', position: 2 },
+  { id: 'hot', name: 'Hot 🔥', color: '#ef4444', position: 3 },
+  { id: 'won', name: 'Won 🎉', color: '#10b981', position: 4 },
+  { id: 'lost', name: 'Lost ❌', color: '#f43f5e', position: 5 }
 ];
 
 const parseLeadComment = (comm: any): any => {

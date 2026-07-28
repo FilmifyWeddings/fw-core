@@ -93,7 +93,7 @@ const DEFAULT_STUDIO_SETTINGS = {
 
 export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdated }: MasterSettingsHubProps) {
   const [activeMenu, setActiveMenu] = useState<
-    'sequences' | 'leads' | 'projects' | 'invoices' | 'expenses' | 'services' | 'packages' | 'deliverables' | 'pdf_quote' | 'pdf_invoice' | 'pdf_contract' | 'workflow'
+    'sequences' | 'leads' | 'team_members' | 'projects' | 'invoices' | 'expenses' | 'services' | 'packages' | 'deliverables' | 'pdf_quote' | 'pdf_invoice' | 'pdf_contract' | 'workflow'
   >('sequences');
   const [loading, setLoading] = useState(false);
 
@@ -104,6 +104,16 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [leadsList, setLeadsList] = useState<any[]>([]);
   const [stages, setStages] = useState<CRMStage[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([
+    { id: '1', name: 'Chad Thunderclock', email: 'dhondesanty1760@gmail.com', role: 'Admin' },
+    { id: '2', name: 'Sahil Dhonde', email: 'sahil@filmifyweddings.com', role: 'Manager' },
+    { id: '3', name: 'Sushant Nawale', email: 'sushant@filmifyweddings.com', role: 'Lead Owner' },
+    { id: '4', name: 'Rahul Sharma', email: 'rahul@filmifyweddings.com', role: 'Team Member' }
+  ]);
+
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState('Lead Owner');
 
   // Studio Settings (saved in profiles JSON column, fallback to localStorage)
   const [studioSettings, setStudioSettings] = useState<any>(DEFAULT_STUDIO_SETTINGS);
@@ -211,6 +221,13 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
         }
       }
 
+      // 6. Fetch Team Members from LocalStorage / Profile
+      const savedMembers = localStorage.getItem(`leads_team_members_${workspaceId}`);
+      if (savedMembers) {
+        try {
+          setTeamMembers(JSON.parse(savedMembers));
+        } catch (_) {}
+      }
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
@@ -528,6 +545,7 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
                 {[
                   { id: 'sequences', label: 'Sequence IDs', icon: FileSpreadsheet },
                   { id: 'leads', label: 'Leads Config', icon: User },
+                  { id: 'team_members', label: 'Team Members & Access', icon: User },
                   { id: 'projects', label: 'Projects & Clients', icon: Briefcase },
                   { id: 'invoices', label: 'Invoices & Orders', icon: Coins },
                   { id: 'expenses', label: 'Expenses & Policies', icon: BarChart2 }
@@ -717,20 +735,101 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
                     </div>
                   )}
 
-                  {/* --- TAB: LEADS CONFIG --- */}
-                  {activeMenu === 'leads' && (
-                    <div className="space-y-5">
+                  {/* --- TAB: LEADS CONFIG & TEAM MEMBERS --- */}
+                  {(activeMenu === 'leads' || activeMenu === 'team_members') && (
+                    <div className="space-y-6">
                       <div>
                         <h4 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                           <User className="w-4.5 h-4.5 text-orange-500" />
-                          Leads default parameters
+                          Team Members & Portal Access
                         </h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Customize leads scoring settings and default assignments</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Manage team members, email credentials, and lead assignment permissions</p>
                       </div>
 
                       <div className="bg-slate-50 dark:bg-zinc-900/30 border border-slate-200 dark:border-zinc-850 p-4 rounded-2xl space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[9px] uppercase font-bold text-slate-400">Default Assigned Owner</label>
+                        <div className="space-y-3">
+                          <label className="text-[9px] uppercase font-bold text-slate-400 block">Add New Team Member</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <input 
+                              type="text"
+                              placeholder="Full Name (e.g. Sahil Dhonde)"
+                              value={newMemberName}
+                              onChange={(e) => setNewMemberName(e.target.value)}
+                              className="bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
+                            />
+                            <input 
+                              type="email"
+                              placeholder="Email ID (for team portal)"
+                              value={newMemberEmail}
+                              onChange={(e) => setNewMemberEmail(e.target.value)}
+                              className="bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
+                            />
+                            <select
+                              value={newMemberRole}
+                              onChange={(e) => setNewMemberRole(e.target.value)}
+                              className="bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
+                            >
+                              <option value="Admin">Admin</option>
+                              <option value="Manager">Manager</option>
+                              <option value="Lead Owner">Lead Owner</option>
+                              <option value="Executive">Executive</option>
+                              <option value="Photographer">Photographer</option>
+                            </select>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!newMemberName.trim()) return;
+                              const newMember = {
+                                id: Math.random().toString(36).substring(5),
+                                name: newMemberName.trim(),
+                                email: newMemberEmail.trim(),
+                                role: newMemberRole
+                              };
+                              const updated = [...teamMembers, newMember];
+                              setTeamMembers(updated);
+                              localStorage.setItem(`leads_team_members_${workspaceId}`, JSON.stringify(updated));
+                              setNewMemberName('');
+                              setNewMemberEmail('');
+                            }}
+                            className="w-full bg-slate-900 dark:bg-white text-white dark:text-black py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
+                          >
+                            + Add Team Member
+                          </button>
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-zinc-800">
+                          <label className="text-[9px] uppercase font-bold text-slate-400 block">Existing Team Members ({teamMembers.length})</label>
+                          <div className="divide-y divide-slate-200 dark:divide-zinc-800 border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-950">
+                            {teamMembers.map((m) => (
+                              <div key={m.id} className="p-3 flex items-center justify-between gap-2 text-xs">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-full bg-amber-500/10 text-amber-600 font-bold flex items-center justify-center border border-amber-500/20 text-xs">
+                                    {m.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <h5 className="font-extrabold text-slate-900 dark:text-white">{m.name}</h5>
+                                    <p className="text-[10px] text-slate-400">{m.email || 'No email assigned'} • <span className="text-orange-500 font-semibold">{m.role}</span></p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = teamMembers.filter(item => item.id !== m.id);
+                                    setTeamMembers(updated);
+                                    localStorage.setItem(`leads_team_members_${workspaceId}`, JSON.stringify(updated));
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 pt-2">
+                          <label className="text-[9px] uppercase font-bold text-slate-400">Default Lead Owner</label>
                           <input 
                             type="text"
                             value={studioSettings.lead_default_owner || ''}
