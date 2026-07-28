@@ -11,7 +11,7 @@ type SignalDataSet = {
   [key: string]: { [id: string]: any };
 };
 
-type SignalKeyStore = {
+export type SignalKeyStore = {
   get<T extends keyof SignalDataTypeMap>(type: T, ids: string[]): Promise<{ [id: string]: SignalDataTypeMap[T] }>;
   set(data: SignalDataSet): Promise<void>;
 };

@@ -212,6 +212,22 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     initSSE();
   };
 
+  const handleForceReset = async () => {
+    if (!window.confirm('This will completely reset your WhatsApp session. You will need to re-scan the QR code. Continue?')) return;
+    sseRef.current?.close(); stopPolling();
+    setConnState('connecting'); setQrString(null); setPhoneNumber(null);
+    startedRef.current = false;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch('/api/integrations/baileys/force-reset', {
+          method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      }
+    } catch {}
+    setTimeout(() => { initSSE(); }, 1500);
+  };
+
   return (
     <div
       className="font-sans text-[#111b21] flex flex-col items-center justify-start gap-6 px-4 py-8 sm:px-6 lg:px-10"
@@ -250,9 +266,15 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                 )}
                 <p className="text-xs text-[#667781] mt-2">All automations are now active and running.</p>
               </div>
-              <button onClick={handleDisconnect} className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 font-bold text-xs transition-all">
-                Disconnect Device
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={handleDisconnect} className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 font-bold text-xs transition-all">
+                  Disconnect Device
+                </button>
+                <button onClick={handleForceReset} className="px-5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-200 font-bold text-[10px] transition-all active:scale-95 cursor-pointer flex items-center gap-1.5">
+                  <RefreshCw className="w-3 h-3" />
+                  Reset &amp; Re-link
+                </button>
+              </div>
             </div>
           </TiltCard>
         )}
@@ -262,9 +284,15 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           <div className="bg-white rounded-3xl border border-[#e9edef] p-8 shadow-sm text-center space-y-4">
             <h2 className="text-lg font-bold text-[#111b21]">Session Disconnected</h2>
             <p className="text-xs text-[#667781]">Your session was reset. Click below to re-link your device.</p>
-            <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all shadow-md shadow-emerald-200">
-              Link a Device
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all shadow-md shadow-emerald-200 cursor-pointer">
+                Link a Device
+              </button>
+              <button onClick={handleForceReset} className="px-5 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-[10px] transition-all active:scale-95 cursor-pointer flex items-center gap-1.5">
+                <RefreshCw className="w-3 h-3" />
+                Force Reset QR
+              </button>
+            </div>
           </div>
         )}
 
@@ -297,8 +325,15 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
                 </div>
 
                 {/* Right: QR */}
-                <div className="lg:col-span-5 flex items-center justify-center">
+                <div className="lg:col-span-5 flex flex-col items-center justify-center gap-3">
                   <QrPanel qrString={qrString} />
+                  <button
+                    onClick={handleForceReset}
+                    className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-[10px] transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Reset &amp; Get Fresh QR
+                  </button>
                 </div>
               </div>
             </div>

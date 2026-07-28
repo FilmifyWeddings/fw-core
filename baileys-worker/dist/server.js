@@ -69,6 +69,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 let sock = null;
 let reconnectTimer = null;
 let lastQrTime = 0;
+let connectingTimeoutTimer = null;
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(state, extras = {}) {
     await supabase
@@ -624,47 +625,144 @@ function startActionQueueListener() {
     logger.info('📋 Running startup queue drain...');
     runQueueDrain().then(() => scheduleNextDelayedCheck());
 }
-// ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
-async function startBaileysSocket() {
-    logger.info('🚀 Starting Baileys socket...');
-    await updateSessionState('connecting');
-    const { state, saveCreds } = await useSupabaseAuthState(supabase, WORKSPACE_ID);
-    let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
-        version: [2, 3000, 1017531287],
-        isLatest: false
-    }));
-    // Force latest WhatsApp Web version if the dynamically fetched one is older than our high fallback
-    const minVersion = [2, 3000, 1017531287];
-    if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
-        version = minVersion;
-        isLatest = true;
+// ─── Connection Timeout Monitor ──────────────────────────────────────────────
+// If connecting for >15s without a QR or open event, kill and regenerate fresh QR
+function startConnectingTimeout() {
+    clearConnectingTimeout();
+    connectingTimeoutTimer = setTimeout(async () => {
+        logger.warn('⏰ Connection stuck in "connecting" for 15s — force-resetting socket for fresh QR...');
+        await initiateForceReset();
+    }, 15_000);
+}
+function clearConnectingTimeout() {
+    if (connectingTimeoutTimer) {
+        clearTimeout(connectingTimeoutTimer);
+        connectingTimeoutTimer = null;
     }
-    logger.info({ version, isLatest }, '📦 WhatsApp Web version (enforced high-version fallback)');
-    sock = makeWASocket({
-        version,
-        logger: logger.child({ module: 'baileys' }),
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, logger.child({ module: 'keys' })),
-        },
-        printQRInTerminal: true,
-        generateHighQualityLinkPreview: true,
-        markOnlineOnConnect: false,
-        browser: ['Ubuntu', 'Chrome', '20.0.0'],
-        syncFullHistory: false,
-        shouldSyncHistoryMessage: () => false,
-    });
-    // Store binding removed
-    // ── Event: creds.update — save creds on every update ──
-    sock.ev.on('creds.update', () => {
-        saveCreds();
-    });
+}
+// ─── Force Reset (shared between timeout handler and /force-reset endpoint) ──
+async function initiateForceReset() {
+    if (sock) {
+        try {
+            sock.end(undefined);
+        }
+        catch { }
+        sock = null;
+    }
+    if (reconnectTimer)
+        clearTimeout(reconnectTimer);
+    // Wipe ALL session state from DB
+    await supabase
+        .from('baileys_sessions')
+        .update({
+        conn_state: 'disconnected',
+        qr_string: null,
+        qr_expires_at: null,
+        phone_number: null,
+        creds_json: null,
+        keys_json: null,
+        error_info: 'Force reset — fresh QR generated',
+        last_status_change: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    })
+        .eq('workspace_id', WORKSPACE_ID);
+    await supabase
+        .from('baileys_sessions')
+        .upsert({
+        workspace_id: WORKSPACE_ID,
+        conn_state: 'connecting',
+        qr_string: null,
+        qr_expires_at: null,
+        phone_number: null,
+        error_info: null,
+        last_status_change: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    }, { onConflict: 'workspace_id' });
+    reconnectTimer = setTimeout(() => startBaileysSocket(true), 500);
+}
+// ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
+async function startBaileysSocket(forceFresh = false) {
+    logger.info({ forceFresh }, '🚀 Starting Baileys socket...');
+    clearConnectingTimeout();
+    if (forceFresh) {
+        logger.info('🔄 Force-fresh mode: creating new credential state from scratch');
+        await updateSessionState('connecting');
+        const { initAuthCreds } = await import('@whiskeysockets/baileys');
+        const freshCreds = initAuthCreds();
+        const freshKeys = {
+            get: async () => ({}),
+            set: async () => { },
+        };
+        let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
+            version: [2, 3000, 1017531287],
+            isLatest: false
+        }));
+        const minVersion = [2, 3000, 1017531287];
+        if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
+            version = minVersion;
+            isLatest = true;
+        }
+        sock = makeWASocket({
+            version,
+            logger: logger.child({ module: 'baileys' }),
+            auth: {
+                creds: freshCreds,
+                keys: makeCacheableSignalKeyStore(freshKeys, logger.child({ module: 'keys' })),
+            },
+            printQRInTerminal: true,
+            generateHighQualityLinkPreview: true,
+            markOnlineOnConnect: false,
+            browser: ['Ubuntu', 'Chrome', '20.0.0'],
+            syncFullHistory: false,
+            shouldSyncHistoryMessage: () => false,
+        });
+        // Wire up creds persistence so the newly-paired session is saved
+        const { saveCreds } = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+        sock.ev.on('creds.update', () => {
+            saveCreds();
+        });
+    }
+    else {
+        // Normal mode: load from Supabase (or initAuthCreds if empty)
+        await updateSessionState('connecting');
+        const { state, saveCreds } = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+        let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
+            version: [2, 3000, 1017531287],
+            isLatest: false
+        }));
+        const minVersion = [2, 3000, 1017531287];
+        if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
+            version = minVersion;
+            isLatest = true;
+        }
+        logger.info({ version, isLatest, forceFresh }, '📦 WhatsApp Web version');
+        sock = makeWASocket({
+            version,
+            logger: logger.child({ module: 'baileys' }),
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, logger.child({ module: 'keys' })),
+            },
+            printQRInTerminal: true,
+            generateHighQualityLinkPreview: true,
+            markOnlineOnConnect: false,
+            browser: ['Ubuntu', 'Chrome', '20.0.0'],
+            syncFullHistory: false,
+            shouldSyncHistoryMessage: () => false,
+        });
+        // ── Event: creds.update — save creds on every update ──
+        sock.ev.on('creds.update', () => {
+            saveCreds();
+        });
+    }
     // ── Event: connection.update — handle QR, open, close ──
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         logger.info({ update }, '🔌 Received connection update event');
-        // New QR code generated — save to DB with a stable 15s throttle interval
+        // Start/clear connecting timeout based on QR activity
         if (qr) {
+            clearConnectingTimeout(); // Got QR — reset the timer
+            startConnectingTimeout(); // Still waiting for scan
             const now = Date.now();
             if (now - lastQrTime > 15_000) {
                 lastQrTime = now;
@@ -674,19 +772,19 @@ async function startBaileysSocket() {
                     .upsert({
                     workspace_id: WORKSPACE_ID,
                     qr_string: qr,
-                    qr_expires_at: new Date(Date.now() + 60_000).toISOString(), // expires in 60s
+                    qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
                     conn_state: 'connecting',
                     updated_at: new Date().toISOString(),
                 }, { onConflict: 'workspace_id' });
             }
             else {
-                logger.info('📱 QR update ignored (throttled to preserve stable front-end scanning window)');
+                logger.info('📱 QR update ignored (throttled)');
             }
         }
         if (connection === 'open') {
+            clearConnectingTimeout();
             logger.info('✅ WhatsApp connected!');
             const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
-            // Fetch current reconnect_count to increment
             const { data: curSession } = await supabase
                 .from('baileys_sessions')
                 .select('reconnect_count')
@@ -706,7 +804,6 @@ async function startBaileysSocket() {
                 last_status_change: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             }, { onConflict: 'workspace_id' });
-            // Create reconnection alert if reconnect_count > 1
             if (curReconnects > 1) {
                 try {
                     await supabase.from('wa_instance_alerts').insert({
@@ -720,6 +817,7 @@ async function startBaileysSocket() {
             }
         }
         if (connection === 'close') {
+            clearConnectingTimeout();
             const error = lastDisconnect?.error;
             const statusCode = error?.output?.statusCode;
             const isReplaced = statusCode === DisconnectReason.connectionReplaced;
@@ -742,7 +840,6 @@ async function startBaileysSocket() {
                 updated_at: new Date().toISOString(),
             })
                 .eq('workspace_id', WORKSPACE_ID);
-            // Create disconnection alert
             try {
                 await supabase.from('wa_instance_alerts').insert({
                     workspace_id: WORKSPACE_ID,
@@ -753,7 +850,7 @@ async function startBaileysSocket() {
             }
             catch { }
             if (isLoggedOut) {
-                logger.warn('🚪 Logged out (401). Clearing Supabase credentials and triggering fresh QR...');
+                logger.warn('🚪 Logged out (401). Clearing credentials and triggering fresh QR...');
                 await supabase
                     .from('baileys_sessions')
                     .update({
@@ -770,13 +867,13 @@ async function startBaileysSocket() {
                     .eq('workspace_id', WORKSPACE_ID);
                 if (reconnectTimer)
                     clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(startBaileysSocket, 1000);
+                reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
             }
             else if (shouldReconnect) {
                 logger.info('♻️  Reconnecting in 5s...');
                 if (reconnectTimer)
                     clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(startBaileysSocket, 5_000);
+                reconnectTimer = setTimeout(() => startBaileysSocket(false), 5_000);
             }
             else {
                 if (isReplaced) {
@@ -980,49 +1077,17 @@ function startHealthServer() {
                 return;
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
-                logger.info('Wiping session and initiating fresh QR pairing flow...');
-                // 1. Close current socket
-                if (sock) {
-                    try {
-                        sock.end(undefined);
-                    }
-                    catch { }
-                    sock = null;
-                }
-                // 2. Clear auth state in Supabase
-                await supabase
-                    .from('baileys_sessions')
-                    .update({
-                    conn_state: 'disconnected',
-                    qr_string: null,
-                    qr_expires_at: null,
-                    phone_number: null,
-                    creds_json: null,
-                    keys_json: null,
-                    error_info: null,
-                    last_status_change: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                })
-                    .eq('workspace_id', WORKSPACE_ID);
-                // 3. Mark state as connecting
-                await supabase
-                    .from('baileys_sessions')
-                    .upsert({
-                    workspace_id: WORKSPACE_ID,
-                    conn_state: 'connecting',
-                    qr_string: null,
-                    qr_expires_at: null,
-                    phone_number: null,
-                    error_info: null,
-                    last_status_change: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'workspace_id' });
-                // 4. Start new socket
-                if (reconnectTimer)
-                    clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(startBaileysSocket, 1000);
+                logger.info('🔁 Wiping session and initiating fresh QR pairing flow...');
+                await initiateForceReset();
                 res.writeHead(200);
                 res.end(JSON.stringify({ success: true, message: 'Pairing flow initialized. QR code is being generated.' }));
+                return;
+            }
+            if (req.method === 'POST' && parsedUrl.pathname === '/force-reset') {
+                logger.info('🔴 Hard force-reset requested — fully wiping session for clean QR...');
+                await initiateForceReset();
+                res.writeHead(200);
+                res.end(JSON.stringify({ success: true, message: 'Hard reset complete. Fresh QR will be generated in 1s.' }));
                 return;
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/send') {
