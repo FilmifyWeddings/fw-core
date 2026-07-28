@@ -53,18 +53,20 @@ const FEATURES = [
 ];
 
 // ─── QR Panel ─────────────────────────────────────────────────────────────────
-function QrPanel({ qrString }: { qrString: string | null }) {
+function QrPanel({ qrString, isResetting }: { qrString: string | null; isResetting?: boolean }) {
   const [countdown, setCountdown] = useState(60);
+  const cacheRef = useRef(Date.now());
 
   useEffect(() => {
     if (!qrString) return;
-    setCountdown(60);
+    cacheRef.current = Date.now();
+    setCountdown(45);
     const t = setInterval(() => setCountdown(c => (c > 0 ? c - 1 : 0)), 1000);
     return () => clearInterval(t);
   }, [qrString]);
 
   const qrUrl = qrString
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=2&format=png&t=${cacheRef.current}`
     : null;
 
   return (
@@ -80,7 +82,9 @@ function QrPanel({ qrString }: { qrString: string | null }) {
               {WA_SVG}
             </div>
             <RefreshCw className="w-5 h-5 text-[#00a884] animate-spin" />
-            <span className="text-xs text-[#667781] text-center">Generating QR code…</span>
+            <span className="text-xs text-[#667781] text-center">
+              {isResetting ? 'Clearing stale session and fetching fresh QR…' : 'Generating QR code…'}
+            </span>
           </div>
         ) : (
           <img src={qrUrl} alt="Scan with WhatsApp" width={260} height={260} draggable={false} className="block rounded-xl" />
@@ -110,6 +114,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const [connState, setConnState] = useState<ConnState>('connecting');
   const [qrString, setQrString] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   const sseRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -119,7 +124,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
 
-  const startPolling = useCallback(() => {
+  const startPolling = useCallback((fast = false) => {
     if (pollRef.current) clearInterval(pollRef.current);
     const t0 = Date.now();
     const tick = async () => {
@@ -134,14 +139,14 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         if (!res.ok) return;
         const d = await res.json();
         if (d.conn_state === 'open' && d.phone_number) {
-          setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); stopPolling();
+          setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); setIsResetting(false); stopPolling();
         } else if (d.qr_string && !d.qr_expired) {
-          setQrString(d.qr_string); setConnState('connecting');
+          setQrString(d.qr_string); setConnState('connecting'); setIsResetting(false);
         }
       } catch { /* ignore */ }
     };
     tick();
-    pollRef.current = setInterval(tick, 2500);
+    pollRef.current = setInterval(tick, fast ? 1000 : 2500);
   }, [stopPolling]);
 
   const initSSE = useCallback(async () => {
@@ -160,7 +165,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       });
       sse.addEventListener('connected', (e) => {
         const d = JSON.parse(e.data);
-        setConnState('open'); setPhoneNumber(d.phone); setQrString(null);
+        setConnState('open'); setPhoneNumber(d.phone); setQrString(null); setIsResetting(false);
         sse.close(); stopPolling();
       });
       sse.onerror = () => { startPolling(); };
@@ -214,9 +219,12 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   const handleForceReset = async () => {
     if (!window.confirm('This will completely reset your WhatsApp session. You will need to re-scan the QR code. Continue?')) return;
+    // ── IMMEDIATE FRONTEND STATE WIPEOUT ──
     sseRef.current?.close(); stopPolling();
+    setIsResetting(true);
     setConnState('connecting'); setQrString(null); setPhoneNumber(null);
     startedRef.current = false;
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
@@ -225,7 +233,9 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         });
       }
     } catch {}
-    setTimeout(() => { initSSE(); }, 1500);
+
+    // Start fast polling immediately — skips SSE to avoid double /init-qr
+    startPolling(true);
   };
 
   return (
@@ -326,7 +336,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
                 {/* Right: QR */}
                 <div className="lg:col-span-5 flex flex-col items-center justify-center gap-3">
-                  <QrPanel qrString={qrString} />
+                  <QrPanel qrString={qrString} isResetting={isResetting} />
                   <button
                     onClick={handleForceReset}
                     className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-[10px] transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"

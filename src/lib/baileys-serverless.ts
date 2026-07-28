@@ -447,11 +447,20 @@ export async function generateQrServerless(
 ): Promise<void> {
   const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
 
-  // 1. Tell worker to start the pairing flow (fire-and-forget, non-blocking)
-  try {
-    await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr`, { method: 'POST' }).catch(() => {});
-  } catch {
-    /* worker not available — polling DB for QR written by external process */
+  // 1. Check if worker already has a session in progress — avoid double init
+  const { data: existing } = await supabaseAdmin
+    .from('baileys_sessions')
+    .select('conn_state')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+
+  if (!existing || existing.conn_state !== 'connecting') {
+    // Tell worker to start the pairing flow (fire-and-forget, non-blocking)
+    try {
+      await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr`, { method: 'POST' }).catch(() => {});
+    } catch {
+      /* worker not available — polling DB for QR written by external process */
+    }
   }
 
   // 2. Poll DB for REAL QR from Baileys worker — never generate fake QRs

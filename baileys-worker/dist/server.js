@@ -644,6 +644,7 @@ function clearConnectingTimeout() {
 async function initiateForceReset() {
     if (sock) {
         try {
+            sock.ev.removeAllListeners();
             sock.end(undefined);
         }
         catch { }
@@ -678,7 +679,10 @@ async function initiateForceReset() {
         last_status_change: new Date().toISOString(),
         updated_at: new Date().toISOString(),
     }, { onConflict: 'workspace_id' });
-    reconnectTimer = setTimeout(() => startBaileysSocket(true), 500);
+    // Start socket immediately — no delay to ensure fastest QR generation
+    startBaileysSocket(true).catch(err => {
+        logger.error({ err }, 'Failed to start Baileys socket after force-reset');
+    });
 }
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
 async function startBaileysSocket(forceFresh = false) {
