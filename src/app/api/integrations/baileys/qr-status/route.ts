@@ -11,6 +11,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -47,6 +50,8 @@ export async function GET(req: NextRequest) {
         qr_string: null,
         phone_number: null,
         last_connected: null,
+      }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
       });
     }
 
@@ -60,6 +65,8 @@ export async function GET(req: NextRequest) {
       qr_expired: qrExpired,
       phone_number: data.phone_number,
       last_connected: data.last_connected,
+    }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
     });
   } catch (err) {
     console.error('[qr-status GET]', err);
@@ -101,6 +108,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Session reset. Connect via SSE at /api/integrations/baileys/qr-init',
+    }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
     });
   } catch (err) {
     console.error('[qr-status POST]', err);

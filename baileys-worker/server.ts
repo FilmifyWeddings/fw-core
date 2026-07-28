@@ -887,7 +887,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       printQRInTerminal: true,
       generateHighQualityLinkPreview: true,
       markOnlineOnConnect: false,
-      browser: ['Ubuntu', 'Chrome', '20.0.0'],
+      browser: ['StudioCore', 'Chrome', '1.0.0'],
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
     });
@@ -946,7 +946,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       printQRInTerminal: true,
       generateHighQualityLinkPreview: true,
       markOnlineOnConnect: false,
-      browser: ['Ubuntu', 'Chrome', '20.0.0'],
+      browser: ['StudioCore', 'Chrome', '1.0.0'],
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
     });
