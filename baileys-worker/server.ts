@@ -687,8 +687,8 @@ async function runQueueDrain(): Promise<void> {
     return;
   }
   try {
-    const importPath = '../src/lib/queue-processor.js';
-    const { drainQueue } = await import(importPath);
+    // @ts-expect-error — compiled by separate tsc step to dist/src/lib/queue-processor.js
+    const { drainQueue } = await import('./src/lib/queue-processor.js');
     await drainQueue(WORKSPACE_ID, executeAction as any, 3);
   } catch (err: unknown) {
     logger.error({ err }, 'Queue drain error');
@@ -697,8 +697,8 @@ async function runQueueDrain(): Promise<void> {
 
 async function runSweeper(): Promise<void> {
   try {
-    const importPath = '../src/lib/queue-processor.js';
-    const { sweepExpiredRetries } = await import(importPath);
+    // @ts-expect-error — compiled by separate tsc step to dist/src/lib/queue-processor.js
+    const { sweepExpiredRetries } = await import('./src/lib/queue-processor.js');
     const recovered = await sweepExpiredRetries(WORKSPACE_ID);
     if (recovered > 0) logger.info({ recovered }, '🧹 Sweeper recovered stuck actions');
   } catch (err: unknown) {
@@ -1338,15 +1338,49 @@ function startHealthServer(): void {
 
   server.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
-      logger.error({ port: PORT }, `⚠️ Port ${PORT} is already in use by a lingering process. Health server could not bind, but WhatsApp socket will remain active.`);
+      logger.warn({ port: PORT }, `⚠️ Port ${PORT} in use. Attempting to kill old process and rebind...`);
+      try {
+        const { execSync } = require('child_process');
+        const isWin = process.platform === 'win32';
+        const cmd = isWin
+          ? `netstat -ano | findstr "LISTENING" | findstr ":${PORT}"`
+          : `lsof -ti:${PORT} 2>/dev/null || ss -tlnp 'sport = :${PORT}' 2>/dev/null | grep -oP 'pid=\\K\\d+' || fuser ${PORT}/tcp 2>/dev/null`;
+        const output = execSync(cmd, { encoding: 'utf8', timeout: 5000 }).trim();
+        const pid = isWin
+          ? output.split('\n').find((l: string) => l.includes(`:${PORT}`))?.trim()?.split(/\s+/)?.pop()
+          : output.split('\n')[0]?.trim();
+        if (pid && /^\d+$/.test(pid)) {
+          const killCmd = isWin ? `taskkill /F /PID ${pid}` : `kill -9 ${pid}`;
+          execSync(killCmd, { timeout: 3000 });
+          logger.warn({ pid }, `🧹 Killed lingering process on port ${PORT}. Rebinding...`);
+          setTimeout(() => server.listen(PORT), 500);
+          return;
+        }
+      } catch (killErr) {
+        logger.error({ err: killErr }, `Failed to auto-clean port ${PORT}. Try: lsof -ti:${PORT} | xargs kill -9`);
+      }
+      logger.error({ port: PORT }, `⚠️ Port ${PORT} still in use after cleanup attempt.`);
     } else {
       logger.error({ err }, '🔴 Health server encountered an error');
     }
   });
 
-  server.listen(PORT, () => {
+  // Close existing server if any before binding (graceful restart)
+  server.on('listening', () => {
     logger.info({ port: PORT }, `🌐 Health server running on port ${PORT}`);
   });
+
+  // Attempt graceful close of any previous listener, then bind
+  try {
+    server.listen(PORT);
+  } catch (listenErr: any) {
+    if (listenErr.code === 'EADDRINUSE') {
+      logger.warn({ port: PORT }, 'Port in use on initial bind, error handler will attempt cleanup.');
+      server.emit('error', listenErr);
+    } else {
+      throw listenErr;
+    }
+  }
 }
 
 // ─── Dynamic Delayed-Check Scheduler ─────────────────────────────────────────
