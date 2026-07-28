@@ -114,33 +114,26 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  // Sync WA connection status from DB + worker health + queue poller status
+  // Sync WA connection status from API (consistent with BaileysQrConnect)
   useEffect(() => {
     if (!userId) return;
     const checkStatus = async () => {
       try {
-        const { data, error } = await supabase
-          .from('baileys_sessions')
-          .select('conn_state')
-          .eq('workspace_id', userId)
-          .maybeSingle();
-
-        if (error) {
-          console.warn('[WhatsApp layout] baileys_sessions fetch error:', error.message);
-          setWsStatus('disconnected');
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) { setWsStatus('disconnected'); return; }
+        const res = await fetch('/api/integrations/baileys/qr-status', {
+          headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+        });
+        if (res.ok) {
+          const d = await res.json();
+          setWsStatus(d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' ? 'connected' : 'disconnected');
           return;
         }
-
-        if (!data) {
-          setWsStatus('disconnected');
-          return;
-        }
-
-        setWsStatus(data.conn_state === 'open' ? 'connected' : 'disconnected');
       } catch (err) {
-        console.warn('[WhatsApp layout] Unexpected error checking WA status:', err);
-        setWsStatus('disconnected');
+        console.warn('[WhatsApp layout] Error checking WA status:', err);
       }
+      setWsStatus('disconnected');
     };
 
     const checkWorker = async () => {

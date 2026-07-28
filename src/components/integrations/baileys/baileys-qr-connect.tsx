@@ -5,7 +5,7 @@ import { motion, useMotionValue, useTransform, useSpring } from 'framer-motion';
 import { CheckCircle2, RefreshCw, Zap, Users, Send, LayoutTemplate, MessageCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-type ConnState = 'disconnected' | 'connecting' | 'open' | 'error';
+type ConnState = 'loading' | 'disconnected' | 'connecting' | 'open' | 'error';
 
 const WA_SVG = (
   <svg className="fill-current" viewBox="0 0 24 24" width="100%" height="100%">
@@ -109,7 +109,7 @@ function QrPanel({ qrString, isResetting }: { qrString: string | null; isResetti
 interface BaileysQrConnectProps { workspaceId: string; }
 
 export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
-  const [connState, setConnState] = useState<ConnState>('connecting');
+  const [connState, setConnState] = useState<ConnState>('loading');
   const [qrString, setQrString] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
@@ -138,8 +138,11 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       const d = await res.json();
       if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
         setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
-      } else if (d.qr_string && !d.qr_expired) {
-        setQrString(d.qr_string); setConnState('connecting'); setIsResetting(false);
+      } else {
+        setConnState('connecting'); setIsResetting(false);
+        if (d.qr_string && !d.qr_expired) {
+          setQrString(d.qr_string);
+        }
       }
     } catch { /* ignore */ }
   }, [stopPolling]);
@@ -188,12 +191,13 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
               setConnState('open'); setPhoneNumber(d.phone_number ?? null); return;
             }
+            setConnState('connecting');
             if (d.qr_string && !d.qr_expired) {
-              setQrString(d.qr_string); setConnState('connecting');
+              setQrString(d.qr_string);
             }
           }
         }
-      } catch { /* ignore */ }
+      } catch { setConnState('connecting'); }
       initSSE();
     };
     init();
@@ -261,6 +265,13 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       </div>
 
       <div className="w-full max-w-5xl space-y-5">
+
+        {/* ─── LOADING ─── */}
+        {connState === 'loading' && (
+          <div className="flex items-center justify-center py-20">
+            <RefreshCw className="w-6 h-6 text-[#00a884] animate-spin" />
+          </div>
+        )}
 
         {/* ─── CONNECTED ─── */}
         {connState === 'open' && (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { isQueuePollerInitialized } from '@/lib/baileys-serverless';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,10 +65,9 @@ export async function GET(req: NextRequest) {
   }
 
   // 4. Queue Poller Status
-  const pollerInit = (globalThis as any).__baileysQueuePollerInitialized;
   checks.queuePoller = {
-    status: pollerInit ? 'running' : 'stopped',
-    initialized: !!pollerInit,
+    status: isQueuePollerInitialized ? 'running' : 'stopped',
+    initialized: isQueuePollerInitialized,
   };
 
   // 5. Queue stats

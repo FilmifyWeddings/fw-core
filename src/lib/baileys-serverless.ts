@@ -826,6 +826,8 @@ export async function processSingleQueuedAction(
   }
 }
 
+export let isQueuePollerInitialized = false;
+
 export function startQueuePoller(supabaseAdmin: SupabaseClient) {
   if (process.env.DISABLE_WHATSAPP_WORKER === 'true') {
     console.log('[poller] Queue poller disabled in Next.js because DISABLE_WHATSAPP_WORKER is true.');
@@ -836,6 +838,7 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
     return;
   }
   (globalThis as any).__baileysQueuePollerInitialized = true;
+  isQueuePollerInitialized = true;
   console.log('[poller] Starting Baileys background queue poller (5s interval)...');
 
   setInterval(async () => {
