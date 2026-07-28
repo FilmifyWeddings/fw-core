@@ -1515,12 +1515,11 @@ export function LeadTable({
           </button>
 
           {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5">
-            <Tag className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
+          <div className="flex items-center gap-1">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none cursor-pointer border-none"
+              className="select-sheets text-xs font-semibold"
             >
               <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Stages: All</option>
               <option value="new" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">New</option>
@@ -1533,12 +1532,11 @@ export function LeadTable({
           </div>
 
           {/* Source Filter */}
-          <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5 font-sans">
-            <ExternalLink className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
+          <div className="flex items-center gap-1 font-sans">
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none cursor-pointer border-none capitalize"
+              className="select-sheets text-xs font-semibold capitalize"
             >
               <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Sources: All</option>
               {customSources.map(src => (
@@ -1548,12 +1546,11 @@ export function LeadTable({
           </div>
 
           {/* Owner Filter */}
-          <div className="flex items-center gap-1.5 bg-[#FAF8F5]/60 dark:bg-[#121110]/60 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl px-2.5 py-1.5 font-sans">
-            <User className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
+          <div className="flex items-center gap-1 font-sans">
             <select
               value={ownerFilter}
               onChange={(e) => setOwnerFilter(e.target.value)}
-              className="bg-transparent text-[11px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none cursor-pointer border-none"
+              className="select-sheets text-xs font-semibold"
             >
               <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Owners: All</option>
               {uniqueOwners.map(owner => (
@@ -1566,9 +1563,9 @@ export function LeadTable({
           <div className="relative" ref={manageColsRef}>
             <button
               onClick={() => setShowManageCols(!showManageCols)}
-              className="px-3 py-1.5 text-xs bg-[#FAF8F5]/60 hover:bg-[#FAF8F5]/90 dark:bg-[#121110]/60 dark:hover:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white rounded-xl transition-all flex items-center gap-2"
+              className="select-sheets text-xs font-semibold flex items-center gap-2"
             >
-              <Columns className="w-3.5 h-3.5" />
+              <Columns className="w-3.5 h-3.5 text-slate-500" />
               Columns Engine
               <ChevronDown className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
             </button>
