@@ -8,6 +8,7 @@ import {
   markTokenNeedsReconnect, 
   enqueueRetry 
 } from '@/lib/meta-observability';
+import { forceWakeQueue } from '@/lib/baileys-serverless';
 
 // ── GET: Meta Webhook Subscription Verification ──────────────
 export async function GET(req: NextRequest) {
@@ -231,6 +232,7 @@ export async function POST(req: NextRequest) {
           const pageName = pageConfig.page_name || 'Facebook Page';
 
           // ── 2. FORM TOGGLE CHECK (checks both fb_lead_forms.is_enabled and fb_form_mappings.is_active) ──
+          let contactGroupId: string | null = null;
           if (form_id) {
             // Primary check: fb_lead_forms.is_enabled (the new UI toggle)
             const { data: formEnabled } = await supabaseAdmin
@@ -243,10 +245,14 @@ export async function POST(req: NextRequest) {
             // Also check legacy fb_form_mappings.is_active
             const { data: formSetting } = await supabaseAdmin
               .from('fb_form_mappings')
-              .select('is_active, form_name')
+              .select('is_active, form_name, contact_group_id')
               .eq('workspace_id', targetWorkspaceId)
               .eq('form_id', form_id)
               .maybeSingle();
+
+            if (formSetting) {
+              contactGroupId = formSetting.contact_group_id || null;
+            }
 
             const isFormDisabled =
               (formEnabled && formEnabled.is_enabled === false) ||
@@ -401,6 +407,7 @@ export async function POST(req: NextRequest) {
             email: leadFields.email || `lead_${leadgen_id}@meta-admanager.com`,
             source: 'Facebook Lead Ads',
             status: 'new',
+            whatsapp_group_id: contactGroupId,
             created_at: new Date(created_time ? created_time * 1000 : Date.now()).toISOString(),
             raw_payload: {
               leadgen_id,
@@ -480,6 +487,13 @@ export async function POST(req: NextRequest) {
             });
 
             insertedLeads.push(inserted);
+
+            if (newLeadRecord.whatsapp_group_id) {
+              console.log(`[Meta Webhook] Triggering queue wake for workspace: ${targetWorkspaceId} due to group: ${newLeadRecord.whatsapp_group_id}`);
+              forceWakeQueue(supabaseAdmin, targetWorkspaceId).catch(err =>
+                console.error('[Meta Webhook] forceWakeQueue error:', err)
+              );
+            }
           }
         }
       }

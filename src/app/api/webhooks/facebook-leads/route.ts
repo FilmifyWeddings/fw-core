@@ -4,6 +4,7 @@ import { classifyLead } from '@/lib/classification';
 import { queueDripsForLead } from '@/lib/queue';
 import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
 import { Lead, LeadStatus } from '@/types';
+import { forceWakeQueue } from '@/lib/baileys-serverless';
 
 // ─────────────────────────────────────────────────────────────
 // Fuzzy auto-mapper: Meta field key se system field guess karo
@@ -80,6 +81,7 @@ export async function POST(req: NextRequest) {
       meta_lead_id: string | null;
       source_form_id: string | null;
       form_tag: string | null;
+      whatsapp_group_id: string | null;
     } = {
       name: '',
       email: '',
@@ -89,6 +91,7 @@ export async function POST(req: NextRequest) {
       meta_lead_id: null,
       source_form_id: null,
       form_tag: null,
+      whatsapp_group_id: null,
     };
 
     // ── 1. Real Meta Webhook payload ─────────────────────────
@@ -164,7 +167,7 @@ export async function POST(req: NextRequest) {
       }
 
       // ── 1d. Load Form Mapping Config from DB ────────────
-      let mappingConfig: Record<string, string> = {};
+       let mappingConfig: Record<string, string> = {};
       let isTaggingEnabled = false;
       let formName: string | null = null;
 
@@ -172,7 +175,7 @@ export async function POST(req: NextRequest) {
       if (resolvedFormId) {
         const { data: formMapping } = await supabaseAdmin
           .from('fb_form_mappings')
-          .select('mapping_config, is_tagging_enabled, form_name, is_active')
+          .select('mapping_config, is_tagging_enabled, form_name, is_active, contact_group_id')
           .eq('workspace_id', workspaceId)
           .eq('form_id', resolvedFormId)
           .maybeSingle();
@@ -186,6 +189,7 @@ export async function POST(req: NextRequest) {
           mappingConfig    = (formMapping.mapping_config as Record<string, string>) || {};
           isTaggingEnabled = formMapping.is_tagging_enabled ?? false;
           formName         = formMapping.form_name || null;
+          leadData.whatsapp_group_id = formMapping.contact_group_id || null;
         }
       }
 
@@ -269,6 +273,7 @@ export async function POST(req: NextRequest) {
         meta_lead_id:      leadData.meta_lead_id,
         source_form_id:    leadData.source_form_id,
         form_tag:          leadData.form_tag,
+        whatsapp_group_id: leadData.whatsapp_group_id,
       })
       .select()
       .single();
@@ -307,6 +312,14 @@ export async function POST(req: NextRequest) {
     syncLeadToGoogleContacts(workspaceId, typedLead).catch(err =>
       console.error('[FB Webhook] Async Google Sync error:', err)
     );
+
+    // ── 9. Wake Queue Processor immediately (Async) ────────
+    if (leadData.whatsapp_group_id) {
+      console.log(`[FB Webhook] Triggering queue wake for workspace: ${workspaceId} due to group: ${leadData.whatsapp_group_id}`);
+      forceWakeQueue(supabaseAdmin, workspaceId).catch(err =>
+        console.error('[FB Webhook] forceWakeQueue error:', err)
+      );
+    }
 
     return NextResponse.json({
       success:   true,

@@ -225,6 +225,7 @@ export async function processQueueAction(
       .from('baileys_action_queue')
       .update({
         status: 'failed',
+        error_message: errMsg,
         failure_reason: `[Attempt ${newAttemptCount}/${MAX_RETRIES}] ${errMsg}`,
         next_retry_at: null,
       })

@@ -83,10 +83,13 @@ const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
 // ─── Status Badge Component ────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
+  const norm = (status || '').toLowerCase();
   const cfg: Record<string, { cls: string; label: string; dot?: boolean }> = {
     completed: { cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400', label: 'Completed', dot: true },
-    running:   { cls: 'bg-amber-500/15 border-amber-500/30 text-amber-400',   label: 'Running',   dot: true },
+    running:   { cls: 'bg-blue-500/15 border-blue-500/30 text-blue-400',       label: 'Running',   dot: true },
     failed:    { cls: 'bg-red-500/15 border-red-500/30 text-red-400',         label: 'Failed',    dot: true },
+    stopped:   { cls: 'bg-rose-950/40 border-rose-800/40 text-rose-300',      label: 'Stopped',   dot: true },
+    cancelled: { cls: 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500',      label: 'Cancelled' },
     not_started: { cls: 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500',    label: 'Not Started' },
     sent:      { cls: 'bg-blue-500/15 border-blue-500/30 text-blue-400',      label: 'Sent',      dot: true },
     delivered: { cls: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400', label: 'Delivered', dot: true },
@@ -94,7 +97,7 @@ function StatusBadge({ status }: { status: string }) {
     pending:   { cls: 'bg-amber-500/15 border-amber-500/30 text-amber-400',   label: 'Pending',   dot: true },
     unsent:    { cls: 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500',      label: 'Unsent' },
   };
-  const c = cfg[status] ?? cfg.unsent;
+  const c = cfg[norm] ?? cfg.unsent;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${c.cls}`}>
       {c.dot && <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80 animate-pulse" />}
@@ -337,10 +340,10 @@ function WorkflowAnalyticsInner() {
     if (!selectedWorkflow) return;
     if (!window.confirm('Restart full workflow for this contact? Previous logs will be deleted.')) return;
     try {
-      const res = await fetch(`/api/integrations/whatsapp/workflows/resend?tenant_id=${tenantId}`, {
+      const res = await fetch('/api/workflows/resend-full', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id }),
+        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id, workspaceId: tenantId }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -363,10 +366,10 @@ function WorkflowAnalyticsInner() {
       );
       if (retriableLogs.length === 0) { alert('No failed or stuck steps found.'); return; }
 
-      const res = await fetch(`/api/integrations/whatsapp/workflows/retry?tenant_id=${tenantId}`, {
+      const res = await fetch('/api/workflows/retry-step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: execution.leadId, workflowId: selectedWorkflow.id }),
+        body: JSON.stringify({ leadId: execution.leadId, workflowId: selectedWorkflow.id, workspaceId: tenantId }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -386,25 +389,17 @@ function WorkflowAnalyticsInner() {
     if (!selectedWorkflow) return;
     if (!window.confirm('Cancel all pending scheduled steps for this contact?')) return;
     try {
-      const cleanPhone = phone.replace(/[^0-9]/g, '');
-      const jid = `${cleanPhone}@s.whatsapp.net`;
-
-      const { data: queueItems } = await supabase
-        .from('baileys_action_queue')
-        .select('id, payload')
-        .eq('workspace_id', tenantId)
-        .eq('status', 'pending');
-
-      const toDelete = (queueItems || []).filter((item: any) => item.payload?.to === jid && item.payload?.workflowLogId);
-      if (toDelete.length > 0) {
-        await supabase.from('baileys_action_queue').delete().in('id', toDelete.map((i: any) => i.id));
+      const res = await fetch('/api/workflows/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id, workspaceId: tenantId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to stop workflow');
       }
 
-      await supabase.from('whatsapp_workflow_logs')
-        .update({ status: 'failed', error_message: 'Cancelled by operator' })
-        .eq('lead_id', leadId).eq('workflow_id', selectedWorkflow.id).eq('status', 'pending');
-
-      alert(`✅ Stopped workflow. ${toDelete.length} queue items cancelled.`);
+      alert(`✅ Stopped workflow.`);
       fetchData(true);
       setIsModalOpen(false);
     } catch (err: any) {
@@ -422,13 +417,14 @@ function WorkflowAnalyticsInner() {
     if (!window.confirm(`Re-queue Step ${stepLog.step_index + 1} (${stepLog.template_name}) for immediate dispatch?`)) return;
     try {
       if (stepLog.id) {
-        const res = await fetch(`/api/integrations/whatsapp/workflows/retry?tenant_id=${tenantId}`, {
+        const res = await fetch('/api/workflows/retry-step', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             leadId: execution.leadId,
             workflowId: selectedWorkflow.id,
-            workflowLogId: stepLog.id
+            workflowLogId: stepLog.id,
+            workspaceId: tenantId
           }),
         });
         const data = await res.json();
