@@ -778,8 +778,10 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
       const workspaceIds = Array.from(new Set(pendingItems.map((item: any) => item.workspace_id)));
 
       for (const workspaceId of workspaceIds) {
-        // Verify socket is in globalSockets, if not try to wake it up if the session is open
-        if (!globalSockets.has(workspaceId)) {
+        // Check if we can process: either a local socket exists OR the worker has an open session
+        let canProcess = globalSockets.has(workspaceId);
+
+        if (!canProcess) {
           const { data: session } = await supabaseAdmin
             .from('baileys_sessions')
             .select('conn_state, creds_json')
@@ -787,12 +789,11 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
             .maybeSingle();
 
           if (session?.conn_state === 'open' && session?.creds_json) {
-            console.log(`[poller] Found pending actions for offline workspace ${workspaceId}. Waking up socket...`);
-            await getOrCreateSocket(supabaseAdmin, workspaceId).catch(err => {
-              console.error(`[poller] Failed to auto-wake socket for workspace ${workspaceId}:`, err.message);
-            });
+            // Worker has an active session — no need to create a duplicate local socket,
+            // sendMessageServerless will route through the worker at WORKER_PORT.
+            canProcess = true;
           } else {
-            // ── DEAD-LOCK AUTO-FAIL: Socket is DISCONNECTED and credentials are missing/null.
+            // ── DEAD-LOCK AUTO-FAIL: No local socket AND no worker session.
             // Any past-deadline pending tasks cannot be delivered. Immediately mark them
             // as failed so they don't perpetually deadlock in PENDING state.
             const { data: overdueItems } = await supabaseAdmin
@@ -803,13 +804,13 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
               .lte('next_retry_at', now);
 
             if (overdueItems && overdueItems.length > 0) {
-              console.warn(`[poller] Gateway DISCONNECTED for workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
+              console.warn(`[poller] No active session for workspace ${workspaceId}. Auto-failing ${overdueItems.length} overdue pending task(s).`);
               for (const item of overdueItems) {
                 await supabaseAdmin
                   .from('baileys_action_queue')
                   .update({
                     status: 'failed',
-                    error_message: `[AUTO-FAIL] Gateway disconnected (no active WhatsApp session). Scheduled dispatch deadline passed at ${now}. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
+                    error_message: `[AUTO-FAIL] No active WhatsApp session. Scheduled dispatch deadline passed at ${now}. Scan QR code on integrations page to re-establish connection, then use Retry Failed Steps.`,
                     next_retry_at: null
                   })
                   .eq('id', item.id)
@@ -820,8 +821,7 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
           }
         }
 
-        // Proceed if socket is now active
-        if (!globalSockets.has(workspaceId)) continue;
+        if (!canProcess) continue;
 
         if (!acquireLock(workspaceId)) continue;
 
@@ -933,7 +933,16 @@ export function startQueuePoller(supabaseAdmin: SupabaseClient) {
 
   // Periodic sweeper to recover stuck processing rows (every 60s)
   setInterval(async () => {
-    const activeWorkspaceIds = Array.from(globalSockets.keys()) as string[];
+    // Include both local-socket workspaces AND worker-managed workspaces with open sessions
+    const { data: activeSessions } = await supabaseAdmin
+      .from('baileys_sessions')
+      .select('workspace_id')
+      .eq('conn_state', 'open');
+    const sessionWorkspaceIds = (activeSessions || []).map((s: any) => s.workspace_id);
+    const activeWorkspaceIds = Array.from(new Set([
+      ...Array.from(globalSockets.keys() as Iterable<string>),
+      ...sessionWorkspaceIds,
+    ])) as string[];
     for (const workspaceId of activeWorkspaceIds) {
       try {
         const stuckTimeout = new Date(Date.now() - 120000).toISOString(); // 2 minutes stuck
