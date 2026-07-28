@@ -822,10 +822,21 @@ async function startBaileysSocket(forceFresh = false) {
             const statusCode = error?.output?.statusCode;
             const isReplaced = statusCode === DisconnectReason.connectionReplaced;
             const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+            const isTimedOut = statusCode === 408 || statusCode === 440;
             const shouldReconnect = !isLoggedOut && !isReplaced;
+            // Check if we have an established session or are still pairing
+            // (phone_number === null means we never connected)
+            const { data: curSession } = await supabase
+                .from('baileys_sessions')
+                .select('phone_number, conn_state')
+                .eq('workspace_id', WORKSPACE_ID)
+                .maybeSingle();
+            const hadEstablishedSession = !!curSession?.phone_number;
             logger.error({
                 statusCode,
                 shouldReconnect,
+                isTimedOut,
+                hadEstablishedSession,
                 message: error?.message,
                 stack: error?.stack,
                 lastDisconnect
@@ -869,16 +880,21 @@ async function startBaileysSocket(forceFresh = false) {
                     clearTimeout(reconnectTimer);
                 reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
             }
+            else if (isTimedOut && !hadEstablishedSession) {
+                // During QR pairing: timeout is expected — just wait for next init
+                logger.warn('⏱️ Pairing timed out (408/440) — no established session. Waiting for user to request fresh QR...');
+                // Don't auto-reconnect. The front-end polling will trigger /init-qr or /force-reset.
+                // The connecting timeout timer will also auto-force-reset after 15s.
+            }
+            else if (isReplaced) {
+                logger.warn('⚠️ Connection replaced by another instance. Not reconnecting.');
+                // Don't reconnect — another worker took over
+            }
             else if (shouldReconnect) {
                 logger.info('♻️  Reconnecting in 5s...');
                 if (reconnectTimer)
                     clearTimeout(reconnectTimer);
                 reconnectTimer = setTimeout(() => startBaileysSocket(false), 5_000);
-            }
-            else {
-                if (isReplaced) {
-                    logger.warn('⚠️ Connection replaced. Another socket has taken over. Stopping auto-reconnect.');
-                }
             }
         }
     });
@@ -1039,6 +1055,7 @@ function getRequestBody(req) {
     });
 }
 // ─── Health Check & API Bridge HTTP Server ───────────────────────────────────
+let healthServer = null;
 function startHealthServer() {
     const server = http.createServer(async (req, res) => {
         // ── CORS Headers ────────────────────────────────────────────────────────
@@ -1248,51 +1265,26 @@ function startHealthServer() {
     });
     server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
-            logger.warn({ port: PORT }, `⚠️ Port ${PORT} in use. Attempting to kill old process and rebind...`);
-            try {
-                const { execSync } = require('child_process');
-                const isWin = process.platform === 'win32';
-                const cmd = isWin
-                    ? `netstat -ano | findstr "LISTENING" | findstr ":${PORT}"`
-                    : `lsof -ti:${PORT} 2>/dev/null || ss -tlnp 'sport = :${PORT}' 2>/dev/null | grep -oP 'pid=\\K\\d+' || fuser ${PORT}/tcp 2>/dev/null`;
-                const output = execSync(cmd, { encoding: 'utf8', timeout: 5000 }).trim();
-                const pid = isWin
-                    ? output.split('\n').find((l) => l.includes(`:${PORT}`))?.trim()?.split(/\s+/)?.pop()
-                    : output.split('\n')[0]?.trim();
-                if (pid && /^\d+$/.test(pid)) {
-                    const killCmd = isWin ? `taskkill /F /PID ${pid}` : `kill -9 ${pid}`;
-                    execSync(killCmd, { timeout: 3000 });
-                    logger.warn({ pid }, `🧹 Killed lingering process on port ${PORT}. Rebinding...`);
-                    setTimeout(() => server.listen(PORT), 500);
-                    return;
-                }
-            }
-            catch (killErr) {
-                logger.error({ err: killErr }, `Failed to auto-clean port ${PORT}. Try: lsof -ti:${PORT} | xargs kill -9`);
-            }
-            logger.error({ port: PORT }, `⚠️ Port ${PORT} still in use after cleanup attempt.`);
+            logger.fatal({ port: PORT }, `🔴 Port ${PORT} is already in use. Is another baileys-worker running?`);
+            logger.fatal('Run: pm2 delete baileys-worker && pm2 start ecosystem.config.js');
+            process.exit(1);
         }
         else {
             logger.error({ err }, '🔴 Health server encountered an error');
         }
     });
-    // Close existing server if any before binding (graceful restart)
     server.on('listening', () => {
         logger.info({ port: PORT }, `🌐 Health server running on port ${PORT}`);
     });
-    // Attempt graceful close of any previous listener, then bind
+    // Single attempt to bind — fail fast instead of looping
     try {
         server.listen(PORT);
     }
     catch (listenErr) {
-        if (listenErr.code === 'EADDRINUSE') {
-            logger.warn({ port: PORT }, 'Port in use on initial bind, error handler will attempt cleanup.');
-            server.emit('error', listenErr);
-        }
-        else {
-            throw listenErr;
-        }
+        logger.fatal({ port: PORT, err: listenErr.message }, '🔴 Failed to bind health server');
+        process.exit(1);
     }
+    return server;
 }
 // ─── Dynamic Delayed-Check Scheduler ─────────────────────────────────────────
 // Replaces the 5-second setInterval. Queries the earliest pending action whose
@@ -1654,11 +1646,61 @@ function startGoogleSheetsWatcher() {
         }, 60_000);
     }, 10_000);
 }
+// ─── Graceful Shutdown ───────────────────────────────────────────────────────
+async function shutdown(signal) {
+    logger.info({ signal }, `🛑 Received ${signal} — initiating graceful shutdown...`);
+    // 1. Stop accepting new requests
+    if (healthServer) {
+        healthServer.close(() => {
+            logger.info('✅ Health server closed');
+        });
+    }
+    // 2. Close WhatsApp socket
+    if (sock) {
+        try {
+            sock.end(undefined);
+            logger.info('✅ WhatsApp socket ended');
+        }
+        catch (e) {
+            logger.error({ err: e }, 'Error ending socket');
+        }
+        sock = null;
+    }
+    // 3. Clear all timers
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+    if (connectingTimeoutTimer) {
+        clearTimeout(connectingTimeoutTimer);
+        connectingTimeoutTimer = null;
+    }
+    if (delayedCheckTimer) {
+        clearTimeout(delayedCheckTimer);
+        delayedCheckTimer = null;
+    }
+    // 4. Write disconnected state to DB
+    try {
+        await supabase
+            .from('baileys_sessions')
+            .update({
+            conn_state: 'disconnected',
+            error_info: `${signal} — worker shutting down`,
+            last_status_change: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        })
+            .eq('workspace_id', WORKSPACE_ID);
+        logger.info('✅ Session state persisted as disconnected');
+    }
+    catch { }
+    logger.info('👋 Goodbye. Worker shut down cleanly.');
+    process.exit(0);
+}
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 async function main() {
     logger.info('🔥 FW Core — Baileys Worker Starting...');
     logger.info({ workspaceId: WORKSPACE_ID }, '🏢 Workspace');
-    startHealthServer();
+    healthServer = startHealthServer();
     // ── Supabase Realtime: queue + leads listeners ──
     startActionQueueListener();
     startLeadsRealtimeListener();
@@ -1676,6 +1718,8 @@ async function main() {
     logger.info('✅ Realtime listeners active. Dynamic delay scheduler running. Sweeper (60s) active.');
     logger.info('✅ Polling setInterval REMOVED — egress now driven by Realtime + scheduleNextDelayedCheck.');
 }
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 main().catch((err) => {
     logger.fatal({ err }, '💥 Worker crashed');
     process.exit(1);
