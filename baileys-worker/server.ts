@@ -793,6 +793,9 @@ async function initiateForceReset(): Promise<void> {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'workspace_id' });
 
+  // Reset QR throttle so new socket's first QR writes to DB immediately
+  lastQrTime = 0;
+
   // Start socket immediately — no delay to ensure fastest QR generation
   startBaileysSocket(true).catch(err => {
     logger.error({ err }, 'Failed to start Baileys socket after force-reset');

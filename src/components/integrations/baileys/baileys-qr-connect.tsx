@@ -54,19 +54,17 @@ const FEATURES = [
 
 // ─── QR Panel ─────────────────────────────────────────────────────────────────
 function QrPanel({ qrString, isResetting }: { qrString: string | null; isResetting?: boolean }) {
-  const [countdown, setCountdown] = useState(60);
-  const cacheRef = useRef(Date.now());
+  const [countdown, setCountdown] = useState(45);
 
   useEffect(() => {
     if (!qrString) return;
-    cacheRef.current = Date.now();
     setCountdown(45);
     const t = setInterval(() => setCountdown(c => (c > 0 ? c - 1 : 0)), 1000);
     return () => clearInterval(t);
   }, [qrString]);
 
   const qrUrl = qrString
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=2&format=png&t=${cacheRef.current}`
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`
     : null;
 
   return (
@@ -87,7 +85,7 @@ function QrPanel({ qrString, isResetting }: { qrString: string | null; isResetti
             </span>
           </div>
         ) : (
-          <img src={qrUrl} alt="Scan with WhatsApp" width={260} height={260} draggable={false} className="block rounded-xl" />
+          <img key={qrString} src={qrUrl} alt="Scan with WhatsApp" width={260} height={260} draggable={false} className="block rounded-xl" />
         )}
       </div>
 
@@ -115,6 +113,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const [qrString, setQrString] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+
+  const [qrPanelKey, setQrPanelKey] = useState(0);
 
   const sseRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -223,6 +223,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     sseRef.current?.close(); stopPolling();
     setIsResetting(true);
     setConnState('connecting'); setQrString(null); setPhoneNumber(null);
+    setQrPanelKey(k => k + 1);
     startedRef.current = false;
 
     try {
@@ -336,7 +337,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
                 {/* Right: QR */}
                 <div className="lg:col-span-5 flex flex-col items-center justify-center gap-3">
-                  <QrPanel qrString={qrString} isResetting={isResetting} />
+                  <QrPanel key={qrPanelKey} qrString={qrString} isResetting={isResetting} />
                   <button
                     onClick={handleForceReset}
                     className="px-5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-[10px] transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"

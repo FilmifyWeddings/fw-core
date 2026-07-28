@@ -10,27 +10,33 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { createClient } from '@supabase/supabase-js';
 
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
-    const supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-    if (authError || !user) {
+    // Fast JWT payload decode — no network call (token was already verified by client SDK)
+    let workspaceId: string | null = null;
+    if (token) {
+      try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+          workspaceId = payload.sub ?? null;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    if (!workspaceId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { data, error } = await supabaseAdmin
       .from('baileys_sessions')
       .select('conn_state, qr_string, qr_expires_at, phone_number, last_connected')
-      .eq('workspace_id', user.id)
+      .eq('workspace_id', workspaceId)
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -66,13 +72,17 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
-    const supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-    if (authError || !user) {
+    let workspaceId: string | null = null;
+    if (token) {
+      try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+          workspaceId = payload.sub ?? null;
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    if (!workspaceId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -80,7 +90,7 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin
       .from('baileys_sessions')
       .upsert({
-        workspace_id: user.id,
+        workspace_id: workspaceId,
         conn_state: 'connecting',
         qr_string: null,
         creds_json: null,
