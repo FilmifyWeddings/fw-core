@@ -476,8 +476,8 @@ export async function generateQrServerless(
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
-    if (data?.conn_state === 'open' && data?.phone_number) {
-      onConnected(data.phone_number);
+    if (data?.conn_state === 'open') {
+      onConnected(data?.phone_number ?? '');
       return;
     }
 

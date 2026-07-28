@@ -118,36 +118,37 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   const sseRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const checkRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (checkRef.current) { clearInterval(checkRef.current); checkRef.current = null; }
   }, []);
+
+  const tick = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/integrations/baileys/qr-status', {
+        headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+      if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
+        setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
+      } else if (d.qr_string && !d.qr_expired) {
+        setQrString(d.qr_string); setConnState('connecting'); setIsResetting(false);
+      }
+    } catch { /* ignore */ }
+  }, [stopPolling]);
 
   const startPolling = useCallback((fast = false) => {
     if (pollRef.current) clearInterval(pollRef.current);
-    const t0 = Date.now();
-    const tick = async () => {
-      if (Date.now() - t0 > 55_000) { stopPolling(); return; }
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) return;
-        const res = await fetch('/api/integrations/baileys/qr-status', {
-          headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
-        });
-        if (!res.ok) return;
-        const d = await res.json();
-        if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
-          setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
-        } else if (d.qr_string && !d.qr_expired) {
-          setQrString(d.qr_string); setConnState('connecting'); setIsResetting(false);
-        }
-      } catch { /* ignore */ }
-    };
     tick();
     pollRef.current = setInterval(tick, fast ? 1000 : 2500);
-  }, [stopPolling]);
+  }, [tick]);
 
   const initSSE = useCallback(async () => {
     if (startedRef.current) return;
@@ -196,8 +197,12 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       initSSE();
     };
     init();
+
+    // persistent fallback: check status every 10s regardless of SSE/polling state
+    checkRef.current = setInterval(tick, 10000);
+
     return () => { sseRef.current?.close(); stopPolling(); };
-  }, [initSSE, stopPolling]);
+  }, [initSSE, stopPolling, tick]);
 
   const handleDisconnect = async () => {
     sseRef.current?.close(); stopPolling();
