@@ -457,7 +457,7 @@ export async function generateQrServerless(
   if (!existing || existing.conn_state !== 'connecting') {
     // Tell worker to start the pairing flow (fire-and-forget, non-blocking)
     try {
-      await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr`, { method: 'POST' }).catch(() => {});
+      await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'POST' }).catch(() => {});
     } catch {
       /* worker not available — polling DB for QR written by external process */
     }

@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from('baileys_sessions')
-      .select('conn_state, qr_string, qr_expires_at, phone_number, last_connected')
+      .select('conn_state, status, qr_string, qr_expires_at, phone_number, last_connected')
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
@@ -46,7 +46,9 @@ export async function GET(req: NextRequest) {
 
     if (!data) {
       return NextResponse.json({
+        isConnected: false,
         conn_state: 'disconnected',
+        status: 'DISCONNECTED',
         qr_string: null,
         phone_number: null,
         last_connected: null,
@@ -55,15 +57,22 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Normalize: treat open / CONNECTED / open status as connected
+    const rawState = data.conn_state ?? 'disconnected';
+    const rawStatus = data.status ?? '';
+    const isConnected = rawState === 'open' || rawStatus === 'CONNECTED' || rawStatus === 'open';
+
     const qrExpired = data.qr_expires_at
       ? new Date(data.qr_expires_at) < new Date()
       : true;
 
     return NextResponse.json({
-      conn_state: data.conn_state,
+      isConnected,
+      conn_state: isConnected ? 'open' : rawState,
+      status: isConnected ? 'CONNECTED' : (rawStatus || 'DISCONNECTED'),
       qr_string: qrExpired ? null : data.qr_string,
       qr_expired: qrExpired,
-      phone_number: data.phone_number,
+      phone_number: data.phone_number || 'Device Linked',
       last_connected: data.last_connected,
     }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },

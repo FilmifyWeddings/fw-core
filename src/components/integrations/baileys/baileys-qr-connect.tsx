@@ -138,7 +138,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         });
         if (!res.ok) return;
         const d = await res.json();
-        if (d.conn_state === 'open') {
+        if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
           setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
         } else if (d.qr_string && !d.qr_expired) {
           setQrString(d.qr_string); setConnState('connecting'); setIsResetting(false);
@@ -184,7 +184,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           });
           if (res.ok) {
             const d = await res.json();
-            if (d.conn_state === 'open') {
+            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
               setConnState('open'); setPhoneNumber(d.phone_number ?? null); return;
             }
             if (d.qr_string && !d.qr_expired) {

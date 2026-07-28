@@ -1410,6 +1410,7 @@ function startHealthServer(): http.Server {
         res.end(JSON.stringify({
           status: 'ok',
           worker: 'baileys',
+          workspace_id: WORKSPACE_ID,
           socket: sock ? 'alive' : 'null',
           session: data,
         }));
@@ -1425,6 +1426,10 @@ function startHealthServer(): http.Server {
       }
 
       if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
+        const qsWorkspace = parsedUrl.searchParams.get('workspace_id');
+        if (qsWorkspace && qsWorkspace !== WORKSPACE_ID) {
+          logger.warn({ configured: WORKSPACE_ID, requested: qsWorkspace }, '⚠️ Workspace ID mismatch in /init-qr — using configured WORKER_WORKSPACE_ID');
+        }
         logger.info('🔁 Wiping session and initiating fresh QR pairing flow...');
         await initiateForceReset();
         res.writeHead(200);
