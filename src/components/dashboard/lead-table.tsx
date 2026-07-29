@@ -2095,7 +2095,7 @@ export function LeadTable({
             if (col.type === 'meta_question') return <col key={col.id} className="w-[240px]" />;
             return <col key={col.id} className="w-[210px]" />;
           })}
-          <col className="w-[220px]" />
+          <col className="w-[300px]" />
         </colgroup>
 
         <thead>
@@ -2213,7 +2213,7 @@ export function LeadTable({
             {/* Frozen Column Actions (Sticky Top & Right) */}
             <th 
               style={{ top: `${headerHeight}px` }}
-              className="py-4 pl-4 pr-6 text-center sticky right-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200"
+              className="py-4 px-4 text-center sticky right-0 w-[300px] min-w-[300px] max-w-[300px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)]"
             >
               Actions
             </th>
@@ -2726,12 +2726,12 @@ export function LeadTable({
                         })}
 
                         {/* Sticky Right: Column Actions */}
-                        <td className={`py-2 pl-4 pr-6 text-right sticky right-0 z-20 border-l border-slate-200 dark:border-zinc-900/60 shadow-[-5px_0_10px_rgba(0,0,0,0.03)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.3)] transition-colors ${
+                        <td className={`py-2 px-3 text-right sticky right-0 w-[300px] min-w-[300px] max-w-[300px] z-20 border-l border-[#E8E5DF] dark:border-[#2C2926] shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)] transition-colors ${
                           isSelected 
                             ? 'bg-[#EAE8E3] dark:bg-[#1F1C1A]' 
-                            : 'bg-[#F6F5F2] dark:bg-[#141211] group-hover/row:bg-[#EDEBE7] dark:group-hover/row:bg-[#1C1A18]'
+                            : 'bg-[#FAF8F5] dark:bg-[#121110] group-hover/row:bg-[#EAE6DF] dark:group-hover/row:bg-[#1C1A18]'
                         }`} onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1.5">
+                          <div className="flex items-center justify-end gap-1 w-full">
                             
                             {/* WA Welcome Msg Quick Action */}
                             <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
