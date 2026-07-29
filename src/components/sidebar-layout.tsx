@@ -189,10 +189,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   ];
 
   // Routes that bypass the global sidebar entirely
-  const bypassRoutes = ['/', '/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager'];
+  const bypassRoutes = ['/', '/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager', '/leads'];
 
   // Bypass sidebar for launchpad, team-manager, and special routes
-  if (bypassRoutes.includes(pathname) || pathname.startsWith('/team-manager')) {
+  if (bypassRoutes.includes(pathname) || pathname.startsWith('/team-manager') || pathname.startsWith('/leads')) {
     return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
   }
   

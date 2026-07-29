@@ -49,7 +49,7 @@ interface ColumnConfig {
 const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'contact', label: 'Contact Details', visible: true, type: 'system' },
   { id: 'source', label: 'Lead Source', visible: true, type: 'system' },
-  { id: 'status', label: 'Status', visible: true, type: 'system' },
+  { id: 'status', label: 'Stages', visible: true, type: 'system' },
   { id: 'lead_owner', label: 'Lead Owner', visible: true, type: 'system' },
   { id: 'company', label: 'Company', visible: false, type: 'system' },
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
@@ -649,6 +649,20 @@ export function LeadTable({
     { id: '3', name: 'Sushant Nawale', email: 'sushant@filmifyweddings.com', role: 'Lead Owner' },
     { id: '4', name: 'Rahul Sharma', email: 'rahul@filmifyweddings.com', role: 'Team Member' }
   ]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const local = localStorage.getItem('leads_workspace_team_members');
+      if (local) {
+        try {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTeamMembers(parsed);
+          }
+        } catch (_) {}
+      }
+    }
+  }, []);
   const [showAddStatusModal, setShowAddStatusModal] = useState(false);
   const [newStatusName, setNewStatusName] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#ef4444');
@@ -1271,7 +1285,10 @@ export function LeadTable({
   };
 
   // Filter lists configuration
-  const uniqueOwners = Array.from(new Set(leads.map(l => (l.raw_payload?.lead_owner || 'Chad Thunderclock') as string)));
+  const uniqueOwners = Array.from(new Set([
+    ...teamMembers.map(m => m.name as string),
+    ...leads.map(l => (l.raw_payload?.lead_owner) as string).filter(Boolean)
+  ]));
 
   // Filter trigger calculation
   const filteredLeads = leads.filter(lead => {
@@ -1556,14 +1573,8 @@ export function LeadTable({
       {/* Sticky Header Anchor Stack */}
       <div ref={headerRef} className="sticky top-0 left-0 w-full z-50 bg-white dark:bg-[#0c0c0e] px-4 md:px-6 pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
         
-        {/* Dynamic Views Switcher Panel */}
-        <div className="flex items-center justify-between pb-4">
-          <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl shadow-inner">
-            <span className="px-4 py-2 text-xs font-bold rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#1C1A18] text-[#D4AF37] dark:text-[#C5A059] shadow-sm flex items-center gap-2">
-              <LayoutGrid className="w-3.5 h-3.5" />
-              Grid Table
-            </span>
-          </div>
+        {/* Primary Actions Row */}
+        <div className="flex items-center justify-end pb-4">
 
           {/* Primary Manual lead creation */}
           <button
