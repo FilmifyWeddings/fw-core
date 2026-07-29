@@ -39,20 +39,20 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
     };
   }, []);
 
-  // LEFT SIDE ICONS (4 Integration Icons)
+  // LEFT SIDE ICONS (4 Integration Icons - Exact Y centers)
   const leftIcons = [
-    { name: 'Instagram', component: InstagramLogo, y: 40, yOffset: -8, delay: 0 },
-    { name: 'Facebook', component: FacebookLogo, y: 140, yOffset: 8, delay: 0.15 },
-    { name: 'Meta', component: MetaLogo, y: 240, yOffset: -10, delay: 0.3 },
-    { name: 'WhatsApp', component: WhatsAppLogo, y: 340, yOffset: 6, delay: 0.1 },
+    { name: 'Instagram', component: InstagramLogo, y: 55, yOffset: -8, delay: 0 },
+    { name: 'Facebook', component: FacebookLogo, y: 160, yOffset: 8, delay: 0.15 },
+    { name: 'Meta', component: MetaLogo, y: 265, yOffset: -10, delay: 0.3 },
+    { name: 'WhatsApp', component: WhatsAppLogo, y: 370, yOffset: 6, delay: 0.1 },
   ];
 
-  // RIGHT SIDE ICONS (4 Integration Icons)
+  // RIGHT SIDE ICONS (4 Integration Icons - Exact Y centers)
   const rightIcons = [
-    { name: 'Drive', component: GoogleDriveLogo, y: 40, yOffset: -8, delay: 0.25 },
-    { name: 'Sheets', component: GoogleSheetsLogo, y: 140, yOffset: 10, delay: 0.4 },
-    { name: 'Calendar', component: GoogleCalendarLogo, y: 240, yOffset: -6, delay: 0.2 },
-    { name: 'Gmail', component: GmailLogo, y: 340, yOffset: 8, delay: 0.35 },
+    { name: 'Drive', component: GoogleDriveLogo, y: 55, yOffset: -8, delay: 0.25 },
+    { name: 'Sheets', component: GoogleSheetsLogo, y: 160, yOffset: 10, delay: 0.4 },
+    { name: 'Calendar', component: GoogleCalendarLogo, y: 265, yOffset: -6, delay: 0.2 },
+    { name: 'Gmail', component: GmailLogo, y: 370, yOffset: 8, delay: 0.35 },
   ];
 
   return (
@@ -168,7 +168,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
           </div>
 
           {/* ========================================================= */}
-          {/* RIGHT DASHBOARD PREVIEW WITH FAR OUTWARD ICONS & CONNECTED SVG LINES */}
+          {/* RIGHT DASHBOARD PREVIEW WITH PERFECTLY ALIGNED FLOATING ICONS */}
           {/* ========================================================= */}
           <div className="lg:col-span-8 relative z-10 flex items-center justify-center">
             
@@ -183,21 +183,21 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                 </defs>
                 {leftIcons.map((item, i) => (
                   <g key={i}>
-                    {/* Curve extending from icon center (x=34) right to dashboard left edge (x=140) */}
+                    {/* Curve extending from icon center (x=24) right to dashboard left edge (x=140) */}
                     <path
-                      d={`M 34 ${item.y + 24} C 80 ${item.y + 24}, 110 210, 140 210`}
+                      d={`M 24 ${item.y} C 65 ${item.y}, 100 210, 140 210`}
                       fill="none"
                       stroke="url(#goldStrokeGradLeft)"
                       strokeWidth="1.8"
                       strokeDasharray="4 2"
                       className="animate-pulse"
                     />
-                    <circle cx="34" cy={item.y + 24} r="3" fill="#D4AF37" />
+                    <circle cx="24" cy={item.y} r="3" fill="#D4AF37" />
                   </g>
                 ))}
               </svg>
 
-              <div className="h-full flex flex-col justify-around py-4 pointer-events-auto">
+              <div className="h-full flex flex-col justify-around py-4 items-start pointer-events-auto">
                 {leftIcons.map((item, idx) => {
                   const IconComponent = item.component;
                   return (
@@ -396,21 +396,21 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                 </defs>
                 {rightIcons.map((item, i) => (
                   <g key={i}>
-                    {/* Curve extending from icon center (x=106) left to dashboard right edge (x=0) */}
+                    {/* Curve extending from right icon center (x=116) left to dashboard right edge (x=0) */}
                     <path
-                      d={`M 106 ${item.y + 24} C 60 ${item.y + 24}, 30 210, 0 210`}
+                      d={`M 116 ${item.y} C 75 ${item.y}, 40 210, 0 210`}
                       fill="none"
                       stroke="url(#goldStrokeGradRight)"
                       strokeWidth="1.8"
                       strokeDasharray="4 2"
                       className="animate-pulse"
                     />
-                    <circle cx="106" cy={item.y + 24} r="3" fill="#D4AF37" />
+                    <circle cx="116" cy={item.y} r="3" fill="#D4AF37" />
                   </g>
                 ))}
               </svg>
 
-              <div className="h-full flex flex-col justify-around py-4 pointer-events-auto">
+              <div className="h-full flex flex-col justify-around py-4 items-end pointer-events-auto">
                 {rightIcons.map((item, idx) => {
                   const IconComponent = item.component;
                   return (
