@@ -17,6 +17,7 @@ import { FaqSection } from '@/components/landing/FaqSection';
 import { CtaSection } from '@/components/landing/CtaSection';
 import { Footer } from '@/components/landing/Footer';
 import { SubPageViewer } from '@/components/landing/SubPages';
+import { PersistentPhotographer } from '@/components/landing/PersistentPhotographer';
 
 export default function RootLandingPage() {
   const [activePage, setActivePage] = useState<string>('home');
@@ -29,6 +30,9 @@ export default function RootLandingPage() {
   return (
     <div className="min-h-screen w-full bg-[#FFFDF9] dark:bg-[#0C0B0A] text-[#1A1917] dark:text-[#FAF8F5] font-sans antialiased selection:bg-[#D4AF37]/30 selection:text-[#B89047]">
       
+      {/* PERSISTENT ANIMATED PHOTOGRAPHER CHARACTER */}
+      {activePage === 'home' && <PersistentPhotographer />}
+
       {/* GLOBAL LANDING NAVBAR */}
       <Navbar activePage={activePage} onNavigate={handleNavigate} />
 
