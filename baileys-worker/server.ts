@@ -143,12 +143,14 @@ let currentAuthState: { creds: import('@whiskeysockets/baileys').AuthenticationC
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(
   state: 'disconnected' | 'connecting' | 'open',
-  extras: Record<string, unknown> = {}
+  extras: Record<string, unknown> = {},
+  targetWorkspaceId?: string
 ): Promise<void> {
+  const wsId = targetWorkspaceId || WORKSPACE_ID;
   await supabase
     .from('baileys_sessions')
     .upsert({
-      workspace_id: WORKSPACE_ID,
+      workspace_id: wsId,
       conn_state: state,
       ...extras,
       updated_at: new Date().toISOString(),
@@ -863,17 +865,18 @@ function clearConnectingTimeout(): void {
 }
 
 // ─── Force Reset (shared between timeout handler and /force-reset endpoint) ──
-async function initiateForceReset(): Promise<void> {
-  if (sock) {
+async function initiateForceReset(targetWorkspaceId?: string): Promise<void> {
+  const wsId = targetWorkspaceId || WORKSPACE_ID;
+  if (sock && wsId === WORKSPACE_ID) {
     try {
       (sock.ev as any).removeAllListeners();
       sock.end(undefined);
     } catch {}
     sock = null;
   }
-  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (reconnectTimer && wsId === WORKSPACE_ID) clearTimeout(reconnectTimer);
 
-  // Wipe ALL session state from DB
+  // Wipe ALL session state from DB for target workspace
   await supabase
     .from('baileys_sessions')
     .update({
@@ -887,12 +890,12 @@ async function initiateForceReset(): Promise<void> {
       last_status_change: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('workspace_id', WORKSPACE_ID);
+    .eq('workspace_id', wsId);
 
   await supabase
     .from('baileys_sessions')
     .upsert({
-      workspace_id: WORKSPACE_ID,
+      workspace_id: wsId,
       conn_state: 'connecting',
       qr_string: null,
       qr_expires_at: null,
@@ -908,25 +911,26 @@ async function initiateForceReset(): Promise<void> {
   lastQrTime = 0;
 
   // Start socket immediately — no delay to ensure fastest QR generation
-  startBaileysSocket(true).catch(err => {
-    logger.error({ err }, 'Failed to start Baileys socket after force-reset');
+  startBaileysSocket(true, wsId).catch(err => {
+    logger.error({ err, workspaceId: wsId }, 'Failed to start Baileys socket after force-reset');
   });
 }
 
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
-async function startBaileysSocket(forceFresh = false): Promise<void> {
-  logger.info({ forceFresh }, '🚀 Starting Baileys socket...');
+async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string): Promise<void> {
+  const wsId = targetWorkspaceId || WORKSPACE_ID;
+  logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket...');
 
   clearConnectingTimeout();
 
   if (forceFresh) {
-    logger.info('🔄 Force-fresh mode: creating new credential state from scratch');
-    await updateSessionState('connecting');
+    logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: creating new credential state from scratch');
+    await updateSessionState('connecting', {}, wsId);
 
     // Use authState's creds/keys so saveCreds persists the SAME object
     // that Baileys mutates in-place via creds.update / keys.set
-    const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
-    saveCreds = authState.saveCreds;
+    const authState = await useSupabaseAuthState(supabase, wsId);
+    const saveCredsLocal = authState.saveCreds;
 
     // Reset creds to fresh random keys even if DB had stale state
     const { initAuthCreds } = await import('@whiskeysockets/baileys');
@@ -937,16 +941,18 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
     Object.assign(authState.state.creds, freshCreds);
 
     // Clear the in-memory signal key cache by resetting keys store internals
-    // (SignalKeyStore.set() appends to an inaccessible closure — replace it)
     const blankKeys: SignalKeyStore = {
       get: async () => ({}),
       set: async () => {},
     };
 
-    currentAuthState = {
-      creds: authState.state.creds,
-      keys: blankKeys,
-    };
+    if (wsId === WORKSPACE_ID) {
+      saveCreds = saveCredsLocal;
+      currentAuthState = {
+        creds: authState.state.creds,
+        keys: blankKeys,
+      };
+    }
 
     let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ 
       version: [2, 3000, 1017531287] as [number, number, number], 
@@ -959,12 +965,12 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       isLatest = true;
     }
 
-    sock = makeWASocket({
+    const localSock = makeWASocket({
       version,
-      logger: logger.child({ module: 'baileys' }),
+      logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
       auth: {
-        creds: currentAuthState.creds,
-        keys: makeCacheableSignalKeyStore(currentAuthState.keys, logger.child({ module: 'keys' })),
+        creds: authState.state.creds,
+        keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
       },
       printQRInTerminal: true,
       generateHighQualityLinkPreview: true,
@@ -978,29 +984,85 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       shouldSyncHistoryMessage: () => false,
     });
 
-    sock.ev.on('creds.update', (update: Partial<any>) => {
+    if (wsId === WORKSPACE_ID) {
+      sock = localSock;
+    }
+
+    localSock.ev.on('creds.update', (update: Partial<any>) => {
       const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
       if (needsForceFlush) {
-        logger.warn({ update }, '⚠️ Creds upgrade detected (isNewLogin/registered/me) — forcing immediate DB flush');
-        saveCreds!().then(() => {
-          console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${WORKSPACE_ID}`);
+        logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
+        saveCredsLocal().then(() => {
+          console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
         }).catch((err) => {
-          logger.error({ err }, 'Failed to force-flush creds after pairing upgrade');
+          logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
         });
       } else {
-        saveCreds!();
+        saveCredsLocal();
+      }
+    });
+
+    localSock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
+      logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
+
+      if (qr) {
+        clearConnectingTimeout();
+        startConnectingTimeout();
+
+        const now = Date.now();
+        if (now - lastQrTime > 10_000) {
+          lastQrTime = now;
+          logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
+          console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
+          await dbWrite(
+            supabase
+              .from('baileys_sessions')
+              .upsert({
+                workspace_id: wsId,
+                qr_string: qr,
+                qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+                conn_state: 'connecting',
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id' }),
+            `upsert-qr-${wsId}`
+          );
+        }
+      }
+
+      if (connection === 'open') {
+        clearConnectingTimeout();
+
+        await dbWriteCritical(
+          supabase
+            .from('baileys_sessions')
+            .upsert({
+              workspace_id: wsId,
+              conn_state: 'open',
+              status: 'CONNECTED',
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id' }),
+          `upsert-open-status-${wsId}`
+        );
+
+        if (update.isNewLogin && saveCredsLocal) {
+          try {
+            await saveCredsLocal();
+            console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${wsId}`);
+          } catch (err) {
+            logger.error({ err, workspaceId: wsId }, 'Failed to flush creds on isNewLogin');
+          }
+        }
       }
     });
   } else {
-    // Reconnect mode: use in-memory creds if available (bypasses DB read
-    // so 515 stream restart never reloads stale auth state from Postgres)
-    if (currentAuthState) {
+    // Reconnect mode
+    if (currentAuthState && wsId === WORKSPACE_ID) {
       logger.info('🧠 Reusing in-memory auth state for reconnect (bypassing DB read)');
-      // saveCreds still points to the original persistAuthState from
-      // the first useSupabaseAuthState call — its closure still owns
-      // the live creds object that Baileys mutated in-place
     } else {
-      const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+      const authState = await useSupabaseAuthState(supabase, wsId);
       saveCreds = authState.saveCreds;
       currentAuthState = {
         creds: authState.state.creds,
@@ -1008,7 +1070,7 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       };
     }
 
-    await updateSessionState('connecting');
+    await updateSessionState('connecting', {}, wsId);
 
     let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ 
       version: [2, 3000, 1017531287] as [number, number, number], 
@@ -1020,14 +1082,14 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       version = minVersion as [number, number, number];
       isLatest = true;
     }
-    logger.info({ version, isLatest, forceFresh }, '📦 WhatsApp Web version');
+    logger.info({ version, isLatest, forceFresh, workspaceId: wsId }, '📦 WhatsApp Web version');
 
-    sock = makeWASocket({
+    const localSock = makeWASocket({
       version,
-      logger: logger.child({ module: 'baileys' }),
+      logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
       auth: {
         creds: currentAuthState!.creds,
-        keys: makeCacheableSignalKeyStore(currentAuthState!.keys, logger.child({ module: 'keys' })),
+        keys: makeCacheableSignalKeyStore(currentAuthState!.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
       },
       printQRInTerminal: true,
       generateHighQualityLinkPreview: true,
@@ -1041,73 +1103,72 @@ async function startBaileysSocket(forceFresh = false): Promise<void> {
       shouldSyncHistoryMessage: () => false,
     });
 
-    // ── Event: creds.update — save creds on every update ──
-    sock.ev.on('creds.update', (update: Partial<any>) => {
+    if (wsId === WORKSPACE_ID) {
+      sock = localSock;
+    }
+
+    localSock.ev.on('creds.update', (update: Partial<any>) => {
       const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
       if (needsForceFlush) {
-        logger.warn({ update }, '⚠️ Creds upgrade detected (isNewLogin/registered/me) — forcing immediate DB flush');
+        logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
         saveCreds!().then(() => {
-          console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${WORKSPACE_ID}`);
+          console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
         }).catch((err) => {
-          logger.error({ err }, 'Failed to force-flush creds after pairing upgrade');
+          logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
         });
       } else {
         saveCreds!();
       }
     });
-  }
 
-  // ── Event: connection.update — handle QR, open, close ──
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+    localSock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
 
-    console.log('⚡ Connection state changed:', connection || 'qr_event');
-    logger.info({ update }, '🔌 Received connection update event');
+      console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
+      logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
 
-    // Start/clear connecting timeout based on QR activity
-    if (qr) {
-      clearConnectingTimeout();      // Got QR — reset the timer
-      startConnectingTimeout();       // Still waiting for scan
+      if (qr) {
+        clearConnectingTimeout();
+        startConnectingTimeout();
 
-      const now = Date.now();
-      if (now - lastQrTime > 15_000) {
-        lastQrTime = now;
-        logger.info('📱 Storing fresh QR code in database...');
-        console.log('📱 Storing fresh QR code for workspace');
-        await dbWrite(
+        const now = Date.now();
+        if (now - lastQrTime > 10_000) {
+          lastQrTime = now;
+          logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
+          console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
+          await dbWrite(
+            supabase
+              .from('baileys_sessions')
+              .upsert({
+                workspace_id: wsId,
+                qr_string: qr,
+                qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+                conn_state: 'connecting',
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id' }),
+            `upsert-qr-${wsId}`
+          );
+        }
+      }
+
+      if (connection === 'open') {
+        clearConnectingTimeout();
+
+        await dbWriteCritical(
           supabase
             .from('baileys_sessions')
             .upsert({
-              workspace_id: WORKSPACE_ID,
-              qr_string: qr,
-              qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
-              conn_state: 'connecting',
+              workspace_id: wsId,
+              conn_state: 'open',
+              status: 'CONNECTED',
               updated_at: new Date().toISOString(),
             }, { onConflict: 'workspace_id' }),
-          'upsert-qr'
+          `upsert-open-status-${wsId}`
         );
-      } else {
-        logger.info('📱 QR update ignored (throttled)');
       }
-    }
-
-    if (connection === 'open') {
-      clearConnectingTimeout();
-
-      // IMMEDIATE status write — set conn_state='open' right away so
-      // the frontend polling loop sees the transition even if the
-      // comprehensive upsert below is slow or times out
-      await dbWriteCritical(
-        supabase
-          .from('baileys_sessions')
-          .upsert({
-            workspace_id: WORKSPACE_ID,
-            conn_state: 'open',
-            status: 'CONNECTED',
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id' }),
-        'upsert-open-status'
-      );
+    });
+  }
+}
 
       // Force-flush creds to DB on new login so 515 stream restart
       // doesn't find stale/unpaired creds
@@ -1461,22 +1522,20 @@ function startHealthServer(): http.Server {
       }
 
       if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
-        const qsWorkspace = parsedUrl.searchParams.get('workspace_id');
-        if (qsWorkspace && qsWorkspace !== WORKSPACE_ID) {
-          logger.warn({ configured: WORKSPACE_ID, requested: qsWorkspace }, '⚠️ Workspace ID mismatch in /init-qr — using configured WORKER_WORKSPACE_ID');
-        }
-        logger.info('🔁 Wiping session and initiating fresh QR pairing flow...');
-        await initiateForceReset();
+        const qsWorkspace = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+        logger.info({ workspace_id: qsWorkspace }, '🔁 Wiping session and initiating fresh QR pairing flow for workspace...');
+        await initiateForceReset(qsWorkspace);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Pairing flow initialized. QR code is being generated.' }));
+        res.end(JSON.stringify({ success: true, message: `Pairing flow initialized for ${qsWorkspace}. QR code is being generated.` }));
         return;
       }
 
       if (req.method === 'POST' && parsedUrl.pathname === '/force-reset') {
-        logger.info('🔴 Hard force-reset requested — fully wiping session for clean QR...');
-        await initiateForceReset();
+        const qsWorkspace = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+        logger.info({ workspace_id: qsWorkspace }, '🔴 Hard force-reset requested for workspace...');
+        await initiateForceReset(qsWorkspace);
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Hard reset complete. Fresh QR will be generated in 1s.' }));
+        res.end(JSON.stringify({ success: true, message: `Hard reset complete for ${qsWorkspace}. Fresh QR will be generated in 1s.` }));
         return;
       }
 
