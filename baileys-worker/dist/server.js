@@ -1569,6 +1569,23 @@ let heartbeatTimer = null;
 async function runSessionHeartbeatCheck() {
     for (const [wsId, sess] of activeSessions.entries()) {
         try {
+            const { data: dbSession } = await supabase
+                .from('baileys_sessions')
+                .select('conn_state, status, last_status_change')
+                .eq('workspace_id', wsId)
+                .maybeSingle();
+            // Only check zombie state if DB believes the workspace session IS OPEN or CONNECTED.
+            // If it's in 'connecting', 'qr_event', or 'disconnected', skip check to allow QR scanning to complete safely.
+            if (dbSession?.conn_state !== 'open' && dbSession?.status !== 'CONNECTED') {
+                continue;
+            }
+            // If connection state changed within the last 30 seconds, give the socket handshake time to settle
+            if (dbSession.last_status_change) {
+                const timeSinceChange = Date.now() - new Date(dbSession.last_status_change).getTime();
+                if (timeSinceChange < 30_000) {
+                    continue;
+                }
+            }
             const targetSock = sess.sock;
             let isDead = false;
             let reason = '';
