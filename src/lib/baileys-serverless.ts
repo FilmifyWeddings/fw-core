@@ -450,31 +450,9 @@ async function startDirectServerlessQr(
     const makeWASocket = (await import('@whiskeysockets/baileys')).default;
     const { fetchLatestBaileysVersion, makeCacheableSignalKeyStore, initAuthCreds, BufferJSON } = await import('@whiskeysockets/baileys');
 
-    let creds: any = initAuthCreds();
-    let keysCache: Record<string, any> = {};
-
-    // Restore existing auth state if present
-    try {
-      const { data: sess } = await supabaseAdmin
-        .from('baileys_sessions')
-        .select('creds_json, keys_json')
-        .eq('workspace_id', workspaceId)
-        .maybeSingle();
-
-      if (sess?.creds_json && sess?.keys_json) {
-        const reviver = (_: string, value: any) => {
-          if (typeof value === 'object' && value !== null && !Array.isArray(value) && value.type === 'Buffer' && value.data !== undefined) {
-            if (typeof value.data === 'string') return Buffer.from(value.data, 'base64');
-            if (Array.isArray(value.data)) return Buffer.from(value.data);
-          }
-          return BufferJSON.reviver(_, value);
-        };
-        const pCreds = JSON.parse(sess.creds_json, reviver);
-        const pKeys = JSON.parse(sess.keys_json, reviver);
-        if (pCreds) creds = pCreds;
-        if (pKeys) keysCache = pKeys;
-      }
-    } catch {}
+    // For fresh QR pairing, always initialize fresh auth credentials so Baileys generates a QR code immediately
+    const creds: any = initAuthCreds();
+    const keysCache: Record<string, any> = {};
 
     const saveCreds = async () => {
       try {
