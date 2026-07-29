@@ -13,6 +13,7 @@ import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadInsiderDrawer } from './lead-insider-drawer';
 import { TeamTasksManager } from './team-tasks-manager';
+import { CRMDropdown } from './crm-dropdown';
 
 const MotionDiv = motionImport.div;
 const MotionTr = motionImport.tr;
@@ -166,112 +167,12 @@ export function getSmartQuestionHeader(raw: string): { key: string; label: strin
     .replace(/\(.*?\)/g, '')
     .trim()
     .split(/[\s_]+/)
-    .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '')
+    .map((w: string) => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '')
     .join(' ');
 
   const cleanKey = text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
   return { key: cleanKey || text, label: cleanLabel || text };
-}
-
-// ─────────────────────────────────────────────────────────────
-// Image 1 Modern Dropdown UI Component
-// ─────────────────────────────────────────────────────────────
-interface Image1SelectOption {
-  value: string;
-  label: string;
-  dotColor?: string;
-}
-
-function Image1Select({
-  value,
-  options,
-  onChange,
-  placeholder = 'Select option',
-  badgeStyle,
-  className = '',
-}: {
-  value: string;
-  options: Image1SelectOption[];
-  onChange: (val: string) => void;
-  placeholder?: string;
-  badgeStyle?: { bg: string; text: string; border: string; dot?: string };
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const selectedOpt = options.find(o => o.value === value);
-  const displayLabel = selectedOpt?.label || value || placeholder;
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
-
-  return (
-    <div ref={containerRef} className={`relative inline-block text-center ${className}`} onClick={e => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-full border transition-all shadow-2xs select-none cursor-pointer w-auto max-w-full text-center ${
-          badgeStyle 
-            ? `${badgeStyle.bg} ${badgeStyle.text} ${badgeStyle.border}` 
-            : 'bg-white dark:bg-[#1C1A18] border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 hover:border-blue-400 dark:hover:border-blue-500'
-        } ${open ? 'ring-2 ring-blue-500/20 border-blue-500' : ''}`}
-      >
-        <div className="flex items-center justify-center gap-1.5 truncate text-center">
-          {badgeStyle?.dot && <span className={`w-2 h-2 rounded-full shrink-0 ${badgeStyle.dot}`} />}
-          <span className="truncate text-center">{displayLabel}</span>
-        </div>
-        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-60 ${open ? 'rotate-180 text-blue-500 opacity-100' : ''}`} />
-      </button>
-
-      <AnimatePresenceComponent>
-        {open && (
-          <MotionDiv
-            initial={{ opacity: 0, y: 4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.98 }}
-            transition={{ duration: 0.12 }}
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 min-w-[180px] max-h-60 overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-xl text-xs font-sans space-y-0.5"
-          >
-            {options.map((opt) => {
-              const isSelected = opt.value === value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(opt.value);
-                    setOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-semibold transition-colors ${
-                    isSelected
-                      ? 'bg-blue-50 dark:bg-blue-950/60 text-[#0866FF] dark:text-blue-400 font-bold'
-                      : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80 text-slate-700 dark:text-zinc-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    {opt.dotColor && <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dotColor}`} />}
-                    <span className="truncate">{opt.label}</span>
-                  </div>
-                  {isSelected && <Check className="w-4 h-4 text-[#0866FF] dark:text-blue-400 shrink-0 ml-2 stroke-[2.5]" />}
-                </button>
-              );
-            })}
-          </MotionDiv>
-        )}
-      </AnimatePresenceComponent>
-    </div>
-  );
 }
 
 export function LeadTable({ 
@@ -1805,9 +1706,10 @@ export function LeadTable({
 
           {/* Status Filter */}
           <div className="flex items-center gap-1">
-            <Image1Select
+            <CRMDropdown
               value={statusFilter}
               placeholder="Stages: All"
+              allowCustomAdd={false}
               options={[
                 { value: 'all', label: 'Stages: All' },
                 { value: 'new', label: 'New' },
@@ -1823,9 +1725,10 @@ export function LeadTable({
 
           {/* Source Filter */}
           <div className="flex items-center gap-1 font-sans">
-            <Image1Select
+            <CRMDropdown
               value={sourceFilter}
               placeholder="Sources: All"
+              allowCustomAdd={false}
               options={[
                 { value: 'all', label: 'Sources: All' },
                 ...customSources.map(src => ({ value: src, label: src }))
@@ -1836,9 +1739,10 @@ export function LeadTable({
 
           {/* Owner Filter */}
           <div className="flex items-center gap-1 font-sans">
-            <Image1Select
+            <CRMDropdown
               value={ownerFilter}
               placeholder="Owners: All"
+              allowCustomAdd={false}
               options={[
                 { value: 'all', label: 'Owners: All' },
                 ...uniqueOwners.map(owner => ({ value: owner, label: owner }))
@@ -2387,20 +2291,21 @@ export function LeadTable({
                                 );
                               case 'source':
                                 return (
-                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <Image1Select
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                                    <CRMDropdown
                                       value={lead.source}
                                       placeholder="Select source"
-                                      options={[
-                                        ...customSources.map(src => ({ value: src, label: src })),
-                                        { value: '__add_new__', label: '+ Add Custom Source' }
-                                      ]}
+                                      customAddTitle="Add Custom Lead Source"
+                                      options={customSources.map(src => ({ value: src, label: src, color: '#f97316' }))}
+                                      onAddCustomOption={(name) => {
+                                        if (!name.trim()) return;
+                                        const updated = [name.trim(), ...customSources];
+                                        setCustomSources(updated);
+                                        localStorage.setItem('leads_custom_sources', JSON.stringify(updated));
+                                        handleInlineLeadEdit({ source: name.trim() }, lead.id);
+                                      }}
                                       onChange={(val) => {
-                                        if (val === '__add_new__') {
-                                          setShowAddSourceModal(true);
-                                        } else {
-                                          handleInlineLeadEdit({ source: val }, lead.id);
-                                        }
+                                        handleInlineLeadEdit({ source: val }, lead.id);
                                       }}
                                     />
                                   </MotionTd>
@@ -2429,50 +2334,58 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'status':
-                                const currentStage = stagesState.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
-                                const stBadgeStyle = (() => {
-                                  const s = (currentStage.name || '').toLowerCase();
-                                  if (s.includes('hot') || s.includes('proposal') || s.includes('sent')) {
-                                    return { bg: 'bg-[#FADBD8] dark:bg-[#4A1511]', text: 'text-[#78281F] dark:text-[#FADBD8] font-bold', border: 'border-[#F5B7B1] dark:border-[#78281F]', dot: 'bg-[#78281F]' };
-                                  }
-                                  if (s.includes('cool') || s.includes('warm') || s.includes('meeting') || s.includes('progress')) {
-                                    return { bg: 'bg-[#FCF3CF] dark:bg-[#423705]', text: 'text-[#7D6608] dark:text-[#FCF3CF] font-bold', border: 'border-[#F9E79F] dark:border-[#7D6608]', dot: 'bg-[#7D6608]' };
-                                  }
-                                  if (s.includes('won') || s.includes('signed') || s.includes('closed')) {
-                                    return { bg: 'bg-[#D4EFDF] dark:bg-[#0B3C21]', text: 'text-[#145A32] dark:text-[#D4EFDF] font-bold', border: 'border-[#A9DFBF] dark:border-[#145A32]', dot: 'bg-[#145A32]' };
-                                  }
-                                  if (s.includes('lost')) {
-                                    return { bg: 'bg-[#E5E7E9] dark:bg-[#212F3D]', text: 'text-[#424949] dark:text-[#E5E7E9] font-bold', border: 'border-[#CCD1D1] dark:border-[#424949]', dot: 'bg-[#424949]' };
-                                  }
-                                  if (s.includes('contacted') || s.includes('open')) {
-                                    return { bg: 'bg-[#E8DFF5] dark:bg-[#341948]', text: 'text-[#5B2C6F] dark:text-[#E8DFF5] font-bold', border: 'border-[#D7BDE2] dark:border-[#5B2C6F]', dot: 'bg-[#5B2C6F]' };
-                                  }
-                                  return { bg: 'bg-[#D6EAF8] dark:bg-[#0E2F44]', text: 'text-[#1B4F72] dark:text-[#D6EAF8] font-bold', border: 'border-[#AED6F1] dark:border-[#1B4F72]', dot: 'bg-[#1B4F72]' };
-                                })();
-
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                                    <Image1Select
+                                    <CRMDropdown
                                       value={lead.stage_id || lead.status}
                                       placeholder="Select status"
-                                      options={[
-                                        ...stagesState.map(s => ({ value: s.id, label: s.name, dotColor: stBadgeStyle.dot })),
-                                        { value: '__add_custom_status__', label: '+ Add Custom Status' }
-                                      ]}
+                                      customAddTitle="Add Custom Status"
+                                      options={stagesState.map(s => ({
+                                        value: s.id,
+                                        label: s.name,
+                                        color: s.color,
+                                        isCustom: s.is_custom,
+                                        created_at: s.created_at
+                                      }))}
+                                      onAddCustomOption={async (name, color) => {
+                                        const newStageObj = {
+                                          id: name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                                          name: name,
+                                          color: color || '#0866FF',
+                                          is_custom: true,
+                                          created_at: new Date().toISOString(),
+                                          position: stagesState.length
+                                        };
+                                        const updated = [newStageObj, ...stagesState];
+                                        setStagesState(updated);
+                                        if (onPreferencesChange) {
+                                          onPreferencesChange({ stages: updated });
+                                        }
+                                        if (onLeadUpdate) {
+                                          onLeadUpdate(lead.id, {
+                                            stage_id: newStageObj.id,
+                                            status: newStageObj.name as any
+                                          });
+                                        }
+                                        try {
+                                          const uId = leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000';
+                                          await supabase.from('crm_stages').insert({
+                                            workspace_id: uId,
+                                            name: newStageObj.name,
+                                            color: newStageObj.color,
+                                            position: newStageObj.position
+                                          });
+                                        } catch (_) {}
+                                      }}
                                       onChange={(val) => {
-                                        if (val === '__add_custom_status__') {
-                                          setShowAddStatusModal(true);
-                                        } else {
-                                          const foundStage = stagesState.find(s => s.id === val);
-                                          if (onLeadUpdate) {
-                                            onLeadUpdate(lead.id, {
-                                              stage_id: val,
-                                              status: (foundStage?.name || val) as any
-                                            });
-                                          }
+                                        const foundStage = stagesState.find(s => s.id === val || s.name === val);
+                                        if (onLeadUpdate) {
+                                          onLeadUpdate(lead.id, {
+                                            stage_id: val,
+                                            status: (foundStage?.name || val) as any
+                                          });
                                         }
                                       }}
-                                      badgeStyle={stBadgeStyle}
                                     />
                                   </MotionTd>
                                 );
@@ -2533,13 +2446,14 @@ export function LeadTable({
                               // SaaS Automation workflow trackers
                               case 'wa_group':
                                 return (
-                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <Image1Select
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                                    <CRMDropdown
                                       value={lead.whatsapp_group_id || ''}
                                       placeholder="Unassigned"
+                                      allowCustomAdd={false}
                                       options={[
-                                        { value: '', label: 'Unassigned' },
-                                        ...contactGroups.map(g => ({ value: g.id, label: `💬 ${g.group_name}` }))
+                                        { value: '', label: 'Unassigned', color: '#64748b' },
+                                        ...contactGroups.map(g => ({ value: g.id, label: `💬 ${g.group_name}`, color: '#0866ff' }))
                                       ]}
                                       onChange={(val) => handleInlineLeadEdit({ whatsapp_group_id: val || null }, lead.id)}
                                     />
@@ -2763,10 +2677,11 @@ export function LeadTable({
                             // Dynamic Dropdown options list type
                             if (col.type === 'custom-dropdown') {
                               return (
-                                <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                  <Image1Select
+                                <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                                  <CRMDropdown
                                     value={customVal}
                                     placeholder="Select option"
+                                    allowCustomAdd={false}
                                     options={(col.options || []).map(opt => ({ value: opt, label: opt }))}
                                     onChange={(val) => handleInlineRawPayloadEdit(col.id, val, lead.id)}
                                   />
