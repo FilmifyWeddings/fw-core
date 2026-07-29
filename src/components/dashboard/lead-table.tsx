@@ -273,8 +273,13 @@ export function LeadTable({
         return false;
       }
       
-      // If it's a meta_question but maps to a standard/system column, filter it out (prevent duplicate columns)
-      if (col.type === 'meta_question' && (SYSTEM_AND_METADATA_KEYS.has(col.id.toLowerCase()) || SYSTEM_AND_METADATA_KEYS.has(norm))) {
+      // If it's a dynamic meta column but maps to a standard/system column, filter it out (prevent duplicate columns)
+      if ((col.type === 'meta' || col.type === 'meta_question') && (
+        SYSTEM_AND_METADATA_KEYS.has(col.id.toLowerCase()) || 
+        SYSTEM_AND_METADATA_KEYS.has(norm) ||
+        SYSTEM_AND_METADATA_KEYS.has(col.id.toLowerCase().replace(/^meta_/, '')) ||
+        SYSTEM_AND_METADATA_KEYS.has(norm.replace(/^meta_/, ''))
+      )) {
         return false;
       }
       
@@ -319,6 +324,7 @@ export function LeadTable({
     'source', 'stage_id', 'status', 'created_at', 'updated_at', 'workspace_id', 'id', 
     'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id', 'attachments', 'campaign_name',
     'groom_name', 'bride_name', 'event_type', 'event_date', 'budget', 'location', 'city', 'venue', 'address', 'company',
+    'budget_range', 'location_city', 'venue_details',
     'custom_color', 'score', 'score_reason', 'notes', 'unread_comments_count', 
     'whatsapp_group_id', 'wa_welcome_sent', 'google_synced', 'wgl_dispatched', 'google_resource_name',
     'meta_lead_id', 'is_organic', 'platform', 'created_time', 'raw_payload', 'raw_meta_payload', 
@@ -782,8 +788,14 @@ export function LeadTable({
     initialLeads.forEach(lead => {
       if (lead.raw_payload && typeof lead.raw_payload === 'object') {
         Object.keys(lead.raw_payload).forEach(key => {
-          // Avoid system overrides
-          if (!['name', 'email', 'phone', 'source', 'status', 'score'].includes(key.toLowerCase())) {
+          const normKey = key.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+          // Avoid system overrides, standard fields, and permanently blocked metadata
+          if (
+            !SYSTEM_AND_METADATA_KEYS.has(key.toLowerCase()) &&
+            !SYSTEM_AND_METADATA_KEYS.has(normKey) &&
+            !PERMANENTLY_BLOCKED_KEYS.has(key.toLowerCase()) &&
+            !PERMANENTLY_BLOCKED_KEYS.has(normKey)
+          ) {
             discoveredKeys.add(key);
           }
         });
