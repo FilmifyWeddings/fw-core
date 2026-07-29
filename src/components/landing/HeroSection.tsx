@@ -172,9 +172,11 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
           {/* ========================================================= */}
           <div className="lg:col-span-8 relative z-10 flex items-center justify-center">
             
-            {/* LEFT 4 INTEGRATION ICONS & STRETCHED CONNECTING SVG LINES */}
-            <div className="hidden lg:block absolute -left-20 xl:-left-28 top-0 bottom-0 w-[140px] z-40 pointer-events-none">
-              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 140 450">
+            {/* BACKGROUND SVG LINES LAYER (Z-10 BEHIND DASHBOARD & CARDS) */}
+            <div className="hidden lg:block absolute -left-20 xl:-left-28 -right-20 xl:-right-28 top-0 bottom-0 z-10 pointer-events-none">
+              
+              {/* LEFT 4 CONNECTING SVG LINES */}
+              <svg className="absolute left-0 top-0 bottom-0 w-[160px] h-full overflow-visible" viewBox="0 0 160 450">
                 <defs>
                   <linearGradient id="goldStrokeGradLeft" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.95" />
@@ -183,9 +185,8 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                 </defs>
                 {leftIcons.map((item, i) => (
                   <g key={i}>
-                    {/* Curve extending from icon center (x=24) right to dashboard left edge (x=140) */}
                     <path
-                      d={`M 24 ${item.y} C 65 ${item.y}, 100 210, 140 210`}
+                      d={`M 24 ${item.y} C 80 ${item.y}, 120 210, 160 210`}
                       fill="none"
                       stroke="url(#goldStrokeGradLeft)"
                       strokeWidth="1.8"
@@ -197,7 +198,33 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                 ))}
               </svg>
 
-              <div className="h-full flex flex-col justify-around py-4 items-start pointer-events-auto">
+              {/* RIGHT 4 CONNECTING SVG LINES */}
+              <svg className="absolute right-0 top-0 bottom-0 w-[160px] h-full overflow-visible" viewBox="0 0 160 450">
+                <defs>
+                  <linearGradient id="goldStrokeGradRight" x1="100%" y1="0%" x2="0%" y2="0%">
+                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.95" />
+                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.4" />
+                  </linearGradient>
+                </defs>
+                {rightIcons.map((item, i) => (
+                  <g key={i}>
+                    <path
+                      d={`M 136 ${item.y} C 80 ${item.y}, 40 210, 0 210`}
+                      fill="none"
+                      stroke="url(#goldStrokeGradRight)"
+                      strokeWidth="1.8"
+                      strokeDasharray="4 2"
+                      className="animate-pulse"
+                    />
+                    <circle cx="136" cy={item.y} r="3" fill="#D4AF37" />
+                  </g>
+                ))}
+              </svg>
+            </div>
+
+            {/* LEFT 4 FLOATING ICON TILES (Z-50 FLT IN FRONT) */}
+            <div className="hidden lg:block absolute -left-20 xl:-left-28 top-0 bottom-0 w-[140px] z-50 pointer-events-auto">
+              <div className="h-full flex flex-col justify-around py-4 items-start">
                 {leftIcons.map((item, idx) => {
                   const IconComponent = item.component;
                   return (
@@ -215,8 +242,28 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               </div>
             </div>
 
-            {/* MAIN APP DASHBOARD WINDOW */}
-            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.14)] p-3 sm:p-5 text-left relative overflow-hidden w-full">
+            {/* RIGHT 4 FLOATING ICON TILES (Z-50 FLT IN FRONT) */}
+            <div className="hidden lg:block absolute -right-20 xl:-right-28 top-0 bottom-0 w-[140px] z-50 pointer-events-auto">
+              <div className="h-full flex flex-col justify-around py-4 items-end">
+                {rightIcons.map((item, idx) => {
+                  const IconComponent = item.component;
+                  return (
+                    <motion.div
+                      key={idx}
+                      animate={{ y: [0, item.yOffset, 0] }}
+                      transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
+                      className="w-12 h-12 rounded-2xl bg-white dark:bg-[#181614] border border-white dark:border-[#2C2926] shadow-[0_10px_30px_rgba(212,175,55,0.25)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
+                      title={item.name}
+                    >
+                      <IconComponent className="w-6 h-6" />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* MAIN APP DASHBOARD WINDOW (Z-20) */}
+            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.14)] p-3 sm:p-5 text-left relative overflow-hidden w-full z-20">
               
               <div className="flex gap-4">
                 
@@ -385,50 +432,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
 
             </div>
 
-            {/* RIGHT 4 INTEGRATION ICONS & STRETCHED CONNECTING SVG LINES */}
-            <div className="hidden lg:block absolute -right-20 xl:-right-28 top-0 bottom-0 w-[140px] z-40 pointer-events-none">
-              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 140 450">
-                <defs>
-                  <linearGradient id="goldStrokeGradRight" x1="100%" y1="0%" x2="0%" y2="0%">
-                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.95" />
-                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.4" />
-                  </linearGradient>
-                </defs>
-                {rightIcons.map((item, i) => (
-                  <g key={i}>
-                    {/* Curve extending from right icon center (x=116) left to dashboard right edge (x=0) */}
-                    <path
-                      d={`M 116 ${item.y} C 75 ${item.y}, 40 210, 0 210`}
-                      fill="none"
-                      stroke="url(#goldStrokeGradRight)"
-                      strokeWidth="1.8"
-                      strokeDasharray="4 2"
-                      className="animate-pulse"
-                    />
-                    <circle cx="116" cy={item.y} r="3" fill="#D4AF37" />
-                  </g>
-                ))}
-              </svg>
-
-              <div className="h-full flex flex-col justify-around py-4 items-end pointer-events-auto">
-                {rightIcons.map((item, idx) => {
-                  const IconComponent = item.component;
-                  return (
-                    <motion.div
-                      key={idx}
-                      animate={{ y: [0, item.yOffset, 0] }}
-                      transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                      className="w-12 h-12 rounded-2xl bg-white dark:bg-[#181614] border border-white dark:border-[#2C2926] shadow-[0_10px_30px_rgba(212,175,55,0.25)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
-                      title={item.name}
-                    >
-                      <IconComponent className="w-6 h-6" />
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* OVERLAPPING MIDDLE LAYER — LEAD PIPELINE CARD */}
+            {/* OVERLAPPING MIDDLE LAYER — LEAD PIPELINE CARD (Z-30) */}
             <motion.div 
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -456,7 +460,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               </div>
             </motion.div>
 
-            {/* OVERLAPPING RIGHT LAYER — CALENDAR WIDGET */}
+            {/* OVERLAPPING RIGHT LAYER — CALENDAR WIDGET (Z-30) */}
             <motion.div 
               initial={{ x: 20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -496,7 +500,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               </div>
             </motion.div>
 
-            {/* 5 FLOATING CARDS & ALERTS */}
+            {/* 5 FLOATING CARDS & ALERTS (Z-40) */}
 
             {/* 1. WHATSAPP FLOATING CARD #1 (TOP RIGHT) */}
             <AnimatePresence>
