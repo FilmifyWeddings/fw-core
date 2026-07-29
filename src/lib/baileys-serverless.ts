@@ -581,10 +581,29 @@ export async function generateQrServerless(
 ): Promise<void> {
   const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
 
+  // 1. Fast check DB — if session is ALREADY CONNECTED/OPEN, return immediately!
+  const { data: dbSess } = await supabaseAdmin
+    .from('baileys_sessions')
+    .select('conn_state, status, phone_number')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+
+  if (dbSess?.conn_state === 'open' || dbSess?.status === 'CONNECTED') {
+    console.log(`[generateQrServerless] ✅ DB shows session already connected for ${workspaceId}`);
+    onConnected(dbSess.phone_number || 'Device Linked');
+    return;
+  }
+
   let isWorkerAvailable = false;
   try {
-    const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health`, { signal: AbortSignal.timeout(1500) });
+    const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(workspaceId)}`, { signal: AbortSignal.timeout(1500) });
     if (healthRes.ok) {
+      const health = await healthRes.json();
+      if (health.socket_conn_state === 'open' || health.socket_authenticated) {
+        console.log(`[generateQrServerless] ✅ Worker reports socket already connected for ${workspaceId}`);
+        onConnected(health.phone_number || 'Device Linked');
+        return;
+      }
       isWorkerAvailable = true;
       await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'POST' }).catch(() => {});
     }

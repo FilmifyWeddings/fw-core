@@ -1008,7 +1008,25 @@ function startHealthServer() {
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
                 const qsWorkspace = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
-                logger.info({ workspace_id: qsWorkspace }, '🔁 Wiping session and initiating fresh QR pairing flow for workspace...');
+                const sess = activeSessions.get(qsWorkspace);
+                if (sess?.sock && sess.sock.user && sess.sock.user.id) {
+                    logger.info({ workspace_id: qsWorkspace }, 'Session is ALREADY CONNECTED! Skipping reset on /init-qr.');
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ success: true, message: `Workspace ${qsWorkspace} is already connected.` }));
+                    return;
+                }
+                const { data: dbSess } = await supabase
+                    .from('baileys_sessions')
+                    .select('conn_state, status')
+                    .eq('workspace_id', qsWorkspace)
+                    .maybeSingle();
+                if (dbSess?.conn_state === 'open' || dbSess?.status === 'CONNECTED') {
+                    logger.info({ workspace_id: qsWorkspace }, 'DB session is ALREADY OPEN! Skipping reset on /init-qr.');
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ success: true, message: `Workspace ${qsWorkspace} is already connected in DB.` }));
+                    return;
+                }
+                logger.info({ workspace_id: qsWorkspace }, '🔁 Initiating fresh QR pairing flow for workspace...');
                 await initiateForceReset(qsWorkspace);
                 res.writeHead(200);
                 res.end(JSON.stringify({ success: true, message: `Pairing flow initialized for ${qsWorkspace}. QR code is being generated.` }));
