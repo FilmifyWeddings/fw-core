@@ -263,6 +263,24 @@ export function LeadTable({
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
+
+  const getFilteredColumns = (cols: ColumnConfig[]) => {
+    return cols.filter(col => {
+      const norm = col.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      
+      // Permanently block blacklisted columns
+      if (PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase()) || PERMANENTLY_BLOCKED_KEYS.has(norm)) {
+        return false;
+      }
+      
+      // If it's a meta_question but maps to a standard/system column, filter it out (prevent duplicate columns)
+      if (col.type === 'meta_question' && (SYSTEM_AND_METADATA_KEYS.has(col.id.toLowerCase()) || SYSTEM_AND_METADATA_KEYS.has(norm))) {
+        return false;
+      }
+      
+      return true;
+    });
+  };
   const [showManageCols, setShowManageCols] = useState(false);
   const [draggedColIdx, setDraggedColIdx] = useState<number | null>(null);
   const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
@@ -2130,7 +2148,7 @@ export function LeadTable({
         <colgroup>
           <col className="w-[50px]" />
           <col className="w-[240px]" />
-          {columns.filter(col => col.visible).map(col => {
+          {getFilteredColumns(columns).filter(col => col.visible).map(col => {
             if (col.id === 'contact') return <col key={col.id} className="w-[280px]" />;
             if (col.id === 'form_name') return <col key={col.id} className="w-[250px]" />;
             if (col.id === 'status') return <col key={col.id} className="w-[230px]" />;
@@ -2191,8 +2209,8 @@ export function LeadTable({
             </th>
             
             {/* Dynamic Columns headers (Sticky Top) */}
-            {columns.map((col, idx) => {
-              if (!col.visible || PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase())) return null;
+            {getFilteredColumns(columns).map((col, idx) => {
+              if (!col.visible) return null;
               return (
                 <th
                 key={col.id}
@@ -2341,8 +2359,8 @@ export function LeadTable({
                         </td>
 
                         {/* Dynamic Column content mapping */}
-                        {columns.map(col => {
-                          if (!col.visible || PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase())) return null;
+                        {getFilteredColumns(columns).map(col => {
+                          if (!col.visible) return null;
 
                           // 1. System Columns
                           if (col.type === 'system') {
