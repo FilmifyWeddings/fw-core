@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { motion as motionImport, AnimatePresence as AnimatePresenceImport } from 'framer-motion';
 import { 
   Search, Filter, Phone, Mail, Calendar, MapPin, X, Info, 
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe, FolderOpen, Archive
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -259,8 +260,16 @@ export function LeadTable({
   const [endDate, setEndDate] = useState<string>('');
 
   // Dynamic Sidebar width detection
-  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [sidebarWidth, setSidebarWidth] = useState(68);
   const [rowActionMenuLeadId, setRowActionMenuLeadId] = useState<string | null>(null);
+
+  // Sidebar expansion & filter states
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
+  const [sidebarFilter, setSidebarFilter] = useState<'overview' | 'lost' | 'archive'>('overview');
+
+  useEffect(() => {
+    setSidebarWidth(isSidebarExpanded ? 240 : 68);
+  }, [isSidebarExpanded]);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -1304,6 +1313,19 @@ export function LeadTable({
     const owner = lead.raw_payload?.lead_owner || 'Chad Thunderclock';
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
+    // Sidebar Filter logic
+    const isLeadLost = lead.stage_id === 'lost' || (lead.status?.toLowerCase() || '').includes('lost');
+    const isLeadArchived = lead.raw_payload?.is_archived === true;
+
+    let matchesSidebar = true;
+    if (sidebarFilter === 'overview') {
+      if (isLeadLost || isLeadArchived) matchesSidebar = false;
+    } else if (sidebarFilter === 'lost') {
+      if (!isLeadLost || isLeadArchived) matchesSidebar = false;
+    } else if (sidebarFilter === 'archive') {
+      if (!isLeadArchived) matchesSidebar = false;
+    }
+
     // Column-level Google Sheets-style multi-select filters check
     let matchesColumnFilters = true;
     for (const [colId, selectedVals] of Object.entries(activeHeaderFilters)) {
@@ -1331,7 +1353,7 @@ export function LeadTable({
       return true;
     })();
 
-    return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner && matchesColumnFilters && matchesDateRange;
+    return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner && matchesColumnFilters && matchesDateRange && matchesSidebar;
   });
 
   // Pagination lists replaced with Infinite Scroll
@@ -1558,10 +1580,94 @@ export function LeadTable({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 w-full relative">
+    <div className="flex-1 flex min-h-0 w-full relative">
       
-      {/* Table viewport container (with overflow-auto) */}
-      <div className="flex-1 overflow-auto w-full relative select-none" ref={tableContainerRef}>
+      {/* Dynamic Left Sidebar Menu Bar */}
+      <aside 
+        className={`flex flex-col border-r border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5] dark:bg-[#121110] transition-all duration-300 select-none shrink-0 ${
+          isSidebarExpanded ? 'w-60' : 'w-[68px]'
+        }`}
+      >
+        {/* CRM Logo / Toggler */}
+        <div className="p-4 border-b border-[#E8E5DF] dark:border-[#2C2926] flex items-center gap-3">
+          <button
+            onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+            className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center shadow-md shrink-0 hover:scale-105 transition-all"
+            title={isSidebarExpanded ? "Collapse Sidebar" : "Expand Sidebar (CRM Toggler)"}
+          >
+            <Database className="w-5 h-5 text-white" />
+          </button>
+          {isSidebarExpanded && (
+            <div className="min-w-0">
+              <h2 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider truncate">CRM Platform</h2>
+              <span className="text-[9px] font-bold text-amber-500 block leading-none">Settings Config</span>
+            </div>
+          )}
+        </div>
+
+        {/* Navigation Items */}
+        <nav className="flex-1 p-3 space-y-2">
+          {/* Back to Suite Workspace */}
+          <Link
+            href="/workspace"
+            className={`flex items-center gap-3 p-2.5 rounded-xl border border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white transition-all ${
+              isSidebarExpanded ? 'justify-start' : 'justify-center'
+            }`}
+            title="Back to Suite Workspace"
+          >
+            <ArrowLeft className="w-4 h-4 shrink-0 text-slate-500" />
+            {isSidebarExpanded && <span className="text-xs font-bold whitespace-nowrap">Back to Workspace</span>}
+          </Link>
+
+          <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-2" />
+
+          {/* Overview */}
+          <button
+            onClick={() => setSidebarFilter('overview')}
+            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
+              sidebarFilter === 'overview'
+                ? 'bg-orange-500/10 border-orange-500/20 text-orange-500 font-bold'
+                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
+            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
+            title="Overview (Active Leads)"
+          >
+            <LayoutGrid className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="text-xs font-bold">Overview</span>}
+          </button>
+
+          {/* Lost */}
+          <button
+            onClick={() => setSidebarFilter('lost')}
+            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
+              sidebarFilter === 'lost'
+                ? 'bg-red-500/10 border-red-500/20 text-red-500 font-bold'
+                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
+            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
+            title="Lost Leads"
+          >
+            <X className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="text-xs font-bold">Lost Leads</span>}
+          </button>
+
+          {/* Archive */}
+          <button
+            onClick={() => setSidebarFilter('archive')}
+            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
+              sidebarFilter === 'archive'
+                ? 'bg-blue-500/10 border-blue-500/20 text-blue-500 font-bold'
+                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
+            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
+            title="Archived Leads"
+          >
+            <Archive className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="text-xs font-bold">Archive</span>}
+          </button>
+        </nav>
+      </aside>
+
+      {/* Main Table viewport container */}
+      <div className="flex-1 flex flex-col min-h-0 w-full relative">
+        <div className="flex-1 overflow-auto w-full relative select-none" ref={tableContainerRef}>
         
         {/* Pinned/Sticky Left Header block */}
         {renderHeader && (
@@ -3032,6 +3138,31 @@ export function LeadTable({
                                     <Clock className="w-3.5 h-3.5 text-amber-500" />
                                     Followups Timeline
                                   </button>
+                                  {lead.raw_payload?.is_archived ? (
+                                    <button 
+                                      onClick={() => {
+                                        setRowActionMenuLeadId(null);
+                                        const updatedPayload = { ...lead.raw_payload, is_archived: false };
+                                        handleInlineLeadEdit({ raw_payload: updatedPayload }, lead.id);
+                                      }}
+                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+                                    >
+                                      <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
+                                      Unarchive Lead
+                                    </button>
+                                  ) : (
+                                    <button 
+                                      onClick={() => {
+                                        setRowActionMenuLeadId(null);
+                                        const updatedPayload = { ...lead.raw_payload, is_archived: true };
+                                        handleInlineLeadEdit({ raw_payload: updatedPayload }, lead.id);
+                                      }}
+                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+                                    >
+                                      <Archive className="w-3.5 h-3.5 text-blue-500" />
+                                      Archive Lead
+                                    </button>
+                                  )}
                                   <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
                                   <button 
                                     onClick={async () => {
@@ -3824,6 +3955,7 @@ export function LeadTable({
       )}
 
 
+      </div>
     </div>
   );
 }

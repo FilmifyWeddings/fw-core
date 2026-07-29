@@ -527,13 +527,6 @@ export default function LeadsPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <Link
-                    href="/workspace"
-                    className="px-3.5 py-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-xs font-bold"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back to Suite Workspace</span>
-                  </Link>
 
                   {isDemoMode && (
                     <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-md text-[10px] font-bold tracking-wide flex items-center gap-1.5 select-none">
