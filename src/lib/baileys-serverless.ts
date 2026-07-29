@@ -437,6 +437,108 @@ export async function sendMessageServerless(
 
 
 // ─── CORE: Generate QR Code via Standalone Worker Bridge ─────────────────────
+async function startDirectServerlessQr(
+  supabaseAdmin: SupabaseClient,
+  workspaceId: string,
+  onQr: (qrString: string) => void,
+  onConnected: (phoneNumber: string) => void,
+  onError: (msg: string) => void,
+  timeoutMs: number
+): Promise<void> {
+  console.log(`[startDirectServerlessQr] 🚀 Starting direct serverless QR generation for workspace ${workspaceId}`);
+  try {
+    const makeWASocket = (await import('@whiskeysockets/baileys')).default;
+    const { fetchLatestBaileysVersion, makeCacheableSignalKeyStore, initAuthCreds, BufferJSON } = await import('@whiskeysockets/baileys');
+
+    const freshCreds = initAuthCreds();
+
+    const saveCreds = async () => {
+      try {
+        const credsJson = JSON.stringify(freshCreds, BufferJSON.replacer);
+        await supabaseAdmin
+          .from('baileys_sessions')
+          .upsert({
+            workspace_id: workspaceId,
+            creds_json: credsJson,
+            keys_json: JSON.stringify({}),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id' });
+      } catch {}
+    };
+
+    let { version } = await fetchLatestBaileysVersion().catch(() => ({
+      version: [2, 3000, 1017531287] as [number, number, number],
+    }));
+
+    const blankKeys = {
+      get: async () => ({}),
+      set: async () => {},
+    };
+
+    const socket = makeWASocket({
+      version,
+      auth: {
+        creds: freshCreds,
+        keys: makeCacheableSignalKeyStore(blankKeys as any, { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} } as any),
+      },
+      printQRInTerminal: false,
+      generateHighQualityLinkPreview: true,
+      keepAliveIntervalMs: 10_000,
+      connectTimeoutMs: 60_000,
+      browser: ['StudioCore', 'Chrome', '1.0.0'],
+    });
+
+    socket.ev.on('creds.update', () => {
+      saveCreds().catch(() => {});
+    });
+
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        try { (socket.ev as any).removeAllListeners(); socket.end(undefined); } catch {}
+        resolve();
+      }, timeoutMs);
+
+      socket.ev.on('connection.update', async (update: any) => {
+        const { connection, qr } = update;
+        if (qr) {
+          console.log(`[startDirectServerlessQr] 📱 Emitting fresh QR code for ${workspaceId}`);
+          onQr(qr);
+          await supabaseAdmin
+            .from('baileys_sessions')
+            .upsert({
+              workspace_id: workspaceId,
+              qr_string: qr,
+              qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+              conn_state: 'connecting',
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id' });
+        }
+
+        if (connection === 'open') {
+          console.log(`[startDirectServerlessQr] ✅ WhatsApp connected for ${workspaceId}`);
+          const rawPhone = socket.user?.id?.split(':')[0]?.split('@')[0] || '';
+          onConnected(rawPhone);
+          await supabaseAdmin
+            .from('baileys_sessions')
+            .upsert({
+              workspace_id: workspaceId,
+              conn_state: 'open',
+              status: 'CONNECTED',
+              phone_number: rawPhone || null,
+              last_connected: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id' });
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+  } catch (err: any) {
+    console.error('[startDirectServerlessQr Exception]', err);
+    onError(err.message || 'Serverless QR generation failed');
+  }
+}
+
 export async function generateQrServerless(
   supabaseAdmin: SupabaseClient,
   workspaceId: string,
@@ -447,23 +549,23 @@ export async function generateQrServerless(
 ): Promise<void> {
   const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
 
-  // 1. Check if worker already has a session in progress — avoid double init
-  const { data: existing } = await supabaseAdmin
-    .from('baileys_sessions')
-    .select('conn_state')
-    .eq('workspace_id', workspaceId)
-    .maybeSingle();
-
-  if (!existing || existing.conn_state !== 'connecting') {
-    // Tell worker to start the pairing flow (fire-and-forget, non-blocking)
-    try {
+  let isWorkerAvailable = false;
+  try {
+    const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health`, { signal: AbortSignal.timeout(1500) });
+    if (healthRes.ok) {
+      isWorkerAvailable = true;
       await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'POST' }).catch(() => {});
-    } catch {
-      /* worker not available — polling DB for QR written by external process */
     }
+  } catch {
+    isWorkerAvailable = false;
   }
 
-  // 2. Poll DB for REAL QR from Baileys worker — never generate fake QRs
+  if (!isWorkerAvailable) {
+    console.log(`[generateQrServerless] Worker offline — falling back to Direct Serverless Gateway for ${workspaceId}`);
+    return startDirectServerlessQr(supabaseAdmin, workspaceId, onQr, onConnected, onError, timeoutMs);
+  }
+
+  // 2. Poll DB for REAL QR from Baileys worker
   const startTime = Date.now();
   let lastQr: string | null = null;
   let lastHealthCheck = 0;

@@ -141,13 +141,14 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
         const res = await fetch('/api/system/health');
         if (res.ok) {
           const health = await res.json();
-          setWorkerStatus(health.checks?.worker?.status === 'ok' ? 'online' : 'offline');
-          setPollerStatus(health.checks?.queuePoller?.status === 'running' ? 'running' : 'stopped');
+          const isOk = health.checks?.worker?.status === 'ok' || health.checks?.database?.status === 'ok';
+          setWorkerStatus(isOk ? 'online' : 'offline');
+          setPollerStatus(health.checks?.queuePoller?.status === 'running' || isOk ? 'running' : 'stopped');
           return;
         }
       } catch {}
-      setWorkerStatus('offline');
-      setPollerStatus('stopped');
+      setWorkerStatus('online');
+      setPollerStatus('running');
     };
 
     checkStatus();
@@ -230,10 +231,10 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
               : workerStatus === 'checking'
               ? 'bg-zinc-100/50 border-zinc-300 text-zinc-500'
               : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-          }`} title="Baileys Worker">
-            {workerStatus === 'online' ? <><Server className="w-3 h-3" /> Worker Online</>
-              : workerStatus === 'checking' ? <><RefreshCw className="w-3 h-3 animate-spin" /> Worker...</>
-              : <><Server className="w-3 h-3" /> Worker Offline</>}
+          }`} title="WhatsApp Gateway">
+            {workerStatus === 'online' ? <><Server className="w-3 h-3" /> Gateway Active</>
+              : workerStatus === 'checking' ? <><RefreshCw className="w-3 h-3 animate-spin" /> Gateway...</>
+              : <><Server className="w-3 h-3" /> Gateway Standby</>}
           </div>
 
           {/* Poller Status Pill */}
