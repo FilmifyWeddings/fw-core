@@ -292,11 +292,12 @@ export function LeadTable({
     fetchFormNamesMap();
   }, []);
 
-  // System keys that are strictly internal (not table columns)
+  // System keys that are strictly internal or standard table columns (not auto-discoverable meta questions)
   const SYSTEM_AND_METADATA_KEYS = new Set([
     'name', 'full_name', 'first_name', 'last_name', 'email', 'phone', 'phone_number', 'mobile', 'contact', 
     'source', 'stage_id', 'status', 'created_at', 'updated_at', 'workspace_id', 'id', 
-    'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id', 'attachments',
+    'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id', 'attachments', 'campaign_name',
+    'groom_name', 'bride_name', 'event_type', 'event_date', 'budget', 'location', 'city', 'venue', 'address', 'company',
     'custom_color', 'score', 'score_reason', 'notes', 'unread_comments_count', 
     'whatsapp_group_id', 'wa_welcome_sent', 'google_synced', 'wgl_dispatched', 'google_resource_name',
     'meta_lead_id', 'is_organic', 'platform', 'created_time', 'raw_payload', 'raw_meta_payload', 
