@@ -130,15 +130,30 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 // (In-Memory Store chat cache removed to comply with ESM build of @whiskeysockets/baileys)
 
-// ─── Active Socket & Creds Persistence ──────────────────────────────────────
-let sock: ReturnType<typeof makeWASocket> | null = null;
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let lastQrTime = 0;
-let connectingTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
-let saveCreds: (() => Promise<void>) | null = null;
-// In-memory auth state shared across reconnects so 515 stream restart
-// uses the live mutated creds object instead of reading stale data from DB
-let currentAuthState: { creds: import('@whiskeysockets/baileys').AuthenticationCreds; keys: SignalKeyStore } | null = null;
+// ─── Multi-Tenant Active Session Store ──────────────────────────────────────
+type WorkspaceSession = {
+  wsId: string;
+  sock: ReturnType<typeof makeWASocket>;
+  authState: Awaited<ReturnType<typeof useSupabaseAuthState>>;
+  reconnectTimer?: ReturnType<typeof setTimeout>;
+  connectingTimeoutTimer?: ReturnType<typeof setTimeout>;
+  lastQrTime: number;
+};
+
+const activeSessions = new Map<string, WorkspaceSession>();
+
+async function getWorkspaceSocket(wsId: string): Promise<ReturnType<typeof makeWASocket>> {
+  let sess = activeSessions.get(wsId);
+  if (!sess || !sess.sock) {
+    logger.info({ workspaceId: wsId }, '🔌 Socket not in memory — restoring socket from DB creds...');
+    await startBaileysSocket(false, wsId);
+    sess = activeSessions.get(wsId);
+  }
+  if (!sess || !sess.sock) {
+    throw new Error(`WhatsApp socket not connected for workspace ${wsId}`);
+  }
+  return sess.sock;
+}
 
 // ─── Session State Helpers ────────────────────────────────────────────────────
 async function updateSessionState(
@@ -293,9 +308,9 @@ async function downloadMediaAsBuffer(
 }
 
 // ─── Message Sending Helpers ──────────────────────────────────────────────────
-async function sendTextMessage(to: string, text: string): Promise<string | null> {
-  if (!sock) throw new Error('Socket not connected');
-  const result = await sock.sendMessage(to, { text });
+async function sendTextMessage(to: string, text: string, wsId = WORKSPACE_ID): Promise<string | null> {
+  const targetSock = await getWorkspaceSocket(wsId);
+  const result = await targetSock.sendMessage(to, { text });
   return result?.key?.id ?? null;
 }
 
@@ -303,10 +318,10 @@ async function sendMediaMessage(
   to: string,
   mediaUrl: string,
   caption: string,
-  mimeType: string
+  mimeType: string,
+  wsId = WORKSPACE_ID
 ): Promise<string | null> {
-  if (!sock) throw new Error('Socket not connected');
-
+  const targetSock = await getWorkspaceSocket(wsId);
   const mediaCategory = detectMediaCategory(mimeType);
 
   // Download media to buffer first — avoids VPS→URL network issues
@@ -315,13 +330,13 @@ async function sendMediaMessage(
 
   let result;
   if (finalCategory === 'image') {
-    result = await sock.sendMessage(to, { image: buffer, caption, mimetype: resolvedMime } as any);
+    result = await targetSock.sendMessage(to, { image: buffer, caption, mimetype: resolvedMime } as any);
   } else if (finalCategory === 'video') {
-    result = await sock.sendMessage(to, { video: buffer, caption, mimetype: resolvedMime } as any);
+    result = await targetSock.sendMessage(to, { video: buffer, caption, mimetype: resolvedMime } as any);
   } else if (finalCategory === 'audio') {
-    result = await sock.sendMessage(to, { audio: buffer, mimetype: resolvedMime, ptt: false } as any);
+    result = await targetSock.sendMessage(to, { audio: buffer, mimetype: resolvedMime, ptt: false } as any);
   } else {
-    result = await sock.sendMessage(to, {
+    result = await targetSock.sendMessage(to, {
       document: buffer,
       mimetype: resolvedMime,
       fileName: caption || 'file',
@@ -333,8 +348,11 @@ async function sendMediaMessage(
 async function sendTemplateMessage(
   to: string,
   templateId: string,
-  variables: Record<string, string>
+  variables: Record<string, string>,
+  wsId = WORKSPACE_ID
 ): Promise<string | null> {
+  const targetSock = await getWorkspaceSocket(wsId);
+
   // Full template row including type, buttons, and payload_json
   type TplRow = {
     body_text: string;
@@ -351,7 +369,7 @@ async function sendTemplateMessage(
     .from('tenant_whatsapp_templates')
     .select('body_text, media_url_payload, type, buttons, payload_json')
     .eq('id', templateId)
-    .eq('tenant_id', WORKSPACE_ID)
+    .eq('tenant_id', wsId)
     .maybeSingle();
 
   if (tenantTpl) {
@@ -375,7 +393,7 @@ async function sendTemplateMessage(
       .from('whatsapp_templates')
       .select('payload, type, buttons')
       .eq('id', templateId)
-      .eq('workspace_id', WORKSPACE_ID)
+      .eq('workspace_id', wsId)
       .maybeSingle();
 
     if (legacyTpl) {
@@ -402,7 +420,7 @@ async function sendTemplateMessage(
       .from('baileys_templates')
       .select('body_text, media_url, media_type')
       .eq('id', templateId)
-      .eq('workspace_id', WORKSPACE_ID)
+      .eq('workspace_id', wsId)
       .maybeSingle();
 
     if (baileysTpl) {
@@ -450,48 +468,19 @@ async function sendTemplateMessage(
       if (normalizedKey === 'phone_number') {
         return leadPhone;
       }
-      if (normalizedKey === 'timestamp') {
-        return new Date().toISOString();
-      }
-      if (normalizedKey === 'current_date') {
-        return new Date().toLocaleDateString('en-IN', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        });
-      }
-      if (normalizedKey === 'facebook_lead_id') {
-        return variables['lead_id'] || variables['facebook_lead_id'] || '';
-      }
-      if (normalizedKey === 'form_name') {
-        return variables['form_name'] || '';
-      }
-      if (normalizedKey === 'campaign_name') {
-        return variables['campaign_name'] || '';
-      }
-      if (normalizedKey === 'platform') {
-        return variables['platform'] || '';
-      }
-
-      return '';
+      return match;
     };
 
-    body = body.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
-    body = body.replace(/\{([^{}]+)\}/g, replaceFn);
+    body = body.replace(/\{\{([^{}]+)\}\}/g, replaceFn).replace(/\{([^{}]+)\}/g, replaceFn);
   }
 
-  if (!sock) throw new Error('Socket not connected');
-
-  const tplType = tpl.tpl_type || (tpl.media_url ? 'media' : 'text');
-  const pj = tpl.tpl_payload || {};
-
-  // ── POLL message ─────────────────────────────────────────────────────────────
-  if (tplType === 'poll') {
-    const pollOpts: any[] = (pj.options || []).map((o: any) => (typeof o === 'string' ? o : o.text));
-    const allowMultiple: boolean = !!(pj.allowMultiple || pj.multipleAnswers);
-    const result = await sock.sendMessage(to, {
+  // ── POLL TEMPLATE ────────────────────────────────────────────────────────
+  if (tpl.tpl_type === 'poll' || (tpl.tpl_payload && tpl.tpl_payload.pollOptions)) {
+    const pollOpts = tpl.tpl_payload.pollOptions || [];
+    const allowMultiple = tpl.tpl_payload.allowMultipleChoice ?? false;
+    const result = await targetSock.sendMessage(to, {
       poll: {
-        name: body,
+        name: body || 'Poll',
         values: pollOpts,
         selectableCount: allowMultiple ? pollOpts.length : 1,
       }
@@ -511,15 +500,15 @@ async function sendTemplateMessage(
   // ── MEDIA (with or without action links) ─────────────────────────────────
   if (tpl.media_url) {
     const mimeType = detectMimeTypeFromUrl(tpl.media_url);
-    return sendMediaMessage(to, tpl.media_url, finalBody, mimeType);
+    return sendMediaMessage(to, tpl.media_url, finalBody, mimeType, wsId);
   }
 
   // ── PLAIN TEXT ────────────────────────────────────────────────────────────
-  return sendTextMessage(to, finalBody);
+  return sendTextMessage(to, finalBody, wsId);
 }
 
-async function dispatchGroupCard(groupJid: string, leadData: Record<string, unknown>): Promise<void> {
-  if (!sock) throw new Error('Socket not connected');
+async function dispatchGroupCard(groupJid: string, leadData: Record<string, unknown>, wsId = WORKSPACE_ID): Promise<void> {
+  const targetSock = await getWorkspaceSocket(wsId);
 
   const name = (leadData.name as string) ?? 'New Lead';
   const source = (leadData.source as string) ?? 'Unknown';
@@ -534,8 +523,8 @@ async function dispatchGroupCard(groupJid: string, leadData: Record<string, unkn
     `🕐 *Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n` +
     `_FW Core — Automated Lead Alert_`;
 
-  await sock.sendMessage(groupJid, { text: card });
-  logger.info({ groupJid, name }, '📤 Group dispatch sent');
+  await targetSock.sendMessage(groupJid, { text: card });
+  logger.info({ groupJid, name, workspaceId: wsId }, '📤 Group dispatch sent');
 }
 
 /**
@@ -546,9 +535,10 @@ async function dispatchGroupCard(groupJid: string, leadData: Record<string, unkn
 async function sendGroupAlert(
   groupId: string,
   leadData: Record<string, any>,
-  templateStr: string
+  templateStr: string,
+  wsId = WORKSPACE_ID
 ): Promise<string | null> {
-  if (!sock) throw new Error('Socket not connected');
+  const targetSock = await getWorkspaceSocket(wsId);
   if (!templateStr || !templateStr.trim()) {
     throw new Error('Template string is empty');
   }
@@ -612,9 +602,9 @@ async function sendGroupAlert(
   };
 
   const formatted = templateStr.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
-  const result = await sock.sendMessage(groupId, { text: formatted });
+  const result = await targetSock.sendMessage(groupId, { text: formatted });
   const waMessageId = result?.key?.id ?? null;
-  logger.info({ groupId, waMessageId }, '📤 Group lead alert sent');
+  logger.info({ groupId, waMessageId, workspaceId: wsId }, '📤 Group lead alert sent');
   return waMessageId;
 }
 
@@ -639,10 +629,13 @@ async function executeAction(action: {
   priority: number;
   created_at: string;
 }): Promise<{ success: boolean; waMessageId?: string | null; error?: string }> {
-  // ── PRE-SEND SESSION VALIDATION ──
-  if (!sock || !sock.user || !sock.user.id) {
-    logger.error({ actionId: action.id, workspaceId: action.workspace_id }, '🔴 [Pre-Send Check] WhatsApp session is unauthenticated or socket is null.');
+  const wsId = action.workspace_id;
+  let targetSock: ReturnType<typeof makeWASocket>;
 
+  try {
+    targetSock = await getWorkspaceSocket(wsId);
+  } catch (err: any) {
+    logger.error({ actionId: action.id, workspaceId: wsId }, '🔴 [Pre-Send Check] Workspace socket is unauthenticated or missing.');
     await dbWriteCritical(
       supabase
         .from('baileys_sessions')
@@ -771,8 +764,8 @@ async function executeAction(action: {
 
 // ─── Queue Drain Wrapper (calls the processor engine) ─────────────────────────
 async function runQueueDrain(): Promise<void> {
-  if (!sock) {
-    logger.debug('Socket not ready — skipping queue drain');
+  if (activeSessions.size === 0) {
+    logger.debug('No active sessions in memory — skipping queue drain');
     return;
   }
   try {
@@ -808,7 +801,6 @@ function startActionQueueListener(): void {
         event: 'INSERT',
         schema: 'public',
         table: 'baileys_action_queue',
-        filter: `workspace_id=eq.${WORKSPACE_ID}`,
       },
       async (payload) => {
         const action = payload.new as { id: string; status: string; action_type: string; next_retry_at?: string };
@@ -840,47 +832,51 @@ function startActionQueueListener(): void {
 }
 
 // ─── Connection Timeout Monitor ──────────────────────────────────────────────
-// Wait 60s for user to scan QR before timing out. Pairing handshake can take
-// 10-25s after scan, so 15s was too aggressive and killed active pairings.
-function startConnectingTimeout(): void {
-  clearConnectingTimeout();
-  connectingTimeoutTimer = setTimeout(async () => {
-    // Only fire if we're STILL connecting after the full window
+function startConnectingTimeout(wsId: string): void {
+  clearConnectingTimeout(wsId);
+  const timer = setTimeout(async () => {
     const { data: cur } = await supabase
       .from('baileys_sessions')
       .select('conn_state')
-      .eq('workspace_id', WORKSPACE_ID)
+      .eq('workspace_id', wsId)
       .maybeSingle();
-    if (cur?.conn_state === 'open') return; // already connected — skip reset
-    logger.warn('⏰ Connection stuck in "connecting" for 60s — force-resetting socket for fresh QR...');
-    await initiateForceReset();
+    if (cur?.conn_state === 'open') return;
+    logger.warn({ workspaceId: wsId }, '⏰ Connection stuck in "connecting" for 60s — force-resetting socket for fresh QR...');
+    await initiateForceReset(wsId);
   }, 60_000);
+
+  const sess = activeSessions.get(wsId);
+  if (sess) sess.connectingTimeoutTimer = timer;
 }
 
-function clearConnectingTimeout(): void {
-  if (connectingTimeoutTimer) {
-    clearTimeout(connectingTimeoutTimer);
-    connectingTimeoutTimer = null;
+function clearConnectingTimeout(wsId: string): void {
+  const sess = activeSessions.get(wsId);
+  if (sess?.connectingTimeoutTimer) {
+    clearTimeout(sess.connectingTimeoutTimer);
+    sess.connectingTimeoutTimer = undefined;
   }
 }
 
 // ─── Force Reset (shared between timeout handler and /force-reset endpoint) ──
 async function initiateForceReset(targetWorkspaceId?: string): Promise<void> {
   const wsId = targetWorkspaceId || WORKSPACE_ID;
-  if (sock && wsId === WORKSPACE_ID) {
+  const existing = activeSessions.get(wsId);
+  if (existing) {
+    if (existing.reconnectTimer) clearTimeout(existing.reconnectTimer);
+    if (existing.connectingTimeoutTimer) clearTimeout(existing.connectingTimeoutTimer);
     try {
-      (sock.ev as any).removeAllListeners();
-      sock.end(undefined);
+      (existing.sock.ev as any).removeAllListeners();
+      existing.sock.end(undefined);
     } catch {}
-    sock = null;
+    activeSessions.delete(wsId);
   }
-  if (reconnectTimer && wsId === WORKSPACE_ID) clearTimeout(reconnectTimer);
 
   // Wipe ALL session state from DB for target workspace
   await supabase
     .from('baileys_sessions')
     .update({
       conn_state: 'disconnected',
+      status: 'DISCONNECTED',
       qr_string: null,
       qr_expires_at: null,
       phone_number: null,
@@ -907,10 +903,6 @@ async function initiateForceReset(targetWorkspaceId?: string): Promise<void> {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'workspace_id' });
 
-  // Reset QR throttle so new socket's first QR writes to DB immediately
-  lastQrTime = 0;
-
-  // Start socket immediately — no delay to ensure fastest QR generation
   startBaileysSocket(true, wsId).catch(err => {
     logger.error({ err, workspaceId: wsId }, 'Failed to start Baileys socket after force-reset');
   });
@@ -919,9 +911,20 @@ async function initiateForceReset(targetWorkspaceId?: string): Promise<void> {
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
 async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string): Promise<void> {
   const wsId = targetWorkspaceId || WORKSPACE_ID;
-  logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket...');
+  logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket for workspace...');
 
-  clearConnectingTimeout();
+  const existing = activeSessions.get(wsId);
+  if (existing) {
+    if (existing.reconnectTimer) clearTimeout(existing.reconnectTimer);
+    if (existing.connectingTimeoutTimer) clearTimeout(existing.connectingTimeoutTimer);
+    try {
+      (existing.sock.ev as any).removeAllListeners();
+      existing.sock.end(undefined);
+    } catch {}
+    activeSessions.delete(wsId);
+  }
+
+  clearConnectingTimeout(wsId);
 
   let authState: Awaited<ReturnType<typeof useSupabaseAuthState>>;
 
@@ -941,14 +944,6 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
     logger.info({ workspaceId: wsId }, '🧠 Reconnect mode: loading state from Supabase / memory');
     authState = await useSupabaseAuthState(supabase, wsId);
     await updateSessionState('connecting', {}, wsId);
-  }
-
-  if (wsId === WORKSPACE_ID) {
-    saveCreds = authState.saveCreds;
-    currentAuthState = {
-      creds: authState.state.creds,
-      keys: authState.state.keys,
-    };
   }
 
   let { version } = await fetchLatestBaileysVersion().catch(() => ({ 
@@ -979,9 +974,13 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
     shouldSyncHistoryMessage: () => false,
   });
 
-  if (wsId === WORKSPACE_ID) {
-    sock = localSock;
-  }
+  const currentSess: WorkspaceSession = {
+    wsId,
+    sock: localSock,
+    authState,
+    lastQrTime: 0,
+  };
+  activeSessions.set(wsId, currentSess);
 
   localSock.ev.on('creds.update', (update: Partial<any>) => {
     Object.assign(authState.state.creds, update);
@@ -1005,12 +1004,12 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
     logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
 
     if (qr) {
-      clearConnectingTimeout();
-      startConnectingTimeout();
+      clearConnectingTimeout(wsId);
+      startConnectingTimeout(wsId);
 
       const now = Date.now();
-      if (now - lastQrTime > 10_000) {
-        lastQrTime = now;
+      if (now - currentSess.lastQrTime > 10_000) {
+        currentSess.lastQrTime = now;
         logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
         console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
         await dbWrite(
@@ -1029,7 +1028,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
     }
 
     if (connection === 'open' || localSock.user?.id) {
-      clearConnectingTimeout();
+      clearConnectingTimeout(wsId);
       const phoneNumber = localSock.user?.id?.split(':')[0] || (authState.state.creds as any)?.me?.id?.split(':')[0] || null;
 
       console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
@@ -1055,7 +1054,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
     }
 
     if (connection === 'close') {
-      clearConnectingTimeout();
+      clearConnectingTimeout(wsId);
       const error = lastDisconnect?.error as Boom;
       const statusCode = error?.output?.statusCode;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
@@ -1068,8 +1067,8 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         logger.info({ statusCode, workspaceId: wsId }, '♻️ Non-logged-out disconnect (e.g. 515 stream restart) — auto-reconnecting in 1.5s with saved auth keys...');
         console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 1.5s (preserving session)...`);
 
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
+        if (currentSess.reconnectTimer) clearTimeout(currentSess.reconnectTimer);
+        currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
         return;
       }
 
@@ -1094,42 +1093,21 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         `update-logged-out-${wsId}`
       );
 
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(() => startBaileysSocket(true, wsId), 1000);
+      if (currentSess.reconnectTimer) clearTimeout(currentSess.reconnectTimer);
+      currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(true, wsId), 1000);
     }
   });
-}
 
-
-  // ── Event: messages.upsert — save inbound messages ──
-  (sock as any)?.ev?.on('messages.upsert', async ({ messages, type }: { messages: any[]; type: string }) => {
+  localSock.ev.on('messages.upsert', async ({ messages, type }: { messages: any[]; type: string }) => {
     if (type !== 'notify') return;
-
     for (const msg of messages) {
-      // Sniff outgoing native flow button payloads (e.g. from WhatsBoost)
-      if (msg.key.fromMe) {
-        const msgStr = msg.message ? JSON.stringify(msg.message, null, 2) : null;
-        if (msgStr && (msgStr.includes('nativeFlowMessage') || msgStr.includes('interactiveMessage'))) {
-          logger.info({ rawPayload: msg.message }, '🔍 DETECTED OUTGOING NATIVE FLOW PAYLOAD');
-          console.log("================= DETECTED OUTGOING PAYLOAD =================");
-          console.log(msgStr);
-          console.log("=============================================================");
-        }
-        continue;
-      }
-
+      if (msg.key.fromMe) continue;
       const chatJid = msg.key.remoteJid!;
-      const text =
-        msg.message?.conversation ??
-        msg.message?.extendedTextMessage?.text ??
-        msg.message?.imageMessage?.caption ??
-        '[media]';
+      const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? msg.message?.imageMessage?.caption ?? '[media]';
 
-      logger.info({ chatJid, text }, '📩 Inbound message');
-
-      // Save to baileys_messages
+      logger.info({ workspaceId: wsId, chatJid, text }, '📩 Inbound message');
       await supabase.from('baileys_messages').insert({
-        workspace_id: WORKSPACE_ID,
+        workspace_id: wsId,
         wa_message_id: msg.key.id,
         chat_jid: chatJid,
         direction: 'inbound',
@@ -1137,127 +1115,9 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         status: 'read',
         sent_at: new Date((msg.messageTimestamp as number) * 1000).toISOString(),
       });
-
-      // ─── Click-to-WhatsApp Ad Lead Parser Hook ───
-      const contextInfo = msg.message?.extendedTextMessage?.contextInfo as any;
-      const isAdReferral = 
-        contextInfo?.sourceType === 'ad' ||
-        contextInfo?.referredImageUrl ||
-        text.toLowerCase().includes('saw this on facebook') ||
-        text.toLowerCase().includes('saw this on instagram') ||
-        text.toLowerCase().includes('click to whatsapp') ||
-        text.toLowerCase().includes('ad_id');
-
-      if (isAdReferral) {
-        logger.info({ chatJid }, '🎯 Click-to-WhatsApp Ad Referral Ingress detected!');
-        
-        const phoneNumber = chatJid.split('@')[0];
-        
-        // Check if lead already exists to avoid duplicate card ingestion
-        const { data: existingLead } = await supabase
-          .from('leads')
-          .select('id')
-          .eq('workspace_id', WORKSPACE_ID)
-          .eq('phone', phoneNumber)
-          .maybeSingle();
-
-        if (!existingLead) {
-          // Auto-create lead card
-          const { data: newLead } = await supabase
-            .from('leads')
-            .insert({
-              workspace_id: WORKSPACE_ID,
-              name: msg.pushName || `WA Ad Lead (${phoneNumber.slice(-4)})`,
-              phone: phoneNumber,
-              source: 'whatsapp_ad',
-              status: 'new',
-              score: 'High-Value 🔥',
-              score_reason: 'Automated Click-to-WhatsApp Ad Lead Ingest.',
-              raw_payload: {
-                message_text: text,
-                ad_context: contextInfo ?? {}
-              }
-            })
-            .select('id')
-            .single();
-
-          if (newLead) {
-            // Write live activity log
-            await supabase.from('live_logs').insert({
-              workspace_id: WORKSPACE_ID,
-              lead_id: newLead.id,
-              event_type: 'webhook_ingested',
-              message: `Lead auto-created from Click-to-WhatsApp Ad: "${msg.pushName || phoneNumber}". Score: High-Value 🔥.`,
-              metadata: { source: 'whatsapp_ad' }
-            });
-            logger.info({ leadId: newLead.id }, '✅ Lead card successfully auto-created.');
-          }
-        }
-      }
-
-      // Update chat last message
-      await supabase
-        .from('baileys_chats')
-        .upsert({
-          workspace_id: WORKSPACE_ID,
-          jid: chatJid,
-          last_message: text.slice(0, 100),
-          last_message_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id, jid' });
     }
   });
-
-  // ── Event: messages.update — Blue Tick / Delivery status ──
-  (sock as any)?.ev?.on('messages.update', async (updates: any[]) => {
-    for (const update of updates) {
-      if (!update.update.status) continue;
-
-      const waStatus = update.update.status;
-      // WhatsApp status codes: 2 = sent, 3 = delivered, 4 = read
-      let dbStatus: 'sent' | 'delivered' | 'read' | null = null;
-      const extras: Record<string, string> = {};
-
-      if (waStatus === proto.WebMessageInfo.Status.DELIVERY_ACK) {
-        dbStatus = 'delivered';
-        extras.delivered_at = new Date().toISOString();
-      } else if (waStatus === proto.WebMessageInfo.Status.READ) {
-        dbStatus = 'read';
-        extras.read_at = new Date().toISOString();
-      } else if (waStatus === proto.WebMessageInfo.Status.SERVER_ACK) {
-        dbStatus = 'sent';
-      }
-
-      if (dbStatus && update.key.id) {
-        await supabase
-          .from('baileys_messages')
-          .update({ status: dbStatus, ...extras })
-          .eq('wa_message_id', update.key.id);
-
-        logger.debug({ msgId: update.key.id, status: dbStatus }, '📊 Status updated');
-      }
-    }
-  });
-
-  // ── Event: chats.set — Bulk sync chat list on connect ──
-  ((sock as any)?.ev as any)?.on('chats.set', async ({ chats }: any) => {
-    if (!chats || !chats.length) return;
-    logger.info({ count: chats.length }, '📂 Syncing chat list...');
-
-    const rows = chats.slice(0, 200).map((chat: any) => ({
-      workspace_id: WORKSPACE_ID,
-      jid: chat.id,
-      display_name: chat.name ?? chat.id.split('@')[0],
-      is_group: chat.id.endsWith('@g.us'),
-      unread_count: chat.unreadCount ?? 0,
-      last_message: chat.lastMessage ?? null,
-      updated_at: new Date().toISOString(),
-    }));
-
-    await supabase
-      .from('baileys_chats')
-      .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
-  });
+}
 
 function getRequestBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -1296,27 +1156,29 @@ function startHealthServer(): http.Server {
       const parsedUrl = new URL(req.url ?? '', `http://localhost:${PORT}`);
 
       if (req.method === 'GET' && parsedUrl.pathname === '/health') {
+        const targetWs = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
         const { data } = await supabase
           .from('baileys_sessions')
           .select('conn_state, phone_number, last_connected')
-          .eq('workspace_id', WORKSPACE_ID)
+          .eq('workspace_id', targetWs)
           .maybeSingle();
 
-        const socketAlive = !!sock;
-        const socketReadyState = (sock as any)?.ws?.readyState;
-        const socketAuthenticated = !!(sock as any)?.user?.id;
-        // Derive actual connection state from socket (not DB):
+        const sess = activeSessions.get(targetWs);
+        const socketAlive = !!sess?.sock;
+        const socketReadyState = (sess?.sock as any)?.ws?.readyState;
+        const socketAuthenticated = !!(sess?.sock as any)?.user?.id;
         const socketConnState = socketAuthenticated ? 'open' : (socketReadyState === 1 ? 'connecting' : (socketAlive ? 'connecting' : 'disconnected'));
 
         res.writeHead(200);
         res.end(JSON.stringify({
           status: 'ok',
           worker: 'baileys',
-          workspace_id: WORKSPACE_ID,
+          workspace_id: targetWs,
+          active_sessions_count: activeSessions.size,
           socket: socketAlive ? 'alive' : 'null',
           socket_conn_state: socketConnState,
           socket_authenticated: socketAuthenticated,
-          phone_number: (sock as any)?.user?.id?.split(':')[0] ?? null,
+          phone_number: (sess?.sock as any)?.user?.id?.split(':')[0] ?? null,
           session: data,
         }));
         return;
@@ -1351,17 +1213,13 @@ function startHealthServer(): http.Server {
       if (req.method === 'POST' && parsedUrl.pathname === '/send') {
         const bodyStr = await getRequestBody(req);
         const payload = JSON.parse(bodyStr);
+        const targetWsId = payload.workspace_id || payload.workspaceId || WORKSPACE_ID;
 
-        logger.info({ payload }, 'Received send message request');
+        logger.info({ payload, workspaceId: targetWsId }, 'Received send message request');
 
-        if (!sock) {
-          res.writeHead(503);
-          res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
-          return;
-        }
+        const targetSock = await getWorkspaceSocket(targetWsId);
 
         // ── Intercept: if rawButtons/buttons are present, force 'buttons' route ──
-        // Prevents type:"image"/"video"/"document" from bypassing the proto builder
         if (Array.isArray(payload.rawButtons) && payload.rawButtons.length > 0) {
           payload.type = 'buttons';
         }
@@ -1390,18 +1248,18 @@ function startHealthServer(): http.Server {
         switch (type) {
           case 'text':
             if (!text) throw new Error('Missing: text');
-            waMessageId = await sendTextMessage(jid, text);
+            waMessageId = await sendTextMessage(jid, text, targetWsId);
             break;
           case 'image':
           case 'video':
           case 'audio':
           case 'document':
             if (!mediaUrl || !mimeType) throw new Error('Missing: mediaUrl, mimeType');
-            waMessageId = await sendMediaMessage(jid, mediaUrl, caption ?? '', mimeType);
+            waMessageId = await sendMediaMessage(jid, mediaUrl, caption ?? '', mimeType, targetWsId);
             break;
           case 'poll':
             if (!text) throw new Error('Missing: text (poll name)');
-            const pollResult = await sock.sendMessage(jid, {
+            const pollResult = await targetSock.sendMessage(jid, {
               poll: {
                 name: text,
                 values: pollOptions || [],
@@ -1411,7 +1269,6 @@ function startHealthServer(): http.Server {
             waMessageId = pollResult?.key?.id ?? null;
             break;
           case 'buttons': {
-            // Action links (URL / Phone) — text-formatted for reliable delivery
             const { rawButtons, buttons: payloadButtons } = payload as any;
             const targetButtons = payloadButtons || rawButtons || [];
             if (!text) throw new Error('Missing: text (buttons body)');
@@ -1421,9 +1278,9 @@ function startHealthServer(): http.Server {
 
             if (mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '') {
               const mimeTypeDetect = mimeType || detectMimeTypeFromUrl(mediaUrl);
-              waMessageId = await sendMediaMessage(jid, mediaUrl, finalText, mimeTypeDetect);
+              waMessageId = await sendMediaMessage(jid, mediaUrl, finalText, mimeTypeDetect, targetWsId);
             } else {
-              waMessageId = await sendTextMessage(jid, finalText);
+              waMessageId = await sendTextMessage(jid, finalText, targetWsId);
             }
             break;
           }
@@ -1437,16 +1294,16 @@ function startHealthServer(): http.Server {
       }
 
       if (req.method === 'POST' && parsedUrl.pathname === '/fetch-groups') {
-        logger.info('Fetch groups requested');
+        const bodyStr = await getRequestBody(req).catch(() => '{}');
+        const payload = JSON.parse(bodyStr || '{}');
+        const targetWsId = payload.workspace_id || payload.workspaceId || parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
 
-        if (!sock) {
-          res.writeHead(503);
-          res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
-          return;
-        }
+        logger.info({ workspaceId: targetWsId }, 'Fetch groups requested');
+
+        const targetSock = await getWorkspaceSocket(targetWsId);
 
         try {
-          const groupMap = await sock.groupFetchAllParticipating();
+          const groupMap = await targetSock.groupFetchAllParticipating();
           const groups = Object.values(groupMap).map((g: any) => ({
             jid: g.id,
             display_name: g.subject || g.id.split('@')[0],
@@ -1454,9 +1311,8 @@ function startHealthServer(): http.Server {
             is_group: true,
           }));
 
-          // Upsert into baileys_chats for persistence
           const rows = groups.map((g: any) => ({
-            workspace_id: WORKSPACE_ID,
+            workspace_id: targetWsId,
             jid: g.jid,
             display_name: g.display_name,
             is_group: true,
@@ -1469,11 +1325,11 @@ function startHealthServer(): http.Server {
               .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
           }
 
-          logger.info({ count: groups.length }, '✅ Groups fetched and synced');
+          logger.info({ count: groups.length, workspaceId: targetWsId }, '✅ Groups fetched and synced');
           res.writeHead(200);
           res.end(JSON.stringify({ success: true, groups }));
         } catch (err: any) {
-          logger.error({ err }, '❌ Failed to fetch groups');
+          logger.error({ err, workspaceId: targetWsId }, '❌ Failed to fetch groups');
           res.writeHead(500);
           res.end(JSON.stringify({ success: false, error: err.message || 'Failed to fetch groups' }));
         }
@@ -1483,14 +1339,9 @@ function startHealthServer(): http.Server {
       if (req.method === 'POST' && parsedUrl.pathname === '/send-group-alert') {
         const bodyStr = await getRequestBody(req);
         const payload = JSON.parse(bodyStr);
+        const targetWsId = payload.workspace_id || payload.workspaceId || WORKSPACE_ID;
 
-        logger.info({ payload }, 'Received send-group-alert request');
-
-        if (!sock) {
-          res.writeHead(503);
-          res.end(JSON.stringify({ success: false, error: 'WhatsApp socket not connected' }));
-          return;
-        }
+        logger.info({ payload, workspaceId: targetWsId }, 'Received send-group-alert request');
 
         const { groupId, leadData, templateStr } = payload;
         if (!groupId || !templateStr) {
@@ -1500,7 +1351,7 @@ function startHealthServer(): http.Server {
         }
 
         try {
-          const waMessageId = await sendGroupAlert(groupId, leadData || {}, templateStr);
+          const waMessageId = await sendGroupAlert(groupId, leadData || {}, templateStr, targetWsId);
           res.writeHead(200);
           res.end(JSON.stringify({ success: true, waMessageId }));
         } catch (err: any) {
@@ -1723,15 +1574,15 @@ function startLeadsRealtimeListener(): void {
         event: 'INSERT',
         schema: 'public',
         table: 'leads',
-        filter: `workspace_id=eq.${WORKSPACE_ID}`,
       },
       async (payload) => {
         const lead = payload.new as Record<string, unknown>;
+        const leadWsId = (lead.workspace_id as string) || WORKSPACE_ID;
         logger.info(
-          { leadId: lead.id, source: lead.source, name: lead.name },
+          { leadId: lead.id, source: lead.source, name: lead.name, workspaceId: leadWsId },
           '🎯 Realtime: new lead inserted — triggering workflows'
         );
-        await triggerWorkflowsForLead(lead, WORKSPACE_ID);
+        await triggerWorkflowsForLead(lead, leadWsId);
 
         // Asynchronously trigger Google Contacts Ingest Sync
         (async () => {
@@ -1740,7 +1591,7 @@ function startLeadsRealtimeListener(): void {
             const syncRes = await fetch(`${appUrl}/api/workflows/google-contacts/sync-lead`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ leadId: lead.id, workspaceId: WORKSPACE_ID }),
+              body: JSON.stringify({ leadId: lead.id, workspaceId: leadWsId }),
             });
             if (syncRes.ok) {
               const resData = await syncRes.json();
@@ -1979,30 +1830,20 @@ function startGoogleSheetsWatcher(): void {
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 async function runSessionHeartbeatCheck(): Promise<void> {
-  try {
-    const { data: session } = await supabase
-      .from('baileys_sessions')
-      .select('conn_state, status')
-      .eq('workspace_id', WORKSPACE_ID)
-      .maybeSingle();
-
-    const dbState = session?.conn_state;
-    const dbStatus = session?.status;
-
-    // Only perform check if DB thinks session is active
-    if (dbState === 'open' || dbStatus === 'CONNECTED') {
+  for (const [wsId, sess] of activeSessions.entries()) {
+    try {
+      const targetSock = sess.sock;
       let isDead = false;
       let reason = '';
 
-      if (!sock) {
+      if (!targetSock) {
         isDead = true;
         reason = 'Socket instance is null/undefined';
-      } else if (!sock.user || !sock.user.id) {
+      } else if (!targetSock.user || !targetSock.user.id) {
         isDead = true;
         reason = 'Socket unauthenticated (sock.user missing)';
       } else {
-        const wsState = (sock as any).ws?.readyState;
-        // ws.OPEN is 1
+        const wsState = (targetSock as any).ws?.readyState;
         if (wsState !== undefined && wsState !== 1) {
           isDead = true;
           reason = `WebSocket readyState is ${wsState} (not OPEN)`;
@@ -2010,9 +1851,7 @@ async function runSessionHeartbeatCheck(): Promise<void> {
       }
 
       if (isDead) {
-        logger.error({ reason, dbState, dbStatus }, '🔴 [Heartbeat] Zombie WhatsApp session detected!');
-        console.log(`🔴 [Heartbeat] Zombie session detected: ${reason} — Wiping session & setting DISCONNECTED`);
-
+        logger.error({ wsId, reason }, '🔴 [Heartbeat] Zombie WhatsApp session detected!');
         await dbWriteCritical(
           supabase
             .from('baileys_sessions')
@@ -2027,33 +1866,21 @@ async function runSessionHeartbeatCheck(): Promise<void> {
               last_status_change: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
-            .eq('workspace_id', WORKSPACE_ID),
-          'heartbeat-disconnect-update'
+            .eq('workspace_id', wsId),
+          `heartbeat-disconnect-${wsId}`
         );
 
-        await dbWrite(
-          supabase.from('wa_instance_alerts').insert({
-            workspace_id: WORKSPACE_ID,
-            alert_type: 'zombie_session_disconnected',
-            message: `Zombie Session Detected: ${reason}. System auto-disconnected to prompt QR scan.`,
-            metadata: { reason, detected_at: new Date().toISOString() },
-          }),
-          'insert-heartbeat-alert'
-        );
+        try {
+          (targetSock.ev as any).removeAllListeners();
+          targetSock.end(undefined);
+        } catch {}
+        activeSessions.delete(wsId);
 
-        if (sock) {
-          try {
-            (sock.ev as any).removeAllListeners();
-            sock.end(undefined);
-          } catch {}
-          sock = null;
-        }
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
+        startBaileysSocket(false, wsId).catch(() => {});
       }
+    } catch (err: any) {
+      logger.error({ wsId, err: err?.message }, '⚠️ Error checking heartbeat for workspace');
     }
-  } catch (err: any) {
-    logger.error({ err: err?.message }, '⚠️ Error running session heartbeat check');
   }
 }
 
@@ -2071,84 +1898,70 @@ function startSessionHeartbeat(): void {
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, `🛑 Received ${signal} — initiating graceful shutdown...`);
 
-  // 1. Stop accepting new requests
   if (healthServer) {
     healthServer.close(() => {
       logger.info('✅ Health server closed');
     });
   }
 
-  // 2. Close WhatsApp socket
-  if (sock) {
+  for (const [wsId, sess] of activeSessions.entries()) {
     try {
-      sock.end(undefined);
-      logger.info('✅ WhatsApp socket ended');
-    } catch (e) {
-      logger.error({ err: e }, 'Error ending socket');
-    }
-    sock = null;
+      if (sess.reconnectTimer) clearTimeout(sess.reconnectTimer);
+      if (sess.connectingTimeoutTimer) clearTimeout(sess.connectingTimeoutTimer);
+      (sess.sock.ev as any)?.removeAllListeners();
+      sess.sock.end(undefined);
+    } catch {}
   }
+  activeSessions.clear();
 
-  // 3. Clear all timers
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  if (connectingTimeoutTimer) { clearTimeout(connectingTimeoutTimer); connectingTimeoutTimer = null; }
   if (delayedCheckTimer) { clearTimeout(delayedCheckTimer); delayedCheckTimer = null; }
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 
-  // 4. Write disconnected state to DB
-  try {
-    await supabase
-      .from('baileys_sessions')
-      .update({
-        conn_state: 'disconnected',
-        error_info: `${signal} — worker shutting down`,
-        last_status_change: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('workspace_id', WORKSPACE_ID);
-    logger.info('✅ Session state persisted as disconnected');
-  } catch {}
-
-  logger.info('👋 Goodbye. Worker shut down cleanly.');
+  logger.info('👋 Goodbye. Multi-tenant worker shut down cleanly.');
   process.exit(0);
 }
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  logger.info('🔥 FW Core — Baileys Worker Starting...');
-  logger.info({ workspaceId: WORKSPACE_ID }, '🏢 Workspace');
+  logger.info('🔥 FW Core — Multi-Tenant Baileys Worker Starting...');
 
   healthServer = startHealthServer();
 
-  // ── Supabase Realtime: queue + leads listeners ──
   startActionQueueListener();
   startLeadsRealtimeListener();
 
-  // ── Google Sheets background watcher (60s polling) ──
   startGoogleSheetsWatcher();
-
-  // ── Start Session Heartbeat watcher (60s check) ──
   startSessionHeartbeat();
 
-  // ── Start WhatsApp Baileys socket ──
-  await startBaileysSocket();
+  // Restore all existing active workspace sessions from DB at startup
+  const { data: activeSessionsDb } = await supabase
+    .from('baileys_sessions')
+    .select('workspace_id, conn_state')
+    .or('conn_state.eq.open,creds_json.neq.null');
 
-  // ── Dynamic delayed-check scheduler replaces the old 5s setInterval ──
-  // Only delayed-node actions need a timer; instant actions are driven by Realtime.
+  if (activeSessionsDb && activeSessionsDb.length > 0) {
+    logger.info({ count: activeSessionsDb.length }, '🔁 Restoring active workspace sessions from DB...');
+    for (const s of activeSessionsDb) {
+      startBaileysSocket(false, s.workspace_id).catch(err => {
+        logger.error({ err, workspaceId: s.workspace_id }, 'Failed to restore workspace session at startup');
+      });
+    }
+  } else {
+    logger.info({ workspaceId: WORKSPACE_ID }, 'Starting default workspace socket...');
+    startBaileysSocket(false, WORKSPACE_ID).catch(() => {});
+  }
+
   await scheduleNextDelayedCheck();
 
-  // ── Periodic 10s Queue Drain Safety Net (Ensures scheduled actions are NEVER missed) ──
   setInterval(() => {
     runQueueDrain().catch(err => logger.error({ err }, 'Periodic queue drain error'));
   }, 10_000);
 
-  // ── Sweeper: recover stuck 'processing' rows every 60 seconds ──
   setInterval(() => {
     runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));
   }, 60_000);
 
   logger.info('✅ Realtime listeners active. Dynamic delay scheduler + 10s queue drainer running. Sweeper (60s) active.');
-  logger.info('✅ Polling setInterval REMOVED — egress now driven by Realtime + scheduleNextDelayedCheck.');
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
