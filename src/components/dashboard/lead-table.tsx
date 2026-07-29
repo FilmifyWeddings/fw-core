@@ -3216,48 +3216,59 @@ export function LeadTable({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Lead Source */}
                     <div className="space-y-1">
-                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold block">
                         Lead Source
                       </label>
-                      <CRMDropdown
-                        value={manualLeadSource}
-                        placeholder="Select Source"
-                        allowCustomAdd={false}
-                        options={customSources.map(src => ({ value: src, label: src }))}
-                        onChange={(val) => setManualLeadSource(val)}
-                      />
+                      <div className="relative flex items-center">
+                        <select
+                          value={manualLeadSource}
+                          onChange={(e) => setManualLeadSource(e.target.value)}
+                          className="w-full appearance-none bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 pr-8 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs cursor-pointer"
+                        >
+                          {customSources.map(src => (
+                            <option key={src} value={src} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">{src}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-3" />
+                      </div>
                     </div>
 
                     {/* Status */}
                     <div className="space-y-1">
-                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold block">
                         Status / Stage
                       </label>
-                      <CRMDropdown
-                        value={manualLeadStatus}
-                        placeholder="Select Status"
-                        customAddTitle="Add Custom Status"
-                        options={stagesState.map(s => ({
-                          value: s.id,
-                          label: s.name,
-                          color: s.color
-                        }))}
-                        onChange={(val) => setManualLeadStatus(val as LeadStatus)}
-                      />
+                      <div className="relative flex items-center">
+                        <select
+                          value={manualLeadStatus}
+                          onChange={(e) => setManualLeadStatus(e.target.value as LeadStatus)}
+                          className="w-full appearance-none bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 pr-8 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs cursor-pointer"
+                        >
+                          {stagesState.map(s => (
+                            <option key={s.id} value={s.id} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">{s.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-3" />
+                      </div>
                     </div>
 
                     {/* Assign Lead */}
                     <div className="space-y-1">
-                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold block">
                         Assign Lead
                       </label>
-                      <CRMDropdown
-                        value={manualLeadOwner}
-                        placeholder="Select Lead Owner"
-                        allowCustomAdd={false}
-                        options={teamMembers.map(m => ({ value: m.name, label: `👤 ${m.name}` }))}
-                        onChange={(val) => setManualLeadOwner(val)}
-                      />
+                      <div className="relative flex items-center">
+                        <select
+                          value={manualLeadOwner}
+                          onChange={(e) => setManualLeadOwner(e.target.value)}
+                          className="w-full appearance-none bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 pr-8 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs cursor-pointer"
+                        >
+                          {teamMembers.map(m => (
+                            <option key={m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">👤 {m.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-3" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3271,56 +3282,51 @@ export function LeadTable({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Event Type */}
                     <div className="space-y-1">
-                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold block">
                         Event Type
                       </label>
-                      <CRMDropdown
-                        value={manualEventType}
-                        placeholder="Select Event Type"
-                        allowCustomAdd={false}
-                        options={[
-                          { value: 'Wedding Photography', label: 'Wedding Photography' },
-                          { value: 'Pre-Wedding Shoot', label: 'Pre-Wedding Shoot' },
-                          { value: 'Engagement & Sangeet', label: 'Engagement & Sangeet' },
-                          { value: 'Destination Wedding', label: 'Destination Wedding' },
-                          { value: 'Birthday / Anniversary', label: 'Birthday / Anniversary' },
-                          { value: 'Commercial Shoot', label: 'Commercial Shoot' },
-                          { value: 'Other Event', label: 'Other Event' }
-                        ]}
-                        onChange={(val) => setManualEventType(val)}
-                      />
+                      <div className="relative flex items-center">
+                        <select
+                          value={manualEventType}
+                          onChange={(e) => setManualEventType(e.target.value)}
+                          className="w-full appearance-none bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 pr-8 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs cursor-pointer"
+                        >
+                          <option value="Wedding Photography">Wedding Photography</option>
+                          <option value="Pre-Wedding Shoot">Pre-Wedding Shoot</option>
+                          <option value="Engagement & Sangeet">Engagement & Sangeet</option>
+                          <option value="Destination Wedding">Destination Wedding</option>
+                          <option value="Birthday / Anniversary">Birthday / Anniversary</option>
+                          <option value="Commercial Shoot">Commercial Shoot</option>
+                          <option value="Other Event">Other Event</option>
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-3" />
+                      </div>
                     </div>
 
                     {/* Event Date */}
                     <div className="space-y-1">
-                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold block">
                         Event Date
                       </label>
                       <input 
                         type="date" 
                         value={manualEventDate}
                         onChange={(e) => setManualEventDate(e.target.value)}
-                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs"
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs"
                       />
                     </div>
 
-                    {/* Budget */}
+                    {/* Budget Range (Custom Text Input) */}
                     <div className="space-y-1">
-                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold block">
                         Budget Range
                       </label>
-                      <CRMDropdown
+                      <input 
+                        type="text" 
+                        placeholder="e.g. ₹1.5 Lakh - ₹2.5 Lakh"
                         value={manualBudget}
-                        placeholder="Select Budget"
-                        allowCustomAdd={false}
-                        options={[
-                          { value: 'Under ₹1 Lakh', label: 'Under ₹1 Lakh' },
-                          { value: '₹1 Lakh - ₹1.5 Lakh', label: '₹1 Lakh - ₹1.5 Lakh' },
-                          { value: '₹1.5 Lakh - ₹2.5 Lakh', label: '₹1.5 Lakh - ₹2.5 Lakh' },
-                          { value: '₹2.5 Lakh - ₹4 Lakh', label: '₹2.5 Lakh - ₹4 Lakh' },
-                          { value: '₹4 Lakh & above', label: '₹4 Lakh & above' }
-                        ]}
-                        onChange={(val) => setManualBudget(val)}
+                        onChange={(e) => setManualBudget(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400"
                       />
                     </div>
                   </div>
