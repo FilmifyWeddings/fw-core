@@ -62,7 +62,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
       <div className="absolute top-1/3 right-1/4 w-[750px] h-[550px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#D4AF37]/20 via-[#F4EFE6]/30 to-transparent blur-[140px] pointer-events-none rounded-full" />
       <div className="absolute top-0 left-1/4 w-[500px] h-[300px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#FAF8F5] via-[#EAE3D2]/20 to-transparent blur-[100px] pointer-events-none rounded-full" />
 
-      {/* MAIN CONTAINER (LEFT CONTENT + DASHBOARD WITH LEFT & RIGHT CONNECTED ICONS) */}
+      {/* MAIN CONTAINER (LEFT CONTENT + DASHBOARD WITH OUTWARD FLOATING ICONS) */}
       <div className="max-w-[1450px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 relative">
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -88,7 +88,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-3xl sm:text-5xl lg:text-[54px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.1]"
+              className="text-3xl sm:text-5xl lg:text-[52px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.1]"
             >
               Run Your Entire <br />
               Photography Business <br />
@@ -168,13 +168,13 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
           </div>
 
           {/* ========================================================= */}
-          {/* RIGHT DASHBOARD PREVIEW WITH 4 LEFT ICONS & 4 RIGHT ICONS */}
+          {/* RIGHT DASHBOARD PREVIEW WITH FULLY OUTWARD VISIBLE ICONS */}
           {/* ========================================================= */}
           <div className="lg:col-span-7 relative z-10 flex items-center justify-center">
             
-            {/* LEFT 4 INTEGRATION ICONS & SVG LINES (DESKTOP) */}
-            <div className="hidden lg:block absolute left-0 top-0 bottom-0 w-16 z-20">
-              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 64 450">
+            {/* LEFT 4 INTEGRATION ICONS & STRETCHED SVG LINES (FULLY OUTWARD, NEVER HIDDEN) */}
+            <div className="hidden lg:block absolute -left-12 xl:-left-16 top-0 bottom-0 w-20 z-40">
+              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 80 450">
                 <defs>
                   <linearGradient id="goldStrokeGradLeft" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
@@ -184,7 +184,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                 {leftIcons.map((item, i) => (
                   <g key={i}>
                     <path
-                      d={`M 24 ${item.y + 24} C 45 ${item.y + 24}, 60 225, 75 225`}
+                      d={`M 24 ${item.y + 24} C 55 ${item.y + 24}, 70 225, 95 225`}
                       fill="none"
                       stroke="url(#goldStrokeGradLeft)"
                       strokeWidth="1.5"
@@ -204,10 +204,10 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                       key={idx}
                       animate={{ y: [0, item.yOffset, 0] }}
                       transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                      className="w-11 h-11 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_20px_rgba(212,175,55,0.18)] flex items-center justify-center p-2 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
+                      className="w-12 h-12 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_25px_rgba(212,175,55,0.22)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
                       title={item.name}
                     >
-                      <IconComponent className="w-5 h-5" />
+                      <IconComponent className="w-6 h-6" />
                     </motion.div>
                   );
                 })}
@@ -215,7 +215,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
             </div>
 
             {/* MAIN APP DASHBOARD WINDOW */}
-            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.14)] p-3 sm:p-5 text-left relative overflow-hidden lg:mx-14 w-full">
+            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.14)] p-3 sm:p-5 text-left relative overflow-hidden w-full">
               
               <div className="flex gap-4">
                 
@@ -384,9 +384,9 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
 
             </div>
 
-            {/* RIGHT 4 INTEGRATION ICONS & SVG LINES (DESKTOP) */}
-            <div className="hidden lg:block absolute right-0 top-0 bottom-0 w-16 z-20">
-              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 64 450">
+            {/* RIGHT 4 INTEGRATION ICONS & STRETCHED SVG LINES (FULLY OUTWARD, NEVER HIDDEN) */}
+            <div className="hidden lg:block absolute -right-12 xl:-right-16 top-0 bottom-0 w-20 z-40">
+              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 80 450">
                 <defs>
                   <linearGradient id="goldStrokeGradRight" x1="100%" y1="0%" x2="0%" y2="0%">
                     <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
@@ -396,14 +396,14 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                 {rightIcons.map((item, i) => (
                   <g key={i}>
                     <path
-                      d={`M 40 ${item.y + 24} C 20 ${item.y + 24}, 5 225, -10 225`}
+                      d={`M 56 ${item.y + 24} C 25 ${item.y + 24}, 10 225, -15 225`}
                       fill="none"
                       stroke="url(#goldStrokeGradRight)"
                       strokeWidth="1.5"
                       strokeDasharray="4 2"
                       className="animate-pulse"
                     />
-                    <circle cx="40" cy={item.y + 24} r="2.5" fill="#D4AF37" />
+                    <circle cx="56" cy={item.y + 24} r="2.5" fill="#D4AF37" />
                   </g>
                 ))}
               </svg>
@@ -416,10 +416,10 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                       key={idx}
                       animate={{ y: [0, item.yOffset, 0] }}
                       transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                      className="w-11 h-11 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_20px_rgba(212,175,55,0.18)] flex items-center justify-center p-2 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
+                      className="w-12 h-12 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_25px_rgba(212,175,55,0.22)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
                       title={item.name}
                     >
-                      <IconComponent className="w-5 h-5" />
+                      <IconComponent className="w-6 h-6" />
                     </motion.div>
                   );
                 })}
