@@ -923,301 +923,135 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
 
   clearConnectingTimeout();
 
+  let authState: Awaited<ReturnType<typeof useSupabaseAuthState>>;
+
   if (forceFresh) {
     logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: creating new credential state from scratch');
     await updateSessionState('connecting', {}, wsId);
 
-    // Use authState's creds/keys so saveCreds persists the SAME object
-    // that Baileys mutates in-place via creds.update / keys.set
-    const authState = await useSupabaseAuthState(supabase, wsId);
-    const saveCredsLocal = authState.saveCreds;
-
-    // Reset creds to fresh random keys even if DB had stale state
+    authState = await useSupabaseAuthState(supabase, wsId);
     const { initAuthCreds } = await import('@whiskeysockets/baileys');
     const freshCreds = initAuthCreds();
+
     for (const k of Object.keys(authState.state.creds) as (keyof import('@whiskeysockets/baileys').AuthenticationCreds)[]) {
       delete authState.state.creds[k];
     }
     Object.assign(authState.state.creds, freshCreds);
-
-    if (wsId === WORKSPACE_ID) {
-      saveCreds = saveCredsLocal;
-      currentAuthState = {
-        creds: authState.state.creds,
-        keys: authState.state.keys,
-      };
-    }
-
-    let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ 
-      version: [2, 3000, 1017531287] as [number, number, number], 
-      isLatest: false 
-    }));
-
-    const minVersion = [2, 3000, 1017531287];
-    if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
-      version = minVersion as [number, number, number];
-      isLatest = true;
-    }
-
-    const localSock = makeWASocket({
-      version,
-      logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
-      auth: {
-        creds: authState.state.creds,
-        keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
-      },
-      printQRInTerminal: true,
-      generateHighQualityLinkPreview: true,
-      keepAliveIntervalMs: 10_000,
-      connectTimeoutMs: 60_000,
-      defaultQueryTimeoutMs: 60_000,
-      retryRequestDelayMs: 2500,
-      markOnlineOnConnect: true,
-      browser: Browsers.ubuntu('Chrome'),
-      syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
-    });
-
-    if (wsId === WORKSPACE_ID) {
-      sock = localSock;
-    }
-
-    localSock.ev.on('creds.update', (update: Partial<any>) => {
-      Object.assign(authState.state.creds, update);
-      const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
-      if (needsForceFlush) {
-        logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
-        saveCredsLocal().then(() => {
-          console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
-        }).catch((err) => {
-          logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
-        });
-      } else {
-        saveCredsLocal();
-      }
-    });
-
-    localSock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
-      logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
-
-      if (qr) {
-        clearConnectingTimeout();
-        startConnectingTimeout();
-
-        const now = Date.now();
-        if (now - lastQrTime > 10_000) {
-          lastQrTime = now;
-          logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
-          console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
-          await dbWrite(
-            supabase
-              .from('baileys_sessions')
-              .upsert({
-                workspace_id: wsId,
-                qr_string: qr,
-                qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
-                conn_state: 'connecting',
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'workspace_id' }),
-            `upsert-qr-${wsId}`
-          );
-        }
-      }
-
-      if (connection === 'open') {
-        clearConnectingTimeout();
-
-        await dbWriteCritical(
-          supabase
-            .from('baileys_sessions')
-            .upsert({
-              workspace_id: wsId,
-              conn_state: 'open',
-              status: 'CONNECTED',
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' }),
-          `upsert-open-status-${wsId}`
-        );
-
-        if (update.isNewLogin && saveCredsLocal) {
-          try {
-            await saveCredsLocal();
-            console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${wsId}`);
-          } catch (err) {
-            logger.error({ err, workspaceId: wsId }, 'Failed to flush creds on isNewLogin');
-          }
-        }
-      }
-    });
   } else {
-    // Reconnect mode
-    if (currentAuthState && wsId === WORKSPACE_ID) {
-      logger.info('🧠 Reusing in-memory auth state for reconnect (bypassing DB read)');
-    } else {
-      const authState = await useSupabaseAuthState(supabase, wsId);
-      saveCreds = authState.saveCreds;
-      currentAuthState = {
-        creds: authState.state.creds,
-        keys: authState.state.keys,
-      };
-    }
-
+    logger.info({ workspaceId: wsId }, '🧠 Reconnect mode: loading state from Supabase / memory');
+    authState = await useSupabaseAuthState(supabase, wsId);
     await updateSessionState('connecting', {}, wsId);
+  }
 
-    let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ 
-      version: [2, 3000, 1017531287] as [number, number, number], 
-      isLatest: false 
-    }));
+  if (wsId === WORKSPACE_ID) {
+    saveCreds = authState.saveCreds;
+    currentAuthState = {
+      creds: authState.state.creds,
+      keys: authState.state.keys,
+    };
+  }
 
-    const minVersion = [2, 3000, 1017531287];
-    if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
-      version = minVersion as [number, number, number];
-      isLatest = true;
+  let { version } = await fetchLatestBaileysVersion().catch(() => ({ 
+    version: [2, 3000, 1017531287] as [number, number, number], 
+  }));
+
+  const minVersion = [2, 3000, 1017531287];
+  if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
+    version = minVersion as [number, number, number];
+  }
+
+  const localSock = makeWASocket({
+    version,
+    logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
+    auth: {
+      creds: authState.state.creds,
+      keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
+    },
+    printQRInTerminal: true,
+    generateHighQualityLinkPreview: true,
+    keepAliveIntervalMs: 10_000,
+    connectTimeoutMs: 60_000,
+    defaultQueryTimeoutMs: 60_000,
+    retryRequestDelayMs: 2500,
+    markOnlineOnConnect: true,
+    browser: Browsers.ubuntu('Chrome'),
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
+  });
+
+  if (wsId === WORKSPACE_ID) {
+    sock = localSock;
+  }
+
+  localSock.ev.on('creds.update', (update: Partial<any>) => {
+    Object.assign(authState.state.creds, update);
+    const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
+    if (needsForceFlush) {
+      logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
+      authState.saveCreds().then(() => {
+        console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
+      }).catch((err) => {
+        logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
+      });
+    } else {
+      authState.saveCreds().catch(() => {});
     }
-    logger.info({ version, isLatest, forceFresh, workspaceId: wsId }, '📦 WhatsApp Web version');
+  });
 
-    const localSock = makeWASocket({
-      version,
-      logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
-      auth: {
-        creds: currentAuthState!.creds,
-        keys: makeCacheableSignalKeyStore(currentAuthState!.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
-      },
-      printQRInTerminal: true,
-      generateHighQualityLinkPreview: true,
-      keepAliveIntervalMs: 10_000,
-      connectTimeoutMs: 60_000,
-      defaultQueryTimeoutMs: 60_000,
-      retryRequestDelayMs: 2500,
-      markOnlineOnConnect: true,
-      browser: Browsers.ubuntu('Chrome'),
-      syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
-    });
+  localSock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
 
-    if (wsId === WORKSPACE_ID) {
-      sock = localSock;
-    }
+    console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
+    logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
 
-    localSock.ev.on('creds.update', (update: Partial<any>) => {
-      const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
-      if (needsForceFlush) {
-        logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
-        saveCreds!().then(() => {
-          console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
-        }).catch((err) => {
-          logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
-        });
-      } else {
-        saveCreds!();
-      }
-    });
+    if (qr) {
+      clearConnectingTimeout();
+      startConnectingTimeout();
 
-    localSock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
-      logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
-
-      if (qr) {
-        clearConnectingTimeout();
-        startConnectingTimeout();
-
-        const now = Date.now();
-        if (now - lastQrTime > 10_000) {
-          lastQrTime = now;
-          logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
-          console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
-          await dbWrite(
-            supabase
-              .from('baileys_sessions')
-              .upsert({
-                workspace_id: wsId,
-                qr_string: qr,
-                qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
-                conn_state: 'connecting',
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'workspace_id' }),
-            `upsert-qr-${wsId}`
-          );
-        }
-      }
-
-      if (connection === 'open') {
-        clearConnectingTimeout();
-
-        await dbWriteCritical(
+      const now = Date.now();
+      if (now - lastQrTime > 10_000) {
+        lastQrTime = now;
+        logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
+        console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
+        await dbWrite(
           supabase
             .from('baileys_sessions')
             .upsert({
               workspace_id: wsId,
-              conn_state: 'open',
-              status: 'CONNECTED',
+              qr_string: qr,
+              qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+              conn_state: 'connecting',
               updated_at: new Date().toISOString(),
             }, { onConflict: 'workspace_id' }),
-          `upsert-open-status-${wsId}`
+          `upsert-qr-${wsId}`
         );
-
-
-      // Force-flush creds to DB on new login so 515 stream restart
-      // doesn't find stale/unpaired creds
-      if (update.isNewLogin && saveCreds) {
-        logger.warn('⚠️ isNewLogin in connection.update — force-flushing creds to DB');
-        try {
-          await saveCreds();
-          console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
-        } catch (err) {
-          logger.error({ err }, 'Failed to flush creds on isNewLogin (connection.update)');
-        }
       }
+    }
 
-      console.log('🟢 SUCCESS: WhatsApp Connected for workspace!');
-      logger.info('✅ WhatsApp connected!');
-      const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
-      console.log('🔑 Phone number:', phoneNumber);
+    if (connection === 'open' || localSock.user?.id) {
+      clearConnectingTimeout();
+      const phoneNumber = localSock.user?.id?.split(':')[0] || (authState.state.creds as any)?.me?.id?.split(':')[0] || null;
 
-      const curSession = await dbWrite(
-        supabase
-          .from('baileys_sessions')
-          .select('reconnect_count')
-          .eq('workspace_id', WORKSPACE_ID)
-          .maybeSingle(),
-        'select-reconnect-count'
-      );
-      const curReconnects = ((curSession as any)?.reconnect_count ?? 0) + 1;
-
+      console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
       await dbWriteCritical(
         supabase
           .from('baileys_sessions')
           .upsert({
-            workspace_id: WORKSPACE_ID,
+            workspace_id: wsId,
             conn_state: 'open',
-            qr_string: null,
+            status: 'CONNECTED',
             phone_number: phoneNumber,
             last_connected: new Date().toISOString(),
+            qr_string: null,
             error_info: null,
-            reconnect_count: curReconnects,
-            last_status_change: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id' }),
-        'upsert-open'
+        `upsert-open-status-${wsId}`
       );
-      console.log('🟢 Session state set to "open" in database');
 
-      if (curReconnects > 1) {
-        await dbWrite(
-          supabase.from('wa_instance_alerts').insert({
-            workspace_id: WORKSPACE_ID,
-            alert_type: 'reconnected',
-            message: `WhatsApp reconnected after ${curReconnects} reconnection(s).`,
-            metadata: { phone_number: phoneNumber, reconnect_count: curReconnects },
-          }),
-          'insert-reconnect-alert'
-        );
-      }
+      try {
+        await authState.saveCreds();
+      } catch {}
     }
 
     if (connection === 'close') {
@@ -1226,29 +1060,21 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       const statusCode = error?.output?.statusCode;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
 
-      console.log('🔌 Connection CLOSED — statusCode:', statusCode, 'isLoggedOut:', isLoggedOut);
-      logger.error({ 
-        statusCode, 
-        isLoggedOut,
-        message: error?.message, 
-        lastDisconnect 
-      }, '🔌 Connection closed details');
+      console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'isLoggedOut:', isLoggedOut);
+      logger.error({ statusCode, isLoggedOut, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
 
       if (!isLoggedOut) {
-        // NON-LOGGED-OUT DISCONNECT (temporary network drop, 515 stream restart, 408 timeout, 503, VPS reboot)
-        // DO NOT wipe credentials or set conn_state = 'disconnected' in DB! Keep session alive and auto-reconnect!
-        logger.info({ statusCode }, '♻️ Temporary network/socket drop — auto-reconnecting in 2.5s (preserving session)...');
-        console.log('♻️ Temporary WhatsApp network drop — auto-reconnecting with existing auth keys');
+        // NON-LOGGED-OUT DISCONNECT (temporary drop, code 515 stream restart after pairing)
+        logger.info({ statusCode, workspaceId: wsId }, '♻️ Non-logged-out disconnect (e.g. 515 stream restart) — auto-reconnecting in 1.5s with saved auth keys...');
+        console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 1.5s (preserving session)...`);
 
         if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => startBaileysSocket(false), 2500);
+        reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
         return;
       }
 
       // ONLY reach here if explicitly LOGGED OUT (401 / phone unlinked)
-      logger.warn('🚪 WhatsApp session LOGGED OUT / unlinked from mobile phone. Clearing credentials...');
-      console.log('🚪 Session logged out — wiping credentials and setting DISCONNECTED');
-
+      logger.warn({ workspaceId: wsId }, '🚪 WhatsApp session LOGGED OUT — wiping credentials');
       await dbWriteCritical(
         supabase
           .from('baileys_sessions')
@@ -1264,26 +1090,16 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
             last_status_change: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
-          .eq('workspace_id', WORKSPACE_ID),
-        'update-logged-out'
-      );
-
-      await dbWrite(
-        supabase.from('wa_instance_alerts').insert({
-          workspace_id: WORKSPACE_ID,
-          alert_type: 'disconnected',
-          message: 'WhatsApp logged out from mobile device — QR re-scan required.',
-          metadata: { status_code: statusCode, is_logged_out: true },
-        }),
-        'insert-disconnect-alert'
+          .eq('workspace_id', wsId),
+        `update-logged-out-${wsId}`
       );
 
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
+      reconnectTimer = setTimeout(() => startBaileysSocket(true, wsId), 1000);
     }
   });
-  }
 }
+
 
   // ── Event: messages.upsert — save inbound messages ──
   (sock as any)?.ev?.on('messages.upsert', async ({ messages, type }: { messages: any[]; type: string }) => {
