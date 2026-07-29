@@ -62,18 +62,18 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'location', label: 'Location / City', visible: false, type: 'system' },
   { id: 'venue', label: 'Venue Details', visible: false, type: 'system' },
   // Meta Form & Ad Metadata (toggleable via Columns Engine)
-  { id: 'form_name', label: 'Form Name', visible: true, type: 'meta_question' },
+  { id: 'form_name', label: 'Form Name', visible: false, type: 'meta_question' },
   { id: 'ad_name', label: 'Ad Name', visible: false, type: 'meta_question' },
   { id: 'form_id', label: 'Form ID', visible: false, type: 'meta_question' },
   { id: 'page_id', label: 'Page ID', visible: false, type: 'meta_question' },
   { id: 'page_name', label: 'Page Name', visible: false, type: 'meta_question' },
   { id: 'adset_name', label: 'Adset Name', visible: false, type: 'meta_question' },
   // Workflow Tracker columns
-  { id: 'wa_group', label: 'WhatsApp Group', visible: true, type: 'system' },
+  { id: 'wa_group', label: 'WhatsApp Group', visible: false, type: 'system' },
   { id: 'wa_welcome', label: 'WA Welcome Msg', visible: false, type: 'system' },
   { id: 'google_sync', label: 'Google Contact Sync', visible: false, type: 'system' },
   { id: 'wgl_status', label: 'WGL Status', visible: false, type: 'system' },
-  { id: 'followup_sched', label: 'Followups', visible: true, type: 'system' },
+  { id: 'followup_sched', label: 'Followups', visible: false, type: 'system' },
 ];
 
 const BLACKLIST = ['field_data', 'synced_manually', 'assigned_team_ids', 'leadgen_id', 'attachments', 'owner', 'lead_owner', 'campaign_name'];
@@ -848,6 +848,12 @@ export function LeadTable({
         .map(col => {
           if (typeof parsedPrefs[col.id] === 'boolean') {
             return { ...col, visible: parsedPrefs[col.id] };
+          }
+          if (parsedPrefs && typeof parsedPrefs === 'object' && Object.keys(parsedPrefs).length > 0) {
+            // If saved preferences exist and this optional column was not checked, default to false
+            if (!['contact', 'source', 'status', 'date'].includes(col.id)) {
+              return { ...col, visible: false };
+            }
           }
           return col;
         });
