@@ -7,7 +7,7 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, MessageSquare, RefreshCw, Users, Database, Globe
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -565,14 +565,18 @@ export function LeadTable({
 
   // Manual Lead fields state
   const [manualLeadName, setManualLeadName] = useState('');
+  const [manualGroomName, setManualGroomName] = useState('');
+  const [manualBrideName, setManualBrideName] = useState('');
   const [manualLeadPhone, setManualLeadPhone] = useState('');
   const [manualLeadEmail, setManualLeadEmail] = useState('');
   const [manualLeadSource, setManualLeadSource] = useState('Manual');
   const [manualLeadStatus, setManualLeadStatus] = useState<LeadStatus>('new');
-  const [manualLeadScore, setManualLeadScore] = useState<LeadScore>('Cold ❄️');
   const [manualLeadOwner, setManualLeadOwner] = useState('Chad Thunderclock');
-  const [manualLeadCompany, setManualLeadCompany] = useState('');
-  const [manualLeadAddress, setManualLeadAddress] = useState('');
+  const [manualEventType, setManualEventType] = useState('Wedding Photography');
+  const [manualEventDate, setManualEventDate] = useState('');
+  const [manualLocation, setManualLocation] = useState('');
+  const [manualVenue, setManualVenue] = useState('');
+  const [manualBudget, setManualBudget] = useState('₹1.5 Lakh - ₹2.5 Lakh');
 
   // Bulk actions menus
   const [showBulkStatusMenu, setShowBulkStatusMenu] = useState(false);
@@ -1267,12 +1271,18 @@ export function LeadTable({
       source: manualLeadSource,
       status: resolvedStatus,
       stage_id: selectedStage ? selectedStage.id : null,
-      score: manualLeadScore,
+      score: 'Warm 👍',
       score_reason: 'Manually created lead.',
       raw_payload: {
+        groom_name: manualGroomName.trim(),
+        bride_name: manualBrideName.trim(),
         lead_owner: manualLeadOwner,
-        company: manualLeadCompany || 'Manual Entry',
-        venue: manualLeadAddress || '',
+        event_type: manualEventType,
+        event_date: manualEventDate,
+        city: manualLocation.trim(),
+        location: manualLocation.trim(),
+        venue: manualVenue.trim(),
+        budget: manualBudget,
       }
     };
 
@@ -1282,10 +1292,17 @@ export function LeadTable({
 
     // Reset fields
     setManualLeadName('');
+    setManualGroomName('');
+    setManualBrideName('');
     setManualLeadPhone('');
     setManualLeadEmail('');
-    setManualLeadCompany('');
-    setManualLeadAddress('');
+    setManualLeadSource('Manual');
+    setManualLeadStatus('new');
+    setManualEventType('Wedding Photography');
+    setManualEventDate('');
+    setManualLocation('');
+    setManualVenue('');
+    setManualBudget('₹1.5 Lakh - ₹2.5 Lakh');
     setCreateModalOpen(false);
   };
 
@@ -3077,153 +3094,283 @@ export function LeadTable({
           <>
             <MotionDiv 
               initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
+              animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setCreateModalOpen(false)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
+              className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md transition-all"
             />
             <MotionDiv
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="fixed inset-0 m-auto z-50 w-full max-w-lg h-fit max-h-[90vh] bg-zinc-950 border border-zinc-850 p-6 rounded-2xl shadow-2xl overflow-y-auto space-y-4 text-white"
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="fixed inset-0 m-auto z-50 w-full max-w-2xl h-fit max-h-[92vh] bg-[#FAF8F5] dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-6 md:p-7 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.18)] overflow-y-auto space-y-6 text-slate-800 dark:text-zinc-100 font-sans"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
-                <h3 className="text-base font-extrabold flex items-center gap-2">
-                  <User className="w-4 h-4 text-orange-500" />
-                  Create Manual Lead Record
-                </h3>
-                <button onClick={() => setCreateModalOpen(false)} className="p-1 hover:bg-zinc-900 rounded-lg text-zinc-500 hover:text-white">
-                  <X className="w-4 h-4" />
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-[#E8E5DF] dark:border-[#2C2926]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#D4AF37]/20 to-[#C5A059]/40 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] shadow-sm">
+                    <UserPlus className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                      Add New Lead Record
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">
+                      Enter client details, contact information, and event specifications
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setCreateModalOpen(false)} 
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-[#EAE6DF] dark:hover:bg-[#252320] transition-colors"
+                >
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-3 text-xs">
+              <div className="space-y-5 text-xs">
                 
-                {/* Inputs */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* 1. Client Details Section */}
+                <div className="space-y-3">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#D4AF37] dark:text-[#C5A059] flex items-center gap-1.5">
+                    👤 Client Contact Information
+                  </span>
+                  
+                  {/* Lead Name */}
                   <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase">Lead Name *</label>
+                    <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                      Lead Name <span className="text-red-500">*</span>
+                    </label>
                     <input 
                       type="text" 
                       placeholder="e.g. Rahul Sharma"
                       value={manualLeadName}
                       onChange={(e) => setManualLeadName(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none focus:border-zinc-750"
+                      className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase">Mobile Number *</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. +919876543210"
-                      value={manualLeadPhone}
-                      onChange={(e) => setManualLeadPhone(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none focus:border-zinc-750 font-mono"
-                    />
+
+                  {/* Groom Name & Bride Name */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Groom Name
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Rahul Sharma"
+                        value={manualGroomName}
+                        onChange={(e) => setManualGroomName(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Bride Name
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Ananya Patel"
+                        value={manualBrideName}
+                        onChange={(e) => setManualBrideName(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Mobile & Email */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Mobile Number <span className="text-red-500">*</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. +919876543210"
+                        value={manualLeadPhone}
+                        onChange={(e) => setManualLeadPhone(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400 font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Email Address
+                      </label>
+                      <input 
+                        type="email" 
+                        placeholder="e.g. rahul@example.com"
+                        value={manualLeadEmail}
+                        onChange={(e) => setManualLeadEmail(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400 font-mono"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase">Email Address</label>
-                    <input 
-                      type="email" 
-                      placeholder="e.g. rahul@example.com"
-                      value={manualLeadEmail}
-                      onChange={(e) => setManualLeadEmail(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none focus:border-zinc-750 font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase">Lead Source</label>
-                    <select
-                      value={manualLeadSource}
-                      onChange={(e) => setManualLeadSource(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none focus:border-zinc-750 cursor-pointer"
-                    >
-                      {customSources.map(src => (
-                        <option key={src} value={src}>{src}</option>
-                      ))}
-                    </select>
+                {/* 2. Source, Status & Assignment */}
+                <div className="space-y-3 pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#D4AF37] dark:text-[#C5A059] flex items-center gap-1.5">
+                    📊 Lead Source & Assignment Status
+                  </span>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Lead Source */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Lead Source
+                      </label>
+                      <CRMDropdown
+                        value={manualLeadSource}
+                        placeholder="Select Source"
+                        allowCustomAdd={false}
+                        options={customSources.map(src => ({ value: src, label: src }))}
+                        onChange={(val) => setManualLeadSource(val)}
+                      />
+                    </div>
+
+                    {/* Status */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Status / Stage
+                      </label>
+                      <CRMDropdown
+                        value={manualLeadStatus}
+                        placeholder="Select Status"
+                        customAddTitle="Add Custom Status"
+                        options={stagesState.map(s => ({
+                          value: s.id,
+                          label: s.name,
+                          color: s.color
+                        }))}
+                        onChange={(val) => setManualLeadStatus(val as LeadStatus)}
+                      />
+                    </div>
+
+                    {/* Assign Lead */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Assign Lead
+                      </label>
+                      <CRMDropdown
+                        value={manualLeadOwner}
+                        placeholder="Select Lead Owner"
+                        allowCustomAdd={false}
+                        options={teamMembers.map(m => ({ value: m.name, label: `👤 ${m.name}` }))}
+                        onChange={(val) => setManualLeadOwner(val)}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase">Deal Stage</label>
-                    <select
-                      value={manualLeadStatus}
-                      onChange={(e) => setManualLeadStatus(e.target.value as LeadStatus)}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none"
-                    >
-                      {stages.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase">Lead Owner</label>
-                    <select
-                      value={manualLeadOwner}
-                      onChange={(e) => setManualLeadOwner(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none"
-                    >
-                      <option value="Chad Thunderclock">Chad Thunderclock</option>
-                      <option value="Sarah Jenkins">Sarah Jenkins</option>
-                      <option value="John Kuy">John Kuy</option>
-                      <option value="Elena Rostova">Elena Rostova</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase">Lead Score</label>
-                    <select
-                      value={manualLeadScore}
-                      onChange={(e) => setManualLeadScore(e.target.value as LeadScore)}
-                      className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none"
-                    >
-                      <option value="High-Value 🔥">High-Value 🔥</option>
-                      <option value="Warm 👍">Warm 👍</option>
-                      <option value="Cold ❄️">Cold ❄️</option>
-                    </select>
-                  </div>
-                </div>
+                {/* 3. Event & Shoot Specifications */}
+                <div className="space-y-3 pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#D4AF37] dark:text-[#C5A059] flex items-center gap-1.5">
+                    💍 Event & Shoot Specifications
+                  </span>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-500 font-bold uppercase">Company Name</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. Pixel Weddings"
-                    value={manualLeadCompany}
-                    onChange={(e) => setManualLeadCompany(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none"
-                  />
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Event Type */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Event Type
+                      </label>
+                      <CRMDropdown
+                        value={manualEventType}
+                        placeholder="Select Event Type"
+                        allowCustomAdd={false}
+                        options={[
+                          { value: 'Wedding Photography', label: 'Wedding Photography' },
+                          { value: 'Pre-Wedding Shoot', label: 'Pre-Wedding Shoot' },
+                          { value: 'Engagement & Sangeet', label: 'Engagement & Sangeet' },
+                          { value: 'Destination Wedding', label: 'Destination Wedding' },
+                          { value: 'Birthday / Anniversary', label: 'Birthday / Anniversary' },
+                          { value: 'Commercial Shoot', label: 'Commercial Shoot' },
+                          { value: 'Other Event', label: 'Other Event' }
+                        ]}
+                        onChange={(val) => setManualEventType(val)}
+                      />
+                    </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-500 font-bold uppercase">Venue / Full Address</label>
-                  <textarea 
-                    placeholder="e.g. Ritz Carlton, Mumbai"
-                    value={manualLeadAddress}
-                    onChange={(e) => setManualLeadAddress(e.target.value)}
-                    rows={2}
-                    className="w-full bg-zinc-900 border border-zinc-850 p-2 rounded-xl text-white focus:outline-none resize-none"
-                  />
+                    {/* Event Date */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Event Date
+                      </label>
+                      <input 
+                        type="date" 
+                        value={manualEventDate}
+                        onChange={(e) => setManualEventDate(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs"
+                      />
+                    </div>
+
+                    {/* Budget */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Budget Range
+                      </label>
+                      <CRMDropdown
+                        value={manualBudget}
+                        placeholder="Select Budget"
+                        allowCustomAdd={false}
+                        options={[
+                          { value: 'Under ₹1 Lakh', label: 'Under ₹1 Lakh' },
+                          { value: '₹1 Lakh - ₹1.5 Lakh', label: '₹1 Lakh - ₹1.5 Lakh' },
+                          { value: '₹1.5 Lakh - ₹2.5 Lakh', label: '₹1.5 Lakh - ₹2.5 Lakh' },
+                          { value: '₹2.5 Lakh - ₹4 Lakh', label: '₹2.5 Lakh - ₹4 Lakh' },
+                          { value: '₹4 Lakh & above', label: '₹4 Lakh & above' }
+                        ]}
+                        onChange={(val) => setManualBudget(val)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Location & Venue */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Location / City
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Mumbai, Udaipur, Goa"
+                        value={manualLocation}
+                        onChange={(e) => setManualLocation(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold">
+                        Venue Details
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Ritz-Carlton, Mumbai"
+                        value={manualVenue}
+                        onChange={(e) => setManualVenue(e.target.value)}
+                        className="w-full bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs placeholder-slate-400"
+                      />
+                    </div>
+                  </div>
                 </div>
 
               </div>
 
-              <div className="pt-3 border-t border-zinc-900 flex justify-end gap-2 text-xs">
-                <button 
+              {/* Modal Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                <button
+                  type="button"
                   onClick={() => setCreateModalOpen(false)}
-                  className="px-4 py-2 border border-zinc-850 hover:bg-zinc-900 rounded-lg text-zinc-400 font-semibold"
+                  className="px-5 py-2.5 rounded-xl border border-[#E8E5DF] dark:border-[#2C2926] bg-[#EAE6DF] dark:bg-[#252320] text-slate-700 dark:text-zinc-300 text-xs font-bold hover:bg-[#DDD8CF] dark:hover:bg-[#2F2C28] transition-colors"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
+                  type="button"
                   onClick={handleSaveManualLead}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-400 text-black font-extrabold rounded-lg"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white text-xs font-extrabold shadow-md hover:opacity-95 transition-opacity flex items-center gap-2"
                 >
+                  <UserPlus className="w-4 h-4" />
                   Create Lead
                 </button>
               </div>
