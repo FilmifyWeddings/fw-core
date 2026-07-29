@@ -368,50 +368,106 @@ export function LeadTable({
     fetchFormNamesMap();
   }, []);
 
-  // Auto-discover Meta Form Custom Questions from lead payloads with Smart Headers
+  // System & Meta Ad Metadata keys to exclude from Meta Form Custom Questions
+  const SYSTEM_AND_METADATA_KEYS = new Set([
+    'name', 'full_name', 'first_name', 'last_name', 'email', 'phone', 'mobile', 'contact', 
+    'source', 'stage_id', 'status', 'created_at', 'updated_at', 'workspace_id', 'id', 
+    'lead_owner', 'custom_color', 'score', 'score_reason', 'notes', 'unread_comments_count', 
+    'whatsapp_group_id', 'wa_welcome_sent', 'google_synced', 'wgl_dispatched', 'google_resource_name',
+    'form_id', 'form_name', 'page_id', 'page_name', 'ad_id', 'ad_name', 'adset_id', 'adset_name', 
+    'campaign_id', 'campaign_name', 'leadgen_id', 'meta_lead_id', 'field_data', 'synced_manually', 
+    'assigned_team_ids', 'is_organic', 'platform', 'created_time', 'raw_payload', 'raw_meta_payload', 
+    'source_form_id', 'custom_fields', 'tags', 'labels', 'metadata', 'mock_attachment'
+  ]);
+
+  // Auto-discover Meta Form Custom Questions from active Meta forms DB + lead payloads
   useEffect(() => {
-    if (!leads || leads.length === 0) return;
+    const fetchFormQuestionsAndAutoDiscover = async () => {
+      try {
+        const { data: leadForms } = await supabase
+          .from('fb_lead_forms')
+          .select('form_id, form_name, questions');
 
-    const systemKeys = new Set([
-      'name', 'email', 'phone', 'lead_owner', 'form_name', 'page_name', 
-      'source', 'stage_id', 'status', 'created_at', 'updated_at', 
-      'workspace_id', 'id', 'meta_lead_id', 'form_id', 'leadgen_id'
-    ]);
-    const discoveredKeys = new Set<string>();
+        const formQuestionCols: ColumnConfig[] = [];
+        const addedKeys = new Set<string>();
 
-    leads.forEach(l => {
-      const payloads = [l.raw_payload, (l as any).raw_meta_payload];
-      payloads.forEach(payload => {
-        if (payload) {
-          Object.keys(payload).forEach(k => {
-            if (!systemKeys.has(k.toLowerCase()) && !k.startsWith('mock_')) {
-              discoveredKeys.add(k);
+        if (leadForms) {
+          leadForms.forEach((form: any) => {
+            let qList: any[] = [];
+            if (Array.isArray(form.questions)) {
+              qList = form.questions;
+            } else if (typeof form.questions === 'string') {
+              try { qList = JSON.parse(form.questions); } catch (e) {}
             }
+
+            qList.forEach((q: any) => {
+              const rawKey = q.key || q.id || q.label || '';
+              const qType = String(q.type || 'CUSTOM').toUpperCase();
+              if (
+                rawKey && 
+                !SYSTEM_AND_METADATA_KEYS.has(rawKey.toLowerCase()) && 
+                !['FULL_NAME', 'FIRST_NAME', 'LAST_NAME', 'EMAIL', 'PHONE', 'PHONE_NUMBER'].includes(qType)
+              ) {
+                const smart = getSmartQuestionHeader(rawKey || q.label);
+                if (!addedKeys.has(rawKey) && !addedKeys.has(smart.key)) {
+                  addedKeys.add(rawKey);
+                  addedKeys.add(smart.key);
+                  formQuestionCols.push({
+                    id: rawKey,
+                    label: smart.label,
+                    visible: true,
+                    type: 'meta_question'
+                  });
+                }
+              }
+            });
           });
         }
-      });
-    });
 
-    if (discoveredKeys.size === 0) return;
+        // Discover from lead payloads excluding system/metadata keys
+        const discoveredKeys = new Set<string>();
+        if (leads && leads.length > 0) {
+          leads.forEach(l => {
+            const payloads = [l.raw_payload, (l as any).raw_meta_payload];
+            payloads.forEach(payload => {
+              if (payload) {
+                Object.keys(payload).forEach(k => {
+                  if (!SYSTEM_AND_METADATA_KEYS.has(k.toLowerCase()) && !k.startsWith('mock_')) {
+                    discoveredKeys.add(k);
+                  }
+                });
+              }
+            });
+          });
+        }
 
-    setColumns(prev => {
-      const existingIds = new Set(prev.map(c => c.id));
-      const newCols: ColumnConfig[] = [];
-
-      discoveredKeys.forEach(k => {
-        if (!existingIds.has(k)) {
+        discoveredKeys.forEach(k => {
           const smart = getSmartQuestionHeader(k);
-          newCols.push({
-            id: k,
-            label: smart.label,
-            visible: true,
-            type: 'meta_question'
+          if (!addedKeys.has(k) && !addedKeys.has(smart.key)) {
+            addedKeys.add(k);
+            addedKeys.add(smart.key);
+            formQuestionCols.push({
+              id: k,
+              label: smart.label,
+              visible: true,
+              type: 'meta_question'
+            });
+          }
+        });
+
+        if (formQuestionCols.length > 0) {
+          setColumns(prev => {
+            const existingIds = new Set(prev.map(c => c.id));
+            const toAdd = formQuestionCols.filter(c => !existingIds.has(c.id));
+            return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
           });
         }
-      });
+      } catch (err) {
+        console.error('Error auto-discovering form questions:', err);
+      }
+    };
 
-      return newCols.length > 0 ? [...prev, ...newCols] : prev;
-    });
+    fetchFormQuestionsAndAutoDiscover();
   }, [leads]);
 
 
@@ -1828,7 +1884,7 @@ export function LeadTable({
                     </div>
 
                     {/* 2. Meta Form Custom Questions Sync */}
-                    {columns.some(c => c.type === 'meta_question') && (
+                    {columns.some(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase())) && (
                       <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider flex items-center gap-1">
@@ -1839,7 +1895,7 @@ export function LeadTable({
                             Auto Synced
                           </span>
                         </div>
-                        {columns.filter(c => c.type === 'meta_question').map(col => (
+                        {columns.filter(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase())).map(col => (
                           <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
                             <button
                               onClick={() => toggleColumn(col.id)}
@@ -2542,14 +2598,40 @@ export function LeadTable({
                           // 2. Facebook Form Field & Custom Questions Ingested Auto-Columns
                           if (col.type === 'meta' || col.type === 'meta_question') {
                             const metaKey = col.id.replace(/^meta_/, '');
-                            const rawMetaVal = lead.raw_payload?.[col.id] ?? lead.raw_payload?.[metaKey] ?? '—';
+                            const getMetaVal = () => {
+                              const payload = lead.raw_payload || {};
+                              const metaPayload = (lead as any).raw_meta_payload || {};
+
+                              if (payload[col.id] !== undefined && payload[col.id] !== null) return payload[col.id];
+                              if (metaPayload[col.id] !== undefined && metaPayload[col.id] !== null) return metaPayload[col.id];
+
+                              if (payload[metaKey] !== undefined && payload[metaKey] !== null) return payload[metaKey];
+                              if (metaPayload[metaKey] !== undefined && metaPayload[metaKey] !== null) return metaPayload[metaKey];
+
+                              const smart = getSmartQuestionHeader(col.id);
+                              if (payload[smart.key] !== undefined && payload[smart.key] !== null) return payload[smart.key];
+                              if (metaPayload[smart.key] !== undefined && metaPayload[smart.key] !== null) return metaPayload[smart.key];
+
+                              // Fuzzy match key in raw_payload
+                              const colLower = col.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+                              for (const k of Object.keys(payload)) {
+                                const kLower = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                if (kLower === colLower || (smart.key && kLower.includes(smart.key))) {
+                                  return payload[k];
+                                }
+                              }
+
+                              return '—';
+                            };
+
+                            const rawMetaVal = getMetaVal();
                             let metaVal: string;
                             if (typeof rawMetaVal === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(rawMetaVal)) {
                               const parsedDate = new Date(rawMetaVal);
                               const fDate = parsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                               const fTime = parsedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
                               return (
-                                <MotionTd key={col.id} className="py-2.5 px-4 whitespace-nowrap">
+                                <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap">
                                   <div className="space-y-0.5 whitespace-nowrap leading-tight">
                                     <span className="block text-xs text-slate-800 dark:text-zinc-200 font-bold">{fDate}</span>
                                     <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">{fTime}</span>
@@ -2559,8 +2641,8 @@ export function LeadTable({
                             }
                             metaVal = String(rawMetaVal);
                             return (
-                              <MotionTd key={col.id} className="py-2.5 px-4 whitespace-nowrap">
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 border border-slate-200/60 dark:border-zinc-700/50">
+                              <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-xl text-xs font-bold bg-slate-100 dark:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 border border-slate-200/60 dark:border-zinc-700/50 shadow-2xs">
                                   {metaVal}
                                 </span>
                               </MotionTd>

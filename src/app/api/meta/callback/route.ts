@@ -206,6 +206,7 @@ async function fetchLeadFormsForPage(pageId: string, pageAccessToken: string) {
       status: f.status || 'ACTIVE',
       sync_count: f.leads_count || 0,
       questions_count: f.questions ? f.questions.length : 0,
+      questions: f.questions || [],
       created_time: f.created_time || new Date().toISOString(),
     }));
     return formsList;
@@ -354,6 +355,7 @@ export async function GET(req: NextRequest) {
             page_id: page.page_id,
             form_id: form.form_id,
             form_name: form.form_name,
+            questions: form.questions || [],
             status: form.status, leads_count: form.sync_count || 0, created_time: form.created_time, updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' })
           .select('*');
