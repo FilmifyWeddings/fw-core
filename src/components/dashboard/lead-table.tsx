@@ -50,18 +50,12 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'source', label: 'Lead Source', visible: true, type: 'system' },
   { id: 'form_name', label: 'Form Name', visible: true, type: 'system' },
   { id: 'status', label: 'Status', visible: true, type: 'system' },
-  { id: 'owner', label: 'Lead Owner', visible: true, type: 'system' },
   { id: 'company', label: 'Company', visible: false, type: 'system' },
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
   { id: 'address', label: 'Full Address', visible: false, type: 'system' },
   { id: 'attachments', label: 'Attachments / PDFs', visible: false, type: 'system' },
-  // Meta Ad Metadata columns (toggleable via Columns Engine)
   { id: 'adset_name', label: 'Adset Name', visible: false, type: 'meta_question' },
-  { id: 'leadgen_id', label: 'Leadgen ID', visible: false, type: 'meta_question' },
   { id: 'campaign_name', label: 'Campaign Name', visible: false, type: 'meta_question' },
-  { id: 'field_data', label: 'Field Data', visible: false, type: 'meta_question' },
-  { id: 'synced_manually', label: 'Synced Manually', visible: false, type: 'meta_question' },
-  { id: 'assigned_team_ids', label: 'Assigned Team IDs', visible: false, type: 'meta_question' },
   // Workflow Tracker columns
   { id: 'wa_group', label: 'WhatsApp Group', visible: true, type: 'system' },
   { id: 'wa_welcome', label: 'WA Welcome Msg', visible: false, type: 'system' },
@@ -69,6 +63,10 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'wgl_status', label: 'WGL Status', visible: false, type: 'system' },
   { id: 'followup_sched', label: 'Followups', visible: true, type: 'system' },
 ];
+
+const PERMANENTLY_BLOCKED_KEYS = new Set([
+  'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id'
+]);
 
 function PremiumTooltip({ content, children }: { content: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
@@ -215,19 +213,19 @@ function Image1Select({
   }, [open]);
 
   return (
-    <div ref={containerRef} className={`relative inline-block ${className}`} onClick={e => e.stopPropagation()}>
+    <div ref={containerRef} className={`relative inline-block text-center ${className}`} onClick={e => e.stopPropagation()}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`flex items-center justify-between gap-2 px-3 py-1.5 text-xs font-bold rounded-xl border transition-all shadow-2xs select-none cursor-pointer ${
+        className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-full border transition-all shadow-2xs select-none cursor-pointer w-auto max-w-full text-center ${
           badgeStyle 
             ? `${badgeStyle.bg} ${badgeStyle.text} ${badgeStyle.border}` 
             : 'bg-white dark:bg-[#1C1A18] border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 hover:border-blue-400 dark:hover:border-blue-500'
         } ${open ? 'ring-2 ring-blue-500/20 border-blue-500' : ''}`}
       >
-        <div className="flex items-center gap-1.5 truncate">
+        <div className="flex items-center justify-center gap-1.5 truncate text-center">
           {badgeStyle?.dot && <span className={`w-2 h-2 rounded-full shrink-0 ${badgeStyle.dot}`} />}
-          <span className="truncate">{displayLabel}</span>
+          <span className="truncate text-center">{displayLabel}</span>
         </div>
         <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-60 ${open ? 'rotate-180 text-blue-500 opacity-100' : ''}`} />
       </button>
@@ -239,7 +237,7 @@ function Image1Select({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.12 }}
-            className="absolute left-0 top-full mt-1.5 min-w-[180px] max-h-60 overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-xl text-xs font-sans space-y-0.5"
+            className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 min-w-[180px] max-h-60 overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-xl text-xs font-sans space-y-0.5"
           >
             {options.map((opt) => {
               const isSelected = opt.value === value;
@@ -289,6 +287,13 @@ export function LeadTable({
   const [headerHeight, setHeaderHeight] = useState(104);
   const headerRef = useRef<HTMLDivElement>(null);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
+  const [stagesState, setStagesState] = useState<any[]>(stages || []);
+
+  useEffect(() => {
+    if (stages && stages.length > 0) {
+      setStagesState(stages);
+    }
+  }, [stages]);
 
   useEffect(() => {
     if (activeLeadId) {
@@ -379,7 +384,8 @@ export function LeadTable({
   const SYSTEM_AND_METADATA_KEYS = new Set([
     'name', 'full_name', 'first_name', 'last_name', 'email', 'phone', 'mobile', 'contact', 
     'source', 'stage_id', 'status', 'created_at', 'updated_at', 'workspace_id', 'id', 
-    'lead_owner', 'custom_color', 'score', 'score_reason', 'notes', 'unread_comments_count', 
+    'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id',
+    'custom_color', 'score', 'score_reason', 'notes', 'unread_comments_count', 
     'whatsapp_group_id', 'wa_welcome_sent', 'google_synced', 'wgl_dispatched', 'google_resource_name',
     'form_id', 'form_name', 'page_id', 'page_name', 'ad_id', 'ad_name', 
     'meta_lead_id', 'is_organic', 'platform', 'created_time', 'raw_payload', 'raw_meta_payload', 
@@ -2420,7 +2426,7 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'status':
-                                const currentStage = stages.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
+                                const currentStage = stagesState.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
                                 const stBadgeStyle = (() => {
                                   const s = (currentStage.name || '').toLowerCase();
                                   if (s.includes('hot') || s.includes('proposal') || s.includes('sent')) {
@@ -2442,19 +2448,19 @@ export function LeadTable({
                                 })();
 
                                 return (
-                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                                     <Image1Select
                                       value={lead.stage_id || lead.status}
                                       placeholder="Select status"
                                       options={[
-                                        ...stages.map(s => ({ value: s.id, label: s.name, dotColor: stBadgeStyle.dot })),
+                                        ...stagesState.map(s => ({ value: s.id, label: s.name, dotColor: stBadgeStyle.dot })),
                                         { value: '__add_custom_status__', label: '+ Add Custom Status' }
                                       ]}
                                       onChange={(val) => {
                                         if (val === '__add_custom_status__') {
                                           setShowAddStatusModal(true);
                                         } else {
-                                          const foundStage = stages.find(s => s.id === val);
+                                          const foundStage = stagesState.find(s => s.id === val);
                                           if (onLeadUpdate) {
                                             onLeadUpdate(lead.id, {
                                               stage_id: val,
@@ -2464,18 +2470,6 @@ export function LeadTable({
                                         }
                                       }}
                                       badgeStyle={stBadgeStyle}
-                                    />
-                                  </MotionTd>
-                                );
-                              case 'owner':
-                                const currentAssignedOwner = lead.raw_payload?.lead_owner || mockOwner.name || 'Unassigned';
-                                return (
-                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <Image1Select
-                                      value={currentAssignedOwner}
-                                      placeholder="Select owner"
-                                      options={teamMembers.map(m => ({ value: m.name, label: `👤 ${m.name}` }))}
-                                      onChange={(val) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: val } }, lead.id)}
                                     />
                                   </MotionTd>
                                 );
@@ -3566,9 +3560,10 @@ export function LeadTable({
                       id: newStatusName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
                       name: newStatusName.trim(),
                       color: newStatusColor,
-                      position: stages.length
+                      position: stagesState.length
                     };
-                    const updated = [...stages, newStageObj];
+                    const updated = [...stagesState, newStageObj];
+                    setStagesState(updated);
                     if (onPreferencesChange) {
                       onPreferencesChange({ stages: updated });
                     }
