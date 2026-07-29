@@ -53,6 +53,14 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'company', label: 'Company', visible: false, type: 'system' },
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
   { id: 'address', label: 'Full Address', visible: false, type: 'system' },
+  // Wedding & Event Specifications (Standard Table Columns)
+  { id: 'groom_name', label: 'Groom Name', visible: false, type: 'system' },
+  { id: 'bride_name', label: 'Bride Name', visible: false, type: 'system' },
+  { id: 'event_type', label: 'Event Type', visible: false, type: 'system' },
+  { id: 'event_date', label: 'Event Date', visible: false, type: 'system' },
+  { id: 'budget', label: 'Budget Range', visible: false, type: 'system' },
+  { id: 'location', label: 'Location / City', visible: false, type: 'system' },
+  { id: 'venue', label: 'Venue Details', visible: false, type: 'system' },
   // Meta Form & Ad Metadata (toggleable via Columns Engine)
   { id: 'form_name', label: 'Form Name', visible: true, type: 'meta_question' },
   { id: 'ad_name', label: 'Ad Name', visible: false, type: 'meta_question' },
@@ -2087,6 +2095,11 @@ export function LeadTable({
             if (col.id === 'wa_group') return <col key={col.id} className="w-[210px]" />;
             if (col.id === 'owner') return <col key={col.id} className="w-[200px]" />;
             if (col.id === 'date') return <col key={col.id} className="w-[190px]" />;
+            if (col.id === 'groom_name' || col.id === 'bride_name') return <col key={col.id} className="w-[190px]" />;
+            if (col.id === 'event_type') return <col key={col.id} className="w-[220px]" />;
+            if (col.id === 'event_date') return <col key={col.id} className="w-[170px]" />;
+            if (col.id === 'budget') return <col key={col.id} className="w-[190px]" />;
+            if (col.id === 'location' || col.id === 'venue') return <col key={col.id} className="w-[220px]" />;
             if (col.id === 'followup_sched') return <col key={col.id} className="w-[170px]" />;
             if (col.id === 'form_id' || col.id === 'page_id') return <col key={col.id} className="w-[170px]" />;
             if (col.id === 'ad_name' || col.id === 'page_name' || col.id === 'adset_name') return <col key={col.id} className="w-[230px]" />;
@@ -2434,6 +2447,50 @@ export function LeadTable({
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
                                     {lead.raw_payload?.venue || lead.raw_payload?.address || '-'}
+                                  </MotionTd>
+                                );
+                              case 'groom_name':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-900 dark:text-white font-bold whitespace-nowrap">
+                                    {lead.raw_payload?.groom_name || '—'}
+                                  </MotionTd>
+                                );
+                              case 'bride_name':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-900 dark:text-white font-bold whitespace-nowrap">
+                                    {lead.raw_payload?.bride_name || '—'}
+                                  </MotionTd>
+                                );
+                              case 'event_type':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-2xs">
+                                      💍 {lead.raw_payload?.event_type || 'Wedding Photography'}
+                                    </span>
+                                  </MotionTd>
+                                );
+                              case 'event_date':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
+                                    {lead.raw_payload?.event_date ? new Date(lead.raw_payload.event_date).toLocaleDateString('en-IN') : '—'}
+                                  </MotionTd>
+                                );
+                              case 'budget':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-emerald-700 dark:text-emerald-400 font-bold whitespace-nowrap">
+                                    {lead.raw_payload?.budget || '—'}
+                                  </MotionTd>
+                                );
+                              case 'location':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
+                                    {lead.raw_payload?.location || lead.raw_payload?.city || '—'}
+                                  </MotionTd>
+                                );
+                              case 'venue':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
+                                    {lead.raw_payload?.venue || '—'}
                                   </MotionTd>
                                 );
                               case 'attachments':
