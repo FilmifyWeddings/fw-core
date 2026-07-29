@@ -74,9 +74,40 @@ export async function PATCH(req: NextRequest) {
         { onConflict: 'workspace_id,form_id', ignoreDuplicates: false }
       );
 
-    if (mappingError && mappingError.code !== '42P10') {
-      // Log but don't fail — the primary toggle in fb_lead_forms is the authoritative source
-      console.warn('[Forms Toggle API] fb_form_mappings mirror error (non-fatal):', mappingError.message, mappingError.code);
+    // ── Fetch & save questions from Graph API when form is enabled ─────────
+    if (is_enabled) {
+      try {
+        const { data: formRow } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('page_id, questions')
+          .eq('workspace_id', workspaceId)
+          .eq('form_id', form_id)
+          .maybeSingle();
+
+        if (formRow?.page_id && (!formRow.questions || (Array.isArray(formRow.questions) && formRow.questions.length === 0))) {
+          const { data: pageRow } = await supabaseAdmin
+            .from('fb_page_configs')
+            .select('page_access_token')
+            .eq('workspace_id', workspaceId)
+            .eq('page_id', formRow.page_id)
+            .maybeSingle();
+
+          if (pageRow?.page_access_token) {
+            const graphUrl = `https://graph.facebook.com/v20.0/${form_id}?fields=id,name,status,questions&access_token=${pageRow.page_access_token}`;
+            const res = await fetch(graphUrl);
+            const gData = await res.json();
+            if (gData?.questions && Array.isArray(gData.questions)) {
+              await supabaseAdmin
+                .from('fb_lead_forms')
+                .update({ questions: gData.questions, updated_at: now })
+                .eq('workspace_id', workspaceId)
+                .eq('form_id', form_id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Forms Toggle API] Error fetching form questions from Graph API:', err);
+      }
     }
 
     return NextResponse.json({

@@ -335,11 +335,26 @@ export async function POST(req: NextRequest) {
 
                 if (graphData.field_data) {
                   graphData.field_data.forEach((field: { name: string; values: string[] }) => {
-                    const key = (field.name || '').toLowerCase();
+                    const origKey = field.name || '';
+                    const keyLower = origKey.toLowerCase();
                     const val = field.values ? field.values[0] || '' : '';
-                    if (key.includes('name')) leadFields.full_name = val;
-                    if (key.includes('phone')) leadFields.phone_number = val;
-                    if (key.includes('email')) leadFields.email = val;
+
+                    if (keyLower.includes('name') || keyLower === 'full_name') {
+                      if (!leadFields.full_name || leadFields.full_name === 'Meta Instant Lead') {
+                        leadFields.full_name = val;
+                      }
+                    }
+                    if (keyLower.includes('phone') || keyLower.includes('mobile')) {
+                      leadFields.phone_number = val;
+                    }
+                    if (keyLower.includes('email')) {
+                      leadFields.email = val;
+                    }
+
+                    // Save EVERY custom question key into leadFields (merged into raw_payload)
+                    if (origKey) {
+                      leadFields[origKey] = val;
+                    }
                   });
                 }
 
