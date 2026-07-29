@@ -55,6 +55,13 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
   { id: 'address', label: 'Full Address', visible: false, type: 'system' },
   { id: 'attachments', label: 'Attachments / PDFs', visible: false, type: 'system' },
+  // Meta Ad Metadata columns (toggleable via Columns Engine)
+  { id: 'adset_name', label: 'Adset Name', visible: false, type: 'meta_question' },
+  { id: 'leadgen_id', label: 'Leadgen ID', visible: false, type: 'meta_question' },
+  { id: 'campaign_name', label: 'Campaign Name', visible: false, type: 'meta_question' },
+  { id: 'field_data', label: 'Field Data', visible: false, type: 'meta_question' },
+  { id: 'synced_manually', label: 'Synced Manually', visible: false, type: 'meta_question' },
+  { id: 'assigned_team_ids', label: 'Assigned Team IDs', visible: false, type: 'meta_question' },
   // Workflow Tracker columns
   { id: 'wa_group', label: 'WhatsApp Group', visible: true, type: 'system' },
   { id: 'wa_welcome', label: 'WA Welcome Msg', visible: false, type: 'system' },
@@ -368,15 +375,14 @@ export function LeadTable({
     fetchFormNamesMap();
   }, []);
 
-  // System & Meta Ad Metadata keys to exclude from Meta Form Custom Questions
+  // System keys that are strictly internal (not table columns)
   const SYSTEM_AND_METADATA_KEYS = new Set([
     'name', 'full_name', 'first_name', 'last_name', 'email', 'phone', 'mobile', 'contact', 
     'source', 'stage_id', 'status', 'created_at', 'updated_at', 'workspace_id', 'id', 
     'lead_owner', 'custom_color', 'score', 'score_reason', 'notes', 'unread_comments_count', 
     'whatsapp_group_id', 'wa_welcome_sent', 'google_synced', 'wgl_dispatched', 'google_resource_name',
-    'form_id', 'form_name', 'page_id', 'page_name', 'ad_id', 'ad_name', 'adset_id', 'adset_name', 
-    'campaign_id', 'campaign_name', 'leadgen_id', 'meta_lead_id', 'field_data', 'synced_manually', 
-    'assigned_team_ids', 'is_organic', 'platform', 'created_time', 'raw_payload', 'raw_meta_payload', 
+    'form_id', 'form_name', 'page_id', 'page_name', 'ad_id', 'ad_name', 
+    'meta_lead_id', 'is_organic', 'platform', 'created_time', 'raw_payload', 'raw_meta_payload', 
     'source_form_id', 'custom_fields', 'tags', 'labels', 'metadata', 'mock_attachment'
   ]);
 
@@ -2612,6 +2618,42 @@ export function LeadTable({
                             const getMetaVal = () => {
                               const payload = lead.raw_payload || {};
                               const metaPayload = (lead as any).raw_meta_payload || {};
+
+                              // Special column handlers
+                              if (col.id === 'field_data') {
+                                const fd = payload.field_data || metaPayload.field_data;
+                                if (Array.isArray(fd)) {
+                                  const summary = fd
+                                    .map((item: any) => {
+                                      const n = item?.name || item?.key || '';
+                                      const v = Array.isArray(item?.values) ? item.values[0] : item?.value ?? item?.val ?? '';
+                                      return n && v ? `${n}: ${v}` : '';
+                                    })
+                                    .filter(Boolean)
+                                    .join(' | ');
+                                  return summary || '—';
+                                }
+                                if (typeof fd === 'object' && fd !== null) {
+                                  return JSON.stringify(fd);
+                                }
+                                return String(fd || '—');
+                              }
+
+                              if (col.id === 'adset_name') {
+                                return payload.adset_name || payload.adset_id || metaPayload.adset_name || '—';
+                              }
+                              if (col.id === 'leadgen_id') {
+                                return payload.leadgen_id || payload.meta_lead_id || lead.id || '—';
+                              }
+                              if (col.id === 'campaign_name') {
+                                return payload.campaign_name || payload.campaign_id || metaPayload.campaign_name || '—';
+                              }
+                              if (col.id === 'synced_manually') {
+                                return payload.synced_manually !== undefined ? String(payload.synced_manually) : 'false';
+                              }
+                              if (col.id === 'assigned_team_ids') {
+                                return payload.assigned_team_ids ? String(payload.assigned_team_ids) : '—';
+                              }
                               const smart = getSmartQuestionHeader(col.id);
 
                               // Extract value from field_data array if present
