@@ -138,13 +138,12 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       const d = await res.json();
       if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
         setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
-      } else if (d.conn_state === 'disconnected' || d.status === 'DISCONNECTED') {
-        setConnState('disconnected'); setPhoneNumber(null); setQrString(null); setIsResetting(false);
-      } else {
+      } else if (d.qr_string && !d.qr_expired) {
+        setConnState('connecting'); setQrString(d.qr_string); setIsResetting(false);
+      } else if (d.conn_state === 'connecting') {
         setConnState('connecting'); setIsResetting(false);
-        if (d.qr_string && !d.qr_expired) {
-          setQrString(d.qr_string);
-        }
+      } else if (d.conn_state === 'disconnected') {
+        setConnState(prev => (prev === 'connecting' ? 'connecting' : 'disconnected'));
       }
     } catch { /* ignore */ }
   }, [stopPolling]);
@@ -193,12 +192,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
             if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
               setConnState('open'); setPhoneNumber(d.phone_number ?? null); return;
             }
-            if (d.conn_state === 'disconnected' || d.status === 'DISCONNECTED') {
-              setConnState('disconnected'); setPhoneNumber(null); return;
-            }
-            setConnState('connecting');
             if (d.qr_string && !d.qr_expired) {
-              setQrString(d.qr_string);
+              setConnState('connecting'); setQrString(d.qr_string); return;
             }
           }
         }
@@ -225,9 +220,18 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     startedRef.current = false;
   };
 
-  const handleReconnect = () => {
+  const handleReconnect = async () => {
     startedRef.current = false;
+    setIsResetting(false);
     setConnState('connecting'); setQrString(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch('/api/integrations/baileys/qr-status', {
+          method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      }
+    } catch {}
     initSSE();
   };
 
