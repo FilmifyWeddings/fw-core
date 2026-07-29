@@ -54,7 +54,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'company', label: 'Company', visible: false, type: 'system' },
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
   { id: 'address', label: 'Full Address', visible: false, type: 'system' },
-  { id: 'attachments', label: 'Attachments / PDFs', visible: true, type: 'system' },
+  { id: 'attachments', label: 'Attachments / PDFs', visible: false, type: 'system' },
   // Workflow Tracker columns
   { id: 'wa_group', label: 'WhatsApp Group', visible: true, type: 'system' },
   { id: 'wa_welcome', label: 'WA Welcome Msg', visible: false, type: 'system' },
@@ -176,13 +176,16 @@ export function LeadTable({
     const discoveredKeys = new Set<string>();
 
     leads.forEach(l => {
-      if (l.raw_payload) {
-        Object.keys(l.raw_payload).forEach(k => {
-          if (!systemKeys.has(k.toLowerCase()) && !k.startsWith('mock_')) {
-            discoveredKeys.add(k);
-          }
-        });
-      }
+      const payloads = [l.raw_payload, (l as any).raw_meta_payload];
+      payloads.forEach(payload => {
+        if (payload) {
+          Object.keys(payload).forEach(k => {
+            if (!systemKeys.has(k.toLowerCase()) && !k.startsWith('mock_')) {
+              discoveredKeys.add(k);
+            }
+          });
+        }
+      });
     });
 
     if (discoveredKeys.size === 0) return;
@@ -1874,18 +1877,19 @@ export function LeadTable({
         
         <colgroup>
           <col className="w-[50px]" />
-          <col className="w-[220px]" />
+          <col className="w-[240px]" />
           {columns.filter(col => col.visible).map(col => {
-            if (col.id === 'contact') return <col key={col.id} className="w-[260px]" />;
-            if (col.id === 'form_name') return <col key={col.id} className="w-[220px]" />;
-            if (col.id === 'status') return <col key={col.id} className="w-[160px]" />;
-            if (col.id === 'owner') return <col key={col.id} className="w-[170px]" />;
-            if (col.id === 'date') return <col key={col.id} className="w-[170px]" />;
-            if (col.id === 'source') return <col key={col.id} className="w-[150px]" />;
-            if (col.type === 'meta_question') return <col key={col.id} className="w-[200px]" />;
+            if (col.id === 'contact') return <col key={col.id} className="w-[280px]" />;
+            if (col.id === 'form_name') return <col key={col.id} className="w-[240px]" />;
+            if (col.id === 'status') return <col key={col.id} className="w-[175px]" />;
+            if (col.id === 'owner') return <col key={col.id} className="w-[185px]" />;
+            if (col.id === 'date') return <col key={col.id} className="w-[180px]" />;
+            if (col.id === 'source') return <col key={col.id} className="w-[165px]" />;
+            if (col.id === 'company') return <col key={col.id} className="w-[180px]" />;
+            if (col.type === 'meta_question') return <col key={col.id} className="w-[220px]" />;
             return <col key={col.id} className="w-[200px]" />;
           })}
-          <col className="w-[280px]" />
+          <col className="w-[300px]" />
         </colgroup>
 
         <thead>
@@ -2118,10 +2122,10 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'form_name':
-                                const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Lead Form';
+                                const formNameVal = lead.raw_payload?.form_name || (lead.raw_payload?.form_id ? `Form #${lead.raw_payload.form_id}` : (lead.source !== 'Facebook' && lead.source !== 'Google' ? lead.source : 'Meta Lead Form'));
                                 return (
                                   <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
-                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25 shadow-xs">
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25">
                                       <Globe className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                                       {formNameVal}
                                     </span>
@@ -2131,28 +2135,28 @@ export function LeadTable({
                                 const currentStage = stages.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
                                 const stBadgeStyle = (() => {
                                   const s = (currentStage.name || '').toLowerCase();
-                                  if (s.includes('hot') || s.includes('proposal')) {
-                                    return { bg: 'bg-red-500/15 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-300 font-extrabold', border: 'border-red-500/40 shadow-sm shadow-red-500/20', dot: 'bg-red-500' };
+                                  if (s.includes('hot') || s.includes('proposal') || s.includes('sent')) {
+                                    return { bg: 'bg-[#FADBD8] dark:bg-[#4A1511]', text: 'text-[#78281F] dark:text-[#FADBD8] font-bold', border: 'border-[#F5B7B1] dark:border-[#78281F]', dot: 'bg-[#78281F]' };
                                   }
-                                  if (s.includes('cool') || s.includes('warm') || s.includes('meeting')) {
-                                    return { bg: 'bg-cyan-500/15 dark:bg-cyan-900/30', text: 'text-cyan-600 dark:text-cyan-300 font-extrabold', border: 'border-cyan-500/40 shadow-sm shadow-cyan-500/20', dot: 'bg-cyan-500' };
+                                  if (s.includes('cool') || s.includes('warm') || s.includes('meeting') || s.includes('progress')) {
+                                    return { bg: 'bg-[#FCF3CF] dark:bg-[#423705]', text: 'text-[#7D6608] dark:text-[#FCF3CF] font-bold', border: 'border-[#F9E79F] dark:border-[#7D6608]', dot: 'bg-[#7D6608]' };
                                   }
                                   if (s.includes('won') || s.includes('signed') || s.includes('closed')) {
-                                    return { bg: 'bg-emerald-500/15 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-300 font-extrabold', border: 'border-emerald-500/40 shadow-sm shadow-emerald-500/20', dot: 'bg-emerald-500' };
+                                    return { bg: 'bg-[#D4EFDF] dark:bg-[#0B3C21]', text: 'text-[#145A32] dark:text-[#D4EFDF] font-bold', border: 'border-[#A9DFBF] dark:border-[#145A32]', dot: 'bg-[#145A32]' };
                                   }
                                   if (s.includes('lost')) {
-                                    return { bg: 'bg-rose-950/20 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400 font-extrabold', border: 'border-rose-800/40 shadow-sm', dot: 'bg-rose-500' };
+                                    return { bg: 'bg-[#E5E7E9] dark:bg-[#212F3D]', text: 'text-[#424949] dark:text-[#E5E7E9] font-bold', border: 'border-[#CCD1D1] dark:border-[#424949]', dot: 'bg-[#424949]' };
                                   }
-                                  if (s.includes('contacted')) {
-                                    return { bg: 'bg-violet-500/15 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-300 font-extrabold', border: 'border-violet-500/40 shadow-sm', dot: 'bg-violet-500' };
+                                  if (s.includes('contacted') || s.includes('open')) {
+                                    return { bg: 'bg-[#E8DFF5] dark:bg-[#341948]', text: 'text-[#5B2C6F] dark:text-[#E8DFF5] font-bold', border: 'border-[#D7BDE2] dark:border-[#5B2C6F]', dot: 'bg-[#5B2C6F]' };
                                   }
-                                  return { bg: 'bg-indigo-500/15 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-300 font-extrabold', border: 'border-indigo-500/40 shadow-sm', dot: 'bg-indigo-500' };
+                                  return { bg: 'bg-[#D6EAF8] dark:bg-[#0E2F44]', text: 'text-[#1B4F72] dark:text-[#D6EAF8] font-bold', border: 'border-[#AED6F1] dark:border-[#1B4F72]', dot: 'bg-[#1B4F72]' };
                                 })();
 
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                     <div className="relative inline-flex items-center">
-                                      <span className={`w-2 h-2 rounded-full absolute left-3 z-10 ${stBadgeStyle.dot}`} />
+                                      <span className={`w-2 h-2 rounded-full absolute left-2.5 z-10 ${stBadgeStyle.dot}`} />
                                       <select
                                         value={lead.stage_id || lead.status}
                                         onChange={(e) => {
@@ -2169,16 +2173,16 @@ export function LeadTable({
                                             }
                                           }
                                         }}
-                                        className={`appearance-none text-xs font-black rounded-full pl-6 pr-7 py-1.5 border shadow-md transition-all cursor-pointer focus:outline-none hover:scale-105 active:scale-95 ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}
+                                        className={`appearance-none text-xs font-bold rounded-lg pl-6 pr-7 py-1 border transition-none cursor-pointer focus:outline-none ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}
                                       >
                                         {stages.map(s => (
                                           <option key={s.id} value={s.id} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">
                                             {s.name}
                                           </option>
                                         ))}
-                                        <option value="__add_custom_status__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-black">+ Add Custom Status</option>
+                                        <option value="__add_custom_status__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-bold">+ Add Custom Status</option>
                                       </select>
-                                      <ChevronDown className={`w-3.5 h-3.5 absolute right-2.5 pointer-events-none opacity-70 ${stBadgeStyle.text}`} />
+                                      <ChevronDown className={`w-3.5 h-3.5 absolute right-2 pointer-events-none opacity-75 ${stBadgeStyle.text}`} />
                                     </div>
                                   </MotionTd>
                                 );
@@ -2432,31 +2436,29 @@ export function LeadTable({
                             
                             {/* WA Welcome Msg Quick Action */}
                             <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
-                              <MotionButton
-                                whileHover={{ scale: 1.1 }}
+                              <button
                                 onClick={() => handleWhatsappWelcomeDispatch(lead)}
                                 className={`p-1.5 rounded-lg border transition-all ${
                                   (lead as any).wa_welcome_sent 
-                                    ? 'bg-emerald-100 dark:bg-emerald-950 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-450' 
-                                    : 'bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-zinc-200 hover:text-emerald-600'
+                                    ? 'bg-emerald-100 dark:bg-emerald-950 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' 
+                                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600'
                                 }`}
                               >
                                 <Send className="w-3.5 h-3.5" />
-                              </MotionButton>
+                              </button>
                             </PremiumTooltip>
 
                             {/* Google Contact Sync Quick Action */}
                             <PremiumTooltip content={(lead as any).google_synced ? "Google Contact Synced" : syncingLeadId === lead.id ? "Syncing..." : "Sync Google Contact"}>
-                              <MotionButton
-                                whileHover={{ scale: 1.1 }}
+                              <button
                                 onClick={() => handleGoogleContactsSync(lead)}
                                 disabled={syncingLeadId === lead.id}
                                 className={`p-1.5 rounded-lg border transition-all ${
                                   (lead as any).google_synced 
-                                    ? 'bg-blue-100 dark:bg-blue-950 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-405' 
+                                    ? 'bg-blue-100 dark:bg-blue-950 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-400' 
                                     : syncingLeadId === lead.id 
-                                      ? 'bg-zinc-850 border-zinc-700 text-zinc-400 animate-pulse'
-                                      : 'bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-zinc-200 hover:text-blue-500'
+                                      ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
+                                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500'
                                 }`}
                               >
                                 {syncingLeadId === lead.id ? (
@@ -2464,50 +2466,47 @@ export function LeadTable({
                                 ) : (
                                   <UserCheck className="w-3.5 h-3.5" />
                                 )}
-                              </MotionButton>
+                              </button>
                             </PremiumTooltip>
 
                             {/* WGL Status / Dispatch Quick Action */}
                             <PremiumTooltip content={(lead as any).wgl_dispatched ? "WGL Alert Active" : "Dispatch WGL Alert"}>
-                              <MotionButton
-                                whileHover={{ scale: 1.1 }}
+                              <button
                                 onClick={() => handleWglDispatch(lead)}
                                 className={`p-1.5 rounded-lg border transition-all ${
                                   (lead as any).wgl_dispatched 
-                                    ? 'bg-green-100 dark:bg-green-950 border-green-300 dark:border-green-800 text-green-700 dark:text-green-405' 
-                                    : 'bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-zinc-200 hover:text-green-600'
+                                    ? 'bg-amber-100 dark:bg-amber-950 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400' 
+                                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-amber-600'
                                 }`}
                               >
                                 <AlertCircle className="w-3.5 h-3.5" />
-                              </MotionButton>
+                              </button>
                             </PremiumTooltip>
 
                             {/* Followups Timeline Quick Action */}
                             <PremiumTooltip content="Open Followup Timeline">
-                              <MotionButton
-                                whileHover={{ scale: 1.1 }}
+                              <button
                                 onClick={() => setTimelineLead(lead)}
-                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-amber-600 transition-all"
                               >
                                 <Clock className="w-3.5 h-3.5" />
-                              </MotionButton>
+                              </button>
                             </PremiumTooltip>
 
-                            <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-850 mx-1.5 shrink-0" />
+                            <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-800 mx-1 shrink-0" />
 
                             {/* PhoneCall Selector */}
                             <div className="relative">
                               <PremiumTooltip content="Call / WhatsApp Options">
-                                <MotionButton 
-                                  whileHover={{ scale: 1.1 }}
+                                <button 
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
                                   }}
-                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600 transition-all"
                                 >
                                   <PhoneCall className="w-3.5 h-3.5" />
-                                </MotionButton>
+                                </button>
                               </PremiumTooltip>
                               {phoneActionMenuLeadId === lead.id && (
                                 <div className="absolute right-0 bottom-8 mt-2 w-52 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
@@ -2536,17 +2535,16 @@ export function LeadTable({
                             {/* Mail Lead */}
                             <PremiumTooltip content={lead.email ? "Email Lead" : "No Email Address"}>
                               {lead.email ? (
-                                <MotionA 
-                                  whileHover={{ scale: 1.1 }}
+                                <a 
                                   href={`mailto:${lead.email}`}
-                                  className="inline-flex items-center justify-center p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                  className="inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500 transition-all"
                                 >
                                   <Mail className="w-3.5 h-3.5" />
-                                </MotionA>
+                                </a>
                               ) : (
                                 <button 
                                   disabled
-                                  className="p-1.5 rounded-lg border border-[#E8E5DF]/50 dark:border-[#2C2926]/50 bg-slate-100/50 dark:bg-zinc-950 text-zinc-400 dark:text-zinc-650 cursor-not-allowed"
+                                  className="p-1.5 rounded-lg border border-slate-200/50 dark:border-zinc-800 bg-slate-100/50 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
                                 >
                                   <Mail className="w-3.5 h-3.5" />
                                 </button>
