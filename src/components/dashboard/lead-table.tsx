@@ -2100,16 +2100,21 @@ export function LeadTable({
           <col className="w-[240px]" />
           {columns.filter(col => col.visible).map(col => {
             if (col.id === 'contact') return <col key={col.id} className="w-[280px]" />;
-            if (col.id === 'form_name') return <col key={col.id} className="w-[240px]" />;
-            if (col.id === 'status') return <col key={col.id} className="w-[175px]" />;
-            if (col.id === 'owner') return <col key={col.id} className="w-[185px]" />;
-            if (col.id === 'date') return <col key={col.id} className="w-[180px]" />;
-            if (col.id === 'source') return <col key={col.id} className="w-[165px]" />;
-            if (col.id === 'company') return <col key={col.id} className="w-[180px]" />;
-            if (col.type === 'meta_question') return <col key={col.id} className="w-[220px]" />;
-            return <col key={col.id} className="w-[200px]" />;
+            if (col.id === 'form_name') return <col key={col.id} className="w-[250px]" />;
+            if (col.id === 'status') return <col key={col.id} className="w-[230px]" />;
+            if (col.id === 'source') return <col key={col.id} className="w-[230px]" />;
+            if (col.id === 'wa_group') return <col key={col.id} className="w-[210px]" />;
+            if (col.id === 'owner') return <col key={col.id} className="w-[200px]" />;
+            if (col.id === 'date') return <col key={col.id} className="w-[190px]" />;
+            if (col.id === 'followup_sched') return <col key={col.id} className="w-[170px]" />;
+            if (col.id === 'form_id' || col.id === 'page_id') return <col key={col.id} className="w-[170px]" />;
+            if (col.id === 'ad_name' || col.id === 'page_name' || col.id === 'adset_name') return <col key={col.id} className="w-[230px]" />;
+            if (col.id === 'campaign_name') return <col key={col.id} className="w-[250px]" />;
+            if (col.id === 'company') return <col key={col.id} className="w-[190px]" />;
+            if (col.type === 'meta_question') return <col key={col.id} className="w-[240px]" />;
+            return <col key={col.id} className="w-[210px]" />;
           })}
-          <col className="w-[300px]" />
+          <col className="w-[220px]" />
         </colgroup>
 
         <thead>

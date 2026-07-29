@@ -126,8 +126,8 @@ export function CRMDropdown({
       }
     });
     // Add snug padding space for badge dot and chevron icon
-    const estimatedWidth = Math.ceil(maxChars * 7.2 + 42);
-    return Math.max(115, Math.min(195, estimatedWidth));
+    const estimatedWidth = Math.ceil(maxChars * 7.5 + 44);
+    return Math.max(120, Math.min(180, estimatedWidth));
   }, [sortedOptions]);
 
   // Close dropdown on click outside
