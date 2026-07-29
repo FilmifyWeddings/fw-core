@@ -7,6 +7,7 @@ import {
   Sparkles, ArrowRight, Menu, X, ChevronDown, Database, 
   Layers, Zap, CheckCircle2, Shield, Calendar, Award, PhoneCall
 } from 'lucide-react';
+import { StudioCoreLogo } from './BrandSvgs';
 
 interface NavbarProps {
   activePage?: string;
@@ -46,21 +47,19 @@ export function Navbar({ activePage = 'home', onNavigate }: NavbarProps) {
       className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-300 ${
         scrolled 
           ? 'bg-[#FFFDF9]/90 dark:bg-[#0C0B0A]/90 backdrop-blur-xl border-b border-[#EAE3D2]/70 dark:border-[#2C2926] shadow-[0_10px_30px_rgba(212,175,55,0.05)] py-3' 
-          : 'bg-transparent py-5'
+          : 'bg-transparent py-4'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
         
-        {/* BRAND LOGO */}
+        {/* BRAND LOGO WITH UPLOADED SC MONOGRAM VECTOR */}
         <Link 
           href="/" 
           onClick={(e) => handleNavClick('home', e)}
           className="flex items-center gap-2.5 group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37] via-[#C5A059] to-[#9A7B32] p-[1px] shadow-[0_4px_16px_rgba(212,175,55,0.25)] group-hover:scale-105 transition-transform duration-300">
-            <div className="w-full h-full bg-[#FAF8F5] dark:bg-[#141210] rounded-[11px] flex items-center justify-center">
-              <Database className="w-5 h-5 text-[#B89047] dark:text-[#E6C665]" />
-            </div>
+          <div className="w-10 h-10 rounded-xl bg-[#1A1917] p-1 shadow-[0_4px_16px_rgba(212,175,55,0.3)] group-hover:scale-105 transition-transform duration-300 flex items-center justify-center border border-[#D4AF37]/40">
+            <StudioCoreLogo className="w-7 h-7 text-[#D4AF37]" />
           </div>
           <div className="flex flex-col">
             <span className="text-xl font-black tracking-tight text-[#1A1917] dark:text-[#FAF8F5] font-serif flex items-center gap-1">

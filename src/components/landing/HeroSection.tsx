@@ -18,7 +18,7 @@ interface HeroSectionProps {
 }
 
 export function HeroSection({ onNavigate }: HeroSectionProps) {
-  // 5 Super clean popup alerts (reduced by 2 to prevent clutter)
+  // 5 Super clean popup alerts
   const [wa1Visible, setWa1Visible] = useState(true);
   const [wa2Visible, setWa2Visible] = useState(true);
   const [mailVisible, setMailVisible] = useState(true);
@@ -39,16 +39,20 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
     };
   }, []);
 
-  // 8 Social & Productivity Integration Icons with exact Y coordinates
-  const floatingIcons = [
-    { name: 'Instagram', component: InstagramLogo, y: 30, yOffset: -8, delay: 0 },
-    { name: 'Facebook', component: FacebookLogo, y: 90, yOffset: 8, delay: 0.15 },
-    { name: 'Meta', component: MetaLogo, y: 150, yOffset: -10, delay: 0.3 },
-    { name: 'WhatsApp', component: WhatsAppLogo, y: 210, yOffset: 6, delay: 0.1 },
-    { name: 'Drive', component: GoogleDriveLogo, y: 270, yOffset: -8, delay: 0.25 },
-    { name: 'Sheets', component: GoogleSheetsLogo, y: 330, yOffset: 10, delay: 0.4 },
-    { name: 'Calendar', component: GoogleCalendarLogo, y: 390, yOffset: -6, delay: 0.2 },
-    { name: 'Gmail', component: GmailLogo, y: 450, yOffset: 8, delay: 0.35 },
+  // LEFT SIDE ICONS (4 Integration Icons)
+  const leftIcons = [
+    { name: 'Instagram', component: InstagramLogo, y: 50, yOffset: -8, delay: 0 },
+    { name: 'Facebook', component: FacebookLogo, y: 150, yOffset: 8, delay: 0.15 },
+    { name: 'Meta', component: MetaLogo, y: 250, yOffset: -10, delay: 0.3 },
+    { name: 'WhatsApp', component: WhatsAppLogo, y: 350, yOffset: 6, delay: 0.1 },
+  ];
+
+  // RIGHT SIDE ICONS (4 Integration Icons)
+  const rightIcons = [
+    { name: 'Drive', component: GoogleDriveLogo, y: 50, yOffset: -8, delay: 0.25 },
+    { name: 'Sheets', component: GoogleSheetsLogo, y: 150, yOffset: 10, delay: 0.4 },
+    { name: 'Calendar', component: GoogleCalendarLogo, y: 250, yOffset: -6, delay: 0.2 },
+    { name: 'Gmail', component: GmailLogo, y: 350, yOffset: 8, delay: 0.35 },
   ];
 
   return (
@@ -58,15 +62,15 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
       <div className="absolute top-1/3 right-1/4 w-[750px] h-[550px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#D4AF37]/20 via-[#F4EFE6]/30 to-transparent blur-[140px] pointer-events-none rounded-full" />
       <div className="absolute top-0 left-1/4 w-[500px] h-[300px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#FAF8F5] via-[#EAE3D2]/20 to-transparent blur-[100px] pointer-events-none rounded-full" />
 
-      {/* MAIN CONTAINER (LEFT CONTENT + CONNECTED FLOATING ICONS + RIGHT DASHBOARD) */}
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 relative">
+      {/* MAIN CONTAINER (LEFT CONTENT + DASHBOARD WITH LEFT & RIGHT CONNECTED ICONS) */}
+      <div className="max-w-[1450px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 relative">
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           
           {/* ========================================================= */}
           {/* LEFT CONTENT COLUMN */}
           {/* ========================================================= */}
-          <div className="lg:col-span-4 text-left z-20 space-y-6">
+          <div className="lg:col-span-5 text-left z-20 space-y-6">
             
             {/* BADGE */}
             <motion.div 
@@ -79,12 +83,12 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               <span>Built for Modern Wedding Studios</span>
             </motion.div>
 
-            {/* HEADLINE (CLEAN 4-LINE LAYOUT MATCHING REFERENCE IMAGE) */}
+            {/* HEADLINE */}
             <motion.h1 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-4xl sm:text-5xl lg:text-[56px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.1] max-w-xl"
+              className="text-3xl sm:text-5xl lg:text-[54px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.1]"
             >
               Run Your Entire <br />
               Photography Business <br />
@@ -164,63 +168,54 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
           </div>
 
           {/* ========================================================= */}
-          {/* CENTER ARCH OF FLOATING INTEGRATION ICONS & CONNECTING LINES */}
+          {/* RIGHT DASHBOARD PREVIEW WITH 4 LEFT ICONS & 4 RIGHT ICONS */}
           {/* ========================================================= */}
-          <div className="hidden lg:block lg:col-span-1 relative h-full min-h-[500px]">
+          <div className="lg:col-span-7 relative z-10 flex items-center justify-center">
             
-            {/* ANIMATED GOLDEN SVG LINES DIRECTLY CONNECTING EACH ICON TO DASHBOARD */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible" viewBox="0 0 100 500">
-              <defs>
-                <linearGradient id="goldStrokeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
-                  <stop offset="100%" stopColor="#C5A059" stopOpacity="0.3" />
-                </linearGradient>
-              </defs>
-              
-              {/* 8 Bezier curves directly touching each icon center (x=24) and converging right at (x=98, y=250) */}
-              {floatingIcons.map((item, i) => (
-                <g key={i}>
-                  <path
-                    d={`M 24 ${item.y + 24} C 55 ${item.y + 24}, 75 250, 98 250`}
-                    fill="none"
-                    stroke="url(#goldStrokeGrad)"
-                    strokeWidth="1.5"
-                    strokeDasharray="4 2"
-                    className="animate-pulse"
-                  />
-                  {/* Flowing golden pulse dot on each line */}
-                  <circle cx="24" cy={item.y + 24} r="2.5" fill="#D4AF37" />
-                </g>
-              ))}
-            </svg>
+            {/* LEFT 4 INTEGRATION ICONS & SVG LINES (DESKTOP) */}
+            <div className="hidden lg:block absolute left-0 top-0 bottom-0 w-16 z-20">
+              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 64 450">
+                <defs>
+                  <linearGradient id="goldStrokeGradLeft" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.3" />
+                  </linearGradient>
+                </defs>
+                {leftIcons.map((item, i) => (
+                  <g key={i}>
+                    <path
+                      d={`M 24 ${item.y + 24} C 45 ${item.y + 24}, 60 225, 75 225`}
+                      fill="none"
+                      stroke="url(#goldStrokeGradLeft)"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 2"
+                      className="animate-pulse"
+                    />
+                    <circle cx="24" cy={item.y + 24} r="2.5" fill="#D4AF37" />
+                  </g>
+                ))}
+              </svg>
 
-            {/* 8 FLOATING INTEGRATION BRAND ICON TILES (HIGH-GLOSS 3D GLASS TILES) */}
-            <div className="absolute inset-y-0 left-0 flex flex-col justify-between py-2 z-20">
-              {floatingIcons.map((item, idx) => {
-                const IconComponent = item.component;
-                return (
-                  <motion.div
-                    key={idx}
-                    animate={{ y: [0, item.yOffset, 0] }}
-                    transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                    className="w-12 h-12 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_20px_rgba(0,0,0,0.08)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
-                    title={item.name}
-                  >
-                    <IconComponent className="w-6 h-6" />
-                  </motion.div>
-                );
-              })}
+              <div className="h-full flex flex-col justify-around py-4">
+                {leftIcons.map((item, idx) => {
+                  const IconComponent = item.component;
+                  return (
+                    <motion.div
+                      key={idx}
+                      animate={{ y: [0, item.yOffset, 0] }}
+                      transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
+                      className="w-11 h-11 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_20px_rgba(212,175,55,0.18)] flex items-center justify-center p-2 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
+                      title={item.name}
+                    >
+                      <IconComponent className="w-5 h-5" />
+                    </motion.div>
+                  );
+                })}
+              </div>
             </div>
 
-          </div>
-
-          {/* ========================================================= */}
-          {/* RIGHT OVERLAPPING DASHBOARD PREVIEW (REAL UI COMPONENTS) */}
-          {/* ========================================================= */}
-          <div className="lg:col-span-7 relative z-10">
-            
-            {/* MAIN BACKDROP APP DASHBOARD WINDOW */}
-            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.14)] p-4 sm:p-5 text-left relative overflow-hidden">
+            {/* MAIN APP DASHBOARD WINDOW */}
+            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.14)] p-3 sm:p-5 text-left relative overflow-hidden lg:mx-14 w-full">
               
               <div className="flex gap-4">
                 
@@ -266,9 +261,9 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   <div className="flex items-center justify-between pb-3 border-b border-[#EAE3D2]/70">
                     <h2 className="text-sm font-serif font-black text-[#1A1917] dark:text-white">Dashboard</h2>
                     <div className="flex items-center gap-2 text-xs">
-                      <div className="w-24 h-6 rounded-lg bg-[#FAF8F5] border border-[#EAE3D2] px-2 flex items-center gap-1 text-[9px] text-[#7A756E]">
+                      <div className="w-20 sm:w-24 h-6 rounded-lg bg-[#FAF8F5] border border-[#EAE3D2] px-2 flex items-center gap-1 text-[9px] text-[#7A756E]">
                         <Search className="w-2.5 h-2.5" />
-                        <span>Search...</span>
+                        <span className="hidden sm:inline">Search...</span>
                       </div>
                       <div className="w-6 h-6 rounded-lg bg-[#FAF8F5] border border-[#EAE3D2] flex items-center justify-center text-[#7A756E]">
                         <Bell className="w-3 h-3" />
@@ -389,21 +384,61 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
 
             </div>
 
-            {/* ========================================================= */}
+            {/* RIGHT 4 INTEGRATION ICONS & SVG LINES (DESKTOP) */}
+            <div className="hidden lg:block absolute right-0 top-0 bottom-0 w-16 z-20">
+              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 64 450">
+                <defs>
+                  <linearGradient id="goldStrokeGradRight" x1="100%" y1="0%" x2="0%" y2="0%">
+                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.3" />
+                  </linearGradient>
+                </defs>
+                {rightIcons.map((item, i) => (
+                  <g key={i}>
+                    <path
+                      d={`M 40 ${item.y + 24} C 20 ${item.y + 24}, 5 225, -10 225`}
+                      fill="none"
+                      stroke="url(#goldStrokeGradRight)"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 2"
+                      className="animate-pulse"
+                    />
+                    <circle cx="40" cy={item.y + 24} r="2.5" fill="#D4AF37" />
+                  </g>
+                ))}
+              </svg>
+
+              <div className="h-full flex flex-col justify-around py-4">
+                {rightIcons.map((item, idx) => {
+                  const IconComponent = item.component;
+                  return (
+                    <motion.div
+                      key={idx}
+                      animate={{ y: [0, item.yOffset, 0] }}
+                      transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
+                      className="w-11 h-11 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_20px_rgba(212,175,55,0.18)] flex items-center justify-center p-2 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
+                      title={item.name}
+                    >
+                      <IconComponent className="w-5 h-5" />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* OVERLAPPING MIDDLE LAYER — LEAD PIPELINE CARD */}
-            {/* ========================================================= */}
             <motion.div 
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="absolute top-1/3 left-4 sm:-left-6 right-8 sm:right-auto sm:w-[480px] z-30 bg-white dark:bg-[#1A1816] rounded-2xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_20px_50px_rgba(0,0,0,0.15)] p-3 sm:p-4 text-left"
+              className="absolute top-1/3 left-4 sm:-left-2 right-4 sm:right-auto sm:w-[460px] z-30 bg-white dark:bg-[#1A1816] rounded-2xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_20px_50px_rgba(0,0,0,0.15)] p-3 sm:p-4 text-left"
             >
               <div className="flex items-center justify-between pb-2 border-b border-[#EAE3D2]">
                 <span className="text-xs font-serif font-black text-[#1A1917] dark:text-white">Lead Pipeline</span>
                 <span className="text-[10px] text-[#B89047] font-bold cursor-pointer">View All →</span>
               </div>
 
-              <div className="grid grid-cols-5 gap-2 pt-3 text-center">
+              <div className="grid grid-cols-5 gap-1.5 sm:gap-2 pt-3 text-center">
                 {[
                   { stage: 'New Lead', count: '45' },
                   { stage: 'Contacted', count: '32' },
@@ -411,22 +446,20 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   { stage: 'Proposal', count: '09' },
                   { stage: 'Closed', count: '52' },
                 ].map((s, i) => (
-                  <div key={i} className="p-2 rounded-xl bg-[#FAF8F5] border border-[#EAE3D2] space-y-1">
-                    <span className="text-[8px] font-bold text-[#7A756E] block truncate">{s.stage}</span>
+                  <div key={i} className="p-1.5 sm:p-2 rounded-xl bg-[#FAF8F5] border border-[#EAE3D2] space-y-0.5">
+                    <span className="text-[7.5px] sm:text-[8px] font-bold text-[#7A756E] block truncate">{s.stage}</span>
                     <span className="text-xs font-serif font-black text-[#1A1917] dark:text-white block">{s.count}</span>
                   </div>
                 ))}
               </div>
             </motion.div>
 
-            {/* ========================================================= */}
             {/* OVERLAPPING RIGHT LAYER — CALENDAR WIDGET */}
-            {/* ========================================================= */}
             <motion.div 
               initial={{ x: 20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ duration: 0.6, delay: 0.5 }}
-              className="absolute -top-4 -right-4 hidden lg:block w-56 z-30 bg-white dark:bg-[#1A1816] rounded-2xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_20px_50px_rgba(0,0,0,0.12)] p-3 text-left space-y-2"
+              className="absolute -top-4 -right-2 hidden lg:block w-52 z-30 bg-white dark:bg-[#1A1816] rounded-2xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_20px_50px_rgba(0,0,0,0.12)] p-3 text-left space-y-2"
             >
               <div className="flex items-center justify-between text-xs font-serif font-black text-[#1A1917] dark:text-white">
                 <span>Calendar</span>
@@ -461,9 +494,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               </div>
             </motion.div>
 
-            {/* ========================================================= */}
-            {/* 5 FLOATING CARDS & ALERTS AROUND DASHBOARD (REDUCED BY 2) */}
-            {/* ========================================================= */}
+            {/* 5 FLOATING CARDS & ALERTS */}
 
             {/* 1. WHATSAPP FLOATING CARD #1 (TOP RIGHT) */}
             <AnimatePresence>
@@ -473,7 +504,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   animate={{ opacity: 1, x: 0, scale: 1 }}
                   exit={{ opacity: 0, x: 40, scale: 0.9 }}
                   transition={{ duration: 0.4 }}
-                  className="absolute -top-10 right-10 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] dark:border-[#2C2926] shadow-2xl rounded-2xl p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
+                  className="absolute -top-10 right-4 sm:right-10 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] dark:border-[#2C2926] shadow-2xl rounded-2xl p-2.5 sm:p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
                 >
                   <div className="w-8 h-8 rounded-xl bg-[#25D366]/10 p-1 flex items-center justify-center shrink-0 shadow-xs">
                     <WhatsAppLogo className="w-5 h-5" />
@@ -496,7 +527,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 40 }}
                   transition={{ duration: 0.4, delay: 0.2 }}
-                  className="absolute top-1/2 -right-6 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-emerald-500/30 shadow-2xl rounded-2xl p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
+                  className="absolute top-1/2 -right-4 sm:-right-6 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-emerald-500/30 shadow-2xl rounded-2xl p-2.5 sm:p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
                 >
                   <div className="w-8 h-8 rounded-xl bg-emerald-500/10 p-1 flex items-center justify-center shrink-0 shadow-xs">
                     <WhatsAppLogo className="w-5 h-5" />
@@ -518,7 +549,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.4 }}
-                  className="absolute -top-6 left-12 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] shadow-xl rounded-2xl p-2.5 flex items-center gap-2.5 backdrop-blur-xl"
+                  className="absolute -top-6 left-6 sm:left-12 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] shadow-xl rounded-2xl p-2.5 flex items-center gap-2.5 backdrop-blur-xl"
                 >
                   <div className="w-7 h-7 rounded-lg bg-rose-500/10 p-1 flex items-center justify-center shrink-0">
                     <GmailLogo className="w-5 h-5" />
@@ -539,10 +570,10 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.4, delay: 0.1 }}
-                  className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-lg rounded-2xl p-2.5 flex items-center gap-2 backdrop-blur-xl text-[10px] font-bold"
+                  className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-lg rounded-2xl p-2 sm:p-2.5 flex items-center gap-2 backdrop-blur-xl text-[9px] sm:text-[10px] font-bold max-w-[90%]"
                 >
-                  <Clock className="w-4 h-4 text-[#B89047]" />
-                  <span>7:00 AM Pre-Wedding Shoot (Rohit & Priya)</span>
+                  <Clock className="w-4 h-4 text-[#B89047] shrink-0" />
+                  <span className="truncate">7:00 AM Pre-Wedding Shoot (Rohit & Priya)</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -555,14 +586,14 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 30 }}
                   transition={{ duration: 0.4 }}
-                  className="absolute -bottom-6 right-6 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#D4AF37]/50 shadow-2xl rounded-2xl p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
+                  className="absolute -bottom-6 right-2 sm:right-6 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#D4AF37]/50 shadow-2xl rounded-2xl p-2.5 sm:p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#C5A059] text-white flex items-center justify-center shrink-0 shadow-md font-serif font-black text-sm">
+                  <div className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#C5A059] text-white flex items-center justify-center shrink-0 shadow-md font-serif font-black text-xs sm:text-sm">
                     ₹
                   </div>
                   <div className="flex-1 text-left min-w-0">
-                    <div className="text-[11px] font-black text-[#1A1917] dark:text-white">Payment Received</div>
-                    <div className="text-[11px] font-black text-[#B89047]">₹1,25,000 <span className="text-[9px] font-normal text-[#7A756E]">from Rohit & Priya</span></div>
+                    <div className="text-[10px] sm:text-[11px] font-black text-[#1A1917] dark:text-white">Payment Received</div>
+                    <div className="text-[10px] sm:text-[11px] font-black text-[#B89047]">₹1,25,000 <span className="text-[8px] sm:text-[9px] font-normal text-[#7A756E]">from Rohit & Priya</span></div>
                     <div className="text-[8px] text-[#7A756E] font-bold">5 min ago</div>
                   </div>
                   <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&q=80" className="w-7 h-7 rounded-full object-cover shrink-0" />
