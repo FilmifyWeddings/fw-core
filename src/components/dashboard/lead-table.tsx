@@ -2118,8 +2118,10 @@ export function LeadTable({
             </th>
             
             {/* Dynamic Columns headers (Sticky Top) */}
-            {columns.map((col, idx) => col.visible && (
-              <th
+            {columns.map((col, idx) => {
+              if (!col.visible || PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase())) return null;
+              return (
+                <th
                 key={col.id}
                 style={{ top: `${headerHeight}px` }}
                 className={`py-4 px-4 text-xs font-black sticky bg-[#EAE6DF] dark:bg-[#1C1A18] z-30 relative group/header cursor-grab active:cursor-grabbing transition-all select-none text-slate-800 dark:text-zinc-200 ${
@@ -2189,7 +2191,7 @@ export function LeadTable({
 
                 </div>
               </th>
-            ))}
+            ); })}
 
             {/* Frozen Column Actions (Sticky Top & Right) */}
             <th 
@@ -2204,7 +2206,7 @@ export function LeadTable({
         <tbody className="divide-y divide-zinc-900 text-sm">
                 {paginatedLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.filter(c => c.visible).length + 3} className="py-16 text-center text-zinc-500 bg-[#0c0c0e]/30">
+                    <td colSpan={columns.filter(c => c.visible && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).length + 3} className="py-16 text-center text-zinc-500 bg-[#0c0c0e]/30">
                       <div className="flex flex-col items-center gap-2">
                         <AlertCircle className="w-8 h-8 text-zinc-650" />
                         <p className="text-sm font-semibold">No photography leads match your filter criteria</p>
@@ -2267,7 +2269,7 @@ export function LeadTable({
 
                         {/* Dynamic Column content mapping */}
                         {columns.map(col => {
-                          if (!col.visible) return null;
+                          if (!col.visible || PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase())) return null;
 
                           // 1. System Columns
                           if (col.type === 'system') {
