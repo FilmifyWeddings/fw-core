@@ -50,6 +50,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'contact', label: 'Contact Details', visible: true, type: 'system' },
   { id: 'source', label: 'Lead Source', visible: true, type: 'system' },
   { id: 'status', label: 'Status', visible: true, type: 'system' },
+  { id: 'lead_owner', label: 'Lead Owner', visible: true, type: 'system' },
   { id: 'company', label: 'Company', visible: false, type: 'system' },
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
   { id: 'address', label: 'Full Address', visible: false, type: 'system' },
@@ -77,8 +78,8 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
 ];
 
 const BLACKLIST = [
-  'field_data', 'synced_manually', 'assigned_team_ids', 'leadgen_id', 'attachments', 'owner', 'lead_owner', 'campaign_name',
-  'field data', 'synced manually', 'assigned team ids', 'leadgen id', 'campaign name', 'lead owner', 'assigned_team_id', 'assigned team id'
+  'field_data', 'synced_manually', 'assigned_team_ids', 'leadgen_id', 'attachments', 'owner', 'campaign_name',
+  'field data', 'synced manually', 'assigned team ids', 'leadgen id', 'campaign name', 'assigned_team_id', 'assigned team id'
 ];
 
 const PERMANENTLY_BLOCKED_KEYS = new Set(BLACKLIST);
@@ -1558,28 +1559,10 @@ export function LeadTable({
         {/* Dynamic Views Switcher Panel */}
         <div className="flex items-center justify-between pb-4">
           <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl shadow-inner">
-            <button 
-              onClick={() => setViewMode('table')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
-                viewMode === 'table' 
-                  ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
-                  : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
-              }`}
-            >
+            <span className="px-4 py-2 text-xs font-bold rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#1C1A18] text-[#D4AF37] dark:text-[#C5A059] shadow-sm flex items-center gap-2">
               <LayoutGrid className="w-3.5 h-3.5" />
               Grid Table
-            </button>
-            <button 
-              onClick={() => setViewMode('tasks')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 border ${
-                viewMode === 'tasks' 
-                  ? 'bg-white dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-[#D4AF37] dark:text-[#C5A059] shadow-sm' 
-                  : 'border-transparent text-[#706E6A] dark:text-[#A09E9A] hover:text-[#1A1A1A] dark:hover:text-white'
-              }`}
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] dark:text-[#C5A059]" />
-              Team Tasks
-            </button>
+            </span>
           </div>
 
           {/* Primary Manual lead creation */}
@@ -2166,7 +2149,7 @@ export function LeadTable({
             if (col.id === 'status') return <col key={col.id} className="w-[230px]" />;
             if (col.id === 'source') return <col key={col.id} className="w-[230px]" />;
             if (col.id === 'wa_group') return <col key={col.id} className="w-[210px]" />;
-            if (col.id === 'owner') return <col key={col.id} className="w-[200px]" />;
+            if (col.id === 'owner' || col.id === 'lead_owner') return <col key={col.id} className="w-[195px]" />;
             if (col.id === 'date') return <col key={col.id} className="w-[190px]" />;
             if (col.id === 'groom_name' || col.id === 'bride_name') return <col key={col.id} className="w-[190px]" />;
             if (col.id === 'event_type') return <col key={col.id} className="w-[220px]" />;
@@ -2520,6 +2503,12 @@ export function LeadTable({
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
                                     {lead.raw_payload?.venue || lead.raw_payload?.address || '-'}
+                                  </MotionTd>
+                                );
+                              case 'lead_owner':
+                                return (
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-amber-700 dark:text-amber-400 font-bold whitespace-nowrap">
+                                    {lead.raw_payload?.lead_owner || '—'}
                                   </MotionTd>
                                 );
                               case 'groom_name':

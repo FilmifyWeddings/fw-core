@@ -144,9 +144,46 @@ export function LeadInsiderDrawer({
   userEmail,
   commentsOnlyMode = false
 }: LeadInsiderDrawerProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'quotes' | 'finance' | 'assets'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'comments_timeline' | 'quotes' | 'assets'>('overview');
   const [isMounted, setIsMounted] = useState(false);
   const [commentText, setCommentText] = useState('');
+
+  const [teamMembersState, setTeamMembersState] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const local = localStorage.getItem('leads_workspace_team_members');
+      if (local) {
+        try {
+          return JSON.parse(local);
+        } catch (_) {}
+      }
+    }
+    return [
+      { id: 't1', name: 'Rahul Sharma', role: 'Lead Photographer' },
+      { id: 't2', name: 'Karan Singh', role: 'Cinematographer' },
+      { id: 't3', name: 'Sneha Reddy', role: 'Main Editor' },
+      { id: 't4', name: 'Amit Patel', role: 'Drone Operator' },
+      { id: 't5', name: 'Sushant Nawale', role: 'Lead Owner' },
+      { id: 't6', name: 'Sahil Dhonde', role: 'Manager' }
+    ];
+  });
+
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState('Team Member');
+
+  const handleAddTeamMember = (name: string, role: string) => {
+    if (!name.trim()) return;
+    const newMember = {
+      id: `t_${Date.now()}`,
+      name: name.trim(),
+      role: role.trim() || 'Team Member'
+    };
+    const updated = [...teamMembersState, newMember];
+    setTeamMembersState(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('leads_workspace_team_members', JSON.stringify(updated));
+    }
+  };
   
   // Audited Comments State
   const [commentsList, setCommentsList] = useState<LeadComment[]>([]);
@@ -439,12 +476,30 @@ export function LeadInsiderDrawer({
   const toggleAssignee = (memberId: string) => {
     const currentAssignees = lead.raw_payload?.assigned_team_ids || [];
     let updated: string[];
+    let newOwnerName = lead.raw_payload?.lead_owner || '';
+    
     if (currentAssignees.includes(memberId)) {
       updated = currentAssignees.filter((id: string) => id !== memberId);
+      const memberObj = teamMembersState.find(m => m.id === memberId);
+      if (memberObj && newOwnerName === memberObj.name) {
+        const nextId = updated[0];
+        const nextMember = teamMembersState.find(m => m.id === nextId);
+        newOwnerName = nextMember ? nextMember.name : '';
+      }
     } else {
       updated = [...currentAssignees, memberId];
+      const memberObj = teamMembersState.find(m => m.id === memberId);
+      if (memberObj) {
+        newOwnerName = memberObj.name;
+      }
     }
-    handleRawPayloadChange('assigned_team_ids', updated);
+    
+    const updatedPayload = { 
+      ...lead.raw_payload, 
+      assigned_team_ids: updated,
+      lead_owner: newOwnerName
+    };
+    handleFieldChange({ raw_payload: updatedPayload });
   };
 
   // Formatted Local Date-Time helper
@@ -986,9 +1041,8 @@ export function LeadInsiderDrawer({
           <div className="flex border-b border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950/30 p-1.5 gap-1 shrink-0">
             {[
               { id: 'overview', label: 'Overview', icon: Briefcase },
-              { id: 'tasks', label: 'Tasks', icon: CheckSquare },
+              { id: 'comments_timeline', label: 'Comments & Reminders', icon: MessageSquare },
               { id: 'quotes', label: 'Quotations', icon: FileText },
-              { id: 'finance', label: 'Financials', icon: DollarSign },
               { id: 'assets', label: 'Assets', icon: FileIcon }
             ].map(t => {
               const Icon = t.icon;
@@ -1193,16 +1247,16 @@ export function LeadInsiderDrawer({
                           />
                         </div>
                       </div>
-                    </div>
-
-                    {/* Team Allocations & Assignees */}
+                    </div>                    {/* Team Allocations & Assignees */}
                     <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-zinc-900">
-                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-555 tracking-wider flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 text-orange-500" />
-                        Team Allocations & Assignees
+                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-555 tracking-wider flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-orange-500" />
+                          Team Allocations & Assignees
+                        </span>
                       </h4>
                       <div className="space-y-2">
-                        {MOCK_TEAM_MEMBERS.map(member => {
+                        {teamMembersState.map(member => {
                           const isAssigned = (lead.raw_payload?.assigned_team_ids || []).includes(member.id);
                           return (
                             <button
@@ -1216,7 +1270,7 @@ export function LeadInsiderDrawer({
                             >
                               <div className="flex items-center gap-2.5">
                                 <div className="w-6 h-6 rounded-md bg-slate-200 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold">
-                                  {member.name.split(' ').map(n => n[0]).join('')}
+                                  {member.name.split(' ').map((n: string) => n[0]).join('')}
                                 </div>
                                 <div className="text-left">
                                   <div className="text-xs font-semibold">{member.name}</div>
@@ -1227,35 +1281,67 @@ export function LeadInsiderDrawer({
                             </button>
                           );
                         })}
-                      </div>
-                    </div>
 
-                    {/* Upgraded Comments Timeline (Direct Database Persistence) */}
-                    <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-zinc-900">
-                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-550 tracking-wider">Comments & Reminders Timeline</h4>
-                      {renderCommentsTimeline()}
+                        {/* Add Team Member Inline Section */}
+                        {showAddMember ? (
+                          <div className="p-3 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              placeholder="Member Name"
+                              value={newMemberName}
+                              onChange={(e) => setNewMemberName(e.target.value)}
+                              className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-850 p-2 rounded-lg text-xs"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Role (e.g. Photographer)"
+                              value={newMemberRole}
+                              onChange={(e) => setNewMemberRole(e.target.value)}
+                              className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-855 p-2 rounded-lg text-xs"
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                onClick={() => setShowAddMember(false)}
+                                className="px-3 py-1.5 text-[10px] font-bold text-slate-500 rounded-lg bg-slate-100 hover:bg-slate-200"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleAddTeamMember(newMemberName, newMemberRole);
+                                  setNewMemberName('');
+                                  setShowAddMember(false);
+                                }}
+                                className="px-3 py-1.5 text-[10px] font-bold text-white rounded-lg bg-orange-500 hover:bg-orange-600"
+                              >
+                                Add Member
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setShowAddMember(true)}
+                            className="w-full py-2.5 border border-dashed border-slate-300 dark:border-zinc-800 rounded-xl text-[10px] font-bold text-slate-500 dark:text-zinc-400 hover:text-orange-500 hover:border-orange-500 transition-all flex items-center justify-center gap-1.5 mt-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Team Member
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 )}
 
-                {/* TAB 2: TEAM TASKS WORKSPACE */}
-                {activeTab === 'tasks' && (
+                {/* TAB 2: COMMENTS & REMINDERS TIMELINE */}
+                {activeTab === 'comments_timeline' && (
                   <motion.div
-                    key="tasks"
+                    key="comments_timeline"
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 5 }}
                     className="space-y-6"
                   >
-                    <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10 text-orange-400 text-[10px] font-bold leading-normal flex items-start gap-2">
-                      <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>Client-Specific Tasks workspace. RLS permissions applied based on workspace owner context.</span>
-                    </div>
-                    <TeamTasksManager
-                      clientId={lead.client_id || lead.id}
-                      workspaceId={lead.workspace_id || lead.tenant_id || ''}
-                      userEmail={userEmail}
-                    />
+                    {renderCommentsTimeline()}
                   </motion.div>
                 )}
 
@@ -1273,74 +1359,6 @@ export function LeadInsiderDrawer({
                       onLeadUpdate={handleFieldChange}
                       userEmail={userEmail}
                     />
-                  </motion.div>
-                )}
-
-                {/* TAB 4: FINANCIAL MATRIX */}
-                {activeTab === 'finance' && (
-                  <motion.div
-                    key="finance"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 5 }}
-                    className="space-y-6"
-                  >
-                    {isShooter ? (
-                      <div className="p-6 rounded-2xl border border-rose-500/10 bg-rose-500/5 text-center space-y-4 py-16">
-                        <Lock className="w-12 h-12 text-rose-500 mx-auto animate-pulse" />
-                        <h3 className="text-sm font-black text-rose-400 uppercase tracking-wide">Access Token Mismatch</h3>
-                        <p className="text-xs text-slate-500 leading-relaxed">
-                          Standard Shooter accounts do not possess authentication clearances to view financial billing registry structures.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4 text-xs">
-                        <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10 text-orange-400 text-[10px] font-bold leading-normal flex items-start gap-2">
-                          <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                          <span>Financial clearance granted. Only administrators or workspace owners can edit these billing registry matrix values.</span>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Total Deal Cost (₹)</label>
-                          <input 
-                            type="number" 
-                            value={lead.raw_payload?.total_deal_cost || ''} 
-                            onChange={(e) => handleRawPayloadChange('total_deal_cost', Number(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none"
-                            placeholder="e.g. 250000"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Retainer Payment (₹)</label>
-                          <input 
-                            type="number" 
-                            value={lead.raw_payload?.retainer_payment || ''} 
-                            onChange={(e) => handleRawPayloadChange('retainer_payment', Number(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none"
-                            placeholder="e.g. 50000"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Balance Outstanding (₹)</label>
-                          <div className="w-full bg-slate-100 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-900 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs font-black">
-                            ₹{Math.max(0, (Number(lead.raw_payload?.total_deal_cost || 0) - Number(lead.raw_payload?.retainer_payment || 0))).toLocaleString('en-IN')}
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Tracking Token Keys</label>
-                          <input 
-                            type="text" 
-                            value={lead.raw_payload?.tracking_token || ''} 
-                            onChange={(e) => handleRawPayloadChange('tracking_token', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2.5 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none"
-                            placeholder="e.g. FT-998822-LOCK"
-                          />
-                        </div>
-                      </div>
-                    )}
                   </motion.div>
                 )}
 
