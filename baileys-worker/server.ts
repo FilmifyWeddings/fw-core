@@ -979,7 +979,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       defaultQueryTimeoutMs: 60_000,
       retryRequestDelayMs: 2500,
       markOnlineOnConnect: true,
-      browser: ['StudioCore', 'Chrome', '1.0.0'],
+      browser: Browsers.ubuntu('Chrome'),
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
     });
@@ -1098,7 +1098,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       defaultQueryTimeoutMs: 60_000,
       retryRequestDelayMs: 2500,
       markOnlineOnConnect: true,
-      browser: ['StudioCore', 'Chrome', '1.0.0'],
+      browser: Browsers.ubuntu('Chrome'),
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
     });
@@ -1165,10 +1165,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
             }, { onConflict: 'workspace_id' }),
           `upsert-open-status-${wsId}`
         );
-      }
-    });
-  }
-}
+
 
       // Force-flush creds to DB on new login so 515 stream restart
       // doesn't find stale/unpaired creds
@@ -1290,9 +1287,11 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
     }
   });
+  }
+}
 
   // ── Event: messages.upsert — save inbound messages ──
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  (sock as any)?.ev?.on('messages.upsert', async ({ messages, type }: { messages: any[]; type: string }) => {
     if (type !== 'notify') return;
 
     for (const msg of messages) {
@@ -1399,7 +1398,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
   });
 
   // ── Event: messages.update — Blue Tick / Delivery status ──
-  sock.ev.on('messages.update', async (updates) => {
+  (sock as any)?.ev?.on('messages.update', async (updates: any[]) => {
     for (const update of updates) {
       if (!update.update.status) continue;
 
@@ -1430,7 +1429,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
   });
 
   // ── Event: chats.set — Bulk sync chat list on connect ──
-  (sock.ev as any).on('chats.set', async ({ chats }: any) => {
+  ((sock as any)?.ev as any)?.on('chats.set', async ({ chats }: any) => {
     if (!chats || !chats.length) return;
     logger.info({ count: chats.length }, '📂 Syncing chat list...');
 
@@ -1448,7 +1447,6 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       .from('baileys_chats')
       .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
   });
-}
 
 function getRequestBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {

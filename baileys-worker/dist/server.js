@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, proto, Browsers, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -111,11 +111,12 @@ let saveCreds = null;
 // uses the live mutated creds object instead of reading stale data from DB
 let currentAuthState = null;
 // ─── Session State Helpers ────────────────────────────────────────────────────
-async function updateSessionState(state, extras = {}) {
+async function updateSessionState(state, extras = {}, targetWorkspaceId) {
+    const wsId = targetWorkspaceId || WORKSPACE_ID;
     await supabase
         .from('baileys_sessions')
         .upsert({
-        workspace_id: WORKSPACE_ID,
+        workspace_id: wsId,
         conn_state: state,
         ...extras,
         updated_at: new Date().toISOString(),
@@ -730,8 +731,9 @@ function clearConnectingTimeout() {
     }
 }
 // ─── Force Reset (shared between timeout handler and /force-reset endpoint) ──
-async function initiateForceReset() {
-    if (sock) {
+async function initiateForceReset(targetWorkspaceId) {
+    const wsId = targetWorkspaceId || WORKSPACE_ID;
+    if (sock && wsId === WORKSPACE_ID) {
         try {
             sock.ev.removeAllListeners();
             sock.end(undefined);
@@ -739,9 +741,9 @@ async function initiateForceReset() {
         catch { }
         sock = null;
     }
-    if (reconnectTimer)
+    if (reconnectTimer && wsId === WORKSPACE_ID)
         clearTimeout(reconnectTimer);
-    // Wipe ALL session state from DB
+    // Wipe ALL session state from DB for target workspace
     await supabase
         .from('baileys_sessions')
         .update({
@@ -755,11 +757,11 @@ async function initiateForceReset() {
         last_status_change: new Date().toISOString(),
         updated_at: new Date().toISOString(),
     })
-        .eq('workspace_id', WORKSPACE_ID);
+        .eq('workspace_id', wsId);
     await supabase
         .from('baileys_sessions')
         .upsert({
-        workspace_id: WORKSPACE_ID,
+        workspace_id: wsId,
         conn_state: 'connecting',
         qr_string: null,
         qr_expires_at: null,
@@ -773,21 +775,22 @@ async function initiateForceReset() {
     // Reset QR throttle so new socket's first QR writes to DB immediately
     lastQrTime = 0;
     // Start socket immediately — no delay to ensure fastest QR generation
-    startBaileysSocket(true).catch(err => {
-        logger.error({ err }, 'Failed to start Baileys socket after force-reset');
+    startBaileysSocket(true, wsId).catch(err => {
+        logger.error({ err, workspaceId: wsId }, 'Failed to start Baileys socket after force-reset');
     });
 }
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
-async function startBaileysSocket(forceFresh = false) {
-    logger.info({ forceFresh }, '🚀 Starting Baileys socket...');
+async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
+    const wsId = targetWorkspaceId || WORKSPACE_ID;
+    logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket...');
     clearConnectingTimeout();
     if (forceFresh) {
-        logger.info('🔄 Force-fresh mode: creating new credential state from scratch');
-        await updateSessionState('connecting');
+        logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: creating new credential state from scratch');
+        await updateSessionState('connecting', {}, wsId);
         // Use authState's creds/keys so saveCreds persists the SAME object
         // that Baileys mutates in-place via creds.update / keys.set
-        const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
-        saveCreds = authState.saveCreds;
+        const authState = await useSupabaseAuthState(supabase, wsId);
+        const saveCredsLocal = authState.saveCreds;
         // Reset creds to fresh random keys even if DB had stale state
         const { initAuthCreds } = await import('@whiskeysockets/baileys');
         const freshCreds = initAuthCreds();
@@ -796,15 +799,17 @@ async function startBaileysSocket(forceFresh = false) {
         }
         Object.assign(authState.state.creds, freshCreds);
         // Clear the in-memory signal key cache by resetting keys store internals
-        // (SignalKeyStore.set() appends to an inaccessible closure — replace it)
         const blankKeys = {
             get: async () => ({}),
             set: async () => { },
         };
-        currentAuthState = {
-            creds: authState.state.creds,
-            keys: blankKeys,
-        };
+        if (wsId === WORKSPACE_ID) {
+            saveCreds = saveCredsLocal;
+            currentAuthState = {
+                creds: authState.state.creds,
+                keys: blankKeys,
+            };
+        }
         let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
             version: [2, 3000, 1017531287],
             isLatest: false
@@ -814,12 +819,12 @@ async function startBaileysSocket(forceFresh = false) {
             version = minVersion;
             isLatest = true;
         }
-        sock = makeWASocket({
+        const localSock = makeWASocket({
             version,
-            logger: logger.child({ module: 'baileys' }),
+            logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
             auth: {
-                creds: currentAuthState.creds,
-                keys: makeCacheableSignalKeyStore(currentAuthState.keys, logger.child({ module: 'keys' })),
+                creds: authState.state.creds,
+                keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
             },
             printQRInTerminal: true,
             generateHighQualityLinkPreview: true,
@@ -828,43 +833,86 @@ async function startBaileysSocket(forceFresh = false) {
             defaultQueryTimeoutMs: 60_000,
             retryRequestDelayMs: 2500,
             markOnlineOnConnect: true,
-            browser: ['StudioCore', 'Chrome', '1.0.0'],
+            browser: Browsers.ubuntu('Chrome'),
             syncFullHistory: false,
             shouldSyncHistoryMessage: () => false,
         });
-        sock.ev.on('creds.update', (update) => {
+        if (wsId === WORKSPACE_ID) {
+            sock = localSock;
+        }
+        localSock.ev.on('creds.update', (update) => {
             const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
             if (needsForceFlush) {
-                logger.warn({ update }, '⚠️ Creds upgrade detected (isNewLogin/registered/me) — forcing immediate DB flush');
-                saveCreds().then(() => {
-                    console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${WORKSPACE_ID}`);
+                logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
+                saveCredsLocal().then(() => {
+                    console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
                 }).catch((err) => {
-                    logger.error({ err }, 'Failed to force-flush creds after pairing upgrade');
+                    logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
                 });
             }
             else {
-                saveCreds();
+                saveCredsLocal();
+            }
+        });
+        localSock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+            console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
+            logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
+            if (qr) {
+                clearConnectingTimeout();
+                startConnectingTimeout();
+                const now = Date.now();
+                if (now - lastQrTime > 10_000) {
+                    lastQrTime = now;
+                    logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
+                    console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
+                    await dbWrite(supabase
+                        .from('baileys_sessions')
+                        .upsert({
+                        workspace_id: wsId,
+                        qr_string: qr,
+                        qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+                        conn_state: 'connecting',
+                        updated_at: new Date().toISOString(),
+                    }, { onConflict: 'workspace_id' }), `upsert-qr-${wsId}`);
+                }
+            }
+            if (connection === 'open') {
+                clearConnectingTimeout();
+                await dbWriteCritical(supabase
+                    .from('baileys_sessions')
+                    .upsert({
+                    workspace_id: wsId,
+                    conn_state: 'open',
+                    status: 'CONNECTED',
+                    updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id' }), `upsert-open-status-${wsId}`);
+                if (update.isNewLogin && saveCredsLocal) {
+                    try {
+                        await saveCredsLocal();
+                        console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${wsId}`);
+                    }
+                    catch (err) {
+                        logger.error({ err, workspaceId: wsId }, 'Failed to flush creds on isNewLogin');
+                    }
+                }
             }
         });
     }
     else {
-        // Reconnect mode: use in-memory creds if available (bypasses DB read
-        // so 515 stream restart never reloads stale auth state from Postgres)
-        if (currentAuthState) {
+        // Reconnect mode
+        if (currentAuthState && wsId === WORKSPACE_ID) {
             logger.info('🧠 Reusing in-memory auth state for reconnect (bypassing DB read)');
-            // saveCreds still points to the original persistAuthState from
-            // the first useSupabaseAuthState call — its closure still owns
-            // the live creds object that Baileys mutated in-place
         }
         else {
-            const authState = await useSupabaseAuthState(supabase, WORKSPACE_ID);
+            const authState = await useSupabaseAuthState(supabase, wsId);
             saveCreds = authState.saveCreds;
             currentAuthState = {
                 creds: authState.state.creds,
                 keys: authState.state.keys,
             };
         }
-        await updateSessionState('connecting');
+        await updateSessionState('connecting', {}, wsId);
         let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
             version: [2, 3000, 1017531287],
             isLatest: false
@@ -874,13 +922,13 @@ async function startBaileysSocket(forceFresh = false) {
             version = minVersion;
             isLatest = true;
         }
-        logger.info({ version, isLatest, forceFresh }, '📦 WhatsApp Web version');
-        sock = makeWASocket({
+        logger.info({ version, isLatest, forceFresh, workspaceId: wsId }, '📦 WhatsApp Web version');
+        const localSock = makeWASocket({
             version,
-            logger: logger.child({ module: 'baileys' }),
+            logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
             auth: {
                 creds: currentAuthState.creds,
-                keys: makeCacheableSignalKeyStore(currentAuthState.keys, logger.child({ module: 'keys' })),
+                keys: makeCacheableSignalKeyStore(currentAuthState.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
             },
             printQRInTerminal: true,
             generateHighQualityLinkPreview: true,
@@ -889,305 +937,299 @@ async function startBaileysSocket(forceFresh = false) {
             defaultQueryTimeoutMs: 60_000,
             retryRequestDelayMs: 2500,
             markOnlineOnConnect: true,
-            browser: ['StudioCore', 'Chrome', '1.0.0'],
+            browser: Browsers.ubuntu('Chrome'),
             syncFullHistory: false,
             shouldSyncHistoryMessage: () => false,
         });
-        // ── Event: creds.update — save creds on every update ──
-        sock.ev.on('creds.update', (update) => {
+        if (wsId === WORKSPACE_ID) {
+            sock = localSock;
+        }
+        localSock.ev.on('creds.update', (update) => {
             const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
             if (needsForceFlush) {
-                logger.warn({ update }, '⚠️ Creds upgrade detected (isNewLogin/registered/me) — forcing immediate DB flush');
+                logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
                 saveCreds().then(() => {
-                    console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${WORKSPACE_ID}`);
+                    console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
                 }).catch((err) => {
-                    logger.error({ err }, 'Failed to force-flush creds after pairing upgrade');
+                    logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
                 });
             }
             else {
                 saveCreds();
             }
         });
-    }
-    // ── Event: connection.update — handle QR, open, close ──
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        console.log('⚡ Connection state changed:', connection || 'qr_event');
-        logger.info({ update }, '🔌 Received connection update event');
-        // Start/clear connecting timeout based on QR activity
-        if (qr) {
-            clearConnectingTimeout(); // Got QR — reset the timer
-            startConnectingTimeout(); // Still waiting for scan
-            const now = Date.now();
-            if (now - lastQrTime > 15_000) {
-                lastQrTime = now;
-                logger.info('📱 Storing fresh QR code in database...');
-                console.log('📱 Storing fresh QR code for workspace');
-                await dbWrite(supabase
+        localSock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+            console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
+            logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
+            if (qr) {
+                clearConnectingTimeout();
+                startConnectingTimeout();
+                const now = Date.now();
+                if (now - lastQrTime > 10_000) {
+                    lastQrTime = now;
+                    logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
+                    console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
+                    await dbWrite(supabase
+                        .from('baileys_sessions')
+                        .upsert({
+                        workspace_id: wsId,
+                        qr_string: qr,
+                        qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+                        conn_state: 'connecting',
+                        updated_at: new Date().toISOString(),
+                    }, { onConflict: 'workspace_id' }), `upsert-qr-${wsId}`);
+                }
+            }
+            if (connection === 'open') {
+                clearConnectingTimeout();
+                await dbWriteCritical(supabase
+                    .from('baileys_sessions')
+                    .upsert({
+                    workspace_id: wsId,
+                    conn_state: 'open',
+                    status: 'CONNECTED',
+                    updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id' }), `upsert-open-status-${wsId}`);
+                // Force-flush creds to DB on new login so 515 stream restart
+                // doesn't find stale/unpaired creds
+                if (update.isNewLogin && saveCreds) {
+                    logger.warn('⚠️ isNewLogin in connection.update — force-flushing creds to DB');
+                    try {
+                        await saveCreds();
+                        console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
+                    }
+                    catch (err) {
+                        logger.error({ err }, 'Failed to flush creds on isNewLogin (connection.update)');
+                    }
+                }
+                console.log('🟢 SUCCESS: WhatsApp Connected for workspace!');
+                logger.info('✅ WhatsApp connected!');
+                const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
+                console.log('🔑 Phone number:', phoneNumber);
+                const curSession = await dbWrite(supabase
+                    .from('baileys_sessions')
+                    .select('reconnect_count')
+                    .eq('workspace_id', WORKSPACE_ID)
+                    .maybeSingle(), 'select-reconnect-count');
+                const curReconnects = (curSession?.reconnect_count ?? 0) + 1;
+                await dbWriteCritical(supabase
                     .from('baileys_sessions')
                     .upsert({
                     workspace_id: WORKSPACE_ID,
-                    qr_string: qr,
-                    qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
-                    conn_state: 'connecting',
+                    conn_state: 'open',
+                    qr_string: null,
+                    phone_number: phoneNumber,
+                    last_connected: new Date().toISOString(),
+                    error_info: null,
+                    reconnect_count: curReconnects,
+                    last_status_change: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id' }), 'upsert-qr');
-            }
-            else {
-                logger.info('📱 QR update ignored (throttled)');
-            }
-        }
-        if (connection === 'open') {
-            clearConnectingTimeout();
-            // IMMEDIATE status write — set conn_state='open' right away so
-            // the frontend polling loop sees the transition even if the
-            // comprehensive upsert below is slow or times out
-            await dbWriteCritical(supabase
-                .from('baileys_sessions')
-                .upsert({
-                workspace_id: WORKSPACE_ID,
-                conn_state: 'open',
-                status: 'CONNECTED',
-                updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' }), 'upsert-open-status');
-            // Force-flush creds to DB on new login so 515 stream restart
-            // doesn't find stale/unpaired creds
-            if (update.isNewLogin && saveCreds) {
-                logger.warn('⚠️ isNewLogin in connection.update — force-flushing creds to DB');
-                try {
-                    await saveCreds();
-                    console.log(`💾 CRITICAL: Fresh pairing creds flushed to Supabase for workspace ${WORKSPACE_ID}`);
-                }
-                catch (err) {
-                    logger.error({ err }, 'Failed to flush creds on isNewLogin (connection.update)');
+                }, { onConflict: 'workspace_id' }), 'upsert-open');
+                console.log('🟢 Session state set to "open" in database');
+                if (curReconnects > 1) {
+                    await dbWrite(supabase.from('wa_instance_alerts').insert({
+                        workspace_id: WORKSPACE_ID,
+                        alert_type: 'reconnected',
+                        message: `WhatsApp reconnected after ${curReconnects} reconnection(s).`,
+                        metadata: { phone_number: phoneNumber, reconnect_count: curReconnects },
+                    }), 'insert-reconnect-alert');
                 }
             }
-            console.log('🟢 SUCCESS: WhatsApp Connected for workspace!');
-            logger.info('✅ WhatsApp connected!');
-            const phoneNumber = sock?.user?.id?.split(':')[0] ?? null;
-            console.log('🔑 Phone number:', phoneNumber);
-            const curSession = await dbWrite(supabase
-                .from('baileys_sessions')
-                .select('reconnect_count')
-                .eq('workspace_id', WORKSPACE_ID)
-                .maybeSingle(), 'select-reconnect-count');
-            const curReconnects = (curSession?.reconnect_count ?? 0) + 1;
-            await dbWriteCritical(supabase
-                .from('baileys_sessions')
-                .upsert({
-                workspace_id: WORKSPACE_ID,
-                conn_state: 'open',
-                qr_string: null,
-                phone_number: phoneNumber,
-                last_connected: new Date().toISOString(),
-                error_info: null,
-                reconnect_count: curReconnects,
-                last_status_change: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' }), 'upsert-open');
-            console.log('🟢 Session state set to "open" in database');
-            if (curReconnects > 1) {
+            if (connection === 'close') {
+                clearConnectingTimeout();
+                const error = lastDisconnect?.error;
+                const statusCode = error?.output?.statusCode;
+                const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+                console.log('🔌 Connection CLOSED — statusCode:', statusCode, 'isLoggedOut:', isLoggedOut);
+                logger.error({
+                    statusCode,
+                    isLoggedOut,
+                    message: error?.message,
+                    lastDisconnect
+                }, '🔌 Connection closed details');
+                if (!isLoggedOut) {
+                    // NON-LOGGED-OUT DISCONNECT (temporary network drop, 515 stream restart, 408 timeout, 503, VPS reboot)
+                    // DO NOT wipe credentials or set conn_state = 'disconnected' in DB! Keep session alive and auto-reconnect!
+                    logger.info({ statusCode }, '♻️ Temporary network/socket drop — auto-reconnecting in 2.5s (preserving session)...');
+                    console.log('♻️ Temporary WhatsApp network drop — auto-reconnecting with existing auth keys');
+                    if (reconnectTimer)
+                        clearTimeout(reconnectTimer);
+                    reconnectTimer = setTimeout(() => startBaileysSocket(false), 2500);
+                    return;
+                }
+                // ONLY reach here if explicitly LOGGED OUT (401 / phone unlinked)
+                logger.warn('🚪 WhatsApp session LOGGED OUT / unlinked from mobile phone. Clearing credentials...');
+                console.log('🚪 Session logged out — wiping credentials and setting DISCONNECTED');
+                await dbWriteCritical(supabase
+                    .from('baileys_sessions')
+                    .update({
+                    conn_state: 'disconnected',
+                    status: 'DISCONNECTED',
+                    qr_string: null,
+                    qr_expires_at: null,
+                    phone_number: null,
+                    creds_json: null,
+                    keys_json: null,
+                    error_info: 'Logged out from mobile device — QR re-scan required',
+                    last_status_change: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                    .eq('workspace_id', WORKSPACE_ID), 'update-logged-out');
                 await dbWrite(supabase.from('wa_instance_alerts').insert({
                     workspace_id: WORKSPACE_ID,
-                    alert_type: 'reconnected',
-                    message: `WhatsApp reconnected after ${curReconnects} reconnection(s).`,
-                    metadata: { phone_number: phoneNumber, reconnect_count: curReconnects },
-                }), 'insert-reconnect-alert');
-            }
-        }
-        if (connection === 'close') {
-            clearConnectingTimeout();
-            const error = lastDisconnect?.error;
-            const statusCode = error?.output?.statusCode;
-            const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
-            console.log('🔌 Connection CLOSED — statusCode:', statusCode, 'isLoggedOut:', isLoggedOut);
-            logger.error({
-                statusCode,
-                isLoggedOut,
-                message: error?.message,
-                lastDisconnect
-            }, '🔌 Connection closed details');
-            if (!isLoggedOut) {
-                // NON-LOGGED-OUT DISCONNECT (temporary network drop, 515 stream restart, 408 timeout, 503, VPS reboot)
-                // DO NOT wipe credentials or set conn_state = 'disconnected' in DB! Keep session alive and auto-reconnect!
-                logger.info({ statusCode }, '♻️ Temporary network/socket drop — auto-reconnecting in 2.5s (preserving session)...');
-                console.log('♻️ Temporary WhatsApp network drop — auto-reconnecting with existing auth keys');
+                    alert_type: 'disconnected',
+                    message: 'WhatsApp logged out from mobile device — QR re-scan required.',
+                    metadata: { status_code: statusCode, is_logged_out: true },
+                }), 'insert-disconnect-alert');
                 if (reconnectTimer)
                     clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(() => startBaileysSocket(false), 2500);
-                return;
+                reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
             }
-            // ONLY reach here if explicitly LOGGED OUT (401 / phone unlinked)
-            logger.warn('🚪 WhatsApp session LOGGED OUT / unlinked from mobile phone. Clearing credentials...');
-            console.log('🚪 Session logged out — wiping credentials and setting DISCONNECTED');
-            await dbWriteCritical(supabase
-                .from('baileys_sessions')
-                .update({
-                conn_state: 'disconnected',
-                status: 'DISCONNECTED',
-                qr_string: null,
-                qr_expires_at: null,
-                phone_number: null,
-                creds_json: null,
-                keys_json: null,
-                error_info: 'Logged out from mobile device — QR re-scan required',
-                last_status_change: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
-                .eq('workspace_id', WORKSPACE_ID), 'update-logged-out');
-            await dbWrite(supabase.from('wa_instance_alerts').insert({
-                workspace_id: WORKSPACE_ID,
-                alert_type: 'disconnected',
-                message: 'WhatsApp logged out from mobile device — QR re-scan required.',
-                metadata: { status_code: statusCode, is_logged_out: true },
-            }), 'insert-disconnect-alert');
-            if (reconnectTimer)
-                clearTimeout(reconnectTimer);
-            reconnectTimer = setTimeout(() => startBaileysSocket(true), 1000);
+        });
+    }
+}
+// ── Event: messages.upsert — save inbound messages ──
+sock?.ev?.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify')
+        return;
+    for (const msg of messages) {
+        // Sniff outgoing native flow button payloads (e.g. from WhatsBoost)
+        if (msg.key.fromMe) {
+            const msgStr = msg.message ? JSON.stringify(msg.message, null, 2) : null;
+            if (msgStr && (msgStr.includes('nativeFlowMessage') || msgStr.includes('interactiveMessage'))) {
+                logger.info({ rawPayload: msg.message }, '🔍 DETECTED OUTGOING NATIVE FLOW PAYLOAD');
+                console.log("================= DETECTED OUTGOING PAYLOAD =================");
+                console.log(msgStr);
+                console.log("=============================================================");
+            }
+            continue;
         }
-    });
-    // ── Event: messages.upsert — save inbound messages ──
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify')
-            return;
-        for (const msg of messages) {
-            // Sniff outgoing native flow button payloads (e.g. from WhatsBoost)
-            if (msg.key.fromMe) {
-                const msgStr = msg.message ? JSON.stringify(msg.message, null, 2) : null;
-                if (msgStr && (msgStr.includes('nativeFlowMessage') || msgStr.includes('interactiveMessage'))) {
-                    logger.info({ rawPayload: msg.message }, '🔍 DETECTED OUTGOING NATIVE FLOW PAYLOAD');
-                    console.log("================= DETECTED OUTGOING PAYLOAD =================");
-                    console.log(msgStr);
-                    console.log("=============================================================");
-                }
-                continue;
-            }
-            const chatJid = msg.key.remoteJid;
-            const text = msg.message?.conversation ??
-                msg.message?.extendedTextMessage?.text ??
-                msg.message?.imageMessage?.caption ??
-                '[media]';
-            logger.info({ chatJid, text }, '📩 Inbound message');
-            // Save to baileys_messages
-            await supabase.from('baileys_messages').insert({
-                workspace_id: WORKSPACE_ID,
-                wa_message_id: msg.key.id,
-                chat_jid: chatJid,
-                direction: 'inbound',
-                message_text: text,
-                status: 'read',
-                sent_at: new Date(msg.messageTimestamp * 1000).toISOString(),
-            });
-            // ─── Click-to-WhatsApp Ad Lead Parser Hook ───
-            const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
-            const isAdReferral = contextInfo?.sourceType === 'ad' ||
-                contextInfo?.referredImageUrl ||
-                text.toLowerCase().includes('saw this on facebook') ||
-                text.toLowerCase().includes('saw this on instagram') ||
-                text.toLowerCase().includes('click to whatsapp') ||
-                text.toLowerCase().includes('ad_id');
-            if (isAdReferral) {
-                logger.info({ chatJid }, '🎯 Click-to-WhatsApp Ad Referral Ingress detected!');
-                const phoneNumber = chatJid.split('@')[0];
-                // Check if lead already exists to avoid duplicate card ingestion
-                const { data: existingLead } = await supabase
-                    .from('leads')
-                    .select('id')
-                    .eq('workspace_id', WORKSPACE_ID)
-                    .eq('phone', phoneNumber)
-                    .maybeSingle();
-                if (!existingLead) {
-                    // Auto-create lead card
-                    const { data: newLead } = await supabase
-                        .from('leads')
-                        .insert({
-                        workspace_id: WORKSPACE_ID,
-                        name: msg.pushName || `WA Ad Lead (${phoneNumber.slice(-4)})`,
-                        phone: phoneNumber,
-                        source: 'whatsapp_ad',
-                        status: 'new',
-                        score: 'High-Value 🔥',
-                        score_reason: 'Automated Click-to-WhatsApp Ad Lead Ingest.',
-                        raw_payload: {
-                            message_text: text,
-                            ad_context: contextInfo ?? {}
-                        }
-                    })
-                        .select('id')
-                        .single();
-                    if (newLead) {
-                        // Write live activity log
-                        await supabase.from('live_logs').insert({
-                            workspace_id: WORKSPACE_ID,
-                            lead_id: newLead.id,
-                            event_type: 'webhook_ingested',
-                            message: `Lead auto-created from Click-to-WhatsApp Ad: "${msg.pushName || phoneNumber}". Score: High-Value 🔥.`,
-                            metadata: { source: 'whatsapp_ad' }
-                        });
-                        logger.info({ leadId: newLead.id }, '✅ Lead card successfully auto-created.');
-                    }
-                }
-            }
-            // Update chat last message
-            await supabase
-                .from('baileys_chats')
-                .upsert({
-                workspace_id: WORKSPACE_ID,
-                jid: chatJid,
-                last_message: text.slice(0, 100),
-                last_message_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id, jid' });
-        }
-    });
-    // ── Event: messages.update — Blue Tick / Delivery status ──
-    sock.ev.on('messages.update', async (updates) => {
-        for (const update of updates) {
-            if (!update.update.status)
-                continue;
-            const waStatus = update.update.status;
-            // WhatsApp status codes: 2 = sent, 3 = delivered, 4 = read
-            let dbStatus = null;
-            const extras = {};
-            if (waStatus === proto.WebMessageInfo.Status.DELIVERY_ACK) {
-                dbStatus = 'delivered';
-                extras.delivered_at = new Date().toISOString();
-            }
-            else if (waStatus === proto.WebMessageInfo.Status.READ) {
-                dbStatus = 'read';
-                extras.read_at = new Date().toISOString();
-            }
-            else if (waStatus === proto.WebMessageInfo.Status.SERVER_ACK) {
-                dbStatus = 'sent';
-            }
-            if (dbStatus && update.key.id) {
-                await supabase
-                    .from('baileys_messages')
-                    .update({ status: dbStatus, ...extras })
-                    .eq('wa_message_id', update.key.id);
-                logger.debug({ msgId: update.key.id, status: dbStatus }, '📊 Status updated');
-            }
-        }
-    });
-    // ── Event: chats.set — Bulk sync chat list on connect ──
-    sock.ev.on('chats.set', async ({ chats }) => {
-        if (!chats || !chats.length)
-            return;
-        logger.info({ count: chats.length }, '📂 Syncing chat list...');
-        const rows = chats.slice(0, 200).map((chat) => ({
+        const chatJid = msg.key.remoteJid;
+        const text = msg.message?.conversation ??
+            msg.message?.extendedTextMessage?.text ??
+            msg.message?.imageMessage?.caption ??
+            '[media]';
+        logger.info({ chatJid, text }, '📩 Inbound message');
+        // Save to baileys_messages
+        await supabase.from('baileys_messages').insert({
             workspace_id: WORKSPACE_ID,
-            jid: chat.id,
-            display_name: chat.name ?? chat.id.split('@')[0],
-            is_group: chat.id.endsWith('@g.us'),
-            unread_count: chat.unreadCount ?? 0,
-            last_message: chat.lastMessage ?? null,
-            updated_at: new Date().toISOString(),
-        }));
+            wa_message_id: msg.key.id,
+            chat_jid: chatJid,
+            direction: 'inbound',
+            message_text: text,
+            status: 'read',
+            sent_at: new Date(msg.messageTimestamp * 1000).toISOString(),
+        });
+        // ─── Click-to-WhatsApp Ad Lead Parser Hook ───
+        const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+        const isAdReferral = contextInfo?.sourceType === 'ad' ||
+            contextInfo?.referredImageUrl ||
+            text.toLowerCase().includes('saw this on facebook') ||
+            text.toLowerCase().includes('saw this on instagram') ||
+            text.toLowerCase().includes('click to whatsapp') ||
+            text.toLowerCase().includes('ad_id');
+        if (isAdReferral) {
+            logger.info({ chatJid }, '🎯 Click-to-WhatsApp Ad Referral Ingress detected!');
+            const phoneNumber = chatJid.split('@')[0];
+            // Check if lead already exists to avoid duplicate card ingestion
+            const { data: existingLead } = await supabase
+                .from('leads')
+                .select('id')
+                .eq('workspace_id', WORKSPACE_ID)
+                .eq('phone', phoneNumber)
+                .maybeSingle();
+            if (!existingLead) {
+                // Auto-create lead card
+                const { data: newLead } = await supabase
+                    .from('leads')
+                    .insert({
+                    workspace_id: WORKSPACE_ID,
+                    name: msg.pushName || `WA Ad Lead (${phoneNumber.slice(-4)})`,
+                    phone: phoneNumber,
+                    source: 'whatsapp_ad',
+                    status: 'new',
+                    score: 'High-Value 🔥',
+                    score_reason: 'Automated Click-to-WhatsApp Ad Lead Ingest.',
+                    raw_payload: {
+                        message_text: text,
+                        ad_context: contextInfo ?? {}
+                    }
+                })
+                    .select('id')
+                    .single();
+                if (newLead) {
+                    // Write live activity log
+                    await supabase.from('live_logs').insert({
+                        workspace_id: WORKSPACE_ID,
+                        lead_id: newLead.id,
+                        event_type: 'webhook_ingested',
+                        message: `Lead auto-created from Click-to-WhatsApp Ad: "${msg.pushName || phoneNumber}". Score: High-Value 🔥.`,
+                        metadata: { source: 'whatsapp_ad' }
+                    });
+                    logger.info({ leadId: newLead.id }, '✅ Lead card successfully auto-created.');
+                }
+            }
+        }
+        // Update chat last message
         await supabase
             .from('baileys_chats')
-            .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
-    });
-}
+            .upsert({
+            workspace_id: WORKSPACE_ID,
+            jid: chatJid,
+            last_message: text.slice(0, 100),
+            last_message_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id, jid' });
+    }
+});
+// ── Event: messages.update — Blue Tick / Delivery status ──
+sock?.ev?.on('messages.update', async (updates) => {
+    for (const update of updates) {
+        if (!update.update.status)
+            continue;
+        const waStatus = update.update.status;
+        // WhatsApp status codes: 2 = sent, 3 = delivered, 4 = read
+        let dbStatus = null;
+        const extras = {};
+        if (waStatus === proto.WebMessageInfo.Status.DELIVERY_ACK) {
+            dbStatus = 'delivered';
+            extras.delivered_at = new Date().toISOString();
+        }
+        else if (waStatus === proto.WebMessageInfo.Status.READ) {
+            dbStatus = 'read';
+            extras.read_at = new Date().toISOString();
+        }
+        else if (waStatus === proto.WebMessageInfo.Status.SERVER_ACK) {
+            dbStatus = 'sent';
+        }
+        if (dbStatus && update.key.id) {
+            await supabase
+                .from('baileys_messages')
+                .update({ status: dbStatus, ...extras })
+                .eq('wa_message_id', update.key.id);
+            logger.debug({ msgId: update.key.id, status: dbStatus }, '📊 Status updated');
+        }
+    }
+});
+// ── Event: chats.set — Bulk sync chat list on connect ──
+sock?.ev?.on('chats.set', async ({ chats }) => {
+    if (!chats || !chats.length)
+        return;
+    logger.info({ count: chats.length }, '📂 Syncing chat list...');
+    const rows = chats.slice(0, 200).map((chat) => ({
+        workspace_id: WORKSPACE_ID,
+        jid: chat.id,
+        display_name: chat.name ?? chat.id.split('@')[0],
+        is_group: chat.id.endsWith('@g.us'),
+        unread_count: chat.unreadCount ?? 0,
+        last_message: chat.lastMessage ?? null,
+        updated_at: new Date().toISOString(),
+    }));
+    await supabase
+        .from('baileys_chats')
+        .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+});
 function getRequestBody(req) {
     return new Promise((resolve, reject) => {
         let body = '';
@@ -1251,21 +1293,19 @@ function startHealthServer() {
                 return;
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
-                const qsWorkspace = parsedUrl.searchParams.get('workspace_id');
-                if (qsWorkspace && qsWorkspace !== WORKSPACE_ID) {
-                    logger.warn({ configured: WORKSPACE_ID, requested: qsWorkspace }, '⚠️ Workspace ID mismatch in /init-qr — using configured WORKER_WORKSPACE_ID');
-                }
-                logger.info('🔁 Wiping session and initiating fresh QR pairing flow...');
-                await initiateForceReset();
+                const qsWorkspace = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+                logger.info({ workspace_id: qsWorkspace }, '🔁 Wiping session and initiating fresh QR pairing flow for workspace...');
+                await initiateForceReset(qsWorkspace);
                 res.writeHead(200);
-                res.end(JSON.stringify({ success: true, message: 'Pairing flow initialized. QR code is being generated.' }));
+                res.end(JSON.stringify({ success: true, message: `Pairing flow initialized for ${qsWorkspace}. QR code is being generated.` }));
                 return;
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/force-reset') {
-                logger.info('🔴 Hard force-reset requested — fully wiping session for clean QR...');
-                await initiateForceReset();
+                const qsWorkspace = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+                logger.info({ workspace_id: qsWorkspace }, '🔴 Hard force-reset requested for workspace...');
+                await initiateForceReset(qsWorkspace);
                 res.writeHead(200);
-                res.end(JSON.stringify({ success: true, message: 'Hard reset complete. Fresh QR will be generated in 1s.' }));
+                res.end(JSON.stringify({ success: true, message: `Hard reset complete for ${qsWorkspace}. Fresh QR will be generated in 1s.` }));
                 return;
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/send') {
