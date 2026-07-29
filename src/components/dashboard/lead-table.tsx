@@ -431,6 +431,17 @@ export function LeadTable({
             const payloads = [l.raw_payload, (l as any).raw_meta_payload];
             payloads.forEach(payload => {
               if (payload) {
+                // 1. Unpack field_data array if present from Meta Graph API
+                if (Array.isArray(payload.field_data)) {
+                  payload.field_data.forEach((fd: any) => {
+                    const fieldName = fd.name || fd.key || '';
+                    if (fieldName && !SYSTEM_AND_METADATA_KEYS.has(fieldName.toLowerCase())) {
+                      discoveredKeys.add(fieldName);
+                    }
+                  });
+                }
+
+                // 2. Scan top-level keys
                 Object.keys(payload).forEach(k => {
                   if (!SYSTEM_AND_METADATA_KEYS.has(k.toLowerCase()) && !k.startsWith('mock_')) {
                     discoveredKeys.add(k);
@@ -2601,6 +2612,27 @@ export function LeadTable({
                             const getMetaVal = () => {
                               const payload = lead.raw_payload || {};
                               const metaPayload = (lead as any).raw_meta_payload || {};
+                              const smart = getSmartQuestionHeader(col.id);
+
+                              // Extract value from field_data array if present
+                              const extractFromFieldData = (fdArray: any[]) => {
+                                if (!Array.isArray(fdArray)) return null;
+                                const colLower = col.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                for (const item of fdArray) {
+                                  const fieldName = item?.name || item?.key || '';
+                                  const fLower = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                  const val = Array.isArray(item?.values) ? item.values[0] : item?.value ?? item?.val;
+                                  if (val !== undefined && val !== null && val !== '') {
+                                    if (fLower === colLower || (smart.key && fLower.includes(smart.key))) {
+                                      return String(val);
+                                    }
+                                  }
+                                }
+                                return null;
+                              };
+
+                              const fromFd = extractFromFieldData(payload.field_data) || extractFromFieldData(metaPayload.field_data);
+                              if (fromFd) return fromFd;
 
                               if (payload[col.id] !== undefined && payload[col.id] !== null) return payload[col.id];
                               if (metaPayload[col.id] !== undefined && metaPayload[col.id] !== null) return metaPayload[col.id];
@@ -2608,13 +2640,13 @@ export function LeadTable({
                               if (payload[metaKey] !== undefined && payload[metaKey] !== null) return payload[metaKey];
                               if (metaPayload[metaKey] !== undefined && metaPayload[metaKey] !== null) return metaPayload[metaKey];
 
-                              const smart = getSmartQuestionHeader(col.id);
                               if (payload[smart.key] !== undefined && payload[smart.key] !== null) return payload[smart.key];
                               if (metaPayload[smart.key] !== undefined && metaPayload[smart.key] !== null) return metaPayload[smart.key];
 
                               // Fuzzy match key in raw_payload
                               const colLower = col.id.toLowerCase().replace(/[^a-z0-9]/g, '');
                               for (const k of Object.keys(payload)) {
+                                if (k === 'field_data') continue;
                                 const kLower = k.toLowerCase().replace(/[^a-z0-9]/g, '');
                                 if (kLower === colLower || (smart.key && kLower.includes(smart.key))) {
                                   return payload[k];
