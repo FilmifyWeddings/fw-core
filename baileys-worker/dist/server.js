@@ -798,16 +798,11 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
             delete authState.state.creds[k];
         }
         Object.assign(authState.state.creds, freshCreds);
-        // Clear the in-memory signal key cache by resetting keys store internals
-        const blankKeys = {
-            get: async () => ({}),
-            set: async () => { },
-        };
         if (wsId === WORKSPACE_ID) {
             saveCreds = saveCredsLocal;
             currentAuthState = {
                 creds: authState.state.creds,
-                keys: blankKeys,
+                keys: authState.state.keys,
             };
         }
         let { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({
@@ -841,6 +836,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
             sock = localSock;
         }
         localSock.ev.on('creds.update', (update) => {
+            Object.assign(authState.state.creds, update);
             const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
             if (needsForceFlush) {
                 logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
