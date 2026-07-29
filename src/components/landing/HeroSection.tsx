@@ -18,45 +18,37 @@ interface HeroSectionProps {
 }
 
 export function HeroSection({ onNavigate }: HeroSectionProps) {
-  // State toggles for 7 floating notifications
+  // 5 Super clean popup alerts (reduced by 2 to prevent clutter)
   const [wa1Visible, setWa1Visible] = useState(true);
   const [wa2Visible, setWa2Visible] = useState(true);
-  const [wa3Visible, setWa3Visible] = useState(true);
-  
-  const [mail1Visible, setMail1Visible] = useState(true);
-  const [mail2Visible, setMail2Visible] = useState(true);
-
-  const [rem1Visible, setRem1Visible] = useState(true);
-  const [rem2Visible, setRem2Visible] = useState(true);
+  const [mailVisible, setMailVisible] = useState(true);
+  const [remVisible, setRemVisible] = useState(true);
+  const [payVisible, setPayVisible] = useState(true);
 
   // Staggered interval loops for floating cards
   useEffect(() => {
-    const t1 = setInterval(() => setWa1Visible(prev => !prev), 4000);
-    const t2 = setInterval(() => setWa2Visible(prev => !prev), 5000);
-    const t3 = setInterval(() => setWa3Visible(prev => !prev), 6000);
-    
-    const t4 = setInterval(() => setMail1Visible(prev => !prev), 4500);
-    const t5 = setInterval(() => setMail2Visible(prev => !prev), 5500);
-
-    const t6 = setInterval(() => setRem1Visible(prev => !prev), 4800);
-    const t7 = setInterval(() => setRem2Visible(prev => !prev), 5800);
+    const t1 = setInterval(() => setWa1Visible(prev => !prev), 4200);
+    const t2 = setInterval(() => setWa2Visible(prev => !prev), 5200);
+    const t3 = setInterval(() => setMailVisible(prev => !prev), 4600);
+    const t4 = setInterval(() => setRemVisible(prev => !prev), 5000);
+    const t5 = setInterval(() => setPayVisible(prev => !prev), 6000);
 
     return () => {
-      clearInterval(t1); clearInterval(t2); clearInterval(t3);
-      clearInterval(t4); clearInterval(t5);
-      clearInterval(t6); clearInterval(t7);
+      clearInterval(t1); clearInterval(t2);
+      clearInterval(t3); clearInterval(t4); clearInterval(t5);
     };
   }, []);
 
+  // 8 Social & Productivity Integration Icons with exact Y coordinates
   const floatingIcons = [
-    { component: InstagramLogo, yOffset: -12, delay: 0 },
-    { component: FacebookLogo, yOffset: 8, delay: 0.2 },
-    { component: MetaLogo, yOffset: -15, delay: 0.4 },
-    { component: WhatsAppLogo, yOffset: 10, delay: 0.1 },
-    { component: GoogleDriveLogo, yOffset: -8, delay: 0.3 },
-    { component: GoogleSheetsLogo, yOffset: 12, delay: 0.5 },
-    { component: GoogleCalendarLogo, yOffset: -10, delay: 0.2 },
-    { component: GmailLogo, yOffset: 6, delay: 0.4 },
+    { name: 'Instagram', component: InstagramLogo, y: 30, yOffset: -8, delay: 0 },
+    { name: 'Facebook', component: FacebookLogo, y: 90, yOffset: 8, delay: 0.15 },
+    { name: 'Meta', component: MetaLogo, y: 150, yOffset: -10, delay: 0.3 },
+    { name: 'WhatsApp', component: WhatsAppLogo, y: 210, yOffset: 6, delay: 0.1 },
+    { name: 'Drive', component: GoogleDriveLogo, y: 270, yOffset: -8, delay: 0.25 },
+    { name: 'Sheets', component: GoogleSheetsLogo, y: 330, yOffset: 10, delay: 0.4 },
+    { name: 'Calendar', component: GoogleCalendarLogo, y: 390, yOffset: -6, delay: 0.2 },
+    { name: 'Gmail', component: GmailLogo, y: 450, yOffset: 8, delay: 0.35 },
   ];
 
   return (
@@ -66,7 +58,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
       <div className="absolute top-1/3 right-1/4 w-[750px] h-[550px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#D4AF37]/20 via-[#F4EFE6]/30 to-transparent blur-[140px] pointer-events-none rounded-full" />
       <div className="absolute top-0 left-1/4 w-[500px] h-[300px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#FAF8F5] via-[#EAE3D2]/20 to-transparent blur-[100px] pointer-events-none rounded-full" />
 
-      {/* MAIN CONTAINER (LEFT CONTENT + FLOATING ICONS + RIGHT DASHBOARD) */}
+      {/* MAIN CONTAINER (LEFT CONTENT + CONNECTED FLOATING ICONS + RIGHT DASHBOARD) */}
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 relative">
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -87,12 +79,12 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               <span>Built for Modern Wedding Studios</span>
             </motion.div>
 
-            {/* HEADLINE (MATCHING REFERENCE IMAGE EXACTLY) */}
+            {/* HEADLINE (CLEAN 4-LINE LAYOUT MATCHING REFERENCE IMAGE) */}
             <motion.h1 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-4xl sm:text-5xl lg:text-[56px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.08]"
+              className="text-4xl sm:text-5xl lg:text-[56px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.1] max-w-xl"
             >
               Run Your Entire <br />
               Photography Business <br />
@@ -172,34 +164,37 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
           </div>
 
           {/* ========================================================= */}
-          {/* CENTER ARCH OF FLOATING INTEGRATION ICONS & SVG LINES */}
+          {/* CENTER ARCH OF FLOATING INTEGRATION ICONS & CONNECTING LINES */}
           {/* ========================================================= */}
           <div className="hidden lg:block lg:col-span-1 relative h-full min-h-[500px]">
             
-            {/* GOLDEN SVG CONNECTING LINES ARC */}
+            {/* ANIMATED GOLDEN SVG LINES DIRECTLY CONNECTING EACH ICON TO DASHBOARD */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible" viewBox="0 0 100 500">
               <defs>
                 <linearGradient id="goldStrokeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#C5A059" stopOpacity="0.2" />
+                  <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
+                  <stop offset="100%" stopColor="#C5A059" stopOpacity="0.3" />
                 </linearGradient>
               </defs>
               
-              {/* Curved bezier lines connecting from left icons column to central convergence point on right */}
-              {[40, 95, 150, 205, 260, 315, 370, 425].map((y, i) => (
-                <path
-                  key={i}
-                  d={`M 10 ${y} C 50 ${y}, 70 250, 95 250`}
-                  fill="none"
-                  stroke="url(#goldStrokeGrad)"
-                  strokeWidth="1.5"
-                  strokeDasharray="4 2"
-                  className="animate-pulse"
-                />
+              {/* 8 Bezier curves directly touching each icon center (x=20) and converging right at (x=95, y=250) */}
+              {floatingIcons.map((item, i) => (
+                <g key={i}>
+                  <path
+                    d={`M 20 ${item.y + 20} C 55 ${item.y + 20}, 75 250, 98 250`}
+                    fill="none"
+                    stroke="url(#goldStrokeGrad)"
+                    strokeWidth="1.5"
+                    strokeDasharray="4 2"
+                    className="animate-pulse"
+                  />
+                  {/* Flowing golden pulse dot on each line */}
+                  <circle cx="20" cy={item.y + 20} r="2" fill="#D4AF37" />
+                </g>
               ))}
             </svg>
 
-            {/* FLOATING ICON CARDS */}
+            {/* 8 FLOATING INTEGRATION BRAND ICON TILES */}
             <div className="absolute inset-y-0 left-0 flex flex-col justify-between py-2 z-20">
               {floatingIcons.map((item, idx) => {
                 const IconComponent = item.component;
@@ -208,7 +203,8 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                     key={idx}
                     animate={{ y: [0, item.yOffset, 0] }}
                     transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                    className="w-10 h-10 rounded-xl bg-white dark:bg-[#181614] border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_4px_12px_rgba(0,0,0,0.06)] flex items-center justify-center hover:scale-110 transition-transform cursor-pointer"
+                    className="w-10 h-10 rounded-xl bg-white dark:bg-[#181614] border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_4px_14px_rgba(212,175,55,0.15)] flex items-center justify-center hover:scale-110 transition-transform cursor-pointer relative group"
+                    title={item.name}
                   >
                     <IconComponent className="w-5 h-5" />
                   </motion.div>
@@ -224,7 +220,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
           <div className="lg:col-span-7 relative z-10">
             
             {/* MAIN BACKDROP APP DASHBOARD WINDOW */}
-            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.12)] p-4 sm:p-5 text-left relative overflow-hidden">
+            <div className="bg-white dark:bg-[#141210] rounded-3xl border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_25px_70px_rgba(212,175,55,0.14)] p-4 sm:p-5 text-left relative overflow-hidden">
               
               <div className="flex gap-4">
                 
@@ -466,7 +462,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
             </motion.div>
 
             {/* ========================================================= */}
-            {/* 7 FLOATING CARDS & ALERTS AROUND DASHBOARD */}
+            {/* 5 FLOATING CARDS & ALERTS AROUND DASHBOARD (REDUCED BY 2) */}
             {/* ========================================================= */}
 
             {/* 1. WHATSAPP FLOATING CARD #1 (TOP RIGHT) */}
@@ -506,38 +502,17 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                     <WhatsAppLogo className="w-4 h-4 fill-current" />
                   </div>
                   <div className="flex-1 text-left min-w-0">
-                    <div className="text-[11px] font-black text-emerald-700">Brochure PDF Sent</div>
-                    <div className="text-[10px] text-[#5A554E] truncate">Rate card delivered to Ananya & Vikram</div>
+                    <div className="text-[11px] font-black text-emerald-700">Message Sent Successfully</div>
+                    <div className="text-[10px] text-[#5A554E] truncate">Brochure & Rate Card Delivered</div>
                     <div className="text-[8px] text-emerald-600 font-bold">Just now</div>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* 3. WHATSAPP FLOATING CARD #3 (BOTTOM MID) */}
+            {/* 3. EMAIL FLOATING CARD (TOP LEFT OVERLAY) */}
             <AnimatePresence>
-              {wa3Visible && (
-                <motion.div
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 30 }}
-                  transition={{ duration: 0.4, delay: 0.3 }}
-                  className="absolute bottom-12 left-1/3 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] shadow-2xl rounded-2xl p-2.5 flex items-center gap-2.5 backdrop-blur-xl"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                    <WhatsAppLogo className="w-4 h-4 fill-current" />
-                  </div>
-                  <div className="text-left text-[10px]">
-                    <span className="font-bold text-[#1A1917] block">Client Confirmed Retainer</span>
-                    <span className="text-[#7A756E]">Sneha & Rohan — Udaipur Wedding</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* 4. EMAIL FLOATING CARD #1 (TOP LEFT OVERLAY) */}
-            <AnimatePresence>
-              {mail1Visible && (
+              {mailVisible && (
                 <motion.div
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -556,30 +531,9 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               )}
             </AnimatePresence>
 
-            {/* 5. EMAIL FLOATING CARD #2 (MID LEFT OVERLAY) */}
+            {/* 4. REMINDER ALERT FLOATING CARD (TOP MID OVERLAY) */}
             <AnimatePresence>
-              {mail2Visible && (
-                <motion.div
-                  initial={{ opacity: 0, x: -30 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -30 }}
-                  transition={{ duration: 0.4, delay: 0.15 }}
-                  className="absolute top-2/3 -left-4 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] shadow-xl rounded-2xl p-2.5 flex items-center gap-2.5 backdrop-blur-xl"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-blue-500 text-white flex items-center justify-center shrink-0">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <div className="text-left text-[10px]">
-                    <span className="font-bold text-[#1A1917] block">Quotation Approved PDF</span>
-                    <span className="text-emerald-600 font-bold">3-Day Proposal Accepted ✓</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* 6. REMINDER ALERT FLOATING CARD #1 (TOP MID) */}
-            <AnimatePresence>
-              {rem1Visible && (
+              {remVisible && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -588,14 +542,14 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-lg rounded-2xl p-2.5 flex items-center gap-2 backdrop-blur-xl text-[10px] font-bold"
                 >
                   <Clock className="w-4 h-4 text-[#B89047]" />
-                  <span>Reminder: 7:00 AM Pre-Wedding Shoot (Rohit & Priya)</span>
+                  <span>7:00 AM Pre-Wedding Shoot (Rohit & Priya)</span>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* 7. REMINDER / PAYMENT ALERT FLOATING CARD #2 (BOTTOM RIGHT) */}
+            {/* 5. PAYMENT ALERT FLOATING CARD (BOTTOM RIGHT OVERLAY) */}
             <AnimatePresence>
-              {rem2Visible && (
+              {payVisible && (
                 <motion.div
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -607,7 +561,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                     ₹
                   </div>
                   <div className="flex-1 text-left min-w-0">
-                    <div className="text-[11px] font-black text-[#1A1917] dark:text-white">Payment Alert Received</div>
+                    <div className="text-[11px] font-black text-[#1A1917] dark:text-white">Payment Received</div>
                     <div className="text-[11px] font-black text-[#B89047]">₹1,25,000 <span className="text-[9px] font-normal text-[#7A756E]">from Rohit & Priya</span></div>
                     <div className="text-[8px] text-[#7A756E] font-bold">5 min ago</div>
                   </div>
