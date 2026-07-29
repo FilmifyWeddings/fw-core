@@ -189,10 +189,32 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   ];
 
   // Routes that bypass the global sidebar entirely
-  const bypassRoutes = ['/', '/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager', '/leads'];
+  const bypassRoutes = [
+    '/', '/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager', '/leads',
+    '/features', '/integrations', '/pricing', '/about', '/contact', '/blog', '/book-demo',
+    '/free-trial', '/documentation', '/changelog', '/careers', '/customers', '/terms', '/privacy-policy'
+  ];
 
-  // Bypass sidebar for launchpad, team-manager, and special routes
-  if (bypassRoutes.includes(pathname) || pathname.startsWith('/team-manager') || pathname.startsWith('/leads')) {
+  // Bypass sidebar for launchpad, team-manager, landing pages, and special routes
+  if (
+    bypassRoutes.includes(pathname) || 
+    pathname.startsWith('/team-manager') || 
+    pathname.startsWith('/leads') ||
+    pathname.startsWith('/features') ||
+    pathname.startsWith('/integrations') ||
+    pathname.startsWith('/pricing') ||
+    pathname.startsWith('/about') ||
+    pathname.startsWith('/contact') ||
+    pathname.startsWith('/blog') ||
+    pathname.startsWith('/book-demo') ||
+    pathname.startsWith('/free-trial') ||
+    pathname.startsWith('/documentation') ||
+    pathname.startsWith('/changelog') ||
+    pathname.startsWith('/careers') ||
+    pathname.startsWith('/customers') ||
+    pathname.startsWith('/terms') ||
+    pathname.startsWith('/privacy-policy')
+  ) {
     return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
   }
   

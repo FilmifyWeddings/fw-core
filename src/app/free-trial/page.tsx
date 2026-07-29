@@ -6,7 +6,7 @@ import { SubPageViewer } from '@/components/landing/SubPages';
 import { Footer } from '@/components/landing/Footer';
 import { useRouter } from 'next/navigation';
 
-export default function IntegrationsPage() {
+export default function FreeTrialPage() {
   const router = useRouter();
   const handleNav = (slug: string) => {
     if (slug === 'home') router.push('/');
@@ -15,8 +15,8 @@ export default function IntegrationsPage() {
 
   return (
     <div className="min-h-screen bg-[#FFFDF9] text-[#1A1917]">
-      <Navbar activePage="integrations" onNavigate={handleNav} />
-      <SubPageViewer pageSlug="integrations" onNavigate={handleNav} />
+      <Navbar activePage="free-trial" onNavigate={handleNav} />
+      <SubPageViewer pageSlug="free-trial" onNavigate={handleNav} />
       <Footer onNavigate={handleNav} />
     </div>
   );
