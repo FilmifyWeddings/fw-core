@@ -2009,44 +2009,64 @@ export function LeadTable({
                 {/* Status Dropdown */}
                 <div className="space-y-1">
                   <span className="text-[9px] uppercase font-black text-slate-400 block">Status</span>
-                  <div className="relative flex items-center">
-                    <select
-                      value={lead.stage_id || lead.status}
-                      onChange={(e) => {
-                        if (e.target.value === '__add_custom_status__') {
-                          setShowAddStatusModal(true);
-                        } else {
-                          const nextStageId = e.target.value;
-                          const foundStage = stages.find(s => s.id === nextStageId);
-                          if (onLeadUpdate) {
-                            onLeadUpdate(lead.id, { stage_id: nextStageId, status: (foundStage?.name || nextStageId) as any });
-                          }
-                        }
-                      }}
-                      className={`w-full appearance-none text-xs font-black rounded-xl pl-3 pr-6 py-1.5 border shadow-sm ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}
-                    >
-                      {stages.map(s => <option key={s.id} value={s.id} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">{s.name}</option>)}
-                      <option value="__add_custom_status__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-black">+ Add Custom Status</option>
-                    </select>
-                    <ChevronDown className={`w-3 h-3 absolute right-2 pointer-events-none opacity-70 ${stBadgeStyle.text}`} />
-                  </div>
+                  <CRMDropdown
+                    value={lead.stage_id || lead.status}
+                    placeholder="Select status"
+                    customAddTitle="Add Custom Status"
+                    options={stagesState.map(s => ({
+                      value: s.id,
+                      label: s.name,
+                      color: s.color,
+                      isCustom: s.is_custom,
+                      created_at: s.created_at
+                    }))}
+                    onAddCustomOption={async (name, color) => {
+                      const newStageObj = {
+                        id: name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                        name: name,
+                        color: color || '#0866FF',
+                        is_custom: true,
+                        created_at: new Date().toISOString(),
+                        position: stagesState.length
+                      };
+                      const updated = [newStageObj, ...stagesState];
+                      setStagesState(updated);
+                      if (onPreferencesChange) {
+                        onPreferencesChange({ stages: updated });
+                      }
+                      if (onLeadUpdate) {
+                        onLeadUpdate(lead.id, {
+                          stage_id: newStageObj.id,
+                          status: newStageObj.name as any
+                        });
+                      }
+                    }}
+                    onChange={(val) => {
+                      const foundStage = stagesState.find(s => s.id === val || s.name === val);
+                      if (onLeadUpdate) {
+                        onLeadUpdate(lead.id, {
+                          stage_id: val,
+                          status: (foundStage?.name || val) as any
+                        });
+                      }
+                    }}
+                  />
                 </div>
 
                 {/* Lead Owner Dropdown */}
                 <div className="space-y-1">
                   <span className="text-[9px] uppercase font-black text-slate-400 block">Lead Owner</span>
-                  <div className="relative flex items-center">
-                    <select
-                      value={currentAssignedOwner}
-                      onChange={(e) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: e.target.value } }, lead.id)}
-                      className="w-full appearance-none bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs font-black rounded-xl pl-3 pr-6 py-1.5 shadow-sm"
-                    >
-                      {teamMembers.map(m => (
-                        <option key={m.id || m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">👤 {m.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-3 h-3 text-amber-600 dark:text-amber-400 absolute right-2 pointer-events-none" />
-                  </div>
+                  <CRMDropdown
+                    value={currentAssignedOwner}
+                    placeholder="Select owner"
+                    allowCustomAdd={false}
+                    options={teamMembers.map(m => ({
+                      value: m.name,
+                      label: `👤 ${m.name}`,
+                      color: '#d97706'
+                    }))}
+                    onChange={(val) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: val } }, lead.id)}
+                  />
                 </div>
               </div>
 
