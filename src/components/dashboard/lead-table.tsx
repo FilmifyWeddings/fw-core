@@ -76,7 +76,10 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'followup_sched', label: 'Followups', visible: false, type: 'system' },
 ];
 
-const BLACKLIST = ['field_data', 'synced_manually', 'assigned_team_ids', 'leadgen_id', 'attachments', 'owner', 'lead_owner', 'campaign_name'];
+const BLACKLIST = [
+  'field_data', 'synced_manually', 'assigned_team_ids', 'leadgen_id', 'attachments', 'owner', 'lead_owner', 'campaign_name',
+  'field data', 'synced manually', 'assigned team ids', 'leadgen id', 'campaign name', 'lead owner', 'assigned_team_id', 'assigned team id'
+];
 
 const PERMANENTLY_BLOCKED_KEYS = new Set(BLACKLIST);
 
@@ -370,15 +373,30 @@ export function LeadTable({
                 if (Array.isArray(payload.field_data)) {
                   payload.field_data.forEach((fd: any) => {
                     const fieldName = fd.name || fd.key || '';
-                    if (fieldName && !SYSTEM_AND_METADATA_KEYS.has(fieldName.toLowerCase())) {
-                      discoveredKeys.add(fieldName);
+                    if (fieldName) {
+                      const normKey = fieldName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                      if (
+                        !SYSTEM_AND_METADATA_KEYS.has(fieldName.toLowerCase()) && 
+                        !SYSTEM_AND_METADATA_KEYS.has(normKey) &&
+                        !PERMANENTLY_BLOCKED_KEYS.has(fieldName.toLowerCase()) &&
+                        !PERMANENTLY_BLOCKED_KEYS.has(normKey)
+                      ) {
+                        discoveredKeys.add(fieldName);
+                      }
                     }
                   });
                 }
 
                 // 2. Scan top-level keys
                 Object.keys(payload).forEach(k => {
-                  if (!SYSTEM_AND_METADATA_KEYS.has(k.toLowerCase()) && !k.startsWith('mock_')) {
+                  const normKey = k.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                  if (
+                    !SYSTEM_AND_METADATA_KEYS.has(k.toLowerCase()) && 
+                    !SYSTEM_AND_METADATA_KEYS.has(normKey) &&
+                    !PERMANENTLY_BLOCKED_KEYS.has(k.toLowerCase()) &&
+                    !PERMANENTLY_BLOCKED_KEYS.has(normKey) &&
+                    !k.startsWith('mock_')
+                  ) {
                     discoveredKeys.add(k);
                   }
                 });
@@ -389,7 +407,13 @@ export function LeadTable({
 
         discoveredKeys.forEach(k => {
           const smart = getSmartQuestionHeader(k);
-          if (!addedKeys.has(k) && !addedKeys.has(smart.key)) {
+          const normKey = k.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+          if (
+            !addedKeys.has(k) && 
+            !addedKeys.has(smart.key) &&
+            !PERMANENTLY_BLOCKED_KEYS.has(k.toLowerCase()) &&
+            !PERMANENTLY_BLOCKED_KEYS.has(normKey)
+          ) {
             addedKeys.add(k);
             addedKeys.add(smart.key);
             formQuestionCols.push({
@@ -845,7 +869,10 @@ export function LeadTable({
   const applySavedPreferences = (parsedPrefs: any) => {
     setColumns(prev => {
       const updated = prev
-        .filter(col => !PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase()))
+        .filter(col => {
+          const norm = col.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+          return !PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
+        })
         .map(col => {
           if (typeof parsedPrefs[col.id] === 'boolean') {
             return { ...col, visible: parsedPrefs[col.id] };
@@ -1839,7 +1866,10 @@ export function LeadTable({
                     {/* 1. Standard Fields */}
                     <div>
                       <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block mb-1">Standard Table Columns</span>
-                      {columns.filter(c => (!c.type || c.type === 'system') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).map(col => (
+                      {columns.filter(c => {
+                        const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                        return (!c.type || c.type === 'system') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
+                      }).map(col => (
                         <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
                           <button
                             onClick={() => toggleColumn(col.id)}
@@ -1859,7 +1889,10 @@ export function LeadTable({
                     </div>
 
                     {/* 2. Meta Form Custom Questions Sync */}
-                    {columns.some(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())) && (
+                    {columns.some(c => {
+                      const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                      return c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !SYSTEM_AND_METADATA_KEYS.has(norm) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
+                    }) && (
                       <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider flex items-center gap-1">
@@ -1870,7 +1903,10 @@ export function LeadTable({
                             Auto Synced
                           </span>
                         </div>
-                        {columns.filter(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).map(col => (
+                        {columns.filter(c => {
+                          const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                          return c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !SYSTEM_AND_METADATA_KEYS.has(norm) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
+                        }).map(col => (
                           <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
                             <button
                               onClick={() => toggleColumn(col.id)}

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Check, User, DollarSign, FileText, Lock, Users, Briefcase, Plus, Calendar, Tag, Mail, Phone,
   FileIcon, ChevronRight, CheckSquare, AlarmClock, Trash2, Edit2, Clock, Shield,
-  CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle, ArrowLeft, ArrowRight
+  CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle, ArrowLeft, ArrowRight, Gift
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -1093,6 +1093,105 @@ export function LeadInsiderDrawer({
                           onChange={(e) => handleFieldChange({ email: e.target.value })}
                           className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-mono focus:outline-none"
                         />
+                      </div>
+                    </div>
+
+                    {/* Wedding & Event Specifications */}
+                    <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-zinc-900">
+                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-555 tracking-wider flex items-center gap-1.5">
+                        <Gift className="w-3.5 h-3.5 text-orange-500" />
+                        Wedding & Event Details
+                      </h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Groom Name */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Groom Name</label>
+                          <input 
+                            type="text" 
+                            value={lead.raw_payload?.groom_name || ''} 
+                            onChange={(e) => handleRawPayloadChange('groom_name', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
+                            placeholder="Groom Name"
+                          />
+                        </div>
+
+                        {/* Bride Name */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Bride Name</label>
+                          <input 
+                            type="text" 
+                            value={lead.raw_payload?.bride_name || ''} 
+                            onChange={(e) => handleRawPayloadChange('bride_name', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
+                            placeholder="Bride Name"
+                          />
+                        </div>
+
+                        {/* Event Type */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Event Type</label>
+                          <select 
+                            value={lead.raw_payload?.event_type || 'Wedding Photography'} 
+                            onChange={(e) => handleRawPayloadChange('event_type', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
+                          >
+                            <option value="Wedding Photography">Wedding Photography</option>
+                            <option value="Pre-Wedding Shoot">Pre-Wedding Shoot</option>
+                            <option value="Maternity Shoot">Maternity Shoot</option>
+                            <option value="Corporate Event">Corporate Event</option>
+                            <option value="Other / Custom Event">Other / Custom Event</option>
+                          </select>
+                        </div>
+
+                        {/* Event Date */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Event Date</label>
+                          <input 
+                            type="date" 
+                            value={lead.raw_payload?.event_date || ''} 
+                            onChange={(e) => handleRawPayloadChange('event_date', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
+                          />
+                        </div>
+
+                        {/* Budget Range */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Budget Range</label>
+                          <input 
+                            type="text" 
+                            value={lead.raw_payload?.budget || ''} 
+                            onChange={(e) => handleRawPayloadChange('budget', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
+                            placeholder="e.g. ₹1.5 Lakh - ₹2.5 Lakh"
+                          />
+                        </div>
+
+                        {/* Location / City */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Location / City</label>
+                          <input 
+                            type="text" 
+                            value={lead.raw_payload?.location || lead.raw_payload?.city || ''} 
+                            onChange={(e) => {
+                              handleRawPayloadChange('location', e.target.value);
+                              handleRawPayloadChange('city', e.target.value);
+                            }}
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
+                            placeholder="e.g. Pune, Goa"
+                          />
+                        </div>
+
+                        {/* Venue Details */}
+                        <div className="space-y-1.5 col-span-2">
+                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Venue Details</label>
+                          <textarea 
+                            rows={2}
+                            value={lead.raw_payload?.venue || ''} 
+                            onChange={(e) => handleRawPayloadChange('venue', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40 resize-none"
+                            placeholder="Enter venue details..."
+                          />
+                        </div>
                       </div>
                     </div>
 
