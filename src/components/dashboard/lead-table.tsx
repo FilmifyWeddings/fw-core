@@ -48,12 +48,16 @@ interface ColumnConfig {
 const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'contact', label: 'Contact Details', visible: true, type: 'system' },
   { id: 'source', label: 'Lead Source', visible: true, type: 'system' },
-  { id: 'form_name', label: 'Form Name', visible: true, type: 'system' },
   { id: 'status', label: 'Status', visible: true, type: 'system' },
   { id: 'company', label: 'Company', visible: false, type: 'system' },
   { id: 'date', label: 'Date Created', visible: true, type: 'system' },
   { id: 'address', label: 'Full Address', visible: false, type: 'system' },
-  { id: 'attachments', label: 'Attachments / PDFs', visible: false, type: 'system' },
+  // Meta Form & Ad Metadata (toggleable via Columns Engine)
+  { id: 'form_name', label: 'Form Name', visible: true, type: 'meta_question' },
+  { id: 'ad_name', label: 'Ad Name', visible: false, type: 'meta_question' },
+  { id: 'form_id', label: 'Form ID', visible: false, type: 'meta_question' },
+  { id: 'page_id', label: 'Page ID', visible: false, type: 'meta_question' },
+  { id: 'page_name', label: 'Page Name', visible: false, type: 'meta_question' },
   { id: 'adset_name', label: 'Adset Name', visible: false, type: 'meta_question' },
   { id: 'campaign_name', label: 'Campaign Name', visible: false, type: 'meta_question' },
   // Workflow Tracker columns
@@ -65,7 +69,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
 ];
 
 const PERMANENTLY_BLOCKED_KEYS = new Set([
-  'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id'
+  'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id', 'attachments'
 ]);
 
 function PremiumTooltip({ content, children }: { content: string; children: React.ReactNode }) {
@@ -382,12 +386,11 @@ export function LeadTable({
 
   // System keys that are strictly internal (not table columns)
   const SYSTEM_AND_METADATA_KEYS = new Set([
-    'name', 'full_name', 'first_name', 'last_name', 'email', 'phone', 'mobile', 'contact', 
+    'name', 'full_name', 'first_name', 'last_name', 'email', 'phone', 'phone_number', 'mobile', 'contact', 
     'source', 'stage_id', 'status', 'created_at', 'updated_at', 'workspace_id', 'id', 
-    'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id',
+    'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id', 'attachments',
     'custom_color', 'score', 'score_reason', 'notes', 'unread_comments_count', 
     'whatsapp_group_id', 'wa_welcome_sent', 'google_synced', 'wgl_dispatched', 'google_resource_name',
-    'form_id', 'form_name', 'page_id', 'page_name', 'ad_id', 'ad_name', 
     'meta_lead_id', 'is_organic', 'platform', 'created_time', 'raw_payload', 'raw_meta_payload', 
     'source_form_id', 'custom_fields', 'tags', 'labels', 'metadata', 'mock_attachment'
   ]);
@@ -2633,20 +2636,33 @@ export function LeadTable({
                                 return String(fd || '—');
                               }
 
+                              if (col.id === 'form_name') {
+                                const rawFormId = payload.form_id || (lead as any).source_form_id;
+                                let nameVal = payload.form_name;
+                                if (!nameVal || /^Form #?\d+$/i.test(nameVal) || /^\d+$/.test(nameVal)) {
+                                  if (rawFormId && formNameMap.has(String(rawFormId))) {
+                                    nameVal = formNameMap.get(String(rawFormId));
+                                  }
+                                }
+                                return nameVal || (rawFormId ? `Form ${rawFormId}` : 'Meta Lead Form');
+                              }
+                              if (col.id === 'ad_name') {
+                                return payload.ad_name || payload.ad_id || metaPayload.ad_name || '—';
+                              }
+                              if (col.id === 'form_id') {
+                                return payload.form_id || (lead as any).source_form_id || '—';
+                              }
+                              if (col.id === 'page_id') {
+                                return payload.page_id || '—';
+                              }
+                              if (col.id === 'page_name') {
+                                return payload.page_name || '—';
+                              }
                               if (col.id === 'adset_name') {
                                 return payload.adset_name || payload.adset_id || metaPayload.adset_name || '—';
                               }
-                              if (col.id === 'leadgen_id') {
-                                return payload.leadgen_id || payload.meta_lead_id || lead.id || '—';
-                              }
                               if (col.id === 'campaign_name') {
                                 return payload.campaign_name || payload.campaign_id || metaPayload.campaign_name || '—';
-                              }
-                              if (col.id === 'synced_manually') {
-                                return payload.synced_manually !== undefined ? String(payload.synced_manually) : 'false';
-                              }
-                              if (col.id === 'assigned_team_ids') {
-                                return payload.assigned_team_ids ? String(payload.assigned_team_ids) : '—';
                               }
                               const smart = getSmartQuestionHeader(col.id);
 
