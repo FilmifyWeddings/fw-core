@@ -89,6 +89,182 @@ function PremiumTooltip({ content, children }: { content: string; children: Reac
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+// Smart Meta Question Header & Key Normalizer
+// ─────────────────────────────────────────────────────────────
+export function getSmartQuestionHeader(raw: string): { key: string; label: string } {
+  if (!raw) return { key: 'custom', label: 'Custom Field' };
+  
+  const text = raw.trim();
+  const lower = text.toLowerCase();
+
+  // 1. Shoot Type / Service
+  if (
+    lower.includes('shoot') || lower.includes('looking for') || 
+    lower.includes('service') || lower.includes('coverage') || 
+    lower.includes('kind of') || lower.includes('category')
+  ) {
+    return { key: 'shoot_type', label: 'Shoot Type' };
+  }
+
+  // 2. Wedding Date / Month
+  if (
+    lower.includes('month') || lower.includes('date') || 
+    lower.includes('when') || lower.includes('event date') || 
+    lower.includes('wedding date') || lower.includes('shoot date')
+  ) {
+    return { key: 'event_date', label: 'Wedding Date / Month' };
+  }
+
+  // 3. Location / Venue
+  if (
+    lower.includes('location') || lower.includes('city') || 
+    lower.includes('venue') || lower.includes('place') || 
+    lower.includes('where') || lower.includes('mumbai') || 
+    lower.includes('pune') || lower.includes('destination')
+  ) {
+    return { key: 'location', label: 'Wedding Location' };
+  }
+
+  // 4. Budget
+  if (
+    lower.includes('budget') || lower.includes('price') || 
+    lower.includes('investment') || lower.includes('cost') || 
+    lower.includes('package') || lower.includes('amount')
+  ) {
+    return { key: 'budget', label: 'Max Budget' };
+  }
+
+  // 5. Guest Count
+  if (
+    lower.includes('guest') || lower.includes('people') || 
+    lower.includes('gathering') || lower.includes('crowd')
+  ) {
+    return { key: 'guest_count', label: 'Guest Count' };
+  }
+
+  // 6. Functions / Days
+  if (
+    lower.includes('function') || lower.includes('days') || 
+    lower.includes('events') || lower.includes('how many')
+  ) {
+    return { key: 'functions_count', label: 'Functions / Days' };
+  }
+
+  // Clean Fallback label formatting
+  const cleanLabel = text
+    .replace(/\s*\?\s*$/, '')
+    .replace(/\(.*?\)/g, '')
+    .trim()
+    .split(/[\s_]+/)
+    .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '')
+    .join(' ');
+
+  const cleanKey = text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+  return { key: cleanKey || text, label: cleanLabel || text };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Image 1 Modern Dropdown UI Component
+// ─────────────────────────────────────────────────────────────
+interface Image1SelectOption {
+  value: string;
+  label: string;
+  dotColor?: string;
+}
+
+function Image1Select({
+  value,
+  options,
+  onChange,
+  placeholder = 'Select option',
+  badgeStyle,
+  className = '',
+}: {
+  value: string;
+  options: Image1SelectOption[];
+  onChange: (val: string) => void;
+  placeholder?: string;
+  badgeStyle?: { bg: string; text: string; border: string; dot?: string };
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedOpt = options.find(o => o.value === value);
+  const displayLabel = selectedOpt?.label || value || placeholder;
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className={`relative inline-block ${className}`} onClick={e => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`flex items-center justify-between gap-2 px-3 py-1.5 text-xs font-bold rounded-xl border transition-all shadow-2xs select-none cursor-pointer ${
+          badgeStyle 
+            ? `${badgeStyle.bg} ${badgeStyle.text} ${badgeStyle.border}` 
+            : 'bg-white dark:bg-[#1C1A18] border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 hover:border-blue-400 dark:hover:border-blue-500'
+        } ${open ? 'ring-2 ring-blue-500/20 border-blue-500' : ''}`}
+      >
+        <div className="flex items-center gap-1.5 truncate">
+          {badgeStyle?.dot && <span className={`w-2 h-2 rounded-full shrink-0 ${badgeStyle.dot}`} />}
+          <span className="truncate">{displayLabel}</span>
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-60 ${open ? 'rotate-180 text-blue-500 opacity-100' : ''}`} />
+      </button>
+
+      <AnimatePresenceComponent>
+        {open && (
+          <MotionDiv
+            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            className="absolute left-0 top-full mt-1.5 min-w-[180px] max-h-60 overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-xl text-xs font-sans space-y-0.5"
+          >
+            {options.map((opt) => {
+              const isSelected = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-semibold transition-colors ${
+                    isSelected
+                      ? 'bg-blue-50 dark:bg-blue-950/60 text-[#0866FF] dark:text-blue-400 font-bold'
+                      : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80 text-slate-700 dark:text-zinc-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    {opt.dotColor && <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dotColor}`} />}
+                    <span className="truncate">{opt.label}</span>
+                  </div>
+                  {isSelected && <Check className="w-4 h-4 text-[#0866FF] dark:text-blue-400 shrink-0 ml-2 stroke-[2.5]" />}
+                </button>
+              );
+            })}
+          </MotionDiv>
+        )}
+      </AnimatePresenceComponent>
+    </div>
+  );
+}
+
 export function LeadTable({ 
   leads: initialLeads, 
   stages = [],
@@ -164,7 +340,35 @@ export function LeadTable({
   const [draggedColIdx, setDraggedColIdx] = useState<number | null>(null);
   const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
 
-  // Auto-discover Meta Form Custom Questions from lead payloads
+  // Form Names Map (form_id -> form_name)
+  const [formNameMap, setFormNameMap] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    const fetchFormNamesMap = async () => {
+      try {
+        const { data: leadForms } = await supabase.from('fb_lead_forms').select('form_id, form_name');
+        const { data: mappings } = await supabase.from('fb_form_mappings').select('form_id, form_name');
+
+        const map = new Map<string, string>();
+        if (leadForms) {
+          leadForms.forEach((f: any) => {
+            if (f.form_id && f.form_name) map.set(String(f.form_id), f.form_name);
+          });
+        }
+        if (mappings) {
+          mappings.forEach((f: any) => {
+            if (f.form_id && f.form_name) map.set(String(f.form_id), f.form_name);
+          });
+        }
+        setFormNameMap(map);
+      } catch (err) {
+        console.error('Error fetching form names map:', err);
+      }
+    };
+    fetchFormNamesMap();
+  }, []);
+
+  // Auto-discover Meta Form Custom Questions from lead payloads with Smart Headers
   useEffect(() => {
     if (!leads || leads.length === 0) return;
 
@@ -196,10 +400,10 @@ export function LeadTable({
 
       discoveredKeys.forEach(k => {
         if (!existingIds.has(k)) {
-          const label = k.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          const smart = getSmartQuestionHeader(k);
           newCols.push({
             id: k,
-            label,
+            label: smart.label,
             visible: true,
             type: 'meta_question'
           });
@@ -1519,47 +1723,46 @@ export function LeadTable({
 
           {/* Status Filter */}
           <div className="flex items-center gap-1">
-            <select
+            <Image1Select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="select-sheets text-xs font-semibold"
-            >
-              <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Stages: All</option>
-              <option value="new" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">New</option>
-              <option value="contacted" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Open</option>
-              <option value="warm" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">In Progress</option>
-              <option value="hot" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Priority</option>
-              <option value="closed" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Won</option>
-              <option value="lost" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Lost</option>
-            </select>
+              placeholder="Stages: All"
+              options={[
+                { value: 'all', label: 'Stages: All' },
+                { value: 'new', label: 'New' },
+                { value: 'contacted', label: 'Open' },
+                { value: 'warm', label: 'In Progress' },
+                { value: 'hot', label: 'Priority' },
+                { value: 'closed', label: 'Won' },
+                { value: 'lost', label: 'Lost' },
+              ]}
+              onChange={(val) => setStatusFilter(val)}
+            />
           </div>
 
           {/* Source Filter */}
           <div className="flex items-center gap-1 font-sans">
-            <select
+            <Image1Select
               value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="select-sheets text-xs font-semibold capitalize"
-            >
-              <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Sources: All</option>
-              {customSources.map(src => (
-                <option key={src} value={src} className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">{src}</option>
-              ))}
-            </select>
+              placeholder="Sources: All"
+              options={[
+                { value: 'all', label: 'Sources: All' },
+                ...customSources.map(src => ({ value: src, label: src }))
+              ]}
+              onChange={(val) => setSourceFilter(val)}
+            />
           </div>
 
           {/* Owner Filter */}
           <div className="flex items-center gap-1 font-sans">
-            <select
+            <Image1Select
               value={ownerFilter}
-              onChange={(e) => setOwnerFilter(e.target.value)}
-              className="select-sheets text-xs font-semibold"
-            >
-              <option value="all" className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">Owners: All</option>
-              {uniqueOwners.map(owner => (
-                <option key={owner} value={owner} className="bg-[#FAF8F5] dark:bg-[#121110] text-[#1A1A1A] dark:text-[#F5F5F5]">{owner}</option>
-              ))}
-            </select>
+              placeholder="Owners: All"
+              options={[
+                { value: 'all', label: 'Owners: All' },
+                ...uniqueOwners.map(owner => ({ value: owner, label: owner }))
+              ]}
+              onChange={(val) => setOwnerFilter(val)}
+            />
           </div>
 
           {/* Columns Config Trigger */}
@@ -2102,31 +2305,43 @@ export function LeadTable({
                                 );
                               case 'source':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <select
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <Image1Select
                                       value={lead.source}
-                                      onChange={(e) => {
-                                        if (e.target.value === '__add_new__') {
+                                      placeholder="Select source"
+                                      options={[
+                                        ...customSources.map(src => ({ value: src, label: src })),
+                                        { value: '__add_new__', label: '+ Add Custom Source' }
+                                      ]}
+                                      onChange={(val) => {
+                                        if (val === '__add_new__') {
                                           setShowAddSourceModal(true);
                                         } else {
-                                          handleInlineLeadEdit({ source: e.target.value }, lead.id);
+                                          handleInlineLeadEdit({ source: val }, lead.id);
                                         }
                                       }}
-                                      className="select-sheets text-xs font-semibold w-[140px] capitalize"
-                                    >
-                                      {customSources.map(src => (
-                                        <option key={src} value={src} className="bg-white dark:bg-[#1C1A18] text-[#1A1A1A] dark:text-[#F5F5F5]">{src}</option>
-                                      ))}
-                                      <option value="__add_new__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-bold">+ Add Custom</option>
-                                    </select>
+                                    />
                                   </MotionTd>
                                 );
                               case 'form_name':
-                                const formNameVal = lead.raw_payload?.form_name || (lead.raw_payload?.form_id ? `Form #${lead.raw_payload.form_id}` : (lead.source !== 'Facebook' && lead.source !== 'Google' ? lead.source : 'Meta Lead Form'));
+                                const rawFormId = lead.raw_payload?.form_id || (lead as any).source_form_id;
+                                const rawFormName = lead.raw_payload?.form_name;
+
+                                let formNameVal = rawFormName;
+                                if (!formNameVal || /^Form #?\d+$/i.test(formNameVal) || /^\d+$/.test(formNameVal)) {
+                                  if (rawFormId && formNameMap.has(String(rawFormId))) {
+                                    formNameVal = formNameMap.get(String(rawFormId));
+                                  }
+                                }
+
+                                if (!formNameVal) {
+                                  formNameVal = rawFormId ? `Form ${rawFormId}` : (lead.source !== 'Facebook' && lead.source !== 'Google' ? lead.source : 'Meta Lead Form');
+                                }
+
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap">
-                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25">
-                                      <Globe className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-[#0866FF] dark:text-blue-400 border border-blue-200 dark:border-blue-800 shadow-2xs">
+                                      <Globe className="w-3.5 h-3.5 text-[#0866FF] shrink-0" />
                                       {formNameVal}
                                     </span>
                                   </MotionTd>
@@ -2155,52 +2370,40 @@ export function LeadTable({
 
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <div className="relative inline-flex items-center">
-                                      <span className={`w-2 h-2 rounded-full absolute left-2.5 z-10 ${stBadgeStyle.dot}`} />
-                                      <select
-                                        value={lead.stage_id || lead.status}
-                                        onChange={(e) => {
-                                          if (e.target.value === '__add_custom_status__') {
-                                            setShowAddStatusModal(true);
-                                          } else {
-                                            const nextStageId = e.target.value;
-                                            const foundStage = stages.find(s => s.id === nextStageId);
-                                            if (onLeadUpdate) {
-                                              onLeadUpdate(lead.id, {
-                                                stage_id: nextStageId,
-                                                status: (foundStage?.name || nextStageId) as any
-                                              });
-                                            }
+                                    <Image1Select
+                                      value={lead.stage_id || lead.status}
+                                      placeholder="Select status"
+                                      options={[
+                                        ...stages.map(s => ({ value: s.id, label: s.name, dotColor: stBadgeStyle.dot })),
+                                        { value: '__add_custom_status__', label: '+ Add Custom Status' }
+                                      ]}
+                                      onChange={(val) => {
+                                        if (val === '__add_custom_status__') {
+                                          setShowAddStatusModal(true);
+                                        } else {
+                                          const foundStage = stages.find(s => s.id === val);
+                                          if (onLeadUpdate) {
+                                            onLeadUpdate(lead.id, {
+                                              stage_id: val,
+                                              status: (foundStage?.name || val) as any
+                                            });
                                           }
-                                        }}
-                                        className={`appearance-none text-xs font-bold rounded-lg pl-6 pr-7 py-1 border transition-none cursor-pointer focus:outline-none ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}
-                                      >
-                                        {stages.map(s => (
-                                          <option key={s.id} value={s.id} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">
-                                            {s.name}
-                                          </option>
-                                        ))}
-                                        <option value="__add_custom_status__" className="bg-white dark:bg-[#1C1A18] text-orange-500 font-bold">+ Add Custom Status</option>
-                                      </select>
-                                      <ChevronDown className={`w-3.5 h-3.5 absolute right-2 pointer-events-none opacity-75 ${stBadgeStyle.text}`} />
-                                    </div>
+                                        }
+                                      }}
+                                      badgeStyle={stBadgeStyle}
+                                    />
                                   </MotionTd>
                                 );
                               case 'owner':
                                 const currentAssignedOwner = lead.raw_payload?.lead_owner || mockOwner.name || 'Unassigned';
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <select
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <Image1Select
                                       value={currentAssignedOwner}
-                                      onChange={(e) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: e.target.value } }, lead.id)}
-                                      className="select-sheets text-xs font-semibold w-[160px]"
-                                    >
-                                      {teamMembers.map(m => (
-                                        <option key={m.id || m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white font-bold">
-                                          👤 {m.name} ({m.role || 'Team Member'})
-                                        </option>
-                                      ))}
-                                    </select>
+                                      placeholder="Select owner"
+                                      options={teamMembers.map(m => ({ value: m.name, label: `👤 ${m.name}` }))}
+                                      onChange={(val) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: val } }, lead.id)}
+                                    />
                                   </MotionTd>
                                 );
                               case 'company':
@@ -2218,7 +2421,7 @@ export function LeadTable({
                                   hour: '2-digit', minute: '2-digit', hour12: true
                                 });
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4">
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5">
                                     <div className="space-y-0.5 whitespace-nowrap leading-tight">
                                       <span className="block text-xs text-slate-800 dark:text-zinc-200 font-bold">{formattedDate}</span>
                                       <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">{formattedTime}</span>
@@ -2227,13 +2430,13 @@ export function LeadTable({
                                 );
                               case 'address':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4 text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-sm text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
                                     {lead.raw_payload?.venue || lead.raw_payload?.address || '-'}
                                   </MotionTd>
                                 );
                               case 'attachments':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5" onClick={(e) => e.stopPropagation()}>
                                     {mockAttachment ? (
                                       <div 
                                         className="relative inline-flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-350 underline transition-all font-mono"
@@ -2260,20 +2463,16 @@ export function LeadTable({
                               // SaaS Automation workflow trackers
                               case 'wa_group':
                                 return (
-                                  <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
-                                    <select
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <Image1Select
                                       value={lead.whatsapp_group_id || ''}
-                                      onChange={(e) => {
-                                        const nextGroupId = e.target.value || null;
-                                        handleInlineLeadEdit({ whatsapp_group_id: nextGroupId }, lead.id);
-                                      }}
-                                      className="bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] text-[#1A1A1A] dark:text-[#F5F5F5] text-[11px] font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#D4AF37] cursor-pointer w-auto min-w-[120px] whitespace-nowrap shadow-sm transition-all"
-                                    >
-                                      <option value="" className="bg-white dark:bg-[#1C1A18] text-[#1A1A1A] dark:text-[#F5F5F5]">Unassigned</option>
-                                      {contactGroups.map(g => (
-                                        <option key={g.id} value={g.id} className="bg-white dark:bg-[#1C1A18] text-[#1A1A1A] dark:text-[#F5F5F5]">{g.group_name}</option>
-                                      ))}
-                                    </select>
+                                      placeholder="Unassigned"
+                                      options={[
+                                        { value: '', label: 'Unassigned' },
+                                        ...contactGroups.map(g => ({ value: g.id, label: `💬 ${g.group_name}` }))
+                                      ]}
+                                      onChange={(val) => handleInlineLeadEdit({ whatsapp_group_id: val || null }, lead.id)}
+                                    />
                                   </MotionTd>
                                 );
                               case 'wa_welcome':
@@ -2398,17 +2597,13 @@ export function LeadTable({
                             // Dynamic Dropdown options list type
                             if (col.type === 'custom-dropdown') {
                               return (
-                                <MotionTd key={col.id} className="py-2 px-4" onClick={(e) => e.stopPropagation()}>
-                                  <select
+                                <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                  <Image1Select
                                     value={customVal}
-                                    onChange={(e) => handleInlineRawPayloadEdit(col.id, e.target.value, lead.id)}
-                                    className="bg-slate-50 dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-900 text-slate-700 dark:text-zinc-350 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-slate-300 dark:focus:border-zinc-800 cursor-pointer w-auto min-w-[120px] whitespace-nowrap"
-                                  >
-                                    <option value="">Select option</option>
-                                    {col.options?.map(opt => (
-                                      <option key={opt} value={opt}>{opt}</option>
-                                    ))}
-                                  </select>
+                                    placeholder="Select option"
+                                    options={(col.options || []).map(opt => ({ value: opt, label: opt }))}
+                                    onChange={(val) => handleInlineRawPayloadEdit(col.id, val, lead.id)}
+                                  />
                                 </MotionTd>
                               );
                             }
