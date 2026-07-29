@@ -473,21 +473,21 @@ export async function generateQrServerless(
 
     const { data } = await supabaseAdmin
       .from('baileys_sessions')
-      .select('conn_state, qr_string, qr_expires_at, phone_number')
+      .select('*')
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
-    if (data?.conn_state === 'open') {
+    if ((data as any)?.conn_state === 'open') {
       console.log(`[generateQrServerless] ✅ DB shows conn_state=open for ${workspaceId}`);
-      onConnected(data?.phone_number ?? '');
+      onConnected((data as any)?.phone_number ?? '');
       return;
     }
 
-    if (data?.qr_string && data.qr_string !== lastQr) {
-      const qrExpired = data.qr_expires_at ? new Date(data.qr_expires_at) < new Date() : false;
+    if ((data as any)?.qr_string && (data as any).qr_string !== lastQr) {
+      const qrExpired = (data as any)?.qr_expires_at ? new Date((data as any).qr_expires_at) < new Date() : false;
       if (!qrExpired) {
-        lastQr = data.qr_string;
-        onQr(data.qr_string);
+        lastQr = (data as any).qr_string;
+        onQr((data as any).qr_string);
       }
     }
 

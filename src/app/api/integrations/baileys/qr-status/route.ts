@@ -1,7 +1,7 @@
 /**
  * GET /api/integrations/baileys/qr-status
  * Pure DB read — returns current QR string and conn_state from baileys_sessions.
- * UI polls this every 3s as fallback alongside SSE stream.
+ * UI polls this every 2.5s as fallback alongside SSE stream.
  *
  * POST /api/integrations/baileys/qr-status
  * Direct serverless QR initialization — no worker needed.
@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -19,30 +20,61 @@ export async function GET(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
-    // Fast JWT payload decode — no network call (token was already verified by client SDK)
     let workspaceId: string | null = null;
     if (token) {
+      // 1. Fast JWT payload decode
       try {
         const parts = token.split('.');
         if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-          workspaceId = payload.sub ?? null;
+          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+          const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+          workspaceId = payload.sub ?? payload.user_id ?? null;
         }
       } catch {
-        // ignore parse errors
+        /* ignore parse errors */
+      }
+
+      // 2. Fallback to Supabase auth check if fast decode didn't yield sub
+      if (!workspaceId) {
+        try {
+          const supabaseClient = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+          );
+          const { data: { user } } = await supabaseClient.auth.getUser(token);
+          if (user) workspaceId = user.id;
+        } catch {
+          /* ignore auth check errors */
+        }
       }
     }
+
     if (!workspaceId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Use select('*') to prevent schema mismatch errors if optional columns are missing
     const { data, error } = await supabaseAdmin
       .from('baileys_sessions')
-      .select('conn_state, status, qr_string, qr_expires_at, phone_number, last_connected')
+      .select('*')
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error('[qr-status GET DB Error]:', error.message);
+      // Gracefully return disconnected state instead of HTTP 500
+      return NextResponse.json({
+        isConnected: false,
+        conn_state: 'disconnected',
+        status: 'DISCONNECTED',
+        qr_string: null,
+        phone_number: null,
+        last_connected: null,
+      }, {
+        status: 200,
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+      });
+    }
 
     if (!data) {
       return NextResponse.json({
@@ -53,33 +85,45 @@ export async function GET(req: NextRequest) {
         phone_number: null,
         last_connected: null,
       }, {
+        status: 200,
         headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
       });
     }
 
     // Normalize: treat open / CONNECTED / open status as connected
-    const rawState = data.conn_state ?? 'disconnected';
-    const rawStatus = data.status ?? '';
+    const rawState = (data.conn_state as string) ?? 'disconnected';
+    const rawStatus = (data.status as string) ?? '';
     const isConnected = rawState === 'open' || rawStatus === 'CONNECTED' || rawStatus === 'open';
 
     const qrExpired = data.qr_expires_at
-      ? new Date(data.qr_expires_at) < new Date()
-      : true;
+      ? new Date(data.qr_expires_at as string) < new Date()
+      : false;
 
     return NextResponse.json({
       isConnected,
       conn_state: isConnected ? 'open' : rawState,
       status: isConnected ? 'CONNECTED' : (rawStatus || 'DISCONNECTED'),
-      qr_string: qrExpired ? null : data.qr_string,
+      qr_string: qrExpired ? null : ((data.qr_string as string) ?? null),
       qr_expired: qrExpired,
-      phone_number: data.phone_number || 'Device Linked',
-      last_connected: data.last_connected,
+      phone_number: (data.phone_number as string) || 'Device Linked',
+      last_connected: data.last_connected ?? null,
     }, {
+      status: 200,
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
     });
   } catch (err) {
-    console.error('[qr-status GET]', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('[qr-status GET Exception]:', err);
+    return NextResponse.json({
+      isConnected: false,
+      conn_state: 'disconnected',
+      status: 'DISCONNECTED',
+      qr_string: null,
+      phone_number: null,
+      last_connected: null,
+    }, {
+      status: 200,
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+    });
   }
 }
 
@@ -93,11 +137,28 @@ export async function POST(req: NextRequest) {
       try {
         const parts = token.split('.');
         if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-          workspaceId = payload.sub ?? null;
+          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+          const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+          workspaceId = payload.sub ?? payload.user_id ?? null;
         }
-      } catch { /* ignore parse errors */ }
+      } catch {
+        /* ignore */
+      }
+
+      if (!workspaceId) {
+        try {
+          const supabaseClient = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+          );
+          const { data: { user } } = await supabaseClient.auth.getUser(token);
+          if (user) workspaceId = user.id;
+        } catch {
+          /* ignore */
+        }
+      }
     }
+
     if (!workspaceId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
