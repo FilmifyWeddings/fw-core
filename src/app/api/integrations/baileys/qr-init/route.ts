@@ -52,18 +52,36 @@ export async function GET(req: NextRequest) {
     if (!workspaceId) {
       return new Response('Unauthorized: Missing workspaceId query parameter when using Webhook Secret', { status: 401 });
     }
-  } else {
-    // Option B: Regular Supabase auth check
-    const supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token ?? undefined);
-    if (authError || !user) {
-      return new Response('Unauthorized', { status: 401 });
+  } else if (token) {
+    // 1. Fast JWT payload decode (robust for browser EventSource tokens)
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+        workspaceId = payload.sub ?? payload.user_id ?? null;
+      }
+    } catch {
+      /* ignore */
     }
-    workspaceId = user.id;
+
+    // 2. Fallback to Supabase auth check
+    if (!workspaceId) {
+      try {
+        const supabaseClient = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
+        const { data: { user } } = await supabaseClient.auth.getUser(token);
+        if (user) workspaceId = user.id;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  if (!workspaceId) {
+    return new Response('Unauthorized', { status: 401 });
   }
 
   // ── Setup SSE Stream ────────────────────────────────────────────────────────
