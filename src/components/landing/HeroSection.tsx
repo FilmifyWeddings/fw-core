@@ -41,36 +41,36 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
 
   // LEFT SIDE ICONS (4 Integration Icons)
   const leftIcons = [
-    { name: 'Instagram', component: InstagramLogo, y: 50, yOffset: -8, delay: 0 },
-    { name: 'Facebook', component: FacebookLogo, y: 150, yOffset: 8, delay: 0.15 },
-    { name: 'Meta', component: MetaLogo, y: 250, yOffset: -10, delay: 0.3 },
-    { name: 'WhatsApp', component: WhatsAppLogo, y: 350, yOffset: 6, delay: 0.1 },
+    { name: 'Instagram', component: InstagramLogo, y: 40, yOffset: -8, delay: 0 },
+    { name: 'Facebook', component: FacebookLogo, y: 140, yOffset: 8, delay: 0.15 },
+    { name: 'Meta', component: MetaLogo, y: 240, yOffset: -10, delay: 0.3 },
+    { name: 'WhatsApp', component: WhatsAppLogo, y: 340, yOffset: 6, delay: 0.1 },
   ];
 
   // RIGHT SIDE ICONS (4 Integration Icons)
   const rightIcons = [
-    { name: 'Drive', component: GoogleDriveLogo, y: 50, yOffset: -8, delay: 0.25 },
-    { name: 'Sheets', component: GoogleSheetsLogo, y: 150, yOffset: 10, delay: 0.4 },
-    { name: 'Calendar', component: GoogleCalendarLogo, y: 250, yOffset: -6, delay: 0.2 },
-    { name: 'Gmail', component: GmailLogo, y: 350, yOffset: 8, delay: 0.35 },
+    { name: 'Drive', component: GoogleDriveLogo, y: 40, yOffset: -8, delay: 0.25 },
+    { name: 'Sheets', component: GoogleSheetsLogo, y: 140, yOffset: 10, delay: 0.4 },
+    { name: 'Calendar', component: GoogleCalendarLogo, y: 240, yOffset: -6, delay: 0.2 },
+    { name: 'Gmail', component: GmailLogo, y: 340, yOffset: 8, delay: 0.35 },
   ];
 
   return (
     <section className="relative pt-24 pb-16 md:pt-28 md:pb-20 overflow-hidden bg-[#FAF8F5] dark:bg-[#0C0B0A] text-[#1A1917] dark:text-[#FAF8F5]">
       
       {/* SOFT WARM GOLDEN RADIAL BACKGROUND GLOW */}
-      <div className="absolute top-1/3 right-1/4 w-[750px] h-[550px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#D4AF37]/20 via-[#F4EFE6]/30 to-transparent blur-[140px] pointer-events-none rounded-full" />
+      <div className="absolute top-1/3 right-1/4 w-[850px] h-[600px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#D4AF37]/20 via-[#F4EFE6]/30 to-transparent blur-[140px] pointer-events-none rounded-full" />
       <div className="absolute top-0 left-1/4 w-[500px] h-[300px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#FAF8F5] via-[#EAE3D2]/20 to-transparent blur-[100px] pointer-events-none rounded-full" />
 
-      {/* MAIN CONTAINER (LEFT CONTENT + DASHBOARD WITH OUTWARD FLOATING ICONS) */}
-      <div className="max-w-[1450px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 relative">
+      {/* MAIN CONTAINER (LEFT CONTENT + DASHBOARD WITH WIDE OUTWARD FLOATING ICONS) */}
+      <div className="max-w-[1550px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 relative">
         
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12 items-center">
           
           {/* ========================================================= */}
           {/* LEFT CONTENT COLUMN */}
           {/* ========================================================= */}
-          <div className="lg:col-span-5 text-left z-20 space-y-6">
+          <div className="lg:col-span-4 text-left z-20 space-y-6">
             
             {/* BADGE */}
             <motion.div 
@@ -88,7 +88,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-3xl sm:text-5xl lg:text-[52px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.1]"
+              className="text-3xl sm:text-4xl lg:text-[48px] font-serif font-black tracking-tight text-[#1A1917] dark:text-white leading-[1.1]"
             >
               Run Your Entire <br />
               Photography Business <br />
@@ -168,35 +168,36 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
           </div>
 
           {/* ========================================================= */}
-          {/* RIGHT DASHBOARD PREVIEW WITH FULLY OUTWARD VISIBLE ICONS */}
+          {/* RIGHT DASHBOARD PREVIEW WITH FAR OUTWARD ICONS & CONNECTED SVG LINES */}
           {/* ========================================================= */}
-          <div className="lg:col-span-7 relative z-10 flex items-center justify-center">
+          <div className="lg:col-span-8 relative z-10 flex items-center justify-center">
             
-            {/* LEFT 4 INTEGRATION ICONS & STRETCHED SVG LINES (FULLY OUTWARD, NEVER HIDDEN) */}
-            <div className="hidden lg:block absolute -left-12 xl:-left-16 top-0 bottom-0 w-20 z-40">
-              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 80 450">
+            {/* LEFT 4 INTEGRATION ICONS & STRETCHED CONNECTING SVG LINES */}
+            <div className="hidden lg:block absolute -left-20 xl:-left-28 top-0 bottom-0 w-[140px] z-40 pointer-events-none">
+              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 140 450">
                 <defs>
                   <linearGradient id="goldStrokeGradLeft" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
-                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.3" />
+                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.95" />
+                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.4" />
                   </linearGradient>
                 </defs>
                 {leftIcons.map((item, i) => (
                   <g key={i}>
+                    {/* Curve extending from icon center (x=34) right to dashboard left edge (x=140) */}
                     <path
-                      d={`M 24 ${item.y + 24} C 55 ${item.y + 24}, 70 225, 95 225`}
+                      d={`M 34 ${item.y + 24} C 80 ${item.y + 24}, 110 210, 140 210`}
                       fill="none"
                       stroke="url(#goldStrokeGradLeft)"
-                      strokeWidth="1.5"
+                      strokeWidth="1.8"
                       strokeDasharray="4 2"
                       className="animate-pulse"
                     />
-                    <circle cx="24" cy={item.y + 24} r="2.5" fill="#D4AF37" />
+                    <circle cx="34" cy={item.y + 24} r="3" fill="#D4AF37" />
                   </g>
                 ))}
               </svg>
 
-              <div className="h-full flex flex-col justify-around py-4">
+              <div className="h-full flex flex-col justify-around py-4 pointer-events-auto">
                 {leftIcons.map((item, idx) => {
                   const IconComponent = item.component;
                   return (
@@ -204,7 +205,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                       key={idx}
                       animate={{ y: [0, item.yOffset, 0] }}
                       transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                      className="w-12 h-12 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_25px_rgba(212,175,55,0.22)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
+                      className="w-12 h-12 rounded-2xl bg-white dark:bg-[#181614] border border-white dark:border-[#2C2926] shadow-[0_10px_30px_rgba(212,175,55,0.25)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
                       title={item.name}
                     >
                       <IconComponent className="w-6 h-6" />
@@ -384,31 +385,32 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
 
             </div>
 
-            {/* RIGHT 4 INTEGRATION ICONS & STRETCHED SVG LINES (FULLY OUTWARD, NEVER HIDDEN) */}
-            <div className="hidden lg:block absolute -right-12 xl:-right-16 top-0 bottom-0 w-20 z-40">
-              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 80 450">
+            {/* RIGHT 4 INTEGRATION ICONS & STRETCHED CONNECTING SVG LINES */}
+            <div className="hidden lg:block absolute -right-20 xl:-right-28 top-0 bottom-0 w-[140px] z-40 pointer-events-none">
+              <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 140 450">
                 <defs>
                   <linearGradient id="goldStrokeGradRight" x1="100%" y1="0%" x2="0%" y2="0%">
-                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
-                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.3" />
+                    <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.95" />
+                    <stop offset="100%" stopColor="#C5A059" stopOpacity="0.4" />
                   </linearGradient>
                 </defs>
                 {rightIcons.map((item, i) => (
                   <g key={i}>
+                    {/* Curve extending from icon center (x=106) left to dashboard right edge (x=0) */}
                     <path
-                      d={`M 56 ${item.y + 24} C 25 ${item.y + 24}, 10 225, -15 225`}
+                      d={`M 106 ${item.y + 24} C 60 ${item.y + 24}, 30 210, 0 210`}
                       fill="none"
                       stroke="url(#goldStrokeGradRight)"
-                      strokeWidth="1.5"
+                      strokeWidth="1.8"
                       strokeDasharray="4 2"
                       className="animate-pulse"
                     />
-                    <circle cx="56" cy={item.y + 24} r="2.5" fill="#D4AF37" />
+                    <circle cx="106" cy={item.y + 24} r="3" fill="#D4AF37" />
                   </g>
                 ))}
               </svg>
 
-              <div className="h-full flex flex-col justify-around py-4">
+              <div className="h-full flex flex-col justify-around py-4 pointer-events-auto">
                 {rightIcons.map((item, idx) => {
                   const IconComponent = item.component;
                   return (
@@ -416,7 +418,7 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                       key={idx}
                       animate={{ y: [0, item.yOffset, 0] }}
                       transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                      className="w-12 h-12 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_25px_rgba(212,175,55,0.22)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
+                      className="w-12 h-12 rounded-2xl bg-white dark:bg-[#181614] border border-white dark:border-[#2C2926] shadow-[0_10px_30px_rgba(212,175,55,0.25)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
                       title={item.name}
                     >
                       <IconComponent className="w-6 h-6" />
