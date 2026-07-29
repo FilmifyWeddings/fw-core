@@ -60,7 +60,6 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'page_id', label: 'Page ID', visible: false, type: 'meta_question' },
   { id: 'page_name', label: 'Page Name', visible: false, type: 'meta_question' },
   { id: 'adset_name', label: 'Adset Name', visible: false, type: 'meta_question' },
-  { id: 'campaign_name', label: 'Campaign Name', visible: false, type: 'meta_question' },
   // Workflow Tracker columns
   { id: 'wa_group', label: 'WhatsApp Group', visible: true, type: 'system' },
   { id: 'wa_welcome', label: 'WA Welcome Msg', visible: false, type: 'system' },
@@ -69,9 +68,9 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'followup_sched', label: 'Followups', visible: true, type: 'system' },
 ];
 
-const PERMANENTLY_BLOCKED_KEYS = new Set([
-  'owner', 'lead_owner', 'assigned_team_ids', 'synced_manually', 'field_data', 'leadgen_id', 'attachments'
-]);
+const BLACKLIST = ['field_data', 'synced_manually', 'assigned_team_ids', 'leadgen_id', 'attachments', 'owner', 'lead_owner', 'campaign_name'];
+
+const PERMANENTLY_BLOCKED_KEYS = new Set(BLACKLIST);
 
 function PremiumTooltip({ content, children }: { content: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
@@ -832,16 +831,18 @@ export function LeadTable({
 
   const applySavedPreferences = (parsedPrefs: any) => {
     setColumns(prev => {
-      const updated = prev.map(col => {
-        if (typeof parsedPrefs[col.id] === 'boolean') {
-          return { ...col, visible: parsedPrefs[col.id] };
-        }
-        return col;
-      });
+      const updated = prev
+        .filter(col => !PERMANENTLY_BLOCKED_KEYS.has(col.id.toLowerCase()))
+        .map(col => {
+          if (typeof parsedPrefs[col.id] === 'boolean') {
+            return { ...col, visible: parsedPrefs[col.id] };
+          }
+          return col;
+        });
 
       // Insert any custom columns loaded from saved layouts
       const savedCustoms = Object.keys(parsedPrefs)
-        .filter(key => key.startsWith('custom_'))
+        .filter(key => key.startsWith('custom_') && !PERMANENTLY_BLOCKED_KEYS.has(key.toLowerCase()))
         .map(key => {
           const colData = parsedPrefs[key];
           const exists = prev.find(p => p.id === key);
@@ -856,7 +857,7 @@ export function LeadTable({
         })
         .filter(Boolean) as ColumnConfig[];
 
-      const combined = [...updated, ...savedCustoms];
+      const combined = [...updated, ...savedCustoms].filter(c => !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()));
 
       // Reorder based on saved column order preference if it exists
       const savedOrderStr = localStorage.getItem('leads_table_column_order');
@@ -865,14 +866,15 @@ export function LeadTable({
           const savedOrder: string[] = JSON.parse(savedOrderStr);
           const ordered: ColumnConfig[] = [];
           savedOrder.forEach(id => {
+            if (PERMANENTLY_BLOCKED_KEYS.has(id.toLowerCase())) return;
             const found = combined.find(c => c.id === id);
             if (found) {
               ordered.push(found);
             }
           });
-          // Append any columns that exist in combined but not in savedOrder (e.g. newly added columns)
+          // Append any columns that exist in combined but not in savedOrder
           combined.forEach(c => {
-            if (!ordered.find(o => o.id === c.id)) {
+            if (!PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !ordered.find(o => o.id === c.id)) {
               ordered.push(c);
             }
           });
@@ -1805,7 +1807,7 @@ export function LeadTable({
                     {/* 1. Standard Fields */}
                     <div>
                       <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block mb-1">Standard Table Columns</span>
-                      {columns.filter(c => !c.type || c.type === 'system').map(col => (
+                      {columns.filter(c => (!c.type || c.type === 'system') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).map(col => (
                         <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
                           <button
                             onClick={() => toggleColumn(col.id)}
@@ -1825,7 +1827,7 @@ export function LeadTable({
                     </div>
 
                     {/* 2. Meta Form Custom Questions Sync */}
-                    {columns.some(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase())) && (
+                    {columns.some(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())) && (
                       <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider flex items-center gap-1">
@@ -1836,7 +1838,7 @@ export function LeadTable({
                             Auto Synced
                           </span>
                         </div>
-                        {columns.filter(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase())).map(col => (
+                        {columns.filter(c => c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).map(col => (
                           <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
                             <button
                               onClick={() => toggleColumn(col.id)}
@@ -1857,10 +1859,10 @@ export function LeadTable({
                     )}
 
                     {/* 3. Custom User Columns */}
-                    {columns.some(c => c.type && c.type.startsWith('custom_')) && (
+                    {columns.some(c => c.type && c.type.startsWith('custom_') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())) && (
                       <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
                         <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 tracking-wider block mb-1">Custom User Columns</span>
-                        {columns.filter(c => c.type && c.type.startsWith('custom_')).map(col => (
+                        {columns.filter(c => c.type && c.type.startsWith('custom_') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).map(col => (
                           <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
                             <button
                               onClick={() => toggleColumn(col.id)}
@@ -1886,44 +1888,6 @@ export function LeadTable({
                       </div>
                     )}
                   </div>
-
-            {/* Custom columns adding form */}
-            <div className="pt-3 border-t border-[#E8E5DF] dark:border-[#2C2926] space-y-2">
-              <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block">Add Custom Column</span>
-              <input 
-                type="text" 
-                placeholder="Column Name (e.g. Shoot Type)"
-                value={newColLabel}
-                onChange={(e) => setNewColLabel(e.target.value)}
-                className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
-              />
-              <select
-                value={newColType}
-                onChange={(e) => setNewColType(e.target.value as any)}
-                className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926]"
-              >
-                <option value="dropdown" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Dropdown List</option>
-                <option value="color" className="bg-[#FAF8F5] dark:bg-[#121110]">Color Highlight Label</option>
-                <option value="text" className="bg-[#FAF8F5] dark:bg-[#121110]">Custom Text Field</option>
-              </select>
-
-              {newColType === 'dropdown' && (
-                <input 
-                  type="text" 
-                  placeholder="Options: Pre-Wedding, Portrait"
-                  value={newColOptionsText}
-                  onChange={(e) => setNewColOptionsText(e.target.value)}
-                  className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926] placeholder-[#706E6A] dark:placeholder-[#A09E9A]"
-                />
-              )}
-
-              <button
-                onClick={handleAddCustomColumn}
-                className="w-full py-1.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-lg text-xs hover:opacity-95 transition-opacity"
-              >
-                Add Column
-              </button>
-            </div>
           </MotionDiv>
         )}
       </AnimatePresenceComponent>
