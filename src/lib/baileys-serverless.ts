@@ -450,36 +450,82 @@ async function startDirectServerlessQr(
     const makeWASocket = (await import('@whiskeysockets/baileys')).default;
     const { fetchLatestBaileysVersion, makeCacheableSignalKeyStore, initAuthCreds, BufferJSON } = await import('@whiskeysockets/baileys');
 
-    const freshCreds = initAuthCreds();
+    let creds: any = initAuthCreds();
+    let keysCache: Record<string, any> = {};
+
+    // Restore existing auth state if present
+    try {
+      const { data: sess } = await supabaseAdmin
+        .from('baileys_sessions')
+        .select('creds_json, keys_json')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      if (sess?.creds_json && sess?.keys_json) {
+        const reviver = (_: string, value: any) => {
+          if (typeof value === 'object' && value !== null && !Array.isArray(value) && value.type === 'Buffer' && value.data !== undefined) {
+            if (typeof value.data === 'string') return Buffer.from(value.data, 'base64');
+            if (Array.isArray(value.data)) return Buffer.from(value.data);
+          }
+          return BufferJSON.reviver(_, value);
+        };
+        const pCreds = JSON.parse(sess.creds_json, reviver);
+        const pKeys = JSON.parse(sess.keys_json, reviver);
+        if (pCreds) creds = pCreds;
+        if (pKeys) keysCache = pKeys;
+      }
+    } catch {}
 
     const saveCreds = async () => {
       try {
-        const credsJson = JSON.stringify(freshCreds, BufferJSON.replacer);
+        const credsJson = JSON.stringify(creds, BufferJSON.replacer);
+        const keysJson = JSON.stringify(keysCache, BufferJSON.replacer);
         await supabaseAdmin
           .from('baileys_sessions')
           .upsert({
             workspace_id: workspaceId,
             creds_json: credsJson,
-            keys_json: JSON.stringify({}),
+            keys_json: keysJson,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id' });
-      } catch {}
+      } catch (err) {
+        console.error('[saveCreds error]', err);
+      }
+    };
+
+    const keysStore = {
+      async get(type: string, ids: string[]) {
+        const result: Record<string, any> = {};
+        const typeCache = keysCache[type] || {};
+        for (const id of ids) {
+          if (typeCache[id] !== undefined) {
+            result[id] = typeCache[id];
+          }
+        }
+        return result;
+      },
+      async set(data: Record<string, Record<string, any>>) {
+        for (const [type, entries] of Object.entries(data)) {
+          if (!keysCache[type]) keysCache[type] = {};
+          if (entries) {
+            for (const [id, value] of Object.entries(entries)) {
+              keysCache[type][id] = value;
+            }
+          }
+        }
+        await saveCreds();
+      },
     };
 
     let { version } = await fetchLatestBaileysVersion().catch(() => ({
       version: [2, 3000, 1017531287] as [number, number, number],
     }));
 
-    const blankKeys = {
-      get: async () => ({}),
-      set: async () => {},
-    };
-
     const socket = makeWASocket({
       version,
       auth: {
-        creds: freshCreds,
-        keys: makeCacheableSignalKeyStore(blankKeys as any, { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} } as any),
+        creds,
+        keys: makeCacheableSignalKeyStore(keysStore as any, { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} } as any),
       },
       printQRInTerminal: false,
       generateHighQualityLinkPreview: true,
@@ -488,8 +534,8 @@ async function startDirectServerlessQr(
       browser: ['StudioCore', 'Chrome', '1.0.0'],
     });
 
-    socket.ev.on('creds.update', () => {
-      saveCreds().catch(() => {});
+    socket.ev.on('creds.update', async () => {
+      await saveCreds();
     });
 
     return new Promise<void>((resolve) => {
