@@ -448,7 +448,9 @@ async function startDirectServerlessQr(
   console.log(`[startDirectServerlessQr] 🚀 Starting direct serverless QR generation for workspace ${workspaceId}`);
   try {
     const makeWASocket = (await import('@whiskeysockets/baileys')).default;
-    const { fetchLatestBaileysVersion, makeCacheableSignalKeyStore, initAuthCreds, BufferJSON } = await import('@whiskeysockets/baileys');
+    const { fetchLatestBaileysVersion, makeCacheableSignalKeyStore, initAuthCreds, BufferJSON, Browsers } = await import('@whiskeysockets/baileys');
+    const pino = (await import('pino')).default;
+    const logger = pino({ level: 'silent' });
 
     // For fresh QR pairing, always initialize fresh auth credentials so Baileys generates a QR code immediately
     const creds: any = initAuthCreds();
@@ -501,18 +503,24 @@ async function startDirectServerlessQr(
 
     const socket = makeWASocket({
       version,
+      logger: logger.child({ module: 'baileys-qr' }),
       auth: {
         creds,
-        keys: makeCacheableSignalKeyStore(keysStore as any, { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} } as any),
+        keys: makeCacheableSignalKeyStore(keysStore as any, logger.child({ module: 'keys-qr' })),
       },
       printQRInTerminal: false,
       generateHighQualityLinkPreview: true,
       keepAliveIntervalMs: 10_000,
       connectTimeoutMs: 60_000,
-      browser: ['StudioCore', 'Chrome', '1.0.0'],
+      defaultQueryTimeoutMs: 60_000,
+      markOnlineOnConnect: true,
+      browser: Browsers.ubuntu('Chrome'),
+      syncFullHistory: false,
+      shouldSyncHistoryMessage: () => false,
     });
 
-    socket.ev.on('creds.update', async () => {
+    socket.ev.on('creds.update', async (update: Partial<any>) => {
+      Object.assign(creds, update);
       await saveCreds();
     });
 
