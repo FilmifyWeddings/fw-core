@@ -253,8 +253,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       }
     } catch {}
 
-    // Start fast polling immediately — skips SSE to avoid double /init-qr
-    startPolling(true);
+    // Initialize real-time SSE stream immediately to generate and receive fresh QR code
+    initSSE();
   };
 
   return (
