@@ -177,11 +177,11 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                 </linearGradient>
               </defs>
               
-              {/* 8 Bezier curves directly touching each icon center (x=20) and converging right at (x=95, y=250) */}
+              {/* 8 Bezier curves directly touching each icon center (x=24) and converging right at (x=98, y=250) */}
               {floatingIcons.map((item, i) => (
                 <g key={i}>
                   <path
-                    d={`M 20 ${item.y + 20} C 55 ${item.y + 20}, 75 250, 98 250`}
+                    d={`M 24 ${item.y + 24} C 55 ${item.y + 24}, 75 250, 98 250`}
                     fill="none"
                     stroke="url(#goldStrokeGrad)"
                     strokeWidth="1.5"
@@ -189,12 +189,12 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                     className="animate-pulse"
                   />
                   {/* Flowing golden pulse dot on each line */}
-                  <circle cx="20" cy={item.y + 20} r="2" fill="#D4AF37" />
+                  <circle cx="24" cy={item.y + 24} r="2.5" fill="#D4AF37" />
                 </g>
               ))}
             </svg>
 
-            {/* 8 FLOATING INTEGRATION BRAND ICON TILES */}
+            {/* 8 FLOATING INTEGRATION BRAND ICON TILES (HIGH-GLOSS 3D GLASS TILES) */}
             <div className="absolute inset-y-0 left-0 flex flex-col justify-between py-2 z-20">
               {floatingIcons.map((item, idx) => {
                 const IconComponent = item.component;
@@ -203,10 +203,10 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                     key={idx}
                     animate={{ y: [0, item.yOffset, 0] }}
                     transition={{ repeat: Infinity, duration: 3.5 + idx * 0.3, ease: 'easeInOut', delay: item.delay }}
-                    className="w-10 h-10 rounded-xl bg-white dark:bg-[#181614] border border-[#EAE3D2] dark:border-[#2C2926] shadow-[0_4px_14px_rgba(212,175,55,0.15)] flex items-center justify-center hover:scale-110 transition-transform cursor-pointer relative group"
+                    className="w-12 h-12 rounded-2xl bg-white/95 dark:bg-[#181614]/95 border border-white dark:border-[#2C2926] shadow-[0_8px_20px_rgba(0,0,0,0.08)] flex items-center justify-center p-2.5 hover:scale-115 transition-transform cursor-pointer relative group backdrop-blur-md"
                     title={item.name}
                   >
-                    <IconComponent className="w-5 h-5" />
+                    <IconComponent className="w-6 h-6" />
                   </motion.div>
                 );
               })}
@@ -475,8 +475,8 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   transition={{ duration: 0.4 }}
                   className="absolute -top-10 right-10 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] dark:border-[#2C2926] shadow-2xl rounded-2xl p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md">
-                    <WhatsAppLogo className="w-4 h-4 fill-current" />
+                  <div className="w-8 h-8 rounded-xl bg-[#25D366]/10 p-1 flex items-center justify-center shrink-0 shadow-xs">
+                    <WhatsAppLogo className="w-5 h-5" />
                   </div>
                   <div className="flex-1 text-left min-w-0">
                     <div className="text-[11px] font-black text-[#1A1917] dark:text-white">New Lead Received</div>
@@ -498,8 +498,8 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   transition={{ duration: 0.4, delay: 0.2 }}
                   className="absolute top-1/2 -right-6 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-emerald-500/30 shadow-2xl rounded-2xl p-3 flex items-center gap-3 backdrop-blur-xl max-w-xs"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md">
-                    <WhatsAppLogo className="w-4 h-4 fill-current" />
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 p-1 flex items-center justify-center shrink-0 shadow-xs">
+                    <WhatsAppLogo className="w-5 h-5" />
                   </div>
                   <div className="flex-1 text-left min-w-0">
                     <div className="text-[11px] font-black text-emerald-700">Message Sent Successfully</div>
@@ -520,8 +520,8 @@ export function HeroSection({ onNavigate }: HeroSectionProps) {
                   transition={{ duration: 0.4 }}
                   className="absolute -top-6 left-12 z-40 bg-white/95 dark:bg-[#1A1816]/95 border border-[#EAE3D2] shadow-xl rounded-2xl p-2.5 flex items-center gap-2.5 backdrop-blur-xl"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-rose-500 text-white flex items-center justify-center shrink-0">
-                    <GmailLogo className="w-4 h-4" />
+                  <div className="w-7 h-7 rounded-lg bg-rose-500/10 p-1 flex items-center justify-center shrink-0">
+                    <GmailLogo className="w-5 h-5" />
                   </div>
                   <div className="text-left text-[10px]">
                     <span className="font-bold text-[#1A1917] block">New Email Inquiry</span>
