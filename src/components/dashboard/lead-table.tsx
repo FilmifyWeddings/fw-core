@@ -307,6 +307,17 @@ export function LeadTable({
         const formQuestionCols: ColumnConfig[] = [];
         const addedKeys = new Set<string>();
 
+        const getSavedVisibility = (colId: string) => {
+          try {
+            const local = localStorage.getItem('leads_table_column_preferences');
+            if (local) {
+              const parsed = JSON.parse(local);
+              if (typeof parsed[colId] === 'boolean') return parsed[colId];
+            }
+          } catch (_) {}
+          return false;
+        };
+
         if (leadForms) {
           leadForms.forEach((form: any) => {
             let qList: any[] = [];
@@ -331,7 +342,7 @@ export function LeadTable({
                   formQuestionCols.push({
                     id: rawKey,
                     label: smart.label,
-                    visible: true,
+                    visible: getSavedVisibility(rawKey),
                     type: 'meta_question'
                   });
                 }
@@ -376,7 +387,7 @@ export function LeadTable({
             formQuestionCols.push({
               id: k,
               label: smart.label,
-              visible: true,
+              visible: getSavedVisibility(k),
               type: 'meta_question'
             });
           }
@@ -2707,7 +2718,11 @@ export function LeadTable({
                         })}
 
                         {/* Sticky Right: Column Actions */}
-                        <td className="py-2 pl-4 pr-6 text-right sticky right-0 bg-white dark:bg-[#0c0c0e] border-l border-[#E8E5DF] dark:border-[#2C2926] z-20 shadow-[-5px_0_10px_rgba(0,0,0,0.02)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.25)]" onClick={(e) => e.stopPropagation()}>
+                        <td className={`py-2 pl-4 pr-6 text-right sticky right-0 z-20 border-l border-slate-200 dark:border-zinc-900/60 shadow-[-5px_0_10px_rgba(0,0,0,0.03)] dark:shadow-[-5px_0_10px_rgba(0,0,0,0.3)] transition-colors ${
+                          isSelected 
+                            ? 'bg-[#EAE8E3] dark:bg-[#1F1C1A]' 
+                            : 'bg-[#F6F5F2] dark:bg-[#141211] group-hover/row:bg-[#EDEBE7] dark:group-hover/row:bg-[#1C1A18]'
+                        }`} onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5">
                             
                             {/* WA Welcome Msg Quick Action */}

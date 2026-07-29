@@ -115,6 +115,8 @@ export function CRMDropdown({
   // ── 2. Fixed Width Calculation (Requirement 1 & 6) ──────────
   // Calculates width based on longest option, max(170px, width + padding)
   // Memoized to prevent layout shifts
+  // ── 2. Fixed Width Calculation (Requirement 1 & 6) ──────────
+  // Calculates width based on longest option, snug and compact
   const fixedWidthPx = useMemo(() => {
     let maxChars = 0;
     sortedOptions.forEach(opt => {
@@ -123,9 +125,9 @@ export function CRMDropdown({
         maxChars = label.length;
       }
     });
-    // Add extra padding space for badge dot and chevron icon
-    const estimatedWidth = Math.ceil(maxChars * 7.8 + 64);
-    return Math.max(170, estimatedWidth);
+    // Add snug padding space for badge dot and chevron icon
+    const estimatedWidth = Math.ceil(maxChars * 7.2 + 42);
+    return Math.max(115, Math.min(195, estimatedWidth));
   }, [sortedOptions]);
 
   // Close dropdown on click outside
@@ -195,7 +197,7 @@ export function CRMDropdown({
           borderColor: themeStyle.light.borderColor,
           color: themeStyle.light.color,
         }}
-        className={`h-8 px-3 rounded-full border transition-all duration-200 shadow-2xs inline-flex items-center justify-between gap-1.5 select-none cursor-pointer font-sans text-xs font-bold text-center ${
+        className={`h-8 px-2.5 rounded-full border transition-all duration-200 shadow-2xs inline-flex items-center justify-between gap-1 select-none cursor-pointer font-sans text-xs font-bold text-center ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-xs active:scale-[0.99]'
         } ${open ? 'ring-2 ring-blue-500/20 border-blue-500' : ''}`}
       >
