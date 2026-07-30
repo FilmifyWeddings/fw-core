@@ -52,29 +52,43 @@ export function WhatsappStatusBadge({ workspaceId, className = '', showLabel = t
     };
 
     fetchState();
-    const interval = setInterval(fetchState, 3000);
+    const interval = setInterval(fetchState, 4000);
 
-    const channel = supabase
-      .channel(`wa-status-badge-${workspaceId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'baileys_sessions', filter: `workspace_id=eq.${workspaceId}` },
-        (payload) => {
-          const payloadWsId = (payload.new as any)?.workspace_id;
-          if (payloadWsId && workspaceId && payloadWsId !== workspaceId) return;
+    // Unique channel topic per badge instance to prevent "Cannot add callbacks after subscribe()" error
+    const uniqueChannelName = `wa-badge-${workspaceId || 'anon'}-${Math.random().toString(36).substring(2, 9)}`;
+    let channel: any = null;
 
-          const newState = (payload.new as any)?.conn_state;
-          if (newState && isMounted) setState(newState as any);
-        }
-      )
-      .subscribe();
+    try {
+      channel = supabase
+        .channel(uniqueChannelName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'baileys_sessions', filter: `workspace_id=eq.${workspaceId}` },
+          (payload) => {
+            const payloadWsId = (payload.new as any)?.workspace_id;
+            if (payloadWsId && workspaceId && payloadWsId !== workspaceId) return;
 
-    channelRef.current = channel;
+            const newState = (payload.new as any)?.conn_state;
+            if (newState && isMounted) setState(newState as any);
+          }
+        )
+        .subscribe();
+
+      channelRef.current = channel;
+    } catch (e) {
+      console.warn('Realtime subscription error in WhatsappStatusBadge:', e);
+    }
 
     return () => {
       isMounted = false;
       clearInterval(interval);
-      supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {
+          /* ignore */
+        }
+      }
     };
   }, [workspaceId]);
 
@@ -98,10 +112,8 @@ export function WhatsappStatusBadge({ workspaceId, className = '', showLabel = t
         )}
       </span>
       {showLabel && (
-        <span className={`text-[10px] font-bold tracking-wider ${
-          isConnected ? 'text-emerald-400' : isConnecting ? 'text-amber-400' : 'text-red-400'
-        }`}>
-          {isConnected ? 'WA Connected' : isConnecting ? 'Connecting...' : 'WA Offline'}
+        <span className="text-[11px] font-semibold tracking-wide text-zinc-300">
+          {isConnected ? 'WhatsApp Live' : isConnecting ? 'Connecting...' : 'WA Disconnected'}
         </span>
       )}
     </span>
