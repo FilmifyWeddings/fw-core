@@ -130,6 +130,7 @@ async function updateSessionState(state, extras = {}, targetWorkspaceId) {
         .from('baileys_sessions')
         .upsert({
         workspace_id: wsId,
+        user_id: wsId,
         conn_state: state,
         ...extras,
         updated_at: new Date().toISOString(),

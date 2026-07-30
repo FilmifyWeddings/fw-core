@@ -20,38 +20,21 @@ export async function GET(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
-    let workspaceId: string | null = null;
-    if (token) {
-      // 1. Fast JWT payload decode
-      try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-          const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-          workspaceId = payload.sub ?? payload.user_id ?? null;
-        }
-      } catch {
-        /* ignore parse errors */
-      }
-
-      // 2. Fallback to Supabase auth check if fast decode didn't yield sub
-      if (!workspaceId) {
-        try {
-          const supabaseClient = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-          );
-          const { data: { user } } = await supabaseClient.auth.getUser(token);
-          if (user) workspaceId = user.id;
-        } catch {
-          /* ignore auth check errors */
-        }
-      }
-    }
-
-    if (!workspaceId) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const workspaceId = user.id;
 
     // Use select('*') to prevent schema mismatch errors if optional columns are missing
     const { data, error } = await supabaseAdmin

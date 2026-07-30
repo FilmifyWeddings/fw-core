@@ -177,6 +177,7 @@ async function updateSessionState(
     .from('baileys_sessions')
     .upsert({
       workspace_id: wsId,
+      user_id: wsId,
       conn_state: state,
       ...extras,
       updated_at: new Date().toISOString(),
