@@ -8,8 +8,8 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return response;
@@ -21,7 +21,7 @@ export async function middleware(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
         response = NextResponse.next({
           request,
         });
@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // PUBLIC PATH ALLOWLIST
+  // STRICT PUBLIC PATH MATCHING
   const isPublicPath =
     pathname === '/' ||
     pathname === '/login' ||
@@ -54,7 +54,8 @@ export async function middleware(request: NextRequest) {
     pathname === '/pricing' ||
     pathname === '/features';
 
-  if (!isPublicPath && !user) {
+  // IF USER IS NOT AUTHENTICATED AND NOT ON A PUBLIC PATH -> REDIRECT TO /login ONLY
+  if (!user && !isPublicPath) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -63,9 +64,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl, { status: 307 });
   }
 
-  // If logged in user tries to visit /login, send them to dashboard
-  if (user && pathname === '/login') {
-    return NextResponse.redirect(new URL('/dashboard/integrations/whatsapp-web', request.url));
+  // IF USER IS AUTHENTICATED AND VISITING LOGIN OR LANDING PAGE -> REDIRECT TO WORKSPACE ONCE
+  if (user && (pathname === '/login' || pathname === '/')) {
+    return NextResponse.redirect(new URL('/dashboard/workspace', request.url));
   }
 
   return response;
