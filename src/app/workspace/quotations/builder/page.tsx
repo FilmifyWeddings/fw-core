@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,13 +18,23 @@ const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
   eventGroup: 'Pre-Wedding',
   look: 'Airy White (Pre-Wed)',
-  title: 'PRE WEDDING PHOTOGRAPHY QUOTATION',
-  subtitle: 'Capturing precious moments before your wedding',
-  year: '2026',
-  preparedFor: 'Ananya & Rohan',
-  coverPhoto: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
+
+  // Section 1: Cover Page State
+  cover: {
+    groomName: 'YASH',
+    brideName: 'TWINKLE',
+    eventType: 'Wedding', // Dropdown: Wedding, Pre-Wedding, Destination Wedding, Engagement, Haldi & Sangeet
+    locationSubtitle: 'BOTH SIDES – MUMBAI',
+    brandName: 'FILMIFY WEDDINGS',
+    brandLogoUrl: '', // Optional uploaded logo image
+    brandLogoSize: 64, // Logo size slider: 20px to 180px
+    photoUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
+    photoHeight: 450, // Cover photo height slider: 200px to 800px
+    photoWidth: 75, // Cover photo width slider: 30% to 100%
+    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle',
+  },
   
-  // Section 1: About Us
+  // Section 2: About Us
   aboutUs: {
     kicker: 'INTRODUCTION',
     heading: 'ABOUT US',
@@ -34,7 +44,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     background: 'Page colour',
   },
 
-  // Section 2: Shoot Details
+  // Section 3: Shoot Details
   shootDetails: {
     kicker: 'WHAT WE DO',
     heading: 'PRE-WEDDING SHOOT',
@@ -50,7 +60,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     staysInFrame: 'Middle',
   },
 
-  // Section 3: What's Included
+  // Section 4: What's Included
   whatsIncluded: {
     kicker: 'YOUR PACKAGE',
     heading: 'INCLUDED',
@@ -63,7 +73,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     staysInFrame: 'Middle',
   },
 
-  // Section 4: Price & Payment
+  // Section 5: Price & Payment
   pricePayment: {
     kicker: 'INVESTMENT',
     heading: 'WEDDING GOLD',
@@ -79,7 +89,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     background: 'Page colour',
   },
 
-  // Section 5: Add-ons Table
+  // Section 6: Add-ons Table
   addOnsTable: {
     heading: 'ADD ONS',
     kicker: "EMBRACE YOUR DAY — YOU'RE IN CONTROL",
@@ -95,7 +105,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     background: 'Page colour',
   },
 
-  // Section 6: Delivery Time
+  // Section 7: Delivery Time
   deliveryTime: {
     heading: 'Delivery time',
     photosDelivered: '3-4 weeks',
@@ -105,7 +115,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     background: 'Page colour',
   },
 
-  // Section 7: Timeline Table
+  // Section 8: Timeline Table
   timelineTable: {
     heading: 'Timeframe for delivery',
     rows: [
@@ -118,7 +128,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     background: 'Page colour',
   },
 
-  // Section 8: Testimonials
+  // Section 9: Testimonials
   testimonials: {
     kicker: 'KIND WORDS',
     heading: 'WHAT COUPLES SAY',
@@ -128,7 +138,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     ]
   },
 
-  // Section 9: Terms & Thank You
+  // Section 10: Terms & Thank You
   termsAndThankYou: {
     termsHeading: 'TERMS',
     termsText: 'Dates are blocked only after the booking advance. Travel and stay outside the city are billed at actuals. Raw files are not shared.',
@@ -141,6 +151,9 @@ const DEFAULT_AIRY_PROPOSAL = {
 function WedGrapherAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const coverPhotoInputRef = useRef<HTMLInputElement>(null);
   
   const [data, setData] = useState(DEFAULT_AIRY_PROPOSAL);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -152,13 +165,43 @@ function WedGrapherAiryBuilderContent() {
   const isGold = data.look.toLowerCase().includes('gold');
   const isDark = data.look.toLowerCase().includes('dark');
 
-  // Exact Requested Colors: #FFF8EA (Background) & #8A6D2F (Content & Text & Borders)
   const pageBgColor = isGold ? '#FFF8EA' : isDark ? '#141622' : '#FFFFFF';
   const textColor = isGold ? '#8A6D2F' : isDark ? '#F3F4F6' : '#27272A';
   const kickerColor = isGold ? '#8A6D2F' : isDark ? '#E5C365' : '#A1A1AA';
   const borderColor = isGold ? 'rgba(138, 109, 47, 0.25)' : isDark ? '#232634' : 'rgba(228, 228, 231, 1)';
   const boxBgColor = isGold ? 'rgba(138, 109, 47, 0.08)' : isDark ? '#0F1017' : 'rgba(244, 244, 245, 1)';
   const photoBorderColor = isGold ? 'rgba(138, 109, 47, 0.3)' : isDark ? '#232634' : 'rgba(228, 228, 231, 1)';
+
+  // Image Upload Handlers
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        if (result) {
+          setData(prev => ({ ...prev, cover: { ...prev.cover, brandLogoUrl: result } }));
+          setHasUnsavedChanges(true);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCoverPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        if (result) {
+          setData(prev => ({ ...prev, cover: { ...prev.cover, photoUrl: result } }));
+          setHasUnsavedChanges(true);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Calculate totals dynamically
   const subtotal = data.pricePayment.packagePrice;
@@ -178,7 +221,7 @@ function WedGrapherAiryBuilderContent() {
         workspace_id: workspaceId,
         quotation_number: 'FW-2026-001',
         title: data.designName,
-        client_name: data.preparedFor,
+        client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
         public_token: publicToken,
         financials: { total_amount: grandTotal, subtotal, gst_rate: data.pricePayment.gstPct },
         events: data.shootDetails.rows,
@@ -334,7 +377,7 @@ function WedGrapherAiryBuilderContent() {
           {/* Collapsible Section Accordion Cards */}
           <div className="space-y-2.5 pt-2 border-t border-zinc-100">
             
-            {/* 1. Cover Card */}
+            {/* 1. COVER PAGE CARD (EXACT MATCHING CONTROLS FOR USER REQUEST) */}
             <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
               <div 
                 onClick={() => setOpenCard(openCard === 'cover' ? null : 'cover')}
@@ -342,31 +385,191 @@ function WedGrapherAiryBuilderContent() {
               >
                 <div className="flex items-center gap-2">
                   <FileText className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>1. Cover</span>
+                  <span>1. Cover Page</span>
                 </div>
                 {openCard === 'cover' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </div>
 
               {openCard === 'cover' && (
                 <div className="p-3 space-y-3 bg-white">
+                  
+                  {/* Couple Names (Groom & Bride) */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Couple Names</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[9px] font-bold text-zinc-400">Groom Name</label>
+                        <input
+                          type="text"
+                          value={data.cover.groomName}
+                          placeholder="e.g. YASH"
+                          onChange={(e) => setData({ ...data, cover: { ...data.cover, groomName: e.target.value } })}
+                          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-zinc-400">Bride Name</label>
+                        <input
+                          type="text"
+                          value={data.cover.brideName}
+                          placeholder="e.g. TWINKLE"
+                          onChange={(e) => setData({ ...data, cover: { ...data.cover, brideName: e.target.value } })}
+                          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Event Type Dropdown + Auto "QUOTATION" */}
+                  <div className="space-y-1">
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400">Event Type (Auto + QUOTATION)</label>
+                    <select
+                      value={data.cover.eventType}
+                      onChange={(e) => setData({ ...data, cover: { ...data.cover, eventType: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                    >
+                      <option value="Wedding">Wedding</option>
+                      <option value="Pre-Wedding">Pre-Wedding</option>
+                      <option value="Destination Wedding">Destination Wedding</option>
+                      <option value="Engagement">Engagement</option>
+                      <option value="Haldi & Sangeet">Haldi & Sangeet</option>
+                    </select>
+                  </div>
+
+                  {/* Subtitle / Location Input */}
                   <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Title</label>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Subtitle / Location</label>
                     <input
                       type="text"
-                      value={data.title}
-                      onChange={(e) => setData({ ...data, title: e.target.value })}
+                      value={data.cover.locationSubtitle}
+                      placeholder="e.g. BOTH SIDES – MUMBAI"
+                      onChange={(e) => setData({ ...data, cover: { ...data.cover, locationSubtitle: e.target.value } })}
                       className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Prepared for</label>
+
+                  {/* Brand Name & Brand Logo Upload + Resizer */}
+                  <div className="space-y-2 pt-2 border-t border-zinc-100">
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Brand Name & Logo</span>
                     <input
                       type="text"
-                      value={data.preparedFor}
-                      onChange={(e) => setData({ ...data, preparedFor: e.target.value })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                      value={data.cover.brandName}
+                      placeholder="Brand Name (e.g. FILMIFY WEDDINGS)"
+                      onChange={(e) => setData({ ...data, cover: { ...data.cover, brandName: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
                     />
+
+                    {/* Logo File Upload */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={logoInputRef}
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => logoInputRef.current?.click()}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-zinc-800 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Upload className="w-3 h-3 text-amber-600" />
+                        <span>Upload Logo (PNG/JPG)</span>
+                      </button>
+                      {data.cover.brandLogoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setData({ ...data, cover: { ...data.cover, brandLogoUrl: '' } })}
+                          className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200"
+                          title="Remove Logo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Logo Size Resizer Slider */}
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                        <span>Logo Size</span>
+                        <span>{data.cover.brandLogoSize}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="20"
+                        max="180"
+                        value={data.cover.brandLogoSize}
+                        onChange={(e) => setData({ ...data, cover: { ...data.cover, brandLogoSize: Number(e.target.value) } })}
+                        className="w-full accent-black cursor-pointer"
+                      />
+                    </div>
                   </div>
+
+                  {/* Cover Photo Upload & Resizer Slider */}
+                  <div className="space-y-2 pt-2 border-t border-zinc-100">
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Cover Photo & Size</span>
+                    
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={coverPhotoInputRef}
+                        accept="image/*"
+                        onChange={handleCoverPhotoUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => coverPhotoInputRef.current?.click()}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-zinc-800 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <ImageIcon className="w-3 h-3 text-amber-600" />
+                        <span>Upload Cover Photo</span>
+                      </button>
+                    </div>
+
+                    {/* Photo Height Resizer Slider */}
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                        <span>Photo Height</span>
+                        <span>{data.cover.photoHeight}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="200"
+                        max="800"
+                        value={data.cover.photoHeight}
+                        onChange={(e) => setData({ ...data, cover: { ...data.cover, photoHeight: Number(e.target.value) } })}
+                        className="w-full accent-black cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Photo Frame Shape Buttons */}
+                    <div>
+                      <span className="block text-[9px] font-bold text-zinc-400 mb-1">Frame Shape</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { id: 'arch', label: 'Arch ⋂' },
+                          { id: 'rounded', label: 'Rounded ▢' },
+                          { id: 'rectangle', label: 'Rectangle ▭' },
+                        ].map(shape => (
+                          <button
+                            key={shape.id}
+                            type="button"
+                            onClick={() => setData({ ...data, cover: { ...data.cover, frameShape: shape.id as any } })}
+                            className={`flex-1 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                              data.cover.frameShape === shape.id
+                                ? 'bg-black text-white border-black'
+                                : 'bg-zinc-50 text-zinc-700 border-zinc-200'
+                            }`}
+                          >
+                            {shape.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
+
                 </div>
               )}
             </div>
@@ -647,7 +850,7 @@ function WedGrapherAiryBuilderContent() {
         </aside>
 
         {/* ───────────────────────────────────────────────────────────── */}
-        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS (AIRY / ROYAL GOLD / DARK) */}
+        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS (EXACT COVER PAGE LAYOUT) */}
         {/* ───────────────────────────────────────────────────────────── */}
         <main className="flex-1 bg-[#EBECEF] p-6 overflow-y-auto flex justify-center items-start">
           
@@ -662,36 +865,83 @@ function WedGrapherAiryBuilderContent() {
             }}
           >
             
-            {/* 1. COVER PAGE HERO (Airy Arch Frame) */}
+            {/* 1. COVER PAGE HERO (EXACT USER SCREENSHOT LAYOUT MATCH) */}
             <div className="text-center space-y-6 pt-4">
-              <span className="text-[10px] tracking-[0.25em] uppercase font-semibold block" style={{ color: kickerColor }}>
-                A &amp; R
-              </span>
+              
+              {/* Couple Names (Groom & Bride - NO "X" as requested) */}
+              <div className="space-y-1">
+                <h1 
+                  className="text-4xl sm:text-5xl font-serif tracking-[0.15em] uppercase font-black leading-tight"
+                  style={{ color: textColor }}
+                >
+                  {data.cover.groomName || 'YASH'}
+                </h1>
+                
+                {/* Note: NO "X" icon/text as requested: "X hatado nahi chaiye" */}
 
-              <h1 className="text-3xl sm:text-4xl font-serif tracking-widest uppercase leading-tight" style={{ color: textColor }}>
-                {data.title}
-              </h1>
+                <h1 
+                  className="text-4xl sm:text-5xl font-serif tracking-[0.15em] uppercase font-black leading-tight"
+                  style={{ color: textColor }}
+                >
+                  {data.cover.brideName || 'TWINKLE'}
+                </h1>
+              </div>
 
-              {/* Arch Image Frame */}
+              {/* Event Type Quotation & Subtitle */}
+              <div className="space-y-1.5 pt-2">
+                <h3 
+                  className="text-sm sm:text-base font-serif tracking-[0.2em] uppercase font-bold"
+                  style={{ color: textColor }}
+                >
+                  {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
+                </h3>
+                <p 
+                  className="text-[11px] tracking-[0.15em] uppercase font-medium opacity-85"
+                  style={{ color: kickerColor }}
+                >
+                  {data.cover.locationSubtitle || 'BOTH SIDES – MUMBAI'}
+                </p>
+              </div>
+
+              {/* Brand Logo / Studio Name */}
+              <div className="pt-2 flex flex-col items-center justify-center">
+                {data.cover.brandLogoUrl ? (
+                  <img 
+                    src={data.cover.brandLogoUrl} 
+                    alt={data.cover.brandName}
+                    style={{ height: `${data.cover.brandLogoSize || 64}px`, objectFit: 'contain' }}
+                  />
+                ) : (
+                  <div className="text-center space-y-0.5">
+                    <div className="text-lg sm:text-xl font-serif tracking-[0.25em] uppercase font-black" style={{ color: textColor }}>
+                      {data.cover.brandName || 'FILMIFY WEDDINGS'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Cover Photo Frame (Arched / Resizable) */}
               <div 
-                className="w-[68%] mx-auto mt-6 rounded-t-[999px] rounded-b-none overflow-hidden aspect-[4/5] shadow-lg relative"
-                style={{ borderColor: photoBorderColor, borderWidth: '1px', backgroundColor: boxBgColor }}
+                className={`mx-auto mt-6 overflow-hidden shadow-lg relative transition-all duration-200 ${
+                  data.cover.frameShape === 'rounded' ? 'rounded-3xl' :
+                  data.cover.frameShape === 'rectangle' ? 'rounded-none' :
+                  'rounded-t-[999px] rounded-b-none'
+                }`}
+                style={{ 
+                  width: `${data.cover.photoWidth || 75}%`,
+                  height: `${data.cover.photoHeight || 450}px`,
+                  borderColor: photoBorderColor, 
+                  borderWidth: '1px', 
+                  backgroundColor: boxBgColor 
+                }}
               >
                 <img 
-                  src={data.coverPhoto} 
+                  src={data.cover.photoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80'} 
                   alt="Wedding Couple"
                   className="w-full h-full object-cover object-center"
                 />
               </div>
 
-              <p className="text-[11px] italic" style={{ color: kickerColor }}>
-                {data.subtitle}
-              </p>
-
-              <div className="pt-8 flex items-center justify-between text-[11px] font-sans border-t" style={{ borderColor: borderColor, color: textColor }}>
-                <span>{data.year}</span>
-                <span>PREPARED FOR <strong style={{ color: textColor }}>{data.preparedFor}</strong></span>
-              </div>
             </div>
 
             {/* 2. ABOUT US SECTION */}
