@@ -1,7 +1,7 @@
 /**
  * Supabase Database Auth Adapter for Baileys
  * Strictly scopes all credentials, pre-keys, and signal state per Workspace ID / User ID.
- * Format for session keys: `${workspaceId}_creds`, `${workspaceId}_app-state-sync-key-*`, `${workspaceId}_session-*`
+ * Features: 500ms Debounced batching, Single-In-Flight DB Lock, Exponential Retry for 57014 Statement Timeout.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -40,6 +40,58 @@ export type SignalKeyStore = {
   get<T extends keyof SignalDataTypeMap>(type: T, ids: string[]): Promise<{ [id: string]: SignalDataTypeMap[T] }>;
   set(data: SignalDataSet): Promise<void>;
 };
+
+/**
+ * Executes Supabase upsert with exponential backoff retries for Statement Timeout (Code 57014) or HTTP errors.
+ */
+async function upsertWithRetry(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  payload: Record<string, any>,
+  maxRetries = 3
+): Promise<void> {
+  let attempt = 0;
+  let lastError: any = null;
+
+  while (attempt < maxRetries) {
+    attempt++;
+    try {
+      const { error } = await supabase
+        .from('baileys_sessions')
+        .upsert({
+          workspace_id: workspaceId,
+          ...payload,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id' });
+
+      if (!error) {
+        logger.debug({ workspaceId, attempt }, '✅ Auth state successfully persisted to Supabase');
+        return;
+      }
+
+      lastError = error;
+      const isTimeout = error.code === '57014' || error.message?.includes('timeout') || error.message?.includes('canceling statement');
+      logger.warn(
+        { attempt, maxRetries, code: error.code, message: error.message, workspaceId },
+        isTimeout
+          ? '⚠️ Supabase statement timeout (57014) on auth state upsert — retrying with backoff'
+          : '⚠️ Supabase upsert error on auth state — retrying'
+      );
+
+      if (attempt < maxRetries) {
+        await new Promise((res) => setTimeout(res, 500 * Math.pow(2, attempt - 1)));
+      }
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        await new Promise((res) => setTimeout(res, 500 * Math.pow(2, attempt - 1)));
+      }
+    }
+  }
+
+  logger.error({ lastError, workspaceId }, '🔴 Failed to persist auth state to Supabase after all retries');
+  throw lastError;
+}
 
 export async function useSupabaseAuthStateNamespaced(
   supabase: SupabaseClient,
@@ -87,42 +139,60 @@ export async function useSupabaseAuthStateNamespaced(
     }
   }
 
+  // ── 500ms Debounce & Single-In-Flight DB Lock ──
   let saveTimer: NodeJS.Timeout | null = null;
+  let isSaving = false;
+  let savePending = false;
 
   function scheduleSave(): void {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      persistAuthState().catch(err => logger.error({ err, workspaceId: targetWorkspaceId }, 'Failed to auto-persist auth state'));
-    }, 200);
+      triggerPersist();
+    }, 500); // 500ms debounce delay to batch multiple key updates into single DB upsert
   }
 
-  async function persistAuthState(): Promise<void> {
+  function triggerPersist(): void {
+    if (isSaving) {
+      savePending = true;
+      return;
+    }
+    isSaving = true;
+    savePending = false;
+
+    persistAuthStateInternal()
+      .catch((err) => logger.error({ err, workspaceId: targetWorkspaceId }, 'Error during background auth state persist'))
+      .finally(() => {
+        isSaving = false;
+        if (savePending) {
+          savePending = false;
+          scheduleSave();
+        }
+      });
+  }
+
+  async function persistAuthStateInternal(): Promise<void> {
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    try {
-      const credsJson = JSON.stringify(creds, BufferJSON.replacer);
-      const keysJson = JSON.stringify(keysCache, BufferJSON.replacer);
 
-      const { error } = await supabase
-        .from('baileys_sessions')
-        .upsert({
-          workspace_id: targetWorkspaceId,
-          creds_json: credsJson,
-          keys_json: keysJson,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id' });
+    const credsJson = JSON.stringify(creds, BufferJSON.replacer);
+    const keysJson = JSON.stringify(keysCache, BufferJSON.replacer);
 
-      if (error) {
-        logger.error({ err: error, workspaceId: targetWorkspaceId }, 'Failed to persist auth state to Supabase');
-      } else {
-        logger.debug({ workspaceId: targetWorkspaceId }, 'Auth state saved to Supabase');
-      }
-    } catch (err) {
-      logger.error({ err, workspaceId: targetWorkspaceId }, 'Failed to persist auth state');
+    await upsertWithRetry(supabase, targetWorkspaceId, {
+      creds_json: credsJson,
+      keys_json: keysJson,
+    });
+  }
+
+  // Explicit public saveCreds (used during 'connection === open' and 'creds.update')
+  async function saveCredsPublic(): Promise<void> {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
     }
+    await persistAuthStateInternal();
   }
 
   const hasExisting = await loadAuthState();
@@ -172,6 +242,6 @@ export async function useSupabaseAuthStateNamespaced(
 
   return {
     state: { creds, keys },
-    saveCreds: persistAuthState,
+    saveCreds: saveCredsPublic,
   };
 }
