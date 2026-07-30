@@ -518,4 +518,91 @@ export interface PostProductionProject {
   updated_at: string;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Dynamic Proposal Designer & Quotation Builder Types
+// ─────────────────────────────────────────────────────────────
+
+export interface QuotationThemeConfig {
+  accent_color: string;
+  primary_font: string;
+  cover_style: 'cinematic_dark' | 'royal_gold' | 'minimal_white' | 'modern_dark';
+  background_style?: string;
+  logo_url?: string | null;
+}
+
+export interface QuotationSectionConfig {
+  id: string;
+  title: string;
+  enabled: boolean;
+}
+
+export interface QuotationEvent {
+  id: string;
+  title: string;
+  days: number;
+  venue?: string | null;
+  crew?: string | null;
+  deliverables?: string[];
+  rate: number;
+}
+
+export interface QuotationAddOnItem {
+  id: string;
+  title: string;
+  rate: number;
+  selected: boolean;
+}
+
+export interface QuotationFinancials {
+  subtotal: number;
+  discount_type: 'flat' | 'percentage';
+  discount_value: number;
+  gst_rate: number;
+  total_amount: number;
+}
+
+export interface QuotationPaymentMilestone {
+  label: string;
+  percentage: number;
+  amount: number;
+  due_description?: string;
+}
+
+export interface QuotationTemplateDoc {
+  id: string;
+  workspace_id: string;
+  title: string;
+  theme_config: QuotationThemeConfig;
+  sections_config: QuotationSectionConfig[];
+  default_terms: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationProposal {
+  id: string;
+  workspace_id: string;
+  client_id?: string | null;
+  client?: WorkspaceClient | null;
+  template_id?: string | null;
+  quotation_number: string;
+  title: string;
+  client_name: string;
+  client_phone?: string | null;
+  client_email?: string | null;
+  event_date?: string | null;
+  theme_config: QuotationThemeConfig;
+  sections_config: QuotationSectionConfig[];
+  events: QuotationEvent[];
+  add_ons: QuotationAddOnItem[];
+  financials: QuotationFinancials;
+  payment_milestones: QuotationPaymentMilestone[];
+  terms: string;
+  status: 'draft' | 'sent' | 'accepted' | 'declined';
+  client_notes?: string | null;
+  public_token: string;
+  created_at: string;
+  updated_at: string;
+}
+
 

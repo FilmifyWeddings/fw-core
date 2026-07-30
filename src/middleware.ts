@@ -25,6 +25,7 @@ export async function middleware(request: NextRequest) {
     pathname === '/free-trial' ||
     pathname === '/pricing' ||
     pathname === '/features' ||
+    pathname.startsWith('/p/quotation') ||
     pathname.includes('.');
 
   // If visiting any public route (especially /login), pass through unconditionally!
