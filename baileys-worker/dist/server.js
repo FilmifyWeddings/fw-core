@@ -843,6 +843,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                         .from('baileys_sessions')
                         .upsert({
                         workspace_id: wsId,
+                        user_id: wsId,
                         qr_string: qr,
                         qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
                         conn_state: 'connecting',
@@ -865,6 +866,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 .from('baileys_sessions')
                 .upsert({
                 workspace_id: wsId,
+                user_id: wsId,
                 conn_state: 'open',
                 status: 'connected',
                 phone_number: phoneNumber,

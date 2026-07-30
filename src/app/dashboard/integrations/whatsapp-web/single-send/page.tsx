@@ -94,11 +94,11 @@ export default function WhatsAppSingleSendPage() {
       }
 
       // 3. Clean direct Supabase DB check
-      if (!isConnected) {
+      if (!isConnected && activeWsId) {
         const { data: dbSession } = await supabase
           .from('baileys_sessions')
-          .select('workspace_id, conn_state, status, phone_number')
-          .eq('workspace_id', activeWsId)
+          .select('workspace_id, user_id, conn_state, status, phone_number')
+          .or(`workspace_id.eq.${activeWsId},user_id.eq.${activeWsId}`)
           .maybeSingle();
 
         if (dbSession) {
