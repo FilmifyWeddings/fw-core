@@ -255,6 +255,25 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     };
   }, [initSSE, startPolling, stopPolling, workspaceId]);
 
+  // ── AUTO-RETRY TIMEOUT: If unconnected and missing QR for >5s, auto trigger force-reset ──
+  useEffect(() => {
+    if (connState === 'open' || qrString) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await fetch('/api/integrations/baileys/force-reset', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+        }
+      } catch {}
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [connState, qrString]);
+
   const handleDisconnect = async () => {
     sseRef.current?.close(); stopPolling();
     const { data: { session } } = await supabase.auth.getSession();

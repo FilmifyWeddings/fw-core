@@ -1012,15 +1012,9 @@ function startHealthServer() {
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
                 const qsWorkspace = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+                const forceFresh = parsedUrl.searchParams.get('force') === 'true' || parsedUrl.searchParams.get('force_fresh') === 'true';
                 const sess = activeSessions.get(qsWorkspace);
                 const now = Date.now();
-                // 1. DEBOUNCE: If active socket generated a QR within 25s, do NOT re-trigger
-                if (sess && (now - (sess.lastQrTime || 0) < 25_000)) {
-                    logger.info({ workspace_id: qsWorkspace }, '⏳ Active QR pairing in progress within 25s window — Skipping re-trigger on /init-qr.');
-                    res.writeHead(200);
-                    res.end(JSON.stringify({ success: true, message: `Active QR pairing in progress.` }));
-                    return;
-                }
                 if (sess?.sock && sess.sock.user && sess.sock.user.id) {
                     logger.info({ workspace_id: qsWorkspace }, 'Session is ALREADY CONNECTED! Skipping reset on /init-qr.');
                     res.writeHead(200);
@@ -1030,7 +1024,7 @@ function startHealthServer() {
                 const { data: dbSess } = await supabase
                     .from('baileys_sessions')
                     .select('conn_state, status, qr_string, updated_at')
-                    .eq('workspace_id', qsWorkspace)
+                    .or(`workspace_id.eq.${qsWorkspace},user_id.eq.${qsWorkspace}`)
                     .maybeSingle();
                 if (dbSess?.conn_state === 'open' || dbSess?.status === 'CONNECTED') {
                     logger.info({ workspace_id: qsWorkspace }, 'DB session is ALREADY OPEN! Skipping reset on /init-qr.');
@@ -1038,15 +1032,14 @@ function startHealthServer() {
                     res.end(JSON.stringify({ success: true, message: `Workspace ${qsWorkspace} is already connected in DB.` }));
                     return;
                 }
-                // 2. DB DEBOUNCE: If existing QR in DB is younger than 25s, do NOT re-trigger
-                if (dbSess?.qr_string && dbSess?.updated_at) {
-                    const updatedAt = new Date(dbSess.updated_at).getTime();
-                    if (now - updatedAt < 25_000) {
-                        logger.info({ workspace_id: qsWorkspace }, '⏳ DB QR string is younger than 25s — Skipping re-trigger on /init-qr.');
-                        res.writeHead(200);
-                        res.end(JSON.stringify({ success: true, message: `Active QR in DB is valid.` }));
-                        return;
-                    }
+                // DEBOUNCE ONLY IF VALID QR ALREADY EXISTS IN MEMORY/DB
+                const validMemoryQr = !!(sess?.lastQrTime && (now - sess.lastQrTime < 20_000));
+                const validDbQr = dbSess?.qr_string && dbSess?.updated_at && (now - new Date(dbSess.updated_at).getTime() < 20_000);
+                if (!forceFresh && (validMemoryQr || validDbQr)) {
+                    logger.info({ workspace_id: qsWorkspace }, '⏳ Active QR pairing in progress with valid QR — Skipping re-trigger on /init-qr.');
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ success: true, message: `Active QR pairing in progress.` }));
+                    return;
                 }
                 logger.info({ workspace_id: qsWorkspace }, '🔁 Initiating fresh QR pairing flow for workspace...');
                 await initiateForceReset(qsWorkspace);
