@@ -68,59 +68,45 @@ export async function POST(req: NextRequest) {
 
     const chatJid = normalizeJid(to);
 
-    // 1. HARD WORKSPACE RESOLUTION: Find ANY active connected session with phone_number
-    const { data: connectedSessions } = await supabaseAdmin
+    // 1. STRICT USER-TO-WORKSPACE RESOLUTION (bypassing RLS with supabaseAdmin)
+    const userId = user.id;
+    const requestedWsId = (body as any).workspace_id || userId;
+
+    const { data: allSessions } = await supabaseAdmin
       .from('baileys_sessions')
-      .select('workspace_id, conn_state, status, phone_number')
-      .order('updated_at', { ascending: false })
-      .limit(10);
+      .select('*')
+      .order('updated_at', { ascending: false });
 
-    let activeWsId = (body as any).workspace_id || user.id;
-    let session: any = null;
-    let isConnected = false;
-
-    if (connectedSessions && connectedSessions.length > 0) {
-      // Prioritize session with valid phone_number or open conn_state
-      const activeSess = connectedSessions.find(
+    let activeSess: any = null;
+    if (allSessions && allSessions.length > 0) {
+      // Priority 1: Exact match for workspace_id or user_id that has connected state or phone_number
+      activeSess = allSessions.find(
         (s: any) =>
-          (s.phone_number && s.phone_number.length > 5) ||
-          s.conn_state === 'open' ||
-          s.status === 'connected' ||
-          s.status === 'CONNECTED'
+          (s.workspace_id === requestedWsId || s.workspace_id === userId || s.user_id === userId) &&
+          (s.conn_state === 'open' || s.status === 'connected' || s.status === 'CONNECTED' || !!(s.phone_number && s.phone_number.length > 5))
       );
 
-      if (activeSess) {
-        session = activeSess;
-        activeWsId = activeSess.workspace_id;
-        isConnected = true;
-        console.log(`[send-message] HARD-OVERWRITE active workspace: ${activeWsId} (+${activeSess.phone_number})`);
+      // Priority 2: Any active session in account with a valid phone_number or connected state
+      if (!activeSess) {
+        activeSess = allSessions.find(
+          (s: any) =>
+            (s.phone_number && s.phone_number.length > 5 && s.phone_number !== 'Device Linked') ||
+            s.conn_state === 'open' ||
+            s.status === 'connected' ||
+            s.status === 'CONNECTED'
+        );
       }
     }
 
-    if (!isConnected) {
-      const { data: userSess } = await supabaseAdmin
-        .from('baileys_sessions')
-        .select('workspace_id, conn_state, status, phone_number')
-        .eq('workspace_id', user.id)
-        .maybeSingle();
-
-      if (userSess) {
-        session = userSess;
-        activeWsId = userSess.workspace_id;
-        isConnected =
-          userSess.conn_state === 'open' ||
-          userSess.status === 'connected' ||
-          userSess.status === 'CONNECTED' ||
-          !!(userSess.phone_number && userSess.phone_number.length > 5);
-      }
-    }
-
-    if (!session || !isConnected) {
+    if (!activeSess) {
       return NextResponse.json({
         error: 'WhatsApp not connected. Please scan QR code first.',
-        conn_state: session?.conn_state ?? 'disconnected',
+        conn_state: 'disconnected',
       }, { status: 409 });
     }
+
+    const activeWsId = activeSess.workspace_id || requestedWsId;
+    console.log('[Dispatch Success] Routing message for User:', userId, 'via Active Workspace Session:', activeWsId);
 
     // Create message record (pre-insert with 'queued' status)
     const { data: msgRecord } = await supabaseAdmin

@@ -26,6 +26,16 @@ export function getSessionDir(workspaceId) {
     return dir;
 }
 /**
+ * Checks if disk session credentials exist for a workspace.
+ */
+export function hasDiskSession(workspaceId) {
+    const basePath = fs.existsSync('/var/www/fw-core')
+        ? '/var/www/fw-core/sessions'
+        : path.resolve(process.cwd(), 'sessions');
+    const credsFile = path.join(basePath, workspaceId, 'creds.json');
+    return fs.existsSync(credsFile);
+}
+/**
  * Completely purges all local session files for a workspace from disk.
  */
 export function purgeSessionDir(workspaceId) {

@@ -35,7 +35,7 @@ import * as http from 'http';
 import { fileURLToPath } from 'url';
 import { useSupabaseAuthState } from './supabase-auth-state.js';
 import type { SignalKeyStore } from './supabase-auth-state.js';
-import { purgeSessionDir, getSessionDir } from './src/auth-adapter.js';
+import { purgeSessionDir, getSessionDir, hasDiskSession } from './src/auth-adapter.js';
 
 // Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
 globalThis.WebSocket = ws as any;
@@ -147,15 +147,23 @@ async function getWorkspaceSocket(wsId: string): Promise<ReturnType<typeof makeW
   let sess = activeSessions.get(wsId);
   if (sess && sess.sock) return sess.sock;
 
-  // Fallback: If requested workspace is not in memory, check if another paired workspace is active in memory
+  // 1. Check if another paired workspace is active in memory
   for (const [activeId, activeSess] of activeSessions.entries()) {
-    if (activeSess.sock && (activeSess.authState.state.creds as any)?.me?.id) {
+    if (activeSess.sock && (activeSess.sock.user || (activeSess.authState?.state?.creds as any)?.me?.id)) {
       logger.info({ requestedWsId: wsId, activeWsId: activeId }, '🔀 Redirecting outbound message dispatch to active in-memory socket');
       return activeSess.sock;
     }
   }
 
-  logger.info({ workspaceId: wsId }, '🔌 Socket not in memory — restoring socket from DB creds...');
+  // 2. Check if disk auth credentials exist for wsId, auto-restore on-the-fly
+  if (hasDiskSession(wsId)) {
+    logger.info({ workspaceId: wsId }, '🔌 Disk credentials found — auto-restoring socket into memory on-the-fly...');
+    await startBaileysSocket(false, wsId);
+    sess = activeSessions.get(wsId);
+    if (sess && sess.sock) return sess.sock;
+  }
+
+  logger.info({ workspaceId: wsId }, '🔌 Restoring socket from disk/DB creds...');
   await startBaileysSocket(false, wsId);
   sess = activeSessions.get(wsId);
 
