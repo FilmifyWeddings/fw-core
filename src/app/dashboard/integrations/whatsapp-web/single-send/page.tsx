@@ -112,18 +112,18 @@ export default function WhatsAppSingleSendPage() {
         }
       }
 
-      if (isConnected || (phoneNum && phoneNum.length > 5)) {
-        const finalPhone = phoneNum || '918169159784';
+      if (isConnected && phoneNum && phoneNum.length > 5) {
         setDeviceState({
           conn_state: 'open',
-          phone_number: finalPhone,
+          phone_number: phoneNum,
           workspace_id: resolvedWsId
         });
         setSelectedDeviceId(resolvedWsId);
       } else {
-        setDeviceState(prev => {
-          if (prev.conn_state === 'open') return prev; // Sticky connected state lock
-          return { conn_state: 'disconnected', phone_number: null, workspace_id: null };
+        setDeviceState({
+          conn_state: 'disconnected',
+          phone_number: null,
+          workspace_id: null
         });
       }
 

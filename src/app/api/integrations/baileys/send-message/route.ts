@@ -72,30 +72,19 @@ export async function POST(req: NextRequest) {
     const userId = user.id;
     const requestedWsId = (body as any).workspace_id || userId;
 
-    const { data: allSessions } = await supabaseAdmin
+    const { data: userSessions } = await supabaseAdmin
       .from('baileys_sessions')
       .select('*')
+      .or(`user_id.eq.${userId},workspace_id.eq.${requestedWsId},workspace_id.eq.${userId}`)
       .order('updated_at', { ascending: false });
 
     let activeSess: any = null;
-    if (allSessions && allSessions.length > 0) {
-      // Priority 1: Exact match for workspace_id or user_id that has connected state or phone_number
-      activeSess = allSessions.find(
+    if (userSessions && userSessions.length > 0) {
+      activeSess = userSessions.find(
         (s: any) =>
-          (s.workspace_id === requestedWsId || s.workspace_id === userId || s.user_id === userId) &&
+          (s.user_id === userId || s.workspace_id === requestedWsId || s.workspace_id === userId) &&
           (s.conn_state === 'open' || s.status === 'connected' || s.status === 'CONNECTED' || !!(s.phone_number && s.phone_number.length > 5))
       );
-
-      // Priority 2: Any active session in account with a valid phone_number or connected state
-      if (!activeSess) {
-        activeSess = allSessions.find(
-          (s: any) =>
-            (s.phone_number && s.phone_number.length > 5 && s.phone_number !== 'Device Linked') ||
-            s.conn_state === 'open' ||
-            s.status === 'connected' ||
-            s.status === 'CONNECTED'
-        );
-      }
     }
 
     if (!activeSess) {

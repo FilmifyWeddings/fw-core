@@ -106,14 +106,7 @@ async function getWorkspaceSocket(wsId) {
     let sess = activeSessions.get(wsId);
     if (sess && sess.sock)
         return sess.sock;
-    // 1. Check if another paired workspace is active in memory
-    for (const [activeId, activeSess] of activeSessions.entries()) {
-        if (activeSess.sock && (activeSess.sock.user || activeSess.authState?.state?.creds?.me?.id)) {
-            logger.info({ requestedWsId: wsId, activeWsId: activeId }, '🔀 Redirecting outbound message dispatch to active in-memory socket');
-            return activeSess.sock;
-        }
-    }
-    // 2. Check if disk auth credentials exist for wsId, auto-restore on-the-fly
+    // 1. Check if disk auth credentials exist for wsId, auto-restore on-the-fly
     if (hasDiskSession(wsId)) {
         logger.info({ workspaceId: wsId }, '🔌 Disk credentials found — auto-restoring socket into memory on-the-fly...');
         await startBaileysSocket(false, wsId);
@@ -121,6 +114,7 @@ async function getWorkspaceSocket(wsId) {
         if (sess && sess.sock)
             return sess.sock;
     }
+    // 2. Restoring socket from disk/DB creds
     logger.info({ workspaceId: wsId }, '🔌 Restoring socket from disk/DB creds...');
     await startBaileysSocket(false, wsId);
     sess = activeSessions.get(wsId);
@@ -1051,17 +1045,6 @@ function startHealthServer() {
                 const bodyStr = await getRequestBody(req);
                 const payload = JSON.parse(bodyStr);
                 let targetWsId = payload.workspace_id || payload.workspaceId || WORKSPACE_ID;
-                // WORKER ENDPOINT FALLBACK: Check if activeSessions has requested ID or ANY open socket in memory
-                let activeSess = activeSessions.get(targetWsId);
-                if (!activeSess || !activeSess.sock) {
-                    for (const [wsId, sess] of activeSessions.entries()) {
-                        if (sess.sock && (sess.sock.user || sess.authState?.state?.creds?.me?.id)) {
-                            logger.info({ requestedWsId: targetWsId, fallbackWsId: wsId }, '⚡ Using active fallback in-memory socket for /send dispatch');
-                            targetWsId = wsId;
-                            break;
-                        }
-                    }
-                }
                 logger.info({ payload, workspaceId: targetWsId }, 'Received send message request');
                 const targetSock = await getWorkspaceSocket(targetWsId);
                 // ── Intercept: if rawButtons/buttons are present, force 'buttons' route ──
