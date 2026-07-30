@@ -356,25 +356,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           </TiltCard>
         )}
 
-        {/* ─── DISCONNECTED ─── */}
-        {connState === 'disconnected' && (
-          <div className="bg-white rounded-3xl border border-[#e9edef] p-8 shadow-sm text-center space-y-4">
-            <h2 className="text-lg font-bold text-[#111b21]">Session Disconnected</h2>
-            <p className="text-xs text-[#667781]">Your session was reset. Click below to re-link your device.</p>
-            <div className="flex items-center justify-center gap-3">
-              <button onClick={handleReconnect} className="px-6 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f70] text-white font-bold text-sm transition-all shadow-md shadow-emerald-200 cursor-pointer">
-                Link a Device
-              </button>
-              <button onClick={handleForceReset} className="px-5 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-[10px] transition-all active:scale-95 cursor-pointer flex items-center gap-1.5">
-                <RefreshCw className="w-3 h-3" />
-                Force Reset QR
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ─── SCAN CARD ─── */}
-        {(connState === 'connecting' || connState === 'error') && (
+        {/* ─── SCAN CARD (ALWAYS DISPLAYED FOR UNCONNECTED USERS) ─── */}
+        {connState !== 'open' && connState !== 'loading' && (
           <TiltCard>
             <div className="bg-white rounded-3xl border border-[#e9edef] px-6 sm:px-10 py-8 shadow-lg shadow-emerald-50/60">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">

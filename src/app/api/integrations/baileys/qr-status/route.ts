@@ -60,24 +60,15 @@ export async function GET(req: NextRequest) {
       .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
       .maybeSingle();
 
-    if (error) {
-      console.error('[qr-status GET DB Error]:', error.message);
-      // Gracefully return disconnected state instead of HTTP 500
-      return NextResponse.json({
-        workspace_id: workspaceId,
-        isConnected: false,
-        conn_state: 'disconnected',
-        status: 'DISCONNECTED',
-        qr_string: null,
-        phone_number: null,
-        last_connected: null,
-      }, {
-        status: 200,
-        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
-      });
-    }
+    if (error || !data) {
+      // AUTO-TRIGGER QR GENERATION FOR UNCONNECTED USER
+      const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+      fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(1500),
+      }).catch(() => {});
 
-    if (!data) {
       return NextResponse.json({
         workspace_id: workspaceId,
         isConnected: false,
@@ -101,6 +92,18 @@ export async function GET(req: NextRequest) {
     const qrExpired = data.qr_expires_at
       ? new Date(data.qr_expires_at as string) < new Date()
       : false;
+
+    const qrString = isConnected ? null : (qrExpired ? null : ((data.qr_string as string) ?? null));
+
+    // AUTO-TRIGGER QR GENERATION IF UNCONNECTED AND QR IS NULL
+    if (!isConnected && !qrString) {
+      const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+      fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(1500),
+      }).catch(() => {});
+    }
 
     return NextResponse.json({
       workspace_id: workspaceId,
