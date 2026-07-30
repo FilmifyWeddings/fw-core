@@ -83,9 +83,10 @@ export default function WhatsAppSingleSendPage() {
           });
           if (statusRes.ok) {
             const d = await statusRes.json();
-            if (d.isConnected || d.conn_state === 'open' || d.conn_state === 'connected' || d.status === 'CONNECTED' || d.status === 'connected') {
+            const isConn = (d.conn_state === 'open' || d.conn_state === 'connected') && d.isConnected !== false;
+            if (isConn) {
               isConnected = true;
-              phoneNum = d.phone_number || d.phone || 'Device Linked';
+              phoneNum = d.phone_number || d.phone || 'Connected Device';
               resolvedWsId = d.workspace_id || activeWsId;
             }
           }
@@ -101,17 +102,17 @@ export default function WhatsAppSingleSendPage() {
           .maybeSingle();
 
         if (dbSession) {
-          const isConn = dbSession.conn_state === 'open' || dbSession.conn_state === 'connected' || dbSession.status === 'connected' || dbSession.status === 'CONNECTED';
+          const isConn = dbSession.conn_state === 'open' || dbSession.conn_state === 'connected';
           if (isConn) {
             isConnected = true;
-            phoneNum = dbSession.phone_number || 'Device Linked';
+            phoneNum = dbSession.phone_number || 'Connected Device';
             resolvedWsId = dbSession.user_id || dbSession.workspace_id || activeWsId;
           }
         }
       }
 
       if (isConnected) {
-        const displayPhone = phoneNum || 'Device Linked';
+        const displayPhone = phoneNum || 'Connected Device';
         setDeviceState({
           conn_state: 'open',
           phone_number: displayPhone,
@@ -124,6 +125,7 @@ export default function WhatsAppSingleSendPage() {
           phone_number: null,
           workspace_id: null
         });
+        setSelectedDeviceId('');
       }
 
       // 4. Fetch templates
