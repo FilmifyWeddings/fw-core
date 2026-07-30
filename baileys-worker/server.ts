@@ -113,11 +113,11 @@ for (const p of envPaths) {
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const WORKSPACE_ID = process.env.WORKER_WORKSPACE_ID || '37c63a54-d4f1-4b99-b546-3d965cd23a37';
+const WORKSPACE_ID = process.env.WORKER_WORKSPACE_ID || '';
 const PORT = parseInt(process.env.WORKER_PORT ?? '3002', 10); // use WORKER_PORT to avoid collision with Next.js on 3000
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !WORKSPACE_ID) {
-  logger.fatal('Missing required env vars: SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_WORKSPACE_ID');
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  logger.fatal('Missing required env vars: SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
   process.exit(1);
 }
 
@@ -2010,7 +2010,7 @@ async function main(): Promise<void> {
         logger.error({ err, workspaceId: s.workspace_id }, 'Failed to restore workspace session at startup');
       });
     }
-  } else {
+  } else if (WORKSPACE_ID) {
     logger.info({ workspaceId: WORKSPACE_ID }, 'Starting default workspace socket...');
     startBaileysSocket(false, WORKSPACE_ID).catch(() => {});
   }

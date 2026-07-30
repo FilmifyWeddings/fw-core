@@ -4,12 +4,10 @@ import React from 'react';
 import { useBhamstra } from '@/lib/context/BhamstraContext';
 import { BaileysQrConnect } from '@/components/integrations/baileys/baileys-qr-connect';
 
-const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
-
 export default function WhatsAppDevicePage() {
   const { userId, loading } = useBhamstra();
 
-  if (loading) {
+  if (loading || !userId) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00a884]"></div>
@@ -18,6 +16,6 @@ export default function WhatsAppDevicePage() {
   }
 
   return (
-    <BaileysQrConnect workspaceId={userId || MOCK_WORKSPACE_ID} />
+    <BaileysQrConnect workspaceId={userId} />
   );
 }
