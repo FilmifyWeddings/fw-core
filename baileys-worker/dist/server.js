@@ -764,16 +764,19 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
         activeSessions.delete(wsId);
     }
     clearConnectingTimeout(wsId);
+    const authState = await useSupabaseAuthState(supabase, wsId);
+    const hasCredsMe = !!authState.state.creds?.me?.id;
     if (forceFresh) {
         logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
         purgeSessionDir(wsId);
         await updateSessionState('connecting', {}, wsId);
     }
     else {
-        logger.info({ workspaceId: wsId }, '🧠 Reconnect mode: loading file-based auth state from local disk');
-        await updateSessionState('connecting', {}, wsId);
+        logger.info({ workspaceId: wsId, hasCredsMe }, '🧠 Reconnect mode: loading file-based auth state from local disk');
+        if (!hasCredsMe) {
+            await updateSessionState('connecting', {}, wsId);
+        }
     }
-    const authState = await useSupabaseAuthState(supabase, wsId);
     let { version } = await fetchLatestBaileysVersion().catch(() => ({
         version: [2, 3000, 1017531287],
     }));
@@ -812,22 +815,28 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
         console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
         logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
         if (qr) {
-            clearConnectingTimeout(wsId);
-            startConnectingTimeout(wsId);
-            const now = Date.now();
-            if (now - currentSess.lastQrTime > 10_000) {
-                currentSess.lastQrTime = now;
-                logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
-                console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
-                await dbWrite(supabase
-                    .from('baileys_sessions')
-                    .upsert({
-                    workspace_id: wsId,
-                    qr_string: qr,
-                    qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
-                    conn_state: 'connecting',
-                    updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id' }), `upsert-qr-${wsId}`);
+            const isAlreadyPaired = !!authState.state.creds?.me?.id || !!localSock.user?.id;
+            if (isAlreadyPaired) {
+                logger.info({ workspaceId: wsId }, '🛡️ Guard: Ignoring residual QR event because session already has paired user credentials');
+            }
+            else {
+                clearConnectingTimeout(wsId);
+                startConnectingTimeout(wsId);
+                const now = Date.now();
+                if (now - currentSess.lastQrTime > 10_000) {
+                    currentSess.lastQrTime = now;
+                    logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
+                    console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
+                    await dbWrite(supabase
+                        .from('baileys_sessions')
+                        .upsert({
+                        workspace_id: wsId,
+                        qr_string: qr,
+                        qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+                        conn_state: 'connecting',
+                        updated_at: new Date().toISOString(),
+                    }, { onConflict: 'workspace_id' }), `upsert-qr-${wsId}`);
+                }
             }
         }
         if (connection === 'open' || (localSock.user?.id && connection !== 'close')) {
@@ -839,7 +848,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
             catch { }
             const phoneNumber = localSock.user?.id?.split(':')[0] || authState.state.creds?.me?.id?.split(':')[0] || null;
             console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
-            // Direct, immediate non-blocking UPSERT into Supabase
+            // Direct, immediate non-blocking UPSERT into Supabase locking open state
             dbWriteCritical(supabase
                 .from('baileys_sessions')
                 .upsert({

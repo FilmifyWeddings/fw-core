@@ -136,14 +136,17 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       });
       if (!res.ok) return;
       const d = await res.json();
-      if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
+      if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected') {
         setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
       } else if (d.qr_string && !d.qr_expired) {
-        setConnState('connecting'); setQrString(d.qr_string); setIsResetting(false);
+        setConnState(prev => (prev === 'open' ? 'open' : 'connecting'));
+        setQrString(prevQr => (connState === 'open' ? null : d.qr_string));
+        setIsResetting(false);
       } else if (d.conn_state === 'connecting') {
-        setConnState('connecting'); setIsResetting(false);
+        setConnState(prev => (prev === 'open' ? 'open' : 'connecting'));
+        setIsResetting(false);
       } else if (d.conn_state === 'disconnected') {
-        setConnState(prev => (prev === 'connecting' ? 'connecting' : 'disconnected'));
+        setConnState(prev => (prev === 'open' ? 'open' : 'disconnected'));
       }
     } catch { /* ignore */ }
   }, [stopPolling]);
