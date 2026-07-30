@@ -962,7 +962,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       creds: authState.state.creds,
       keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
     },
-    printQRInTerminal: true,
+    printQRInTerminal: false,
     generateHighQualityLinkPreview: true,
     keepAliveIntervalMs: 10_000,
     connectTimeoutMs: 60_000,
@@ -971,7 +971,6 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
     markOnlineOnConnect: true,
     browser: Browsers.ubuntu('Chrome'),
     syncFullHistory: false,
-    shouldSyncHistoryMessage: () => false,
   });
 
   const currentSess: WorkspaceSession = {
