@@ -57,13 +57,14 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabaseAdmin
       .from('baileys_sessions')
       .select('*')
-      .eq('workspace_id', workspaceId)
+      .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
       .maybeSingle();
 
     if (error) {
       console.error('[qr-status GET DB Error]:', error.message);
       // Gracefully return disconnected state instead of HTTP 500
       return NextResponse.json({
+        workspace_id: workspaceId,
         isConnected: false,
         conn_state: 'disconnected',
         status: 'DISCONNECTED',
@@ -78,6 +79,7 @@ export async function GET(req: NextRequest) {
 
     if (!data) {
       return NextResponse.json({
+        workspace_id: workspaceId,
         isConnected: false,
         conn_state: 'disconnected',
         status: 'DISCONNECTED',
@@ -93,7 +95,8 @@ export async function GET(req: NextRequest) {
     // Normalize: treat open / CONNECTED / open status as connected
     const rawState = (data.conn_state as string) ?? 'disconnected';
     const rawStatus = (data.status as string) ?? '';
-    const isConnected = rawState === 'open' || rawStatus === 'CONNECTED' || rawStatus === 'open';
+    const hasPhone = !!(data.phone_number && (data.phone_number as string).length > 5);
+    const isConnected = (rawState === 'open' || rawStatus === 'CONNECTED' || rawStatus === 'open') && hasPhone;
 
     const qrExpired = data.qr_expires_at
       ? new Date(data.qr_expires_at as string) < new Date()
@@ -106,7 +109,7 @@ export async function GET(req: NextRequest) {
       status: isConnected ? 'CONNECTED' : (rawStatus || 'DISCONNECTED'),
       qr_string: isConnected ? null : (qrExpired ? null : ((data.qr_string as string) ?? null)),
       qr_expired: isConnected ? false : qrExpired,
-      phone_number: (data.phone_number as string) || 'Device Linked',
+      phone_number: (data.phone_number as string) || null,
       last_connected: data.last_connected ?? null,
     }, {
       status: 200,

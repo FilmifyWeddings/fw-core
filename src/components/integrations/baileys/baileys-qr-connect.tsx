@@ -136,17 +136,18 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       });
       if (!res.ok) return;
       const d = await res.json();
-      if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected') {
-        setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false); stopPolling();
+      if (d.isConnected && d.phone_number) {
+        setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); setIsResetting(false); stopPolling();
       } else if (d.qr_string && !d.qr_expired) {
-        setConnState(prev => (prev === 'open' ? 'open' : 'connecting'));
-        setQrString(prevQr => (connState === 'open' ? null : d.qr_string));
+        setConnState('connecting');
+        setQrString(d.qr_string);
         setIsResetting(false);
       } else if (d.conn_state === 'connecting') {
-        setConnState(prev => (prev === 'open' ? 'open' : 'connecting'));
+        setConnState('connecting');
         setIsResetting(false);
       } else if (d.conn_state === 'disconnected') {
-        setConnState(prev => (prev === 'open' ? 'open' : 'disconnected'));
+        setConnState('disconnected');
+        setPhoneNumber(null);
       }
     } catch { /* ignore */ }
   }, [stopPolling]);
@@ -194,9 +195,9 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           });
           if (res.ok) {
             const d = await res.json();
-            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
+            if (d.isConnected && d.phone_number) {
               if (isMounted) {
-                setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false);
+                setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); setIsResetting(false);
               }
               return;
             }
