@@ -63,29 +63,25 @@ export default function WhatsAppSingleSendPage() {
   const loadConfigData = async () => {
     setLoadingConfig(true);
     try {
-      // 1. Fetch connection details
+      // 1. Fetch connection details directly from /api/integrations/baileys/qr-status
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
+      let statusData: any = null;
+
       if (token) {
-        const statusRes = await fetch('/api/integrations/baileys/qr-status', {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
-        });
-        if (statusRes.ok) {
-          const d = await statusRes.json();
-          if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected') {
-            setDeviceState({
-              conn_state: 'open',
-              phone_number: d.phone_number || 'Device Linked'
-            });
-          } else {
-            setDeviceState({
-              conn_state: d.conn_state || 'disconnected',
-              phone_number: d.phone_number || null
-            });
+        try {
+          const statusRes = await fetch('/api/integrations/baileys/qr-status', {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          });
+          if (statusRes.ok) {
+            statusData = await statusRes.json();
           }
-        }
-      } else {
+        } catch {}
+      }
+
+      // Fallback query directly to Supabase baileys_sessions table if statusData was not open
+      if (!statusData || (!statusData.isConnected && statusData.conn_state !== 'open')) {
         const { data: dbSession } = await supabase
           .from('baileys_sessions')
           .select('conn_state, status, phone_number')
@@ -94,11 +90,20 @@ export default function WhatsAppSingleSendPage() {
 
         if (dbSession) {
           const isConn = dbSession.conn_state === 'open' || dbSession.status === 'connected' || dbSession.status === 'CONNECTED';
-          setDeviceState({
+          statusData = {
+            isConnected: isConn,
             conn_state: isConn ? 'open' : (dbSession.conn_state || 'disconnected'),
-            phone_number: dbSession.phone_number
-          });
+            phone_number: dbSession.phone_number,
+          };
         }
+      }
+
+      if (statusData) {
+        const isConn = statusData.isConnected || statusData.conn_state === 'open' || statusData.status === 'CONNECTED' || statusData.status === 'connected';
+        setDeviceState({
+          conn_state: isConn ? 'open' : (statusData.conn_state || 'disconnected'),
+          phone_number: statusData.phone_number || 'Device Linked'
+        });
       }
 
       // 2. Fetch templates
@@ -115,10 +120,10 @@ export default function WhatsAppSingleSendPage() {
   };
 
   useEffect(() => {
-    if (tenantId) {
-      loadConfigData();
-    }
-  }, [tenantId]);
+    loadConfigData();
+    const interval = setInterval(loadConfigData, 3000);
+    return () => clearInterval(interval);
+  }, [tenantId, userId]);
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
