@@ -1007,21 +1007,24 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       const phoneNumber = localSock.user?.id?.split(':')[0] || (authState.state.creds as any)?.me?.id?.split(':')[0] || null;
 
       console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
-      await dbWriteCritical(
+      
+      // Direct, immediate non-blocking UPSERT into Supabase
+      dbWriteCritical(
         supabase
           .from('baileys_sessions')
           .upsert({
             workspace_id: wsId,
             conn_state: 'open',
-            status: 'CONNECTED',
+            status: 'connected',
             phone_number: phoneNumber,
             last_connected: new Date().toISOString(),
             qr_string: null,
+            qr_expires_at: null,
             error_info: null,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id' }),
         `upsert-open-status-${wsId}`
-      );
+      ).catch((err: any) => logger.error({ err, workspaceId: wsId }, 'Failed direct DB status upsert'));
     }
 
     if (connection === 'close') {

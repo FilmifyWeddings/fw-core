@@ -64,17 +64,41 @@ export default function WhatsAppSingleSendPage() {
     setLoadingConfig(true);
     try {
       // 1. Fetch connection details
-      const { data: session } = await supabase
-        .from('baileys_sessions')
-        .select('conn_state, phone_number')
-        .eq('workspace_id', tenantId)
-        .maybeSingle();
-
-      if (session) {
-        setDeviceState({
-          conn_state: session.conn_state,
-          phone_number: session.phone_number
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token) {
+        const statusRes = await fetch('/api/integrations/baileys/qr-status', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
         });
+        if (statusRes.ok) {
+          const d = await statusRes.json();
+          if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected') {
+            setDeviceState({
+              conn_state: 'open',
+              phone_number: d.phone_number || 'Device Linked'
+            });
+          } else {
+            setDeviceState({
+              conn_state: d.conn_state || 'disconnected',
+              phone_number: d.phone_number || null
+            });
+          }
+        }
+      } else {
+        const { data: dbSession } = await supabase
+          .from('baileys_sessions')
+          .select('conn_state, status, phone_number')
+          .eq('workspace_id', tenantId)
+          .maybeSingle();
+
+        if (dbSession) {
+          const isConn = dbSession.conn_state === 'open' || dbSession.status === 'connected' || dbSession.status === 'CONNECTED';
+          setDeviceState({
+            conn_state: isConn ? 'open' : (dbSession.conn_state || 'disconnected'),
+            phone_number: dbSession.phone_number
+          });
+        }
       }
 
       // 2. Fetch templates
@@ -424,7 +448,7 @@ export default function WhatsAppSingleSendPage() {
                 {loadingConfig ? (
                   <option>Loading Device Status...</option>
                 ) : deviceState.conn_state === 'open' ? (
-                  <option value="gateway">WhatsApp Web Gateway - Active (+{deviceState.phone_number})</option>
+                  <option value="gateway">WhatsApp Web Gateway - Connected (+{deviceState.phone_number || 'Device Linked'})</option>
                 ) : (
                   <option value="gateway">WhatsApp Web Gateway - Offline / Disconnected</option>
                 )}
