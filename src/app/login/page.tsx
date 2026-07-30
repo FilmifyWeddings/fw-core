@@ -60,7 +60,7 @@ export default function LoginPage() {
           }
           
           alert('Account created successfully! Logging in...');
-          router.push('/dashboard/workspace');
+          window.location.href = '/dashboard/integrations/whatsapp-web';
         }
       } else {
         // Log In Flow
@@ -71,8 +71,8 @@ export default function LoginPage() {
 
         if (signInErr) throw signInErr;
         const searchParams = new URLSearchParams(window.location.search);
-        const redirectTo = searchParams.get('redirectTo') || '/dashboard/workspace';
-        router.push(redirectTo);
+        const redirectTo = searchParams.get('redirectTo') || '/dashboard/integrations/whatsapp-web';
+        window.location.href = redirectTo;
       }
     } catch (err: any) {
       console.error(err);
