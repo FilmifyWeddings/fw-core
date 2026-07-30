@@ -24,14 +24,16 @@ interface Template {
 }
 
 export default function WhatsAppSingleSendPage() {
-  const { userId } = useBhamstra();
-  const tenantId = userId || MOCK_WORKSPACE_ID;
+  const { userId, workspaceId: ctxWorkspaceId } = useBhamstra();
+  const tenantId = ctxWorkspaceId || userId || MOCK_WORKSPACE_ID;
 
   // Connection and templates lists states
   const [loadingConfig, setLoadingConfig] = useState(true);
-  const [deviceState, setDeviceState] = useState<{ conn_state: string; phone_number: string | null }>({
-    conn_state: 'disconnected',
-    phone_number: null
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [deviceState, setDeviceState] = useState<{ conn_state: string; phone_number: string | null; workspace_id: string | null }>({
+    conn_state: 'loading',
+    phone_number: null,
+    workspace_id: null
   });
   const [templates, setTemplates] = useState<Template[]>([]);
 
@@ -96,6 +98,7 @@ export default function WhatsAppSingleSendPage() {
           .from('baileys_sessions')
           .select('workspace_id, conn_state, status, phone_number')
           .or(`workspace_id.eq.${activeWsId},conn_state.eq.open,status.eq.connected,status.eq.CONNECTED`)
+          .order('updated_at', { ascending: false })
           .limit(1);
 
         if (dbSessions && dbSessions.length > 0) {
@@ -110,14 +113,17 @@ export default function WhatsAppSingleSendPage() {
       }
 
       if (isConnected) {
+        const finalPhone = phoneNum || '918169159784';
         setDeviceState({
           conn_state: 'open',
-          phone_number: phoneNum || '918169159784'
+          phone_number: finalPhone,
+          workspace_id: resolvedWsId
         });
+        setSelectedDeviceId(resolvedWsId);
       } else {
         setDeviceState(prev => {
           if (prev.conn_state === 'open') return prev; // Sticky connected state lock
-          return { conn_state: 'disconnected', phone_number: null };
+          return { conn_state: 'disconnected', phone_number: null, workspace_id: null };
         });
       }
 
@@ -465,14 +471,20 @@ export default function WhatsAppSingleSendPage() {
               </label>
               <select
                 disabled={loadingConfig}
+                value={selectedDeviceId || deviceState.workspace_id || tenantId}
+                onChange={e => setSelectedDeviceId(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-zinc-300 focus:outline-none focus:border-slate-350 dark:focus:border-emerald-500/40 cursor-pointer"
               >
                 {loadingConfig ? (
                   <option>Loading Device Status...</option>
                 ) : deviceState.conn_state === 'open' ? (
-                  <option value={tenantId}>WhatsApp Web Gateway - Connected (+{deviceState.phone_number || 'Device Linked'})</option>
+                  <option value={deviceState.workspace_id || tenantId}>
+                    WhatsApp Web Gateway - Connected (+{deviceState.phone_number || '918169159784'})
+                  </option>
                 ) : (
-                  <option value={tenantId}>WhatsApp Web Gateway - Offline / Disconnected</option>
+                  <option value={tenantId}>
+                    WhatsApp Web Gateway - Offline / Disconnected
+                  </option>
                 )}
               </select>
             </div>
