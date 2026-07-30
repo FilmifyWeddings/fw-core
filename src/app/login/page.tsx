@@ -16,12 +16,39 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Check if session already exists
+  // Staging environment checks
+  const allowedStagingEmailsRaw = process.env.NEXT_PUBLIC_ALLOWED_STAGING_EMAILS || '';
+  const isStagingFlag = process.env.NEXT_PUBLIC_IS_STAGING === 'true';
+  const isStagingRestricted = isStagingFlag || allowedStagingEmailsRaw.trim().length > 0;
+
+  const allowedStagingEmails = allowedStagingEmailsRaw
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  // Read URL search params on load (for unauthorized_staging error)
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const errParam = searchParams.get('error');
+    if (errParam === 'unauthorized_staging') {
+      setError('Access Denied: This staging environment is restricted to authorized testing accounts only.');
+    } else if (errParam) {
+      setError(decodeURIComponent(errParam));
+    }
+
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        const searchParams = new URLSearchParams(window.location.search);
+        // If user session exists, verify email on staging
+        const userEmail = (session.user.email || '').trim().toLowerCase();
+        if (allowedStagingEmails.length > 0 && !allowedStagingEmails.includes(userEmail)) {
+          await supabase.auth.signOut();
+          document.cookie = 'sb-access-token=; path=/; max-age=0';
+          document.cookie = 'sb-refresh-token=; path=/; max-age=0';
+          setError('Access Denied: This staging environment is restricted to authorized testing accounts only.');
+          return;
+        }
+
         const redirectTo = searchParams.get('redirectTo');
         if (redirectTo) {
           router.push(redirectTo);
@@ -29,22 +56,36 @@ export default function LoginPage() {
       }
     };
     checkSession();
-  }, [router]);
+  }, [router, allowedStagingEmailsRaw]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const targetEmail = email.trim().toLowerCase();
+
+    // Check staging email authorization client-side
+    if (allowedStagingEmails.length > 0 && !allowedStagingEmails.includes(targetEmail)) {
+      setError('Access Denied: This staging environment is restricted to authorized testing accounts only.');
+      return;
+    }
+
+    if (isSignUp && isStagingRestricted) {
+      setError('Staging Environment: Registration is disabled. Only authorized testing accounts can log in.');
+      return;
+    }
+
     setLoading(true);
 
     try {
       if (isSignUp) {
-        // Sign Up Flow - pass workspace_name to user metadata for db trigger
+        // Sign Up Flow
         const { data, error: signUpErr } = await supabase.auth.signUp({
-          email,
+          email: targetEmail,
           password,
           options: {
             data: {
-              workspace_name: workspaceName.trim() || `${email.split('@')[0]}'s Studio`,
+              workspace_name: workspaceName.trim() || `${targetEmail.split('@')[0]}'s Studio`,
             }
           }
         });
@@ -55,7 +96,7 @@ export default function LoginPage() {
         if (user) {
           if (!session) {
             alert('Account created successfully! Please check your email to confirm your account before logging in.');
-            setIsSignUp(false); // Switch back to Sign In page
+            setIsSignUp(false);
             return;
           }
           
@@ -65,7 +106,7 @@ export default function LoginPage() {
       } else {
         // Log In Flow
         const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-          email,
+          email: targetEmail,
           password,
         });
 
@@ -101,6 +142,15 @@ export default function LoginPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md p-8 rounded-2xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-10 space-y-6"
       >
+        {/* Staging environment badge */}
+        {isStagingRestricted && (
+          <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] font-extrabold text-center flex items-center justify-center gap-1.5">
+            <span>🔒 STAGING ENVIRONMENT</span>
+            <span className="opacity-60">•</span>
+            <span>Authorized Testing Only</span>
+          </div>
+        )}
+
         {/* Header Title */}
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center font-bold text-lg text-black shadow-lg shadow-orange-500/20 mx-auto">
@@ -119,16 +169,16 @@ export default function LoginPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-400 text-xs flex items-start gap-2.5"
+            className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5 shadow-lg"
           >
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+            <span className="font-semibold leading-relaxed">{error}</span>
           </motion.div>
         )}
 
         {/* Auth Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {isSignUp && (
+          {isSignUp && !isStagingRestricted && (
             <div className="space-y-1.5">
               <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Workspace / Studio Name</label>
               <div className="relative">
@@ -178,7 +228,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-white hover:bg-zinc-200 text-black text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 mt-6 shadow-xl"
+            className="w-full py-2.5 bg-white hover:bg-zinc-200 text-black text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 mt-6 shadow-xl cursor-pointer"
           >
             {loading ? 'Processing...' : isSignUp ? 'Create Workspace' : 'Sign In'}
             {!loading && <ArrowRight className="w-4 h-4" />}
@@ -186,15 +236,21 @@ export default function LoginPage() {
         </form>
 
         {/* Signup / Sign in Toggle */}
-        <div className="text-center pt-2">
-          <button
-            type="button"
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-xs text-zinc-400 hover:text-white transition-colors underline underline-offset-4"
-          >
-            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-          </button>
-        </div>
+        {!isStagingRestricted ? (
+          <div className="text-center pt-2">
+            <button
+              type="button"
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-xs text-zinc-400 hover:text-white transition-colors underline underline-offset-4 cursor-pointer"
+            >
+              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+            </button>
+          </div>
+        ) : (
+          <div className="text-center pt-2 text-[11px] text-amber-400/80 font-medium">
+            Registration is disabled on Staging. Contact administrator for testing access.
+          </div>
+        )}
 
         {/* Compliance Footer Links */}
         <div className="flex justify-center gap-4 text-[10px] text-zinc-500 pt-4 border-t border-zinc-900/60">

@@ -79,7 +79,42 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 2. PROTECTED ROUTE CHECK ONLY
+  // 2. PROTECTED ROUTE & STAGING AUTHORIZATION CHECK
+  const allowedStagingEmailsRaw = 
+    process.env.NEXT_PUBLIC_ALLOWED_STAGING_EMAILS ||
+    process.env.ALLOWED_EMAILS ||
+    process.env.STAGING_ALLOWED_EMAILS ||
+    '';
+
+  const allowedStagingEmails = allowedStagingEmailsRaw
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  // If user is authenticated, verify staging email permission
+  if (user && allowedStagingEmails.length > 0) {
+    const userEmail = (user.email || '').trim().toLowerCase();
+    const isAllowed = allowedStagingEmails.includes(userEmail);
+
+    if (!isAllowed) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'Access Denied: This staging environment is restricted to authorized testing accounts only.' },
+          { status: 403 }
+        );
+      }
+
+      // Clear auth cookies on response to sign them out immediately
+      const redirectUrl = new URL('/login', request.url);
+      redirectUrl.searchParams.set('error', 'unauthorized_staging');
+      const signOutResponse = NextResponse.redirect(redirectUrl, { status: 307 });
+      
+      signOutResponse.cookies.set('sb-access-token', '', { expires: new Date(0) });
+      signOutResponse.cookies.set('sb-refresh-token', '', { expires: new Date(0) });
+      return signOutResponse;
+    }
+  }
+
   const isProtectedRoute =
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/workspace') ||
