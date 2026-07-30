@@ -654,7 +654,6 @@ async function executeAction(action: {
         .from('baileys_sessions')
         .update({
           conn_state: 'disconnected',
-          status: 'DISCONNECTED',
           error_info: 'WhatsApp Session Expired. Please reconnect QR code.',
           last_status_change: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -732,7 +731,6 @@ async function executeAction(action: {
           .from('baileys_sessions')
           .update({
             conn_state: 'disconnected',
-            status: 'DISCONNECTED',
             error_info: 'WhatsApp Session Expired. Please reconnect QR code.',
             last_status_change: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -900,16 +898,16 @@ async function initiateForceReset(targetWorkspaceId?: string): Promise<void> {
   await supabase
     .from('baileys_sessions')
     .upsert({
+      user_id: wsId,
       workspace_id: wsId,
       conn_state: 'connecting',
-      status: 'DISCONNECTED',
       qr_string: null,
       qr_expires_at: null,
       phone_number: null,
       error_info: 'Force reset — fresh QR generated',
       last_status_change: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'workspace_id' });
+    }, { onConflict: 'user_id' });
 
   startBaileysSocket(true, wsId).catch(err => {
     logger.error({ err, workspaceId: wsId }, 'Failed to start Baileys socket after force-reset');
@@ -943,7 +941,6 @@ async function syncOpenSessionToDb(wsId: string, sock: any, authState?: any): Pr
       user_id: wsId,
       workspace_id: wsId,
       conn_state: 'open',
-      status: 'connected',
       phone_number: phoneNum,
       qr_string: null,
       qr_expires_at: null,
@@ -1139,7 +1136,6 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         .from('baileys_sessions')
         .update({
           conn_state: 'disconnected',
-          status: 'DISCONNECTED',
           qr_string: null,
           qr_expires_at: null,
           phone_number: null,
@@ -1974,7 +1970,6 @@ async function runSessionHeartbeatCheck(): Promise<void> {
             .from('baileys_sessions')
             .update({
               conn_state: 'disconnected',
-              status: 'DISCONNECTED',
               phone_number: null,
               qr_string: null,
               creds_json: null,
