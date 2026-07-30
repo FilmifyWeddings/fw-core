@@ -59,7 +59,20 @@ export async function useSupabaseAuthState(supabase, workspaceId) {
             return false;
         }
     }
+    let saveTimer = null;
+    function scheduleSave() {
+        if (saveTimer)
+            clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            saveTimer = null;
+            persistAuthState().catch(err => logger.error({ err }, 'Failed to auto-persist auth state'));
+        }, 200);
+    }
     async function persistAuthState() {
+        if (saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
+        }
         try {
             const credsJson = JSON.stringify(creds, BufferJSON.replacer);
             const keysJson = JSON.stringify(keysCache, BufferJSON.replacer);
@@ -100,14 +113,24 @@ export async function useSupabaseAuthState(supabase, workspaceId) {
             return result;
         },
         async set(data) {
+            let changed = false;
             for (const [type, entries] of Object.entries(data)) {
                 if (!keysCache[type])
                     keysCache[type] = {};
                 if (entries) {
                     for (const [id, value] of Object.entries(entries)) {
-                        keysCache[type][id] = value;
+                        if (value === null || value === undefined) {
+                            delete keysCache[type][id];
+                        }
+                        else {
+                            keysCache[type][id] = value;
+                        }
+                        changed = true;
                     }
                 }
+            }
+            if (changed) {
+                scheduleSave();
             }
         },
     };

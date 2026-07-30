@@ -83,7 +83,21 @@ export async function useSupabaseAuthState(
     }
   }
 
+  let saveTimer: NodeJS.Timeout | null = null;
+
+  function scheduleSave(): void {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      persistAuthState().catch(err => logger.error({ err }, 'Failed to auto-persist auth state'));
+    }, 200);
+  }
+
   async function persistAuthState(): Promise<void> {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     try {
       const credsJson = JSON.stringify(creds, BufferJSON.replacer);
       const keysJson = JSON.stringify(keysCache, BufferJSON.replacer);
@@ -127,13 +141,22 @@ export async function useSupabaseAuthState(
       return result as any;
     },
     async set(data: SignalDataSet): Promise<void> {
+      let changed = false;
       for (const [type, entries] of Object.entries(data)) {
         if (!keysCache[type]) keysCache[type] = {};
         if (entries) {
           for (const [id, value] of Object.entries(entries)) {
-            keysCache[type][id] = value;
+            if (value === null || value === undefined) {
+              delete keysCache[type][id];
+            } else {
+              keysCache[type][id] = value;
+            }
+            changed = true;
           }
         }
+      }
+      if (changed) {
+        scheduleSave();
       }
     },
   };

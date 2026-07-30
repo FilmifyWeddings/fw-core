@@ -1027,8 +1027,14 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       }
     }
 
-    if (connection === 'open' || localSock.user?.id) {
+    if (connection === 'open' || (localSock.user?.id && connection !== 'close')) {
       clearConnectingTimeout(wsId);
+
+      // FIRST: Guarantee creds and keys are flushed to Supabase immediately
+      try {
+        await authState.saveCreds();
+      } catch {}
+
       const phoneNumber = localSock.user?.id?.split(':')[0] || (authState.state.creds as any)?.me?.id?.split(':')[0] || null;
 
       console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
@@ -1047,24 +1053,24 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
           }, { onConflict: 'workspace_id' }),
         `upsert-open-status-${wsId}`
       );
-
-      try {
-        await authState.saveCreds();
-      } catch {}
     }
 
     if (connection === 'close') {
       clearConnectingTimeout(wsId);
       const error = lastDisconnect?.error as Boom;
       const statusCode = error?.output?.statusCode;
-      const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+      const hasCredsMe = !!(authState.state.creds as any)?.me?.id;
 
-      console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'isLoggedOut:', isLoggedOut);
-      logger.error({ statusCode, isLoggedOut, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
+      // 401 is ONLY a true logout if we do NOT have paired user creds in memory
+      const isExplicitLoggedOut = statusCode === DisconnectReason.loggedOut;
+      const isLoggedOut = isExplicitLoggedOut || (statusCode === 401 && !hasCredsMe);
+
+      console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'hasCredsMe:', hasCredsMe, 'isLoggedOut:', isLoggedOut);
+      logger.error({ statusCode, isLoggedOut, hasCredsMe, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
 
       if (!isLoggedOut) {
-        // NON-LOGGED-OUT DISCONNECT (temporary drop, code 515 stream restart after pairing)
-        logger.info({ statusCode, workspaceId: wsId }, '♻️ Non-logged-out disconnect (e.g. 515 stream restart) — auto-reconnecting in 1.5s with saved auth keys...');
+        // NON-LOGGED-OUT DISCONNECT (temporary drop, code 515 stream restart, Noise handshake retry)
+        logger.info({ statusCode, workspaceId: wsId, hasCredsMe }, '♻️ Non-logged-out disconnect — auto-reconnecting in 1.5s with saved auth keys...');
         console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 1.5s (preserving session)...`);
 
         if (currentSess.reconnectTimer) clearTimeout(currentSess.reconnectTimer);
@@ -1072,7 +1078,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         return;
       }
 
-      // ONLY reach here if explicitly LOGGED OUT (401 / phone unlinked)
+      // ONLY reach here if EXPLICITLY LOGGED OUT (e.g. user manually unlinked device in WhatsApp app)
       logger.warn({ workspaceId: wsId }, '🚪 WhatsApp session LOGGED OUT — wiping credentials');
       await dbWriteCritical(
         supabase
