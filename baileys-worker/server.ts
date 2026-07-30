@@ -916,6 +916,49 @@ async function initiateForceReset(targetWorkspaceId?: string): Promise<void> {
   });
 }
 
+/**
+ * Multi-Event Phone Number & Session State Sync Helper
+ */
+async function syncOpenSessionToDb(wsId: string, sock: any, authState?: any): Promise<void> {
+  if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') return;
+
+  let phoneNum: string | null = null;
+  const rawJid = sock?.user?.id || (sock?.user as any)?.jid || (authState?.state?.creds as any)?.me?.id || (authState?.state?.creds as any)?.me?.jid;
+
+  if (rawJid) {
+    const match = String(rawJid).match(/^(\d+)/);
+    if (match && match[1]) {
+      phoneNum = match[1];
+    }
+  }
+
+  if (!phoneNum) {
+    phoneNum = 'Connected Device';
+  }
+
+  console.log(`[WA Sync] Extracted phone number: ${phoneNum} for workspace: ${wsId}`);
+
+  try {
+    const { error: dbErr } = await supabase.from('baileys_sessions').upsert({
+      user_id: wsId,
+      workspace_id: wsId,
+      conn_state: 'open',
+      status: 'connected',
+      phone_number: phoneNum,
+      qr_string: null,
+      qr_expires_at: null,
+      last_connected: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+
+    if (dbErr) {
+      console.error('[WA Sync DB Error]:', dbErr);
+    }
+  } catch (err) {
+    console.error('[WA Sync Exception]:', err);
+  }
+}
+
 const activeSocketStarts = new Map<string, Promise<void>>();
 
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
@@ -997,10 +1040,16 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
   };
   activeSessions.set(wsId, currentSess);
 
-  localSock.ev.on('creds.update', (update: Partial<any>) => {
-    authState.saveCreds().catch((err) => {
+  localSock.ev.on('creds.update', async () => {
+    try {
+      await authState.saveCreds();
+      const hasUser = !!localSock.user?.id || !!(authState.state.creds as any)?.me?.id;
+      if (hasUser) {
+        await syncOpenSessionToDb(wsId, localSock, authState);
+      }
+    } catch (err) {
       logger.error({ err, workspaceId: wsId }, 'Failed to save creds to disk');
-    });
+    }
   });
 
   localSock.ev.on('connection.update', async (update) => {
@@ -1047,38 +1096,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         await authState.saveCreds();
       } catch {}
 
-      let phoneNum: string | null = null;
-      const rawJid = localSock.user?.id || (localSock.user as any)?.jid || (authState?.state?.creds as any)?.me?.id || (authState?.state?.creds as any)?.me?.jid;
-
-      if (rawJid) {
-        const match = String(rawJid).match(/^(\d+)/);
-        if (match && match[1]) {
-          phoneNum = match[1];
-        }
-      }
-
-      if (!phoneNum) {
-        phoneNum = 'Connected Device';
-      }
-
-      console.log(`[WA Open Event] Successfully extracted phone number: ${phoneNum} for workspace: ${wsId}`);
-      logger.info({ workspaceId: wsId, phoneNum }, '[WA Open Event] Extracted phone number');
-      
-      const { error: dbErr } = await supabase.from('baileys_sessions').upsert({
-        user_id: wsId,
-        workspace_id: wsId,
-        conn_state: 'open',
-        status: 'connected',
-        phone_number: phoneNum,
-        qr_string: null,
-        qr_expires_at: null,
-        last_connected: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
-
-      if (dbErr) {
-        console.error('[WA Open Event] DB Upsert Error:', dbErr);
-      }
+      await syncOpenSessionToDb(wsId, localSock, authState);
     }
 
     if (connection === 'close') {
@@ -2052,15 +2070,42 @@ async function main(): Promise<void> {
 
   await scheduleNextDelayedCheck();
 
+/**
+ * Background Self-Healing Poll: Checks active sessions every 10 seconds.
+ * If socket has user JID but DB has phone_number NULL or conn_state != 'open', force sync!
+ */
+async function runSelfHealingSessionSync(): Promise<void> {
+  for (const [wsId, sess] of activeSessions.entries()) {
+    if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') continue;
+
+    const hasUser = !!(sess.sock?.user?.id || (sess.sock?.user as any)?.jid);
+    if (hasUser) {
+      try {
+        const { data: dbSess } = await supabase
+          .from('baileys_sessions')
+          .select('phone_number, conn_state')
+          .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`)
+          .maybeSingle();
+
+        if (!dbSess || dbSess.conn_state !== 'open' || !dbSess.phone_number || dbSess.phone_number === 'null' || dbSess.phone_number === 'Connected Device') {
+          console.log(`[Self-Healing Sync] Force-syncing active session for workspace: ${wsId}`);
+          await syncOpenSessionToDb(wsId, sess.sock, sess.authState);
+        }
+      } catch {}
+    }
+  }
+}
+
   setInterval(() => {
     runQueueDrain().catch(err => logger.error({ err }, 'Periodic queue drain error'));
+    runSelfHealingSessionSync().catch(err => logger.error({ err }, 'Self healing session sync error'));
   }, 10_000);
 
   setInterval(() => {
     runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));
   }, 60_000);
 
-  logger.info('✅ Realtime listeners active. Dynamic delay scheduler + 10s queue drainer running. Sweeper (60s) active.');
+  logger.info('✅ Realtime listeners active. Dynamic delay scheduler + 10s queue drainer & self-healing syncer running. Sweeper (60s) active.');
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
