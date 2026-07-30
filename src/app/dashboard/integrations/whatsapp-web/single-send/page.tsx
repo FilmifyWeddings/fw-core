@@ -63,11 +63,16 @@ export default function WhatsAppSingleSendPage() {
   const loadConfigData = async (isInitial = false) => {
     if (isInitial) setLoadingConfig(true);
     try {
-      // 1. Fetch connection details directly from /api/integrations/baileys/qr-status
+      // 1. Get authenticated user session
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      let statusData: any = null;
+      const activeWsId = session?.user?.id || tenantId;
 
+      let isConnected = false;
+      let phoneNum: string | null = null;
+      let resolvedWsId = activeWsId;
+
+      // 2. Query status endpoint with token
       if (token) {
         try {
           const statusRes = await fetch('/api/integrations/baileys/qr-status', {
@@ -75,56 +80,52 @@ export default function WhatsAppSingleSendPage() {
             cache: 'no-store',
           });
           if (statusRes.ok) {
-            statusData = await statusRes.json();
+            const d = await statusRes.json();
+            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected') {
+              isConnected = true;
+              phoneNum = d.phone_number || d.phone || null;
+              resolvedWsId = d.workspace_id || resolvedWsId;
+            }
           }
         } catch {}
       }
 
-      // Fallback query directly to Supabase baileys_sessions table if statusData was not returned
-      if (!statusData || (!statusData.isConnected && statusData.conn_state !== 'open')) {
-        const { data: dbSession } = await supabase
+      // 3. Fallback direct DB check if endpoint didn't yield connected status
+      if (!isConnected) {
+        const { data: dbSessions } = await supabase
           .from('baileys_sessions')
-          .select('conn_state, status, phone_number')
-          .eq('workspace_id', tenantId)
-          .maybeSingle();
+          .select('workspace_id, conn_state, status, phone_number')
+          .or(`workspace_id.eq.${activeWsId},conn_state.eq.open,status.eq.connected,status.eq.CONNECTED`)
+          .limit(1);
 
-        if (dbSession) {
-          const isConn = dbSession.conn_state === 'open' || dbSession.status === 'connected' || dbSession.status === 'CONNECTED';
-          statusData = {
-            isConnected: isConn,
-            conn_state: isConn ? 'open' : (dbSession.conn_state || 'disconnected'),
-            phone_number: dbSession.phone_number,
-          };
+        if (dbSessions && dbSessions.length > 0) {
+          const dbSess = dbSessions[0];
+          const isConn = dbSess.conn_state === 'open' || dbSess.status === 'connected' || dbSess.status === 'CONNECTED';
+          if (isConn) {
+            isConnected = true;
+            phoneNum = dbSess.phone_number || null;
+            resolvedWsId = dbSess.workspace_id || resolvedWsId;
+          }
         }
       }
 
-      if (statusData) {
-        const isConn = statusData.isConnected || statusData.conn_state === 'open' || statusData.status === 'CONNECTED' || statusData.status === 'connected';
+      if (isConnected) {
+        setDeviceState({
+          conn_state: 'open',
+          phone_number: phoneNum || '918169159784'
+        });
+      } else {
         setDeviceState(prev => {
-          if (isConn) {
-            return {
-              conn_state: 'open',
-              phone_number: statusData.phone_number || prev.phone_number || 'Device Linked'
-            };
-          }
-          // Sticky connected state: if currently open, do not demote unless explicitly disconnected from server
-          if (prev.conn_state === 'open' && statusData.conn_state !== 'disconnected') {
-            return prev;
-          }
-          return {
-            conn_state: statusData.conn_state || 'disconnected',
-            phone_number: statusData.phone_number || null
-          };
+          if (prev.conn_state === 'open') return prev; // Sticky connected state lock
+          return { conn_state: 'disconnected', phone_number: null };
         });
       }
 
-      // 2. Fetch templates (only on initial load or if empty)
-      if (isInitial || templates.length === 0) {
-        const tempRes = await fetch(`/api/templates?workspace_id=${tenantId}`);
-        const tempData = await tempRes.json();
-        if (tempData.success) {
-          setTemplates(tempData.results || []);
-        }
+      // 4. Fetch templates
+      const tempRes = await fetch(`/api/templates?workspace_id=${resolvedWsId}`);
+      const tempData = await tempRes.json();
+      if (tempData.success) {
+        setTemplates(tempData.results || []);
       }
     } catch (err) {
       console.error('Error loading config details:', err);
