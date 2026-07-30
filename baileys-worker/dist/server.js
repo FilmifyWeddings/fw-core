@@ -550,13 +550,44 @@ async function sendGroupAlert(groupId, leadData, templateStr, wsId = WORKSPACE_I
  * Must return { success: boolean, waMessageId?, error? }
  */
 async function executeAction(action) {
-    const wsId = action.workspace_id;
+    // Extract workspace / user ID from action payload safely
+    let targetWsId = action.workspace_id ||
+        action.user_id ||
+        action.workspaceId ||
+        action.userId ||
+        action.payload?.workspace_id ||
+        action.payload?.workspaceId ||
+        action.payload?.user_id ||
+        action.payload?.userId;
+    // IF still missing, fetch the workspace_id/user_id directly from DB for this action row before calling getWorkspaceSocket
+    if (!targetWsId && action.id) {
+        try {
+            const { data: actionRow } = await supabase
+                .from('baileys_action_queue')
+                .select('workspace_id, user_id')
+                .eq('id', action.id)
+                .maybeSingle();
+            targetWsId = actionRow?.workspace_id || actionRow?.user_id;
+        }
+        catch (dbErr) {
+            logger.error({ actionId: action.id, err: dbErr }, 'Error fetching targetWsId from DB');
+        }
+    }
+    // IF targetWsId is STILL missing/empty, fallback to active session ID if available
+    if ((!targetWsId || targetWsId.trim() === '' || targetWsId === 'null' || targetWsId === 'undefined') && activeSessions.size > 0) {
+        targetWsId = Array.from(activeSessions.keys())[0];
+    }
+    if (!targetWsId || targetWsId.trim() === '' || targetWsId === 'null' || targetWsId === 'undefined') {
+        logger.error({ actionId: action.id, action }, '[QueueProcessor Trace Error] Missing user_id/workspace_id in action payload');
+        throw new Error(`[QueueProcessor Error] Missing user_id/workspace_id for action ${action.id}`);
+    }
+    console.log(`[QueueProcessor Trace] Processing action ${action.id} with resolved targetWsId: ${targetWsId}`);
     let targetSock;
     try {
-        targetSock = await getWorkspaceSocket(wsId);
+        targetSock = await getWorkspaceSocket(targetWsId);
     }
     catch (err) {
-        logger.error({ actionId: action.id, workspaceId: wsId }, '🔴 [Pre-Send Check] Workspace socket is unauthenticated or missing.');
+        logger.error({ actionId: action.id, workspaceId: targetWsId }, '🔴 [Pre-Send Check] Workspace socket is unauthenticated or missing.');
         await dbWriteCritical(supabase
             .from('baileys_sessions')
             .update({
@@ -565,9 +596,9 @@ async function executeAction(action) {
             last_status_change: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         })
-            .eq('workspace_id', action.workspace_id), 'presend-disconnect-update');
+            .eq('workspace_id', targetWsId), 'presend-disconnect-update');
         await dbWrite(supabase.from('wa_instance_alerts').insert({
-            workspace_id: action.workspace_id,
+            workspace_id: targetWsId,
             alert_type: 'presend_session_expired',
             message: 'Pre-send check failed: WhatsApp Session Expired. Please reconnect QR code.',
             metadata: { action_id: action.id, action_type: action.action_type },
@@ -580,27 +611,27 @@ async function executeAction(action) {
         switch (action.action_type) {
             case 'send_text': {
                 const { to, text } = action.payload;
-                waMessageId = await sendTextMessage(to, text);
+                waMessageId = await sendTextMessage(to, text, targetWsId);
                 break;
             }
             case 'send_media': {
                 const { to, mediaUrl, caption, mimeType } = action.payload;
-                waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType);
+                waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType, targetWsId);
                 break;
             }
             case 'send_template': {
                 const { to, templateId, variables } = action.payload;
-                waMessageId = await sendTemplateMessage(to, templateId, variables);
+                waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId);
                 break;
             }
             case 'group_dispatch': {
                 const { groupJid, leadData } = action.payload;
-                await dispatchGroupCard(groupJid, leadData);
+                await dispatchGroupCard(groupJid, leadData, targetWsId);
                 break;
             }
             case 'group_lead_alert': {
                 const { groupId, leadData, templateStr } = action.payload;
-                waMessageId = await sendGroupAlert(groupId, leadData, templateStr);
+                waMessageId = await sendGroupAlert(groupId, leadData, templateStr, targetWsId);
                 break;
             }
             default:
