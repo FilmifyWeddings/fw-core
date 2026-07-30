@@ -68,14 +68,20 @@ export async function POST(req: NextRequest) {
 
     const chatJid = normalizeJid(to);
 
-    // Check session connection
+    // Check session connection with relaxed phone_number and connected status validation
     const { data: session } = await supabaseAdmin
       .from('baileys_sessions')
-      .select('conn_state')
+      .select('conn_state, status, phone_number')
       .eq('workspace_id', user.id)
       .maybeSingle();
 
-    if (!session || session.conn_state !== 'open') {
+    const isConnected =
+      session?.conn_state === 'open' ||
+      session?.status === 'connected' ||
+      session?.status === 'CONNECTED' ||
+      !!(session?.phone_number && session.phone_number.length > 5);
+
+    if (!session || !isConnected) {
       return NextResponse.json({
         error: 'WhatsApp not connected. Please scan QR code first.',
         conn_state: session?.conn_state ?? 'disconnected',
