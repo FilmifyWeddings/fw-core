@@ -136,6 +136,11 @@ async function executeWhatsAppSend(
 
   if (!to) return { success: false, output: {}, error: 'Missing "to" phone/JID' };
 
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    console.error(`[Workflow Trigger Error] Missing user_id/workspace_id in payload for WhatsApp Send to contact ${to}`);
+    return { success: false, output: {}, error: '[Workflow Trigger Error] Missing user_id/workspace_id in payload' };
+  }
+
   // If a scheduled timestamp is provided, we route it directly into the background queue loop
   if (scheduledAt) {
     const payload = templateId
@@ -440,7 +445,24 @@ export async function executeWorkflow(
   triggerPayload: Record<string, unknown>,
   supabaseAdmin: SupabaseClient
 ): Promise<{ runId: string; success: boolean; stepsCompleted: number; stepsFailed: number }> {
-  const workspaceId = workflow.workspace_id;
+  // Robust tenant ID resolution
+  let workspaceId = workflow.workspace_id || (workflow as any).user_id || (workflow as any).tenant_id;
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    workspaceId = (triggerPayload as any).workspace_id || (triggerPayload as any).user_id || (triggerPayload as any).tenant_id || '';
+  }
+
+  if (!workspaceId || workspaceId.trim() === '') {
+    try {
+      const { data: wfRow } = await supabaseAdmin
+        .from('whatsapp_custom_workflows')
+        .select('workspace_id, tenant_id, user_id')
+        .eq('id', workflow.id)
+        .maybeSingle();
+      if (wfRow) {
+        workspaceId = wfRow.workspace_id || wfRow.tenant_id || wfRow.user_id || '';
+      }
+    } catch {}
+  }
 
   // Resolve steps graph or fall back to legacy array conversion
   let graphNodes: any[] = [];

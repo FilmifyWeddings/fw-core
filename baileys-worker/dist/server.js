@@ -1132,7 +1132,14 @@ function startHealthServer() {
             if (req.method === 'POST' && parsedUrl.pathname === '/send') {
                 const bodyStr = await getRequestBody(req);
                 const payload = JSON.parse(bodyStr);
-                let targetWsId = payload.workspace_id || payload.workspaceId || WORKSPACE_ID;
+                let targetWsId = payload.workspace_id || payload.workspaceId || payload.user_id || payload.userId || WORKSPACE_ID;
+                if (!targetWsId || targetWsId.trim() === '' || targetWsId === 'null' || targetWsId === 'undefined') {
+                    console.error(`[Workflow Trigger Error] Missing user_id/workspace_id in payload for /send request (Contact: ${payload.to || payload.jid || 'unknown'}, Step ID: ${payload.step_id || payload.stepId || 'N/A'})`);
+                    logger.error({ payload }, '[Workflow Trigger Error] Missing user_id/workspace_id in payload');
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ success: false, error: `[Workflow Trigger Error] Missing user_id/workspace_id in payload: ${targetWsId}` }));
+                    return;
+                }
                 logger.info({ payload, workspaceId: targetWsId }, 'Received send message request');
                 const targetSock = await getWorkspaceSocket(targetWsId);
                 // ── Intercept: if rawButtons/buttons are present, force 'buttons' route ──
