@@ -476,9 +476,9 @@ export default function WhatsAppSingleSendPage() {
               >
                 {loadingConfig ? (
                   <option>Loading Device Status...</option>
-                ) : deviceState.conn_state === 'open' ? (
+                ) : (deviceState.conn_state === 'open' || deviceState.conn_state === 'connected') ? (
                   <option value={deviceState.workspace_id || tenantId}>
-                    WhatsApp Web Gateway - Connected (+{deviceState.phone_number || '918169159784'})
+                    WhatsApp Web Gateway - Connected (+{deviceState.phone_number || 'Connected Device'})
                   </option>
                 ) : (
                   <option value={tenantId}>

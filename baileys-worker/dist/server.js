@@ -880,28 +880,32 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                         await authState.saveCreds();
                     }
                     catch { }
-                    const rawJid = localSock.user?.id || authState.state.creds?.me?.id;
-                    const phoneNum = rawJid ? rawJid.split(':')[0].split('@')[0] : null;
-                    console.log(`🟢 SUCCESS: WhatsApp Connected for workspace/user ${wsId} (+${phoneNum})`);
-                    logger.info({ workspaceId: wsId, phoneNum }, '🟢 SUCCESS: WhatsApp Connected, updating baileys_sessions to open');
-                    try {
-                        await supabase
-                            .from('baileys_sessions')
-                            .upsert({
-                            user_id: wsId,
-                            workspace_id: wsId,
-                            conn_state: 'open',
-                            status: 'connected',
-                            phone_number: phoneNum,
-                            last_connected: new Date().toISOString(),
-                            qr_string: null,
-                            qr_expires_at: null,
-                            error_info: null,
-                            updated_at: new Date().toISOString(),
-                        }, { onConflict: 'user_id' });
+                    let phoneNum = null;
+                    const rawJid = localSock.user?.id || localSock.user?.jid || authState?.state?.creds?.me?.id || authState?.state?.creds?.me?.jid;
+                    if (rawJid) {
+                        const match = String(rawJid).match(/^(\d+)/);
+                        if (match && match[1]) {
+                            phoneNum = match[1];
+                        }
                     }
-                    catch (err) {
-                        logger.error({ err, workspaceId: wsId }, 'Failed direct DB status upsert');
+                    if (!phoneNum) {
+                        phoneNum = 'Connected Device';
+                    }
+                    console.log(`[WA Open Event] Successfully extracted phone number: ${phoneNum} for workspace: ${wsId}`);
+                    logger.info({ workspaceId: wsId, phoneNum }, '[WA Open Event] Extracted phone number');
+                    const { error: dbErr } = await supabase.from('baileys_sessions').upsert({
+                        user_id: wsId,
+                        workspace_id: wsId,
+                        conn_state: 'open',
+                        status: 'connected',
+                        phone_number: phoneNum,
+                        qr_string: null,
+                        qr_expires_at: null,
+                        last_connected: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    }, { onConflict: 'user_id' });
+                    if (dbErr) {
+                        console.error('[WA Open Event] DB Upsert Error:', dbErr);
                     }
                 }
                 if (connection === 'close') {
