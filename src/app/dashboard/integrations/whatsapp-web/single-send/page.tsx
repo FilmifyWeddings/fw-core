@@ -83,39 +83,38 @@ export default function WhatsAppSingleSendPage() {
           });
           if (statusRes.ok) {
             const d = await statusRes.json();
-            const hasPhone = !!(d.phone_number && d.phone_number !== 'Device Linked' && d.phone_number.length > 5);
-            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected' || hasPhone) {
+            if (d.isConnected || d.conn_state === 'open' || d.conn_state === 'connected' || d.status === 'CONNECTED' || d.status === 'connected') {
               isConnected = true;
-              phoneNum = d.phone_number || d.phone || null;
-              resolvedWsId = d.workspace_id || resolvedWsId;
+              phoneNum = d.phone_number || d.phone || 'Device Linked';
+              resolvedWsId = d.workspace_id || activeWsId;
             }
           }
         } catch {}
       }
 
-      // 3. Clean direct Supabase DB check
+      // 3. Clean direct Supabase DB check fallback
       if (!isConnected && activeWsId) {
         const { data: dbSession } = await supabase
           .from('baileys_sessions')
-          .select('workspace_id, user_id, conn_state, status, phone_number')
-          .or(`workspace_id.eq.${activeWsId},user_id.eq.${activeWsId}`)
+          .select('id, workspace_id, user_id, conn_state, status, phone_number')
+          .or(`user_id.eq.${activeWsId},workspace_id.eq.${activeWsId}`)
           .maybeSingle();
 
         if (dbSession) {
-          const hasPhone = !!(dbSession.phone_number && dbSession.phone_number.length > 5);
-          const isConn = dbSession.conn_state === 'open' || dbSession.status === 'connected' || dbSession.status === 'CONNECTED' || hasPhone;
+          const isConn = dbSession.conn_state === 'open' || dbSession.conn_state === 'connected' || dbSession.status === 'connected' || dbSession.status === 'CONNECTED';
           if (isConn) {
             isConnected = true;
-            phoneNum = dbSession.phone_number || null;
-            resolvedWsId = dbSession.workspace_id || resolvedWsId;
+            phoneNum = dbSession.phone_number || 'Device Linked';
+            resolvedWsId = dbSession.user_id || dbSession.workspace_id || activeWsId;
           }
         }
       }
 
-      if (isConnected && phoneNum && phoneNum.length > 5) {
+      if (isConnected) {
+        const displayPhone = phoneNum || 'Device Linked';
         setDeviceState({
           conn_state: 'open',
-          phone_number: phoneNum,
+          phone_number: displayPhone,
           workspace_id: resolvedWsId
         });
         setSelectedDeviceId(resolvedWsId);
