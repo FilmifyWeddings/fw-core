@@ -21,7 +21,11 @@ export default function LoginPage() {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.push('/');
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectTo = searchParams.get('redirectTo');
+        if (redirectTo) {
+          router.push(redirectTo);
+        }
       }
     };
     checkSession();
@@ -56,7 +60,7 @@ export default function LoginPage() {
           }
           
           alert('Account created successfully! Logging in...');
-          router.push('/');
+          router.push('/dashboard/workspace');
         }
       } else {
         // Log In Flow
@@ -66,7 +70,9 @@ export default function LoginPage() {
         });
 
         if (signInErr) throw signInErr;
-        router.push('/');
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectTo = searchParams.get('redirectTo') || '/dashboard/workspace';
+        router.push(redirectTo);
       }
     } catch (err: any) {
       console.error(err);
