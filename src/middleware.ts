@@ -8,6 +8,29 @@ export async function middleware(request: NextRequest) {
     },
   });
 
+  const { pathname } = request.nextUrl;
+
+  // 1. UNCONDITIONAL PASS FOR PUBLIC & AUTH PATHS
+  const isPublicRoute =
+    pathname === '/login' ||
+    pathname === '/' ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/api/webhooks') ||
+    pathname.startsWith('/api/public') ||
+    pathname.startsWith('/_next') ||
+    pathname === '/privacy-policy' ||
+    pathname === '/terms-of-service' ||
+    pathname === '/book-demo' ||
+    pathname === '/free-trial' ||
+    pathname === '/pricing' ||
+    pathname === '/features' ||
+    pathname.includes('.');
+
+  // If visiting any public route (especially /login), pass through unconditionally!
+  if (isPublicRoute) {
+    return response;
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -36,37 +59,27 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
+  // 2. PROTECTED ROUTE CHECK ONLY
+  const isProtectedRoute =
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/workspace') ||
+    pathname.startsWith('/integrations') ||
+    pathname.startsWith('/team-manager') ||
+    pathname.startsWith('/leads') ||
+    pathname.startsWith('/single-send') ||
+    pathname.startsWith('/quotations') ||
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/broadcast-campaigns') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/api/integrations');
 
-  // STRICT PUBLIC PATH MATCHING
-  const isPublicPath =
-    pathname === '/' ||
-    pathname === '/login' ||
-    pathname.startsWith('/auth') ||
-    pathname.startsWith('/api/auth') ||
-    pathname.startsWith('/api/webhooks') ||
-    pathname.startsWith('/api/public') ||
-    pathname.startsWith('/_next') ||
-    pathname === '/privacy-policy' ||
-    pathname === '/terms-of-service' ||
-    pathname === '/book-demo' ||
-    pathname === '/free-trial' ||
-    pathname === '/pricing' ||
-    pathname === '/features';
-
-  // IF USER IS NOT AUTHENTICATED AND NOT ON A PUBLIC PATH -> REDIRECT TO /login ONLY
-  if (!user && !isPublicPath) {
+  if (isProtectedRoute && !user) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(loginUrl, { status: 307 });
-  }
-
-  // IF USER IS AUTHENTICATED AND VISITING LOGIN OR LANDING PAGE -> REDIRECT TO WORKSPACE ONCE
-  if (user && (pathname === '/login' || pathname === '/')) {
-    return NextResponse.redirect(new URL('/dashboard/workspace', request.url));
   }
 
   return response;
