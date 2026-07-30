@@ -62,7 +62,7 @@ const PRESET_TEMPLATES = [
   }
 ];
 
-export default function QuotationBuilderPage() {
+function QuotationBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams?.get('id');
@@ -717,5 +717,20 @@ export default function QuotationBuilderPage() {
         </div>
       </div>
     </SidebarLayout>
+  );
+}
+
+export default function QuotationBuilderPage() {
+  return (
+    <React.Suspense fallback={
+      <div className="min-h-screen bg-[#07090E] text-white flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-bold text-zinc-400">Loading Quotation Builder...</p>
+        </div>
+      </div>
+    }>
+      <QuotationBuilderContent />
+    </React.Suspense>
   );
 }
