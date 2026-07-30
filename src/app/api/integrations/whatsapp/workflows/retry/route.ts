@@ -4,14 +4,42 @@ import { forceWakeQueue } from '@/lib/baileys-serverless';
 
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const tenantId = searchParams.get('tenant_id') || searchParams.get('workspace_id');
-
-  if (!tenantId) {
-    return NextResponse.json({ error: 'Missing tenant_id parameter' }, { status: 400 });
-  }
+  let tenantId = searchParams.get('tenant_id') || searchParams.get('workspace_id');
 
   try {
-    const { leadId, workflowId, workflowLogId } = await req.json();
+    const body = await req.json();
+    const { leadId, workflowId, workflowLogId } = body || {};
+
+    if (!tenantId || tenantId.trim() === '' || tenantId === 'null' || tenantId === 'undefined') {
+      tenantId = body?.workspace_id || body?.tenant_id || body?.user_id;
+    }
+
+    if (!tenantId || tenantId.trim() === '' || tenantId === 'null' || tenantId === 'undefined') {
+      if (workflowId) {
+        const { data: wf } = await supabaseAdmin
+          .from('whatsapp_custom_workflows')
+          .select('tenant_id, workspace_id, user_id')
+          .eq('id', workflowId)
+          .maybeSingle();
+        if (wf) {
+          tenantId = wf.tenant_id || wf.workspace_id || wf.user_id;
+        }
+      }
+      if (!tenantId && leadId) {
+        const { data: ld } = await supabaseAdmin
+          .from('leads')
+          .select('workspace_id')
+          .eq('id', leadId)
+          .maybeSingle();
+        if (ld) {
+          tenantId = ld.workspace_id;
+        }
+      }
+    }
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Missing tenant_id parameter and could not resolve workspace owner' }, { status: 400 });
+    }
 
     if (!leadId || !workflowId) {
       return NextResponse.json({ error: 'Missing leadId or workflowId parameters' }, { status: 400 });

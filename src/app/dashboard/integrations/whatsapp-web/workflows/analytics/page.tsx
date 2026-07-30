@@ -366,10 +366,12 @@ function WorkflowAnalyticsInner() {
       );
       if (retriableLogs.length === 0) { alert('No failed or stuck steps found.'); return; }
 
+      const activeWsId = tenantId || (selectedWorkflow as any).tenant_id || (selectedWorkflow as any).workspace_id || (selectedWorkflow as any).user_id;
+
       const res = await fetch('/api/workflows/retry-step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: execution.leadId, workflowId: selectedWorkflow.id, workspaceId: tenantId }),
+        body: JSON.stringify({ leadId: execution.leadId, workflowId: selectedWorkflow.id, workspaceId: activeWsId }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -389,10 +391,11 @@ function WorkflowAnalyticsInner() {
     if (!selectedWorkflow) return;
     if (!window.confirm('Cancel all pending scheduled steps for this contact?')) return;
     try {
+      const activeWsId = tenantId || (selectedWorkflow as any).tenant_id || (selectedWorkflow as any).workspace_id || (selectedWorkflow as any).user_id;
       const res = await fetch('/api/workflows/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id, workspaceId: tenantId }),
+        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id, workspaceId: activeWsId }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -416,6 +419,7 @@ function WorkflowAnalyticsInner() {
     }
     if (!window.confirm(`Re-queue Step ${stepLog.step_index + 1} (${stepLog.template_name}) for immediate dispatch?`)) return;
     try {
+      const activeWsId = tenantId || (selectedWorkflow as any).tenant_id || (selectedWorkflow as any).workspace_id || (selectedWorkflow as any).user_id;
       if (stepLog.id) {
         const res = await fetch('/api/workflows/retry-step', {
           method: 'POST',
@@ -424,7 +428,7 @@ function WorkflowAnalyticsInner() {
             leadId: execution.leadId,
             workflowId: selectedWorkflow.id,
             workflowLogId: stepLog.id,
-            workspaceId: tenantId
+            workspaceId: activeWsId
           }),
         });
         const data = await res.json();
@@ -434,7 +438,7 @@ function WorkflowAnalyticsInner() {
       } else {
         const cleanPhone = execution.phone.replace(/[^0-9]/g, '');
         const { error } = await supabase.from('baileys_action_queue').insert({
-          workspace_id: tenantId,
+          workspace_id: activeWsId,
           action_type: 'send_template',
           payload: {
             to: `${cleanPhone}@s.whatsapp.net`,

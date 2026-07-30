@@ -250,6 +250,54 @@ export async function sendMessageServerless(
   let tempFileToClean: string | null = null;
 
   try {
+    // 0. Centralized Fallback Resolution for workspaceId / user_id
+    let effectiveWsId = workspaceId;
+    if (!effectiveWsId || effectiveWsId.trim() === '' || effectiveWsId === 'null' || effectiveWsId === 'undefined') {
+      effectiveWsId = (payload as any).workspace_id || (payload as any).workspaceId || (payload as any).user_id || (payload as any).userId;
+    }
+
+    // IF STILL EMPTY (e.g. background cron job, workflow retry):
+    if (!effectiveWsId || effectiveWsId.trim() === '' || effectiveWsId === 'null' || effectiveWsId === 'undefined') {
+      if (payload.workflowLogId) {
+        try {
+          const { data: logData } = await supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .select('tenant_id, workspace_id, workflow_id, lead_id')
+            .eq('id', payload.workflowLogId)
+            .maybeSingle();
+
+          if (logData) {
+            effectiveWsId = logData.tenant_id || logData.workspace_id;
+            if (!effectiveWsId && logData.workflow_id) {
+              const { data: wfData } = await supabaseAdmin
+                .from('whatsapp_custom_workflows')
+                .select('user_id, workspace_id, tenant_id')
+                .eq('id', logData.workflow_id)
+                .maybeSingle();
+              effectiveWsId = wfData?.user_id || wfData?.workspace_id || wfData?.tenant_id;
+            }
+            if (!effectiveWsId && logData.lead_id) {
+              const { data: leadData } = await supabaseAdmin
+                .from('leads')
+                .select('workspace_id')
+                .eq('id', logData.lead_id)
+                .maybeSingle();
+              effectiveWsId = leadData?.workspace_id;
+            }
+          }
+        } catch (dbErr) {
+          console.error('[sendMessageServerless] Error looking up fallback tenantId:', dbErr);
+        }
+      }
+    }
+
+    if (!effectiveWsId || effectiveWsId.trim() === '' || effectiveWsId === 'null' || effectiveWsId === 'undefined') {
+      console.error(`[sendMessageServerless Error] Cannot execute workflow step: Missing tenant workspace_id for recipient ${payload.to}`);
+      return { success: false, error: `[sendMessageServerless Error] Cannot execute step: Missing tenant workspace_id for recipient ${payload.to}` };
+    }
+
+    workspaceId = effectiveWsId;
+
     // 1. Token Replacement Parser (Regex Parser)
     const textContent = payload.text || payload.caption || '';
     if (textContent && (textContent.includes('{') || textContent.includes('}'))) {
