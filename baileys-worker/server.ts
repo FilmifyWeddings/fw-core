@@ -144,21 +144,44 @@ type WorkspaceSession = {
 const activeSessions = new Map<string, WorkspaceSession>();
 
 async function getWorkspaceSocket(wsId: string): Promise<ReturnType<typeof makeWASocket>> {
+  if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') {
+    throw new Error('Invalid empty workspace/user ID provided to getWorkspaceSocket');
+  }
+
+  // 1. Direct activeSessions lookup
   let sess = activeSessions.get(wsId);
   if (sess && sess.sock) return sess.sock;
 
-  // 1. Check if disk auth credentials exist for wsId, auto-restore on-the-fly
-  if (hasDiskSession(wsId)) {
-    logger.info({ workspaceId: wsId }, '🔌 Disk credentials found — auto-restoring socket into memory on-the-fly...');
-    await startBaileysSocket(false, wsId);
-    sess = activeSessions.get(wsId);
+  // 2. Check DB session mapping for user_id or workspace_id
+  let mappedId = wsId;
+  try {
+    const { data: dbSess } = await supabase
+      .from('baileys_sessions')
+      .select('user_id, workspace_id')
+      .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`)
+      .maybeSingle();
+
+    if (dbSess) {
+      mappedId = dbSess.user_id || dbSess.workspace_id || wsId;
+      sess = activeSessions.get(mappedId);
+      if (sess && sess.sock) return sess.sock;
+    }
+  } catch {}
+
+  const targetId = hasDiskSession(mappedId) ? mappedId : (hasDiskSession(wsId) ? wsId : mappedId);
+
+  // 3. Auto-restore on-the-fly from disk session
+  if (hasDiskSession(targetId)) {
+    logger.info({ workspaceId: targetId }, '🔌 Disk credentials found — auto-restoring socket into memory on-the-fly...');
+    await startBaileysSocket(false, targetId);
+    sess = activeSessions.get(targetId) || activeSessions.get(wsId);
     if (sess && sess.sock) return sess.sock;
   }
 
-  // 2. Restoring socket from disk/DB creds
-  logger.info({ workspaceId: wsId }, '🔌 Restoring socket from disk/DB creds...');
-  await startBaileysSocket(false, wsId);
-  sess = activeSessions.get(wsId);
+  // 4. Final attempt to restore socket
+  logger.info({ workspaceId: targetId }, '🔌 Restoring socket from disk/DB creds...');
+  await startBaileysSocket(false, targetId);
+  sess = activeSessions.get(targetId) || activeSessions.get(wsId);
 
   if (!sess || !sess.sock) {
     throw new Error(`WhatsApp socket not connected for workspace ${wsId}`);

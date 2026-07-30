@@ -384,6 +384,8 @@ export async function sendMessageServerless(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          workspace_id: workspaceId,
+          user_id: workspaceId,
           to: sendTo,
           type: sendType,
           text: payload.text,
