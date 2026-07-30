@@ -21,7 +21,7 @@ import * as path from 'path';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
 import { useSupabaseAuthState } from './supabase-auth-state.js';
-import { purgeSessionDir } from './src/auth-adapter.js';
+import { purgeSessionDir, getSessionDir } from './src/auth-adapter.js';
 // Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
 globalThis.WebSocket = ws;
 const __filename = fileURLToPath(import.meta.url);
@@ -769,9 +769,11 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
     if (forceFresh) {
         logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
         purgeSessionDir(wsId);
+        getSessionDir(wsId); // Guarantee directory re-creation immediately after purge
         await updateSessionState('connecting', {}, wsId);
     }
     else {
+        getSessionDir(wsId); // Guarantee directory exists
         logger.info({ workspaceId: wsId, hasCredsMe }, '🧠 Reconnect mode: loading file-based auth state from local disk');
         if (!hasCredsMe) {
             await updateSessionState('connecting', {}, wsId);

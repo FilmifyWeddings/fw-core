@@ -42,11 +42,31 @@ export function purgeSessionDir(workspaceId) {
 }
 /**
  * Initializes or loads file-based auth state for a workspace.
+ * Wraps saveCreds to atomically guarantee target directory existence before disk write.
  */
 export async function useWorkspaceAuthState(workspaceId) {
     const dir = getSessionDir(workspaceId);
     logger.info({ workspaceId, dir }, '📁 Initializing file-based auth state for workspace...');
-    return await useMultiFileAuthState(dir);
+    const authState = await useMultiFileAuthState(dir);
+    const originalSaveCreds = authState.saveCreds;
+    const safeSaveCreds = async () => {
+        try {
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            await originalSaveCreds();
+        }
+        catch (err) {
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            await originalSaveCreds();
+        }
+    };
+    return {
+        state: authState.state,
+        saveCreds: safeSaveCreds,
+    };
 }
 // Re-export alias for backwards compatibility
 export async function useSupabaseAuthStateNamespaced(_supabase, workspaceId) {
