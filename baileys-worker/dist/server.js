@@ -12,7 +12,7 @@
  *        npm start    (production)
  */
 import { config } from 'dotenv';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers, } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, Browsers, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import pino from 'pino';
 import ws from 'ws';
@@ -21,6 +21,7 @@ import * as path from 'path';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
 import { useSupabaseAuthState } from './supabase-auth-state.js';
+import { purgeSessionDir } from './src/auth-adapter.js';
 // Polyfill WebSocket globally for Supabase Realtime in Node.js < 22
 globalThis.WebSocket = ws;
 const __filename = fileURLToPath(import.meta.url);
@@ -725,33 +726,19 @@ async function initiateForceReset(targetWorkspaceId) {
         catch { }
         activeSessions.delete(wsId);
     }
-    // Wipe ALL session state from DB for target workspace
-    await supabase
-        .from('baileys_sessions')
-        .update({
-        conn_state: 'disconnected',
-        status: 'DISCONNECTED',
-        qr_string: null,
-        qr_expires_at: null,
-        phone_number: null,
-        creds_json: null,
-        keys_json: null,
-        error_info: 'Force reset — fresh QR generated',
-        last_status_change: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-    })
-        .eq('workspace_id', wsId);
+    // Purge local disk session files for target workspace ONLY
+    purgeSessionDir(wsId);
+    // Update Supabase metadata ONLY (no heavy JSONs written to DB)
     await supabase
         .from('baileys_sessions')
         .upsert({
         workspace_id: wsId,
         conn_state: 'connecting',
+        status: 'DISCONNECTED',
         qr_string: null,
         qr_expires_at: null,
         phone_number: null,
-        creds_json: null,
-        keys_json: null,
-        error_info: null,
+        error_info: 'Force reset — fresh QR generated',
         last_status_change: new Date().toISOString(),
         updated_at: new Date().toISOString(),
     }, { onConflict: 'workspace_id' });
@@ -777,36 +764,16 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
         activeSessions.delete(wsId);
     }
     clearConnectingTimeout(wsId);
-    let authState;
     if (forceFresh) {
-        logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: creating new credential state from scratch');
+        logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
+        purgeSessionDir(wsId);
         await updateSessionState('connecting', {}, wsId);
-        authState = await useSupabaseAuthState(supabase, wsId);
-        const { initAuthCreds } = await import('@whiskeysockets/baileys');
-        const freshCreds = initAuthCreds();
-        for (const k of Object.keys(authState.state.creds)) {
-            delete authState.state.creds[k];
-        }
-        Object.assign(authState.state.creds, freshCreds);
     }
     else {
-        logger.info({ workspaceId: wsId }, '🧠 Reconnect mode: loading state from Supabase / memory');
-        authState = await useSupabaseAuthState(supabase, wsId);
-        // OPTIMIZE AUTH STATE LOAD ON RECONNECT:
-        // If authState is missing essential pairing keys (noiseKey / signedIdentityKey), fallback to forceFresh = true
-        const hasNoiseKey = !!authState.state.creds?.noiseKey;
-        const hasSignedIdentityKey = !!authState.state.creds?.signedIdentityKey;
-        if (!hasNoiseKey || !hasSignedIdentityKey) {
-            logger.warn({ workspaceId: wsId, hasNoiseKey, hasSignedIdentityKey }, '⚠️ Auth state corrupted or missing noise/pairing keys — falling back to forceFresh = true to avoid 401 loop');
-            const { initAuthCreds } = await import('@whiskeysockets/baileys');
-            const freshCreds = initAuthCreds();
-            for (const k of Object.keys(authState.state.creds)) {
-                delete authState.state.creds[k];
-            }
-            Object.assign(authState.state.creds, freshCreds);
-        }
+        logger.info({ workspaceId: wsId }, '🧠 Reconnect mode: loading file-based auth state from local disk');
         await updateSessionState('connecting', {}, wsId);
     }
+    const authState = await useSupabaseAuthState(supabase, wsId);
     let { version } = await fetchLatestBaileysVersion().catch(() => ({
         version: [2, 3000, 1017531287],
     }));
@@ -817,10 +784,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
     const localSock = makeWASocket({
         version,
         logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
-        auth: {
-            creds: authState.state.creds,
-            keys: makeCacheableSignalKeyStore(authState.state.keys, logger.child({ module: `keys-${wsId.slice(0, 8)}` })),
-        },
+        auth: authState.state,
         printQRInTerminal: false,
         generateHighQualityLinkPreview: true,
         keepAliveIntervalMs: 10_000,
@@ -839,19 +803,9 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
     };
     activeSessions.set(wsId, currentSess);
     localSock.ev.on('creds.update', (update) => {
-        Object.assign(authState.state.creds, update);
-        const needsForceFlush = update.isNewLogin === true || update.registered === true || update.me !== undefined;
-        if (needsForceFlush) {
-            logger.warn({ update, workspaceId: wsId }, '⚠️ Creds upgrade detected — forcing immediate DB flush');
-            authState.saveCreds().then(() => {
-                console.log(`💾 CRITICAL: Pairing creds locked in Postgres for workspace ${wsId}`);
-            }).catch((err) => {
-                logger.error({ err, workspaceId: wsId }, 'Failed to force-flush creds after pairing upgrade');
-            });
-        }
-        else {
-            authState.saveCreds().catch(() => { });
-        }
+        authState.saveCreds().catch((err) => {
+            logger.error({ err, workspaceId: wsId }, 'Failed to save creds to disk');
+        });
     });
     localSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -878,7 +832,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
         }
         if (connection === 'open' || (localSock.user?.id && connection !== 'close')) {
             clearConnectingTimeout(wsId);
-            // FIRST: Guarantee creds and keys are flushed to Supabase immediately
+            // Guarantee local disk save
             try {
                 await authState.saveCreds();
             }
@@ -903,22 +857,22 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
             const error = lastDisconnect?.error;
             const statusCode = error?.output?.statusCode;
             const hasCredsMe = !!authState.state.creds?.me?.id;
-            // 401 is ONLY a true logout if we do NOT have paired user creds in memory
+            // 401 is ONLY a true logout if we do NOT have paired user creds
             const isExplicitLoggedOut = statusCode === DisconnectReason.loggedOut;
             const isLoggedOut = isExplicitLoggedOut || (statusCode === 401 && !hasCredsMe);
             console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'hasCredsMe:', hasCredsMe, 'isLoggedOut:', isLoggedOut);
             logger.error({ statusCode, isLoggedOut, hasCredsMe, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
             if (!isLoggedOut) {
-                // NON-LOGGED-OUT DISCONNECT (temporary drop, code 515 stream restart, Noise handshake retry)
-                logger.info({ statusCode, workspaceId: wsId, hasCredsMe }, '♻️ Non-logged-out disconnect — auto-reconnecting in 1.5s with saved auth keys...');
+                // NON-LOGGED-OUT DISCONNECT (temporary network drop, code 515 stream restart)
+                logger.info({ statusCode, workspaceId: wsId, hasCredsMe }, '♻️ Non-logged-out disconnect — auto-reconnecting in 1.5s with local disk auth...');
                 console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 1.5s (preserving session)...`);
                 if (currentSess.reconnectTimer)
                     clearTimeout(currentSess.reconnectTimer);
                 currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
                 return;
             }
-            // MANDATORY FIX 1: IMMEDIATE CLEAN MEMORY PURGE ON 401 / LOGGED_OUT
-            logger.warn({ workspaceId: wsId, statusCode }, '🚪 WhatsApp session LOGGED OUT / 401 — Performing immediate clean memory & socket purge');
+            // EXPLICIT LOGOUT OR 401
+            logger.warn({ workspaceId: wsId, statusCode }, '🚪 WhatsApp session LOGGED OUT / 401 — Performing disk & memory purge');
             try {
                 localSock.ev.removeAllListeners();
                 localSock.ws?.close();
@@ -929,6 +883,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
             if (currentSess.connectingTimeoutTimer)
                 clearTimeout(currentSess.connectingTimeoutTimer);
             activeSessions.delete(wsId);
+            purgeSessionDir(wsId);
             await dbWriteCritical(supabase
                 .from('baileys_sessions')
                 .update({
@@ -937,8 +892,6 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 qr_string: null,
                 qr_expires_at: null,
                 phone_number: null,
-                creds_json: null,
-                keys_json: null,
                 error_info: 'Logged out from mobile device — QR re-scan required',
                 last_status_change: new Date().toISOString(),
                 updated_at: new Date().toISOString()
