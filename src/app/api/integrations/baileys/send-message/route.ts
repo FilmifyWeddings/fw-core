@@ -68,43 +68,50 @@ export async function POST(req: NextRequest) {
 
     const chatJid = normalizeJid(to);
 
-    // 1. Fetch user's session by user.id
-    let activeWsId = user.id;
-    let { data: session } = await supabaseAdmin
+    // 1. HARD WORKSPACE RESOLUTION: Find ANY active connected session with phone_number
+    const { data: connectedSessions } = await supabaseAdmin
       .from('baileys_sessions')
       .select('workspace_id, conn_state, status, phone_number')
-      .eq('workspace_id', user.id)
-      .maybeSingle();
+      .order('updated_at', { ascending: false })
+      .limit(10);
 
-    let isConnected =
-      session?.conn_state === 'open' ||
-      session?.status === 'connected' ||
-      session?.status === 'CONNECTED' ||
-      !!(session?.phone_number && session.phone_number.length > 5);
+    let activeWsId = (body as any).workspace_id || user.id;
+    let session: any = null;
+    let isConnected = false;
 
-    // 2. If user.id session is NOT connected, find ANY active connected session in baileys_sessions
+    if (connectedSessions && connectedSessions.length > 0) {
+      // Prioritize session with valid phone_number or open conn_state
+      const activeSess = connectedSessions.find(
+        (s: any) =>
+          (s.phone_number && s.phone_number.length > 5) ||
+          s.conn_state === 'open' ||
+          s.status === 'connected' ||
+          s.status === 'CONNECTED'
+      );
+
+      if (activeSess) {
+        session = activeSess;
+        activeWsId = activeSess.workspace_id;
+        isConnected = true;
+        console.log(`[send-message] HARD-OVERWRITE active workspace: ${activeWsId} (+${activeSess.phone_number})`);
+      }
+    }
+
     if (!isConnected) {
-      const { data: activeSessions } = await supabaseAdmin
+      const { data: userSess } = await supabaseAdmin
         .from('baileys_sessions')
         .select('workspace_id, conn_state, status, phone_number')
-        .order('updated_at', { ascending: false })
-        .limit(5);
+        .eq('workspace_id', user.id)
+        .maybeSingle();
 
-      if (activeSessions && activeSessions.length > 0) {
-        const activeSess = activeSessions.find(
-          (s: any) =>
-            s.conn_state === 'open' ||
-            s.status === 'connected' ||
-            s.status === 'CONNECTED' ||
-            !!(s.phone_number && s.phone_number.length > 5)
-        );
-
-        if (activeSess) {
-          session = activeSess;
-          activeWsId = activeSess.workspace_id;
-          isConnected = true;
-          console.log(`[send-message] Auto-routed dispatch to active connected workspace: ${activeWsId} (+${activeSess.phone_number})`);
-        }
+      if (userSess) {
+        session = userSess;
+        activeWsId = userSess.workspace_id;
+        isConnected =
+          userSess.conn_state === 'open' ||
+          userSess.status === 'connected' ||
+          userSess.status === 'CONNECTED' ||
+          !!(userSess.phone_number && userSess.phone_number.length > 5);
       }
     }
 

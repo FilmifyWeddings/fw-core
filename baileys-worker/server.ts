@@ -1239,7 +1239,19 @@ function startHealthServer(): http.Server {
       if (req.method === 'POST' && parsedUrl.pathname === '/send') {
         const bodyStr = await getRequestBody(req);
         const payload = JSON.parse(bodyStr);
-        const targetWsId = payload.workspace_id || payload.workspaceId || WORKSPACE_ID;
+        let targetWsId = payload.workspace_id || payload.workspaceId || WORKSPACE_ID;
+
+        // WORKER ENDPOINT FALLBACK: Check if activeSessions has requested ID or ANY open socket in memory
+        let activeSess = activeSessions.get(targetWsId);
+        if (!activeSess || !activeSess.sock) {
+          for (const [wsId, sess] of activeSessions.entries()) {
+            if (sess.sock && (sess.sock.user || (sess.authState?.state?.creds as any)?.me?.id)) {
+              logger.info({ requestedWsId: targetWsId, fallbackWsId: wsId }, '⚡ Using active fallback in-memory socket for /send dispatch');
+              targetWsId = wsId;
+              break;
+            }
+          }
+        }
 
         logger.info({ payload, workspaceId: targetWsId }, 'Received send message request');
 
