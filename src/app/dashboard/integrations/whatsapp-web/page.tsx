@@ -7,7 +7,15 @@ import { BaileysQrConnect } from '@/components/integrations/baileys/baileys-qr-c
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
 export default function WhatsAppDevicePage() {
-  const { userId } = useBhamstra();
+  const { userId, loading } = useBhamstra();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00a884]"></div>
+      </div>
+    );
+  }
 
   return (
     <BaileysQrConnect workspaceId={userId || MOCK_WORKSPACE_ID} />

@@ -213,8 +213,8 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
               }
               return;
             }
-            if (d.qr_string && !d.qr_expired && isMounted) {
-              setConnState('connecting'); setQrString(d.qr_string);
+            if (d.qr_string && isMounted) {
+              setConnState('connecting'); setQrString(d.qr_string); qrStringRef.current = d.qr_string; setIsResetting(false);
             }
           }
         }
@@ -232,18 +232,16 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       .channel(`baileys-qr-realtime-${workspaceId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'baileys_sessions', filter: `workspace_id=eq.${workspaceId}` },
+        { event: '*', schema: 'public', table: 'baileys_sessions' },
         (payload) => {
-          const payloadWsId = (payload.new as any)?.workspace_id;
-          if (payloadWsId && workspaceId && payloadWsId !== workspaceId) return;
-
+          const payloadWsId = (payload.new as any)?.workspace_id || (payload.new as any)?.user_id;
           const newState = (payload.new as any)?.conn_state;
           const phone = (payload.new as any)?.phone_number;
           const qr = (payload.new as any)?.qr_string;
           if (newState === 'open' && isMounted) {
-            setConnState('open'); setPhoneNumber(phone ?? null); setQrString(null); setIsResetting(false); stopPolling();
+            setConnState('open'); setPhoneNumber(phone ?? null); setQrString(null); qrStringRef.current = null; setIsResetting(false); stopPolling();
           } else if (qr && isMounted && newState !== 'open') {
-            setConnState('connecting'); setQrString(qr);
+            setConnState('connecting'); setQrString(qr); qrStringRef.current = qr; setIsResetting(false);
           }
         }
       )
@@ -255,7 +253,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       sseRef.current?.close();
       stopPolling();
     };
-  }, [initSSE, startPolling, stopPolling]);
+  }, [initSSE, startPolling, stopPolling, workspaceId]);
 
   const handleDisconnect = async () => {
     sseRef.current?.close(); stopPolling();
@@ -265,14 +263,14 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
       });
     }
-    setConnState('disconnected'); setQrString(null); setPhoneNumber(null);
+    setConnState('disconnected'); setQrString(null); qrStringRef.current = null; lastQrUpdateRef.current = 0; setPhoneNumber(null);
     startedRef.current = false;
   };
 
   const handleReconnect = async () => {
     startedRef.current = false;
     setIsResetting(false);
-    setConnState('connecting'); setQrString(null);
+    setConnState('connecting'); setQrString(null); qrStringRef.current = null; lastQrUpdateRef.current = 0;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
@@ -289,7 +287,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     // ── IMMEDIATE FRONTEND STATE WIPEOUT ──
     sseRef.current?.close(); stopPolling();
     setIsResetting(true);
-    setConnState('connecting'); setQrString(null); setPhoneNumber(null);
+    setConnState('connecting'); setQrString(null); qrStringRef.current = null; lastQrUpdateRef.current = 0; setPhoneNumber(null);
     setQrPanelKey(k => k + 1);
     startedRef.current = false;
 
