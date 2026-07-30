@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// WedGrapher Airy White Presets & Full Dynamic State
+// WedGrapher Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
   eventGroup: 'Pre-Wedding',
@@ -147,6 +147,18 @@ function WedGrapherAiryBuilderContent() {
   const [saving, setSaving] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [openCard, setOpenCard] = useState<string | null>('cover');
+
+  // Dynamic Theme Colors based on Look Selection
+  const isGold = data.look.toLowerCase().includes('gold');
+  const isDark = data.look.toLowerCase().includes('dark');
+
+  // Exact Requested Colors: #FFF8EA (Background) & #8A6D2F (Content & Text & Borders)
+  const pageBgColor = isGold ? '#FFF8EA' : isDark ? '#141622' : '#FFFFFF';
+  const textColor = isGold ? '#8A6D2F' : isDark ? '#F3F4F6' : '#27272A';
+  const kickerColor = isGold ? '#8A6D2F' : isDark ? '#E5C365' : '#A1A1AA';
+  const borderColor = isGold ? 'rgba(138, 109, 47, 0.25)' : isDark ? '#232634' : 'rgba(228, 228, 231, 1)';
+  const boxBgColor = isGold ? 'rgba(138, 109, 47, 0.08)' : isDark ? '#0F1017' : 'rgba(244, 244, 245, 1)';
+  const photoBorderColor = isGold ? 'rgba(138, 109, 47, 0.3)' : isDark ? '#232634' : 'rgba(228, 228, 231, 1)';
 
   // Calculate totals dynamically
   const subtotal = data.pricePayment.packagePrice;
@@ -283,14 +295,15 @@ function WedGrapherAiryBuilderContent() {
               </div>
 
               <div>
-                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Look</label>
+                <label className="block text-[10px] uppercase font-bold text-amber-700 mb-1">Look</label>
                 <select
                   value={data.look}
                   onChange={(e) => setData({ ...data, look: e.target.value })}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
+                  className="w-full p-2 rounded-xl bg-amber-50/60 border border-amber-200 font-bold text-amber-900 focus:outline-none"
                 >
                   <option value="Airy White (Pre-Wed)">Airy White (Pre-Wed)</option>
                   <option value="Royal Gold (Classic)">Royal Gold (Classic)</option>
+                  <option value="Golden Luxe">Golden Luxe (#FFF8EA / #8A6D2F)</option>
                   <option value="Dark Studio">Dark Studio</option>
                 </select>
               </div>
@@ -634,25 +647,36 @@ function WedGrapherAiryBuilderContent() {
         </aside>
 
         {/* ───────────────────────────────────────────────────────────── */}
-        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS (AIRY WHITE WEDGRAPHER)  */}
+        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS (AIRY / ROYAL GOLD / DARK) */}
         {/* ───────────────────────────────────────────────────────────── */}
         <main className="flex-1 bg-[#EBECEF] p-6 overflow-y-auto flex justify-center items-start">
           
-          {/* Centered Document Page */}
-          <div className="w-full max-w-[680px] bg-white border border-zinc-200 rounded-sm shadow-2xl p-10 sm:p-14 space-y-12 my-4 text-zinc-800">
+          {/* Dynamic Theme Centered Document Page */}
+          <div 
+            className="w-full max-w-[680px] rounded-sm shadow-2xl p-10 sm:p-14 space-y-12 my-4 transition-colors duration-300"
+            style={{ 
+              backgroundColor: pageBgColor, 
+              color: textColor,
+              borderColor: borderColor,
+              borderWidth: '1px'
+            }}
+          >
             
             {/* 1. COVER PAGE HERO (Airy Arch Frame) */}
             <div className="text-center space-y-6 pt-4">
-              <span className="text-[10px] tracking-[0.25em] text-zinc-400 uppercase font-semibold block">
+              <span className="text-[10px] tracking-[0.25em] uppercase font-semibold block" style={{ color: kickerColor }}>
                 A &amp; R
               </span>
 
-              <h1 className="text-3xl sm:text-4xl font-serif tracking-widest uppercase text-zinc-900 leading-tight">
+              <h1 className="text-3xl sm:text-4xl font-serif tracking-widest uppercase leading-tight" style={{ color: textColor }}>
                 {data.title}
               </h1>
 
-              {/* Arch Image Frame (Airy White WedGrapher Signature) */}
-              <div className="w-[68%] mx-auto mt-6 rounded-t-[999px] rounded-b-none overflow-hidden bg-zinc-100 border border-zinc-200 aspect-[4/5] shadow-lg relative">
+              {/* Arch Image Frame */}
+              <div 
+                className="w-[68%] mx-auto mt-6 rounded-t-[999px] rounded-b-none overflow-hidden aspect-[4/5] shadow-lg relative"
+                style={{ borderColor: photoBorderColor, borderWidth: '1px', backgroundColor: boxBgColor }}
+              >
                 <img 
                   src={data.coverPhoto} 
                   alt="Wedding Couple"
@@ -660,51 +684,51 @@ function WedGrapherAiryBuilderContent() {
                 />
               </div>
 
-              <p className="text-[11px] text-zinc-400 italic">
+              <p className="text-[11px] italic" style={{ color: kickerColor }}>
                 {data.subtitle}
               </p>
 
-              <div className="pt-8 flex items-center justify-between text-[11px] text-zinc-500 font-sans border-t border-zinc-100">
+              <div className="pt-8 flex items-center justify-between text-[11px] font-sans border-t" style={{ borderColor: borderColor, color: textColor }}>
                 <span>{data.year}</span>
-                <span>PREPARED FOR <strong className="text-zinc-900">{data.preparedFor}</strong></span>
+                <span>PREPARED FOR <strong style={{ color: textColor }}>{data.preparedFor}</strong></span>
               </div>
             </div>
 
             {/* 2. ABOUT US SECTION */}
-            <div className="space-y-3 pt-10 border-t border-zinc-100">
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+            <div className="space-y-3 pt-10 border-t" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
                 {data.aboutUs.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.aboutUs.heading}
               </h2>
-              <p className="text-xs text-zinc-600 leading-relaxed whitespace-pre-line font-sans">
+              <p className="text-xs leading-relaxed whitespace-pre-line font-sans opacity-90" style={{ color: textColor }}>
                 {data.aboutUs.text}
               </p>
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block pt-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider block pt-2" style={{ color: kickerColor }}>
                 {data.aboutUs.signature}
               </span>
             </div>
 
             {/* 3. SHOOT DETAILS SECTION */}
-            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
                 {data.shootDetails.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.shootDetails.heading}
               </h2>
 
               <div className="space-y-3">
                 {data.shootDetails.rows.map(row => (
-                  <div key={row.id} className="space-y-0.5 border-b border-zinc-100 pb-2">
-                    <span className="text-[9px] font-bold uppercase text-zinc-400 tracking-wider block">{row.label}</span>
-                    <span className="text-xs text-zinc-800 font-medium">{row.value}</span>
+                  <div key={row.id} className="space-y-0.5 border-b pb-2" style={{ borderColor: borderColor }}>
+                    <span className="text-[9px] font-bold uppercase tracking-wider block" style={{ color: kickerColor }}>{row.label}</span>
+                    <span className="text-xs font-medium" style={{ color: textColor }}>{row.value}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="rounded-2xl overflow-hidden border border-zinc-200 mt-4 shadow-md">
+              <div className="rounded-2xl overflow-hidden mt-4 shadow-md" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
                 <img 
                   src={data.shootDetails.photo} 
                   alt="Pre-Wedding Shoot"
@@ -715,19 +739,19 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 4. WHAT'S INCLUDED SECTION */}
-            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
                 {data.whatsIncluded.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.whatsIncluded.heading}
               </h2>
 
-              <div className="p-5 bg-zinc-50 rounded-2xl border border-zinc-200 leading-relaxed whitespace-pre-line text-zinc-700 font-sans">
+              <div className="p-5 rounded-2xl leading-relaxed whitespace-pre-line font-sans" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px', color: textColor }}>
                 {data.whatsIncluded.deliverablesText}
               </div>
 
-              <div className="rounded-2xl overflow-hidden border border-zinc-200 mt-4 shadow-md">
+              <div className="rounded-2xl overflow-hidden mt-4 shadow-md" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
                 <img 
                   src={data.whatsIncluded.photo} 
                   alt="Package Deliverables"
@@ -738,46 +762,46 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 5. PRICE & PAYMENT SECTION */}
-            <div className="space-y-6 pt-10 border-t border-zinc-100 font-sans text-xs">
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+            <div className="space-y-6 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
                 {data.pricePayment.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.pricePayment.heading}
               </h2>
 
-              <div className="text-3xl font-serif text-zinc-900">
+              <div className="text-3xl font-serif" style={{ color: textColor }}>
                 ₹{grandTotal.toLocaleString('en-IN')}
               </div>
 
-              <div className="space-y-1 border-t border-zinc-100 pt-3">
-                <span className="text-[10px] font-bold uppercase text-zinc-400 block">{data.pricePayment.paymentHeading}</span>
-                <p className="text-xs text-zinc-700">{data.pricePayment.paymentTerms}</p>
+              <div className="space-y-1 border-t pt-3" style={{ borderColor: borderColor }}>
+                <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
+                <p className="text-xs" style={{ color: textColor }}>{data.pricePayment.paymentTerms}</p>
               </div>
             </div>
 
             {/* 6. ADD ONS TABLE */}
-            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.addOnsTable.heading}
               </h2>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
                 {data.addOnsTable.kicker}
               </span>
 
-              <div className="border border-zinc-200 rounded-xl overflow-hidden">
+              <div className="rounded-xl overflow-hidden" style={{ borderColor: borderColor, borderWidth: '1px' }}>
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-zinc-100 text-[10px] uppercase font-bold text-zinc-500 border-b border-zinc-200">
+                  <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor: borderColor, color: textColor }}>
                     <tr>
                       <th className="py-2.5 px-4">Services</th>
                       <th className="py-2.5 px-4 text-right">Charges</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 font-medium text-zinc-700">
+                  <tbody className="divide-y font-medium" style={{ color: textColor }}>
                     {data.addOnsTable.rows.map(row => (
-                      <tr key={row.id} className="hover:bg-zinc-50">
+                      <tr key={row.id}>
                         <td className="py-2.5 px-4">{row.service}</td>
-                        <td className="py-2.5 px-4 text-right font-mono text-zinc-900">{row.charge}</td>
+                        <td className="py-2.5 px-4 text-right font-mono font-bold" style={{ color: textColor }}>{row.charge}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -786,45 +810,45 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 7. DELIVERY TIMEFRAME */}
-            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.deliveryTime.heading}
               </h2>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200">
-                  <span className="text-[10px] font-bold uppercase text-zinc-400 block">PHOTOS</span>
-                  <strong className="text-xs text-zinc-800">{data.deliveryTime.photosDelivered}</strong>
+                <div className="p-4 rounded-xl" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px' }}>
+                  <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor }}>PHOTOS</span>
+                  <strong className="text-xs font-bold" style={{ color: textColor }}>{data.deliveryTime.photosDelivered}</strong>
                 </div>
-                <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200">
-                  <span className="text-[10px] font-bold uppercase text-zinc-400 block">TEASER &amp; FILM</span>
-                  <strong className="text-xs text-zinc-800">{data.deliveryTime.filmDelivered}</strong>
+                <div className="p-4 rounded-xl" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px' }}>
+                  <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor }}>TEASER &amp; FILM</span>
+                  <strong className="text-xs font-bold" style={{ color: textColor }}>{data.deliveryTime.filmDelivered}</strong>
                 </div>
               </div>
-              <p className="text-[10px] text-zinc-400 italic">{data.deliveryTime.smallPrint}</p>
+              <p className="text-[10px] italic" style={{ color: kickerColor }}>{data.deliveryTime.smallPrint}</p>
             </div>
 
             {/* 8. TIMELINE TABLE */}
-            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.timelineTable.heading}
               </h2>
 
-              <div className="border border-zinc-200 rounded-xl overflow-hidden">
+              <div className="rounded-xl overflow-hidden" style={{ borderColor: borderColor, borderWidth: '1px' }}>
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-zinc-100 text-[10px] uppercase font-bold text-zinc-500 border-b border-zinc-200">
+                  <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor: borderColor, color: textColor }}>
                     <tr>
                       <th className="py-2.5 px-4">Result</th>
                       <th className="py-2.5 px-4">Timeline</th>
                       <th className="py-2.5 px-4">Revisions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 font-medium text-zinc-700">
+                  <tbody className="divide-y font-medium" style={{ color: textColor }}>
                     {data.timelineTable.rows.map(row => (
-                      <tr key={row.id} className="hover:bg-zinc-50">
+                      <tr key={row.id}>
                         <td className="py-2.5 px-4">{row.result}</td>
                         <td className="py-2.5 px-4">{row.timeline}</td>
-                        <td className="py-2.5 px-4 text-zinc-500">{row.revisions}</td>
+                        <td className="py-2.5 px-4" style={{ color: kickerColor }}>{row.revisions}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -833,39 +857,39 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 9. TESTIMONIALS */}
-            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
                 {data.testimonials.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                 {data.testimonials.heading}
               </h2>
 
-              <div className="space-y-3 font-serif italic text-zinc-700">
+              <div className="space-y-3 font-serif italic" style={{ color: textColor }}>
                 {data.testimonials.quotes.map(q => (
-                  <div key={q.id} className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-1">
+                  <div key={q.id} className="p-4 rounded-xl space-y-1" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px' }}>
                     <p className="text-xs">{q.quote}</p>
-                    <span className="text-[10px] font-sans font-bold uppercase text-zinc-400 not-italic block">— {q.author}</span>
+                    <span className="text-[10px] font-sans font-bold uppercase not-italic block" style={{ color: kickerColor }}>— {q.author}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* 10. TERMS & THANK YOU */}
-            <div className="space-y-6 pt-10 border-t border-zinc-100 font-sans text-xs">
+            <div className="space-y-6 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
               <div className="space-y-2">
-                <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                   {data.termsAndThankYou.termsHeading}
                 </h2>
-                <p className="text-xs text-zinc-600 font-sans leading-relaxed">{data.termsAndThankYou.termsText}</p>
+                <p className="text-xs leading-relaxed font-sans opacity-90" style={{ color: textColor }}>{data.termsAndThankYou.termsText}</p>
               </div>
 
-              <div className="text-center pt-8 border-t border-zinc-100 space-y-2">
-                <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+              <div className="text-center pt-8 border-t space-y-2" style={{ borderColor: borderColor }}>
+                <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
                   {data.termsAndThankYou.thankYouHeading}
                 </h2>
-                <p className="text-xs text-zinc-500">{data.termsAndThankYou.thankYouText}</p>
-                <p className="text-[10px] font-mono text-zinc-400 pt-2">{data.termsAndThankYou.studioContact}</p>
+                <p className="text-xs" style={{ color: textColor }}>{data.termsAndThankYou.thankYouText}</p>
+                <p className="text-[10px] font-mono pt-2" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
               </div>
             </div>
 
@@ -882,8 +906,8 @@ export default function QuotationBuilderPage() {
     <React.Suspense fallback={
       <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 flex items-center justify-center p-4">
         <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-2 border-zinc-900 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-zinc-600">Loading WedGrapher Airy Editor...</p>
+          <div className="w-10 h-10 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-bold text-zinc-600">Loading WedGrapher Studio Editor...</p>
         </div>
       </div>
     }>
