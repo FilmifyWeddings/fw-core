@@ -64,12 +64,19 @@ export default function LoginPage() {
         }
       } else {
         // Log In Flow
-        const { error: signInErr } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
         if (signInErr) throw signInErr;
+
+        if (signInData?.session) {
+          const maxAge = 60 * 60 * 24 * 7;
+          document.cookie = `sb-access-token=${signInData.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+          document.cookie = `sb-refresh-token=${signInData.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+        }
+
         const searchParams = new URLSearchParams(window.location.search);
         const redirectTo = searchParams.get('redirectTo') || '/dashboard/integrations/whatsapp-web';
         window.location.href = redirectTo;
