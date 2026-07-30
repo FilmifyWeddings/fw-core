@@ -173,15 +173,16 @@ async function updateSessionState(
   targetWorkspaceId?: string
 ): Promise<void> {
   const wsId = targetWorkspaceId || WORKSPACE_ID;
+  if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') return;
   await supabase
     .from('baileys_sessions')
     .upsert({
-      workspace_id: wsId,
       user_id: wsId,
+      workspace_id: wsId,
       conn_state: state,
       ...extras,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'workspace_id' });
+    }, { onConflict: 'user_id' });
 }
 
 function formatActionLinksText(rawButtons: any[]): string {
@@ -1025,13 +1026,13 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
             supabase
               .from('baileys_sessions')
               .upsert({
-                workspace_id: wsId,
                 user_id: wsId,
+                workspace_id: wsId,
                 qr_string: qr,
                 qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
                 conn_state: 'connecting',
                 updated_at: new Date().toISOString(),
-              }, { onConflict: 'workspace_id' }),
+              }, { onConflict: 'user_id' }),
             `upsert-qr-${wsId}`
           );
         }
@@ -1046,28 +1047,30 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         await authState.saveCreds();
       } catch {}
 
-      const phoneNumber = localSock.user?.id?.split(':')[0] || (authState.state.creds as any)?.me?.id?.split(':')[0] || null;
+      const rawJid = localSock.user?.id || (authState.state.creds as any)?.me?.id;
+      const phoneNum = rawJid ? rawJid.split(':')[0].split('@')[0] : null;
 
-      console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
+      console.log(`🟢 SUCCESS: WhatsApp Connected for workspace/user ${wsId} (+${phoneNum})`);
+      logger.info({ workspaceId: wsId, phoneNum }, '🟢 SUCCESS: WhatsApp Connected, updating baileys_sessions to open');
       
-      // Direct, immediate non-blocking UPSERT into Supabase locking open state
-      dbWriteCritical(
-        supabase
+      try {
+        await supabase
           .from('baileys_sessions')
           .upsert({
-            workspace_id: wsId,
             user_id: wsId,
+            workspace_id: wsId,
             conn_state: 'open',
             status: 'connected',
-            phone_number: phoneNumber,
+            phone_number: phoneNum,
             last_connected: new Date().toISOString(),
             qr_string: null,
             qr_expires_at: null,
             error_info: null,
             updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id' }),
-        `upsert-open-status-${wsId}`
-      ).catch((err: any) => logger.error({ err, workspaceId: wsId }, 'Failed direct DB status upsert'));
+          }, { onConflict: 'user_id' });
+      } catch (err: any) {
+        logger.error({ err, workspaceId: wsId }, 'Failed direct DB status upsert');
+      }
     }
 
     if (connection === 'close') {
@@ -1106,22 +1109,19 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       activeSessions.delete(wsId);
       purgeSessionDir(wsId);
 
-      await dbWriteCritical(
-        supabase
-          .from('baileys_sessions')
-          .update({
-            conn_state: 'disconnected',
-            status: 'DISCONNECTED',
-            qr_string: null,
-            qr_expires_at: null,
-            phone_number: null,
-            error_info: 'Logged out from mobile device — QR re-scan required',
-            last_status_change: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('workspace_id', wsId),
-        `update-logged-out-${wsId}`
-      );
+      await supabase
+        .from('baileys_sessions')
+        .update({
+          conn_state: 'disconnected',
+          status: 'DISCONNECTED',
+          qr_string: null,
+          qr_expires_at: null,
+          phone_number: null,
+          error_info: 'Logged out from mobile device — QR re-scan required',
+          last_status_change: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`);
 
       setTimeout(() => startBaileysSocket(true, wsId), 1000);
     }
