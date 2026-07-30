@@ -9,36 +9,21 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
-    let workspaceId: string | null = null;
-    if (token) {
-      try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-          const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-          workspaceId = payload.sub ?? payload.user_id ?? null;
-        }
-      } catch {
-        /* ignore */
-      }
-
-      if (!workspaceId) {
-        try {
-          const supabaseClient = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-          );
-          const { data: { user } } = await supabaseClient.auth.getUser(token);
-          if (user) workspaceId = user.id;
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-
-    if (!workspaceId) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const workspaceId = user.id;
 
     // 1. Always wipe database session state directly in Supabase Postgres
     await supabaseAdmin
