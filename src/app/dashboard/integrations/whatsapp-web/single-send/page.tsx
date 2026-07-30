@@ -60,8 +60,8 @@ export default function WhatsAppSingleSendPage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   // Fetch device session and templates
-  const loadConfigData = async () => {
-    setLoadingConfig(true);
+  const loadConfigData = async (isInitial = false) => {
+    if (isInitial) setLoadingConfig(true);
     try {
       // 1. Fetch connection details directly from /api/integrations/baileys/qr-status
       const { data: { session } } = await supabase.auth.getSession();
@@ -80,7 +80,7 @@ export default function WhatsAppSingleSendPage() {
         } catch {}
       }
 
-      // Fallback query directly to Supabase baileys_sessions table if statusData was not open
+      // Fallback query directly to Supabase baileys_sessions table if statusData was not returned
       if (!statusData || (!statusData.isConnected && statusData.conn_state !== 'open')) {
         const { data: dbSession } = await supabase
           .from('baileys_sessions')
@@ -100,28 +100,44 @@ export default function WhatsAppSingleSendPage() {
 
       if (statusData) {
         const isConn = statusData.isConnected || statusData.conn_state === 'open' || statusData.status === 'CONNECTED' || statusData.status === 'connected';
-        setDeviceState({
-          conn_state: isConn ? 'open' : (statusData.conn_state || 'disconnected'),
-          phone_number: statusData.phone_number || 'Device Linked'
+        setDeviceState(prev => {
+          if (isConn) {
+            return {
+              conn_state: 'open',
+              phone_number: statusData.phone_number || prev.phone_number || 'Device Linked'
+            };
+          }
+          // Sticky connected state: if currently open, do not demote unless explicitly disconnected from server
+          if (prev.conn_state === 'open' && statusData.conn_state !== 'disconnected') {
+            return prev;
+          }
+          return {
+            conn_state: statusData.conn_state || 'disconnected',
+            phone_number: statusData.phone_number || null
+          };
         });
       }
 
-      // 2. Fetch templates
-      const tempRes = await fetch(`/api/templates?workspace_id=${tenantId}`);
-      const tempData = await tempRes.json();
-      if (tempData.success) {
-        setTemplates(tempData.results || []);
+      // 2. Fetch templates (only on initial load or if empty)
+      if (isInitial || templates.length === 0) {
+        const tempRes = await fetch(`/api/templates?workspace_id=${tenantId}`);
+        const tempData = await tempRes.json();
+        if (tempData.success) {
+          setTemplates(tempData.results || []);
+        }
       }
     } catch (err) {
       console.error('Error loading config details:', err);
     } finally {
-      setLoadingConfig(false);
+      if (isInitial) setLoadingConfig(false);
     }
   };
 
   useEffect(() => {
-    loadConfigData();
-    const interval = setInterval(loadConfigData, 3000);
+    loadConfigData(true);
+    const interval = setInterval(() => {
+      loadConfigData(false);
+    }, 10000);
     return () => clearInterval(interval);
   }, [tenantId, userId]);
 
