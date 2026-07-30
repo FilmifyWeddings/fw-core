@@ -1201,6 +1201,16 @@ function startHealthServer(): http.Server {
       if (req.method === 'POST' && parsedUrl.pathname === '/init-qr') {
         const qsWorkspace = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
         const sess = activeSessions.get(qsWorkspace);
+        const now = Date.now();
+
+        // 1. DEBOUNCE: If active socket generated a QR within 25s, do NOT re-trigger
+        if (sess && (now - (sess.lastQrTime || 0) < 25_000)) {
+          logger.info({ workspace_id: qsWorkspace }, '⏳ Active QR pairing in progress within 25s window — Skipping re-trigger on /init-qr.');
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, message: `Active QR pairing in progress.` }));
+          return;
+        }
+
         if (sess?.sock && (sess.sock as any).user && (sess.sock as any).user.id) {
           logger.info({ workspace_id: qsWorkspace }, 'Session is ALREADY CONNECTED! Skipping reset on /init-qr.');
           res.writeHead(200);
@@ -1210,7 +1220,7 @@ function startHealthServer(): http.Server {
 
         const { data: dbSess } = await supabase
           .from('baileys_sessions')
-          .select('conn_state, status')
+          .select('conn_state, status, qr_string, updated_at')
           .eq('workspace_id', qsWorkspace)
           .maybeSingle();
 
@@ -1219,6 +1229,17 @@ function startHealthServer(): http.Server {
           res.writeHead(200);
           res.end(JSON.stringify({ success: true, message: `Workspace ${qsWorkspace} is already connected in DB.` }));
           return;
+        }
+
+        // 2. DB DEBOUNCE: If existing QR in DB is younger than 25s, do NOT re-trigger
+        if (dbSess?.qr_string && dbSess?.updated_at) {
+          const updatedAt = new Date(dbSess.updated_at).getTime();
+          if (now - updatedAt < 25_000) {
+            logger.info({ workspace_id: qsWorkspace }, '⏳ DB QR string is younger than 25s — Skipping re-trigger on /init-qr.');
+            res.writeHead(200);
+            res.end(JSON.stringify({ success: true, message: `Active QR in DB is valid.` }));
+            return;
+          }
         }
 
         logger.info({ workspace_id: qsWorkspace }, '🔁 Initiating fresh QR pairing flow for workspace...');

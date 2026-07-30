@@ -116,6 +116,18 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   const [qrPanelKey, setQrPanelKey] = useState(0);
 
+  const qrStringRef = useRef<string | null>(null);
+  const lastQrUpdateRef = useRef<number>(0);
+
+  const updateQrDebounced = useCallback((newQr: string) => {
+    const now = Date.now();
+    if (!qrStringRef.current || (newQr !== qrStringRef.current && now - lastQrUpdateRef.current > 20_000)) {
+      qrStringRef.current = newQr;
+      lastQrUpdateRef.current = now;
+      setQrString(newQr);
+    }
+  }, []);
+
   const sseRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const checkRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -137,10 +149,10 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       if (!res.ok) return;
       const d = await res.json();
       if (d.isConnected && d.phone_number) {
-        setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); setIsResetting(false); stopPolling();
+        setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); qrStringRef.current = null; setIsResetting(false); stopPolling();
       } else if (d.qr_string && !d.qr_expired) {
         setConnState('connecting');
-        setQrString(d.qr_string);
+        updateQrDebounced(d.qr_string);
         setIsResetting(false);
       } else if (d.conn_state === 'connecting') {
         setConnState('connecting');
@@ -150,12 +162,12 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         setPhoneNumber(null);
       }
     } catch { /* ignore */ }
-  }, [stopPolling]);
+  }, [stopPolling, updateQrDebounced]);
 
   const startPolling = useCallback((fast = true) => {
     if (pollRef.current) clearInterval(pollRef.current);
     tick();
-    pollRef.current = setInterval(tick, fast ? 1500 : 2500);
+    pollRef.current = setInterval(tick, fast ? 2000 : 3000);
   }, [tick]);
 
   const initSSE = useCallback(async () => {
@@ -170,7 +182,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       sseRef.current = sse;
       sse.addEventListener('qr', (e) => {
         const d = JSON.parse(e.data);
-        if (d.qr) { setQrString(d.qr); setConnState('connecting'); }
+        if (d.qr) { updateQrDebounced(d.qr); setConnState('connecting'); }
       });
       sse.addEventListener('connected', (e) => {
         const d = JSON.parse(e.data);
