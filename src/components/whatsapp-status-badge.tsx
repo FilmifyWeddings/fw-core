@@ -55,11 +55,14 @@ export function WhatsappStatusBadge({ workspaceId, className = '', showLabel = t
     const interval = setInterval(fetchState, 3000);
 
     const channel = supabase
-      .channel('wa-status-badge')
+      .channel(`wa-status-badge-${workspaceId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'baileys_sessions' },
+        { event: '*', schema: 'public', table: 'baileys_sessions', filter: `workspace_id=eq.${workspaceId}` },
         (payload) => {
+          const payloadWsId = (payload.new as any)?.workspace_id;
+          if (payloadWsId && workspaceId && payloadWsId !== workspaceId) return;
+
           const newState = (payload.new as any)?.conn_state;
           if (newState && isMounted) setState(newState as any);
         }

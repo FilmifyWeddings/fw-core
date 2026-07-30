@@ -100,11 +100,12 @@ export async function GET(req: NextRequest) {
       : false;
 
     return NextResponse.json({
+      workspace_id: workspaceId,
       isConnected,
       conn_state: isConnected ? 'open' : rawState,
       status: isConnected ? 'CONNECTED' : (rawStatus || 'DISCONNECTED'),
-      qr_string: qrExpired ? null : ((data.qr_string as string) ?? null),
-      qr_expired: qrExpired,
+      qr_string: isConnected ? null : (qrExpired ? null : ((data.qr_string as string) ?? null)),
+      qr_expired: isConnected ? false : qrExpired,
       phone_number: (data.phone_number as string) || 'Device Linked',
       last_connected: data.last_connected ?? null,
     }, {

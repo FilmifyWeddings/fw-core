@@ -213,17 +213,20 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
     // Supabase Realtime Subscription for instant <50ms UI update on Postgres status change
     const channel = supabase
-      .channel('baileys-qr-realtime')
+      .channel(`baileys-qr-realtime-${workspaceId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'baileys_sessions' },
+        { event: '*', schema: 'public', table: 'baileys_sessions', filter: `workspace_id=eq.${workspaceId}` },
         (payload) => {
+          const payloadWsId = (payload.new as any)?.workspace_id;
+          if (payloadWsId && workspaceId && payloadWsId !== workspaceId) return;
+
           const newState = (payload.new as any)?.conn_state;
           const phone = (payload.new as any)?.phone_number;
           const qr = (payload.new as any)?.qr_string;
           if (newState === 'open' && isMounted) {
             setConnState('open'); setPhoneNumber(phone ?? null); setQrString(null); setIsResetting(false); stopPolling();
-          } else if (qr && isMounted) {
+          } else if (qr && isMounted && newState !== 'open') {
             setConnState('connecting'); setQrString(qr);
           }
         }
