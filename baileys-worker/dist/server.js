@@ -688,14 +688,16 @@ function startConnectingTimeout(wsId) {
     const timer = setTimeout(async () => {
         const { data: cur } = await supabase
             .from('baileys_sessions')
-            .select('conn_state')
+            .select('conn_state, creds_json')
             .eq('workspace_id', wsId)
             .maybeSingle();
-        if (cur?.conn_state === 'open')
+        if (cur?.conn_state === 'open' || (cur?.creds_json && cur.creds_json !== 'null')) {
+            logger.info({ workspaceId: wsId }, '⏰ Watchdog: session already open or creds saved — skipping force-reset.');
             return;
-        logger.warn({ workspaceId: wsId }, '⏰ Connection stuck in "connecting" for 60s — force-resetting socket for fresh QR...');
+        }
+        logger.warn({ workspaceId: wsId }, '⏰ Connection stuck in "connecting" for 120s — force-resetting socket for fresh QR...');
         await initiateForceReset(wsId);
-    }, 60_000);
+    }, 120_000);
     const sess = activeSessions.get(wsId);
     if (sess)
         sess.connectingTimeoutTimer = timer;
@@ -790,6 +792,19 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
     else {
         logger.info({ workspaceId: wsId }, '🧠 Reconnect mode: loading state from Supabase / memory');
         authState = await useSupabaseAuthState(supabase, wsId);
+        // OPTIMIZE AUTH STATE LOAD ON RECONNECT:
+        // If authState is missing essential pairing keys (noiseKey / signedIdentityKey), fallback to forceFresh = true
+        const hasNoiseKey = !!authState.state.creds?.noiseKey;
+        const hasSignedIdentityKey = !!authState.state.creds?.signedIdentityKey;
+        if (!hasNoiseKey || !hasSignedIdentityKey) {
+            logger.warn({ workspaceId: wsId, hasNoiseKey, hasSignedIdentityKey }, '⚠️ Auth state corrupted or missing noise/pairing keys — falling back to forceFresh = true to avoid 401 loop');
+            const { initAuthCreds } = await import('@whiskeysockets/baileys');
+            const freshCreds = initAuthCreds();
+            for (const k of Object.keys(authState.state.creds)) {
+                delete authState.state.creds[k];
+            }
+            Object.assign(authState.state.creds, freshCreds);
+        }
         await updateSessionState('connecting', {}, wsId);
     }
     let { version } = await fetchLatestBaileysVersion().catch(() => ({
@@ -902,8 +917,18 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
                 return;
             }
-            // ONLY reach here if EXPLICITLY LOGGED OUT (e.g. user manually unlinked device in WhatsApp app)
-            logger.warn({ workspaceId: wsId }, '🚪 WhatsApp session LOGGED OUT — wiping credentials');
+            // MANDATORY FIX 1: IMMEDIATE CLEAN MEMORY PURGE ON 401 / LOGGED_OUT
+            logger.warn({ workspaceId: wsId, statusCode }, '🚪 WhatsApp session LOGGED OUT / 401 — Performing immediate clean memory & socket purge');
+            try {
+                localSock.ev.removeAllListeners();
+                localSock.ws?.close();
+            }
+            catch { }
+            if (currentSess.reconnectTimer)
+                clearTimeout(currentSess.reconnectTimer);
+            if (currentSess.connectingTimeoutTimer)
+                clearTimeout(currentSess.connectingTimeoutTimer);
+            activeSessions.delete(wsId);
             await dbWriteCritical(supabase
                 .from('baileys_sessions')
                 .update({
@@ -919,9 +944,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 updated_at: new Date().toISOString()
             })
                 .eq('workspace_id', wsId), `update-logged-out-${wsId}`);
-            if (currentSess.reconnectTimer)
-                clearTimeout(currentSess.reconnectTimer);
-            currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(true, wsId), 1000);
+            setTimeout(() => startBaileysSocket(true, wsId), 1000);
         }
     });
     localSock.ev.on('messages.upsert', async ({ messages, type }) => {
