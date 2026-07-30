@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Users, FileText, Database, Sparkles, Plug } from 'lucide-react';
+import { Users, FileText, Database, Sparkles, Plug, Film } from 'lucide-react';
 import { SUITE_REGISTRY, type SuiteAppConfig } from '@/types';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -12,6 +12,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileText,
   Database,
   Plug,
+  Film,
 };
 
 const SUITE_ACCENT_MAP: Record<string, { bg: string; border: string; text: string; glow: string; iconBg: string }> = {
@@ -42,6 +43,20 @@ const SUITE_ACCENT_MAP: Record<string, { bg: string; border: string; text: strin
     text: 'text-zinc-900',
     glow: 'hover:shadow-[0_20px_40px_rgba(59,130,246,0.08)]',
     iconBg: 'bg-gradient-to-br from-blue-500 to-indigo-600',
+  },
+  'clients': {
+    bg: 'bg-white',
+    border: 'border-zinc-200',
+    text: 'text-zinc-900',
+    glow: 'hover:shadow-[0_20px_40px_rgba(99,102,241,0.08)]',
+    iconBg: 'bg-gradient-to-br from-indigo-500 to-purple-600',
+  },
+  'post-production': {
+    bg: 'bg-white',
+    border: 'border-zinc-200',
+    text: 'text-zinc-900',
+    glow: 'hover:shadow-[0_20px_40px_rgba(236,72,153,0.08)]',
+    iconBg: 'bg-gradient-to-br from-pink-500 to-rose-600',
   },
 };
 

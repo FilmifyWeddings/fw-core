@@ -348,7 +348,7 @@ export interface FWWhatsAppLog {
 // SaaS Suite Registry Types
 // ─────────────────────────────────────────────────────────────
 
-export type SubAppSlug = 'team-manager' | 'quotations' | 'leads' | 'integrations';
+export type SubAppSlug = 'team-manager' | 'quotations' | 'leads' | 'integrations' | 'clients' | 'post-production';
 
 export interface SuiteAppNavItem {
   label: string;
@@ -438,7 +438,84 @@ export const SUITE_REGISTRY: SuiteRegistry = {
         { label: 'Webhooks API', icon: 'Key', href: '/workspace/integrations' },
       ],
     },
+    {
+      slug: 'clients',
+      title: 'Clients Management',
+      subtitle: 'Client Roster & Billing',
+      description: 'Track converted wedding clients, total package billing, paid deposits, and balance receivables.',
+      icon: 'Users',
+      accentColor: '#6366F1',
+      accentGradient: 'from-indigo-500 to-purple-600',
+      href: '/workspace/clients',
+      sidebarNavItems: [
+        { label: 'Client Directory', icon: 'Users', href: '/workspace/clients' },
+        { label: 'Post-Production', icon: 'Film', href: '/workspace/post-production' },
+      ],
+    },
+    {
+      slug: 'post-production',
+      title: 'Post-Production',
+      subtitle: 'Deliverables & Tracking',
+      description: 'Interactive dark cinematic board for tracking teaser films, full films, reels, photos, albums, and editor deadlines.',
+      icon: 'Film',
+      accentColor: '#EC4899',
+      accentGradient: 'from-pink-500 to-rose-600',
+      href: '/workspace/post-production',
+      sidebarNavItems: [
+        { label: 'Deliverable Board', icon: 'Film', href: '/workspace/post-production' },
+        { label: 'Client Roster', icon: 'Users', href: '/workspace/clients' },
+      ],
+    },
   ],
 };
+
+// ─────────────────────────────────────────────────────────────
+// Workspace Clients & Post-Production Deliverables Types
+// ─────────────────────────────────────────────────────────────
+
+export interface WorkspaceClient {
+  id: string;
+  workspace_id: string;
+  lead_id?: string | null;
+  name: string;
+  phone: string;
+  email?: string | null;
+  event_type: string;
+  event_date?: string | null;
+  total_package_amount: number;
+  paid_amount: number;
+  status: 'active' | 'completed' | 'archived';
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DeliverableCategory = 'teaser' | 'film' | 'reels' | 'photos' | 'album';
+export type DeliverableStatus = 'pending' | 'in_progress' | 'under_review' | 'completed';
+
+export interface DeliverableItem {
+  id: string;
+  title: string;
+  category: DeliverableCategory;
+  assigned_to?: string | null;
+  deadline?: string | null;
+  status: DeliverableStatus;
+  drive_link?: string | null;
+  revision_notes?: string | null;
+}
+
+export interface PostProductionProject {
+  id: string;
+  workspace_id: string;
+  client_id: string;
+  client?: WorkspaceClient | null;
+  project_manager_id?: string | null;
+  project_manager_name: string;
+  overall_status: 'active' | 'delayed' | 'completed';
+  deliverables: DeliverableItem[];
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 

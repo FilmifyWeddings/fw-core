@@ -9,7 +9,7 @@ import {
   Settings, HelpCircle, Sun, Moon, Menu, ChevronDown, ChevronRight, 
   LogOut, Search, MessageSquare, FileSpreadsheet, Check, Shield, GitBranch,
   FileText, Users, ArrowLeft, Globe, BarChart3, FolderOpen, Layout,
-  Calendar, ClipboardList, Sparkles, Webhook
+  Calendar, ClipboardList, Sparkles, Webhook, Film
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { SUITE_REGISTRY, type SubAppSlug } from '@/types';
@@ -33,7 +33,7 @@ const FacebookIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 const SUB_APP_ICON_MAP: Record<string, React.ElementType> = {
   Users, FolderOpen, Calendar, ClipboardList, FileText, Layout, Sparkles, Database,
-  Globe, Webhook, BarChart3, Send
+  Globe, Webhook, BarChart3, Send, Film
 };
 
 interface SidebarLayoutProps {
@@ -44,6 +44,8 @@ function getSubAppFromPath(pathname: string): SubAppSlug | null {
   if (pathname.startsWith('/team-manager')) return 'team-manager';
   if (pathname.startsWith('/quotations')) return 'quotations';
   if (pathname.startsWith('/leads')) return 'leads';
+  if (pathname.startsWith('/workspace/clients')) return 'clients';
+  if (pathname.startsWith('/workspace/post-production')) return 'post-production';
   return null;
 }
 
