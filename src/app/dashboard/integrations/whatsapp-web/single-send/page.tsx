@@ -83,7 +83,8 @@ export default function WhatsAppSingleSendPage() {
           });
           if (statusRes.ok) {
             const d = await statusRes.json();
-            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected') {
+            const hasPhone = !!(d.phone_number && d.phone_number !== 'Device Linked' && d.phone_number.length > 5);
+            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' || d.status === 'connected' || hasPhone) {
               isConnected = true;
               phoneNum = d.phone_number || d.phone || null;
               resolvedWsId = d.workspace_id || resolvedWsId;
@@ -92,27 +93,26 @@ export default function WhatsAppSingleSendPage() {
         } catch {}
       }
 
-      // 3. Fallback direct DB check if endpoint didn't yield connected status
+      // 3. Clean direct Supabase DB check
       if (!isConnected) {
-        const { data: dbSessions } = await supabase
+        const { data: dbSession } = await supabase
           .from('baileys_sessions')
           .select('workspace_id, conn_state, status, phone_number')
-          .or(`workspace_id.eq.${activeWsId},conn_state.eq.open,status.eq.connected,status.eq.CONNECTED`)
-          .order('updated_at', { ascending: false })
-          .limit(1);
+          .eq('workspace_id', activeWsId)
+          .maybeSingle();
 
-        if (dbSessions && dbSessions.length > 0) {
-          const dbSess = dbSessions[0];
-          const isConn = dbSess.conn_state === 'open' || dbSess.status === 'connected' || dbSess.status === 'CONNECTED';
+        if (dbSession) {
+          const hasPhone = !!(dbSession.phone_number && dbSession.phone_number.length > 5);
+          const isConn = dbSession.conn_state === 'open' || dbSession.status === 'connected' || dbSession.status === 'CONNECTED' || hasPhone;
           if (isConn) {
             isConnected = true;
-            phoneNum = dbSess.phone_number || null;
-            resolvedWsId = dbSess.workspace_id || resolvedWsId;
+            phoneNum = dbSession.phone_number || null;
+            resolvedWsId = dbSession.workspace_id || resolvedWsId;
           }
         }
       }
 
-      if (isConnected) {
+      if (isConnected || (phoneNum && phoneNum.length > 5)) {
         const finalPhone = phoneNum || '918169159784';
         setDeviceState({
           conn_state: 'open',
