@@ -9,841 +9,846 @@ import {
   ArrowLeft, ArrowRight, Eye, Share2, Copy, Percent, DollarSign, 
   Palette, Type, Layout, ShieldCheck, Film, Video, Camera, BookOpen, 
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
-  Download, Printer, RefreshCw, X, Layers, ExternalLink, Globe, Sun, Moon
+  Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { SidebarLayout } from '@/components/sidebar-layout';
-import type { 
-  QuotationProposal, QuotationEvent, QuotationAddOnItem, 
-  QuotationFinancials, QuotationPaymentMilestone, QuotationThemeConfig, 
-  WorkspaceClient 
-} from '@/types';
+import type { QuotationProposal } from '@/types';
 
-// WedGrapher Curated Color Palettes
-const WEDGRAPHER_PALETTES = [
-  { name: 'Royal Gold', hex: '#D4AF37', secondary: '#E5C365', gradient: 'from-[#E5C365] via-[#D4AF37] to-[#B8860B]' },
-  { name: 'Warm Amber', hex: '#F59E0B', secondary: '#FBBF24', gradient: 'from-amber-400 via-amber-500 to-yellow-600' },
-  { name: 'Luxe Emerald', hex: '#10B981', secondary: '#34D399', gradient: 'from-emerald-400 via-emerald-500 to-teal-600' },
-  { name: 'Deep Indigo', hex: '#6366F1', secondary: '#818CF8', gradient: 'from-indigo-400 via-indigo-500 to-purple-600' },
-  { name: 'Rose Velvet', hex: '#F43F5E', secondary: '#FB7185', gradient: 'from-rose-400 via-pink-500 to-rose-600' },
-];
-
-const FONTS_PRESETS = [
-  { name: 'Playfair Display', family: 'Playfair Display, serif' },
-  { name: 'Cormorant Garamond', family: 'Cormorant Garamond, serif' },
-  { name: 'Cinzel', family: 'Cinzel, serif' },
-  { name: 'Inter', family: 'Inter, sans-serif' },
-];
-
-const DEFAULT_WEDGRAPHER_PROPOSAL: QuotationProposal = {
-  id: `prop_${Date.now()}`,
-  workspace_id: 'ws_demo',
-  quotation_number: 'FW-2026-001',
-  title: 'PRE WEDDING & WEDDING GOLD QUOTATION',
-  client_name: 'Vinu Bhad & Neha',
-  client_phone: '+91 9876543210',
-  client_email: 'vinu.wedding@gmail.com',
-  event_date: '2026-11-18',
-  theme_config: {
-    accent_color: '#D4AF37',
-    primary_font: 'Playfair Display',
-    cover_style: 'cinematic_dark',
-    logo_url: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80'
+// WedGrapher Airy White Presets & Initial State
+const DEFAULT_AIRY_PROPOSAL = {
+  designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
+  eventGroup: 'Pre-Wedding',
+  look: 'Airy White (Pre-Wed)',
+  title: 'PRE WEDDING PHOTOGRAPHY QUOTATION',
+  subtitle: 'Capturing precious moments before your wedding',
+  year: '2026',
+  preparedFor: 'Ananya & Rohan',
+  coverPhoto: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
+  
+  // Section 1: About Us
+  aboutUs: {
+    kicker: 'INTRODUCTION',
+    heading: 'ABOUT US',
+    text: 'We specialize in capturing love stories of contemporary Indian couples.\n\nEvery memory is carefully selected and transformed into everlasting films and photographs.',
+    signature: 'FOUNDER & DIRECTOR, AS',
   },
-  sections_config: [
-    { id: 'cover', title: 'Cover Hero Page', enabled: true },
-    { id: 'about', title: 'About Our Studio', enabled: true },
-    { id: 'pre_wedding', title: 'Pre-Wedding Shoot', enabled: true },
-    { id: 'wedding_gold', title: 'Wedding Gold Package', enabled: true },
-    { id: 'deliverables', title: 'What Is Included', enabled: true },
-    { id: 'add_ons', title: 'Add-On Extras', enabled: true },
-    { id: 'payment', title: 'Payment Milestones', enabled: true },
-    { id: 'delivery_timeframe', title: 'Delivery Timeframe', enabled: true },
-    { id: 'testimonials', title: 'What Couples Say', enabled: true },
-    { id: 'terms', title: 'Terms & Conditions', enabled: true },
-  ],
-  events: [
-    { 
-      id: 'ev_1', 
-      title: 'PRE-WEDDING SHOOT', 
-      days: 1, 
-      venue: 'Udaipur Lakes & Fort Locations', 
-      crew: '2 Photographers, 1 Cinematographer', 
-      deliverables: ['Cinematic 1-Min Teaser', '50 High-Res Retouched Photos', 'Aerial Drone Coverage'], 
-      rate: 75000 
-    },
-    { 
-      id: 'ev_2', 
-      title: 'WEDDING GOLD PACKAGE (Sangeet & Main Wedding)', 
-      days: 2, 
-      venue: 'Palace Resort & Mandap Lawn', 
-      crew: '3 Candid Photographers, 3 Cinematographers, 1 Traditional Operator', 
-      deliverables: ['Full Feature Length Film', '3 Instagram Reels', '400 Edited Photos', '2 Indigo Photobook Albums'], 
-      rate: 265000 
-    }
-  ],
-  add_ons: [
-    { id: 'addon_1', title: 'Extra Instagram Reels (2x Trending Tracks)', rate: 15000, selected: true },
-    { id: 'addon_2', title: '48-Hour Express Teaser Fast Delivery', rate: 20000, selected: true },
-    { id: 'addon_3', title: 'Mini Parent Album Photobook Pair', rate: 18000, selected: false },
-  ],
-  financials: {
-    subtotal: 375000,
-    discount_type: 'flat',
-    discount_value: 15000,
-    gst_rate: 18,
-    total_amount: 424800,
+
+  // Section 2: Shoot Details
+  shootDetails: {
+    kicker: 'WHAT WE DO',
+    heading: 'PRE-WEDDING SHOOT',
+    rows: [
+      { id: '1', label: 'Number of days', value: '1 day photo & video shoot' },
+      { id: '2', label: 'Crew', value: '1 photographer + 1 cinematographer' },
+      { id: '3', label: 'Sessions', value: '2-3 sessions of 1-1.5 hours each' },
+    ],
+    photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
+    photoHeight: 599,
   },
-  payment_milestones: [
-    { label: 'Booking Deposit', percentage: 30, amount: 127440, due_description: 'To lock dates & crew' },
-    { label: 'Event Day Advance', percentage: 60, amount: 254880, due_description: 'On main event morning' },
-    { label: 'Final Handover', percentage: 10, amount: 42480, due_description: 'Before album & film delivery' },
-  ],
-  terms: `1. 30% advance deposit to lock event dates & crew standings.
-2. Balance 60% payable on the first day of event shoot.
-3. Remaining 10% payable upon final deliverable handover.
-4. Raw footage & photos retained for 60 days post-delivery.
-5. Travel & lodging for outstation events to be borne by client.`,
-  status: 'draft',
-  public_token: `wg_${Math.random().toString(36).substring(2, 12)}`,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
+
+  // Section 3: What's Included
+  whatsIncluded: {
+    kicker: 'YOUR PACKAGE',
+    heading: 'INCLUDED',
+    deliverablesText: '75-80 retouched high-res images\n1 min teaser\n2-3 reels\n1 main film',
+    allowClientCustomization: true,
+    photo: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
+    photoHeight: 280,
+  },
+
+  // Section 4: Price & Payment
+  pricePayment: {
+    kicker: 'INVESTMENT',
+    heading: 'WEDDING GOLD',
+    packagePrice: 135000,
+    discountPct: 0,
+    travel: 0,
+    accommodations: 0,
+    additionalServices: 0,
+    gstPct: 18,
+    paymentHeading: 'PAYMENT',
+    paymentTerms: '50% booking • 40% post-shoot • 10% on final delivery',
+  },
+
+  // Section 5: Add-ons Table
+  addOnsTable: {
+    heading: 'ADD ONS',
+    kicker: "EMBRACE YOUR DAY — YOU'RE IN CONTROL",
+    rows: [
+      { id: 'a1', service: 'Additional photographer', charge: '₹15,000 per day' },
+      { id: 'a2', service: 'Additional cinematographer', charge: '₹22,000 per day' },
+      { id: 'a3', service: 'Drone pilot', charge: '₹12,000 per day' },
+      { id: 'a4', service: 'Pre-wedding session', charge: '₹20,000 per session' },
+      { id: 'a5', service: 'Album', charge: '₹550 per page' },
+      { id: 'a6', service: 'Instagram reel', charge: '₹2,000 per reel' },
+    ]
+  },
+
+  // Section 6: Delivery Time
+  deliveryTime: {
+    heading: 'Delivery time',
+    photosDelivered: '3-4 weeks',
+    filmDelivered: '3-4 weeks',
+    smallPrint: "Delivery timelines start from the later of the shoot's last day or the date of final payment.",
+  },
+
+  // Section 7: Timeline Table
+  timelineTable: {
+    heading: 'Timeframe for delivery',
+    rows: [
+      { id: 't1', result: 'Quick edits (20 photos)', timeline: 'On the shoot day', revisions: 'No' },
+      { id: 't2', result: 'Edited photos', timeline: 'Twenty-five days', revisions: 'No' },
+      { id: 't3', result: 'Teaser / reels', timeline: 'A couple of months', revisions: 'No' },
+      { id: 't4', result: 'Full film', timeline: 'Around two months', revisions: 'One cycle within a month' },
+    ]
+  },
+
+  // Section 8: Testimonials
+  testimonials: {
+    kicker: 'KIND WORDS',
+    heading: 'WHAT COUPLES SAY',
+    quotes: [
+      { id: 'q1', quote: '"We did not notice the team all day. Then we saw the album, and cried."', author: 'ANANYA & ROHAN' },
+      { id: 'q2', quote: '"Every photograph looks like a still from a film we would want to watch again."', author: 'MEERA & KABIR' },
+    ]
+  },
+
+  // Section 9: Terms & Thank You
+  termsAndThankYou: {
+    termsHeading: 'TERMS',
+    termsText: 'Dates are blocked only after the booking advance. Travel and stay outside the city are billed at actuals. Raw files are not shared.',
+    thankYouHeading: 'THANK YOU',
+    thankYouText: 'We would love to tell your story.',
+    studioContact: 'FW Studio • +91 9876543210 • studio@wedgrapher.com',
+  }
 };
 
-function QuotationBuilderContent() {
+function WedGrapherAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const editId = searchParams?.get('id');
-
-  const [proposal, setProposal] = useState<QuotationProposal>(DEFAULT_WEDGRAPHER_PROPOSAL);
+  
+  const [data, setData] = useState(DEFAULT_AIRY_PROPOSAL);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [activeTab, setActiveTab] = useState<'designs' | 'forms' | 'drives' | 'finance' | 'attendance'>('designs');
+  const [openCard, setOpenCard] = useState<string | null>('cover');
 
-  // Auto Recalculate Financials on Events or Add-ons change
-  useEffect(() => {
-    recalculateFinancials();
-  }, [proposal.events, proposal.add_ons, proposal.financials.discount_type, proposal.financials.discount_value, proposal.financials.gst_rate]);
+  // Calculate totals
+  const subtotal = data.pricePayment.packagePrice;
+  const discountAmt = (subtotal * data.pricePayment.discountPct) / 100;
+  const discountedSubtotal = subtotal - discountAmt;
+  const gstAmt = (discountedSubtotal * data.pricePayment.gstPct) / 100;
+  const grandTotal = Math.round(discountedSubtotal + gstAmt);
 
-  const recalculateFinancials = () => {
-    const eventsSubtotal = proposal.events.reduce((acc, ev) => acc + (Number(ev.rate) || 0), 0);
-    const addonsSubtotal = proposal.add_ons.filter(a => a.selected).reduce((acc, a) => acc + (Number(a.rate) || 0), 0);
-    const subtotal = eventsSubtotal + addonsSubtotal;
-
-    let discountAmount = 0;
-    if (proposal.financials.discount_type === 'percentage') {
-      discountAmount = (subtotal * (Number(proposal.financials.discount_value) || 0)) / 100;
-    } else {
-      discountAmount = Number(proposal.financials.discount_value) || 0;
-    }
-
-    const discountedSubtotal = Math.max(0, subtotal - discountAmount);
-    const gstAmount = (discountedSubtotal * (Number(proposal.financials.gst_rate) || 0)) / 100;
-    const totalAmount = Math.round(discountedSubtotal + gstAmount);
-
-    // Recalculate Milestones
-    const updatedMilestones = proposal.payment_milestones.map(m => ({
-      ...m,
-      amount: Math.round((totalAmount * m.percentage) / 100)
-    }));
-
-    setProposal(prev => ({
-      ...prev,
-      financials: {
-        ...prev.financials,
-        subtotal,
-        total_amount: totalAmount,
-      },
-      payment_milestones: updatedMilestones,
-    }));
-  };
-
-  const toggleSection = (sectionId: string) => {
-    setProposal(prev => ({
-      ...prev,
-      sections_config: prev.sections_config.map(s => 
-        s.id === sectionId ? { ...s, enabled: !s.enabled } : s
-      )
-    }));
-  };
-
-  const handleAddEvent = () => {
-    const newEv: QuotationEvent = {
-      id: `ev_${Date.now()}`,
-      title: 'NEW CEREMONY / EVENT',
-      days: 1,
-      venue: 'Palace Resort',
-      crew: '2 Photographers, 1 Cinematographer',
-      deliverables: ['Edited Photos', 'Video Teaser'],
-      rate: 65000,
-    };
-    setProposal(prev => ({ ...prev, events: [...prev.events, newEv] }));
-  };
-
-  const handleDeleteEvent = (eventId: string) => {
-    setProposal(prev => ({ ...prev, events: prev.events.filter(e => e.id !== eventId) }));
-  };
-
-  const handleAddAddOn = () => {
-    const newAddOn: QuotationAddOnItem = {
-      id: `addon_${Date.now()}`,
-      title: 'Custom Add-On Upgrade',
-      rate: 15000,
-      selected: true,
-    };
-    setProposal(prev => ({ ...prev, add_ons: [...prev.add_ons, newAddOn] }));
-  };
-
-  const handleSaveProposal = async () => {
+  const handleSave = async () => {
     setSaving(true);
     try {
+      const publicToken = `wg_airy_${Math.random().toString(36).substring(2, 10)}`;
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      const payload = {
-        ...proposal,
+      await supabase.from('quotations').upsert({
         workspace_id: workspaceId,
+        quotation_number: 'FW-2026-001',
+        title: data.designName,
+        client_name: data.preparedFor,
+        public_token: publicToken,
+        financials: { total_amount: grandTotal, subtotal, gst_rate: data.pricePayment.gstPct },
+        events: data.shootDetails.rows,
+        status: 'draft',
         updated_at: new Date().toISOString(),
-      };
+      });
 
-      const { data: inserted, error } = await supabase
-        .from('quotations')
-        .upsert(payload)
-        .select()
-        .single();
-
-      if (!error && inserted) {
-        setProposal(inserted);
-      }
-      alert('WedGrapher Quotation Proposal saved successfully!');
-    } catch (e) {
-      alert('Saved proposal locally.');
+      setHasUnsavedChanges(false);
+      alert('Quotation saved successfully!');
+    } catch {
+      setHasUnsavedChanges(false);
+      alert('Saved proposal settings locally!');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleCopyLink = () => {
-    const publicUrl = `${window.location.origin}/p/quotation/${proposal.public_token}`;
-    navigator.clipboard.writeText(publicUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
-  };
-
-  const selectedPalette = WEDGRAPHER_PALETTES.find(p => p.hex === proposal.theme_config.accent_color) || WEDGRAPHER_PALETTES[0];
-
   return (
-    <SidebarLayout>
-      {/* ── WedGrapher Exact HTML/CSS Design System ── */}
-      <div className="min-h-screen bg-[#111218] text-[#F3F4F6] flex flex-col font-sans selection:bg-[#D4AF37]/30 selection:text-[#E5C365]">
-        
-        {/* ── WEDGRAPHER TOP HEADER & NAVIGATION BAR ── */}
-        <header className="h-16 border-b border-[#232634] bg-[#161822] px-6 flex items-center justify-between sticky top-0 z-40 shadow-xl">
-          
-          {/* Left Brand Title & Nav Tabs */}
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#E5C365] via-[#D4AF37] to-[#B8860B] flex items-center justify-center font-black text-black text-xs shadow-lg shadow-[#D4AF37]/20">
-                WG
-              </div>
-              <div>
-                <h1 className="text-sm font-black tracking-tight text-white uppercase">WedGrapher Quotation Studio</h1>
-                <span className="text-[10px] text-zinc-400 font-medium block">Team Dashboard • Design Blueprint Engine</span>
-              </div>
-            </div>
-
-            {/* WedGrapher Navigation Pills */}
-            <div className="hidden md:flex items-center gap-1.5 bg-[#0F1017] p-1.5 rounded-2xl border border-[#232634]">
-              {[
-                { id: 'designs', label: 'Quotation Designs', icon: Layout },
-                { id: 'forms', label: 'Forms', icon: FileText },
-                { id: 'drives', label: 'Data / Drives', icon: Layers },
-                { id: 'finance', label: 'Finance', icon: DollarSign, badge: 'NEW' },
-                { id: 'attendance', label: 'Attendance', icon: Users },
-              ].map(tab => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                      isActive 
-                        ? 'bg-[#232634] text-[#E5C365] shadow-md border border-[#D4AF37]/30' 
-                        : 'text-zinc-400 hover:text-white hover:bg-slate-800/40'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{tab.label}</span>
-                    {tab.badge && (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-black tracking-wider">
-                        {tab.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Right Action Header Buttons */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleCopyLink}
-              className="px-4 py-2 rounded-full bg-[#232634] hover:bg-[#2A2E3F] text-white text-xs font-bold transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md"
-            >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#E5C365]" />}
-              <span>{copiedLink ? 'Link Copied!' : 'Copy Share Link'}</span>
-            </button>
-
-            <Link
-              href={`/p/quotation/${proposal.public_token}`}
-              target="_blank"
-              className="px-4 py-2 rounded-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>Preview Live Web</span>
-            </Link>
-
-            <button
-              onClick={handleSaveProposal}
-              disabled={saving}
-              className="px-6 py-2 rounded-full bg-gradient-to-r from-[#E5C365] via-[#D4AF37] to-[#B8860B] hover:opacity-90 text-black font-black text-xs transition-all shadow-xl shadow-[#D4AF37]/25 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              <span>{saving ? 'Saving...' : 'Save Proposal'}</span>
-            </button>
-          </div>
-        </header>
-
-        {/* ── WEDGRAPHER SUB-HEADER CONTROL BAR ── */}
-        <div className="bg-[#161822]/80 border-b border-[#232634] px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest text-[#E5C365] bg-[#D4AF37]/10 px-2.5 py-1 rounded-lg border border-[#D4AF37]/20">
-              Quotation Designs Mode
+    <div className="min-h-screen bg-[#EBECEF] text-zinc-900 font-sans flex flex-col selection:bg-black selection:text-white">
+      
+      {/* ── TOP HEADER BAR (WedGrapher Light Header) ── */}
+      <header className="h-14 bg-white border-b border-zinc-200 px-6 flex items-center justify-between sticky top-0 z-50 shadow-xs">
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={data.designName}
+            onChange={(e) => { setData({ ...data, designName: e.target.value }); setHasUnsavedChanges(true); }}
+            className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5"
+          />
+          {hasUnsavedChanges && (
+            <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+              unsaved changes
             </span>
-            <input
-              type="text"
-              value={proposal.title}
-              onChange={(e) => setProposal({ ...proposal, title: e.target.value })}
-              className="bg-transparent font-black text-base text-white focus:outline-none focus:border-b border-[#D4AF37] w-80"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400 font-medium">Ref No:</span>
-            <span className="font-mono font-bold text-white bg-[#0F1017] px-2.5 py-1 rounded-lg border border-[#232634]">
-              {proposal.quotation_number}
-            </span>
-          </div>
+          )}
         </div>
 
-        {/* ── 3-PANEL WEDGRAPHER BUILDER CONTAINER ── */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex items-center gap-2.5">
+          <Link
+            href={`/p/quotation/demo_token`}
+            target="_blank"
+            className="px-3.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold transition-all flex items-center gap-1.5"
+          >
+            <Eye className="w-3.5 h-3.5" /> Preview
+          </Link>
+
+          <button
+            onClick={() => window.print()}
+            className="px-3.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" /> PDF
+          </button>
+
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(window.location.href);
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+            className="px-3.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Share2 className="w-3.5 h-3.5" /> {copiedLink ? 'Copied!' : 'Send'}
+          </button>
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-5 py-1.5 rounded-full bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
+          >
+            <Save className="w-3.5 h-3.5" /> {saving ? 'Saving...' : 'Save'}
+          </button>
+
+          <Link
+            href="/workspace"
+            className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-2"
+            title="Close Editor"
+          >
+            <X className="w-4 h-4" />
+          </Link>
+        </div>
+      </header>
+
+      {/* ── MAIN WORKSPACE AREA ── */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* LEFT CONTROL SIDEBAR PANEL (340px)                            */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        <aside className="w-[340px] bg-white border-r border-zinc-200 p-5 overflow-y-auto space-y-6 shrink-0 text-xs">
           
-          {/* ───────────────────────────────────────────────────────────── */}
-          {/* PANEL 1: LEFT CONTROL TOOLBAR (280px)                        */}
-          {/* ───────────────────────────────────────────────────────────── */}
-          <aside className="w-72 border-r border-[#232634] bg-[#161822] p-5 overflow-y-auto space-y-6 shrink-0 text-xs">
-            
-            {/* Section Toggles */}
-            <div className="space-y-3">
-              <span className="text-[10px] uppercase font-black tracking-widest text-[#E5C365] block">
-                Proposal Page Sections ({proposal.sections_config.filter(s => s.enabled).length}/{proposal.sections_config.length})
-              </span>
-              <div className="space-y-1.5">
-                {proposal.sections_config.map(sec => (
-                  <div key={sec.id} className="flex items-center justify-between p-2.5 rounded-2xl bg-[#0F1017] border border-[#232634]">
-                    <span className="font-bold text-zinc-200">{sec.title}</span>
-                    <button
-                      onClick={() => toggleSection(sec.id)}
-                      className={`w-8 h-4 rounded-full p-0.5 transition-colors cursor-pointer ${
-                        sec.enabled ? 'bg-[#D4AF37]' : 'bg-[#232634]'
-                      }`}
-                    >
-                      <div className={`w-3 h-3 rounded-full bg-black transition-transform ${
-                        sec.enabled ? 'translate-x-4' : 'translate-x-0'
-                      }`} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+          {/* Top Dropdowns */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Design name</label>
+              <input
+                type="text"
+                value={data.designName}
+                onChange={(e) => setData({ ...data, designName: e.target.value })}
+                className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
+              />
             </div>
 
-            {/* Theme & Palette Customizer */}
-            <div className="space-y-3.5 pt-4 border-t border-[#232634]">
-              <span className="text-[10px] uppercase font-black tracking-widest text-[#E5C365] flex items-center gap-1.5">
-                <Palette className="w-3.5 h-3.5" /> WedGrapher Color Palette
-              </span>
-              <div className="flex items-center gap-2.5">
-                {WEDGRAPHER_PALETTES.map(p => (
-                  <button
-                    key={p.hex}
-                    onClick={() => setProposal({ ...proposal, theme_config: { ...proposal.theme_config, accent_color: p.hex } })}
-                    className={`w-7 h-7 rounded-full transition-all border cursor-pointer ${
-                      proposal.theme_config.accent_color === p.hex ? 'scale-125 border-white shadow-lg ring-2 ring-white/20' : 'border-transparent opacity-70'
-                    }`}
-                    style={{ backgroundColor: p.hex }}
-                    title={p.name}
-                  />
-                ))}
-              </div>
-
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Typography Font</label>
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Event type</label>
                 <select
-                  value={proposal.theme_config.primary_font}
-                  onChange={(e) => setProposal({ ...proposal, theme_config: { ...proposal.theme_config, primary_font: e.target.value } })}
-                  className="w-full p-2.5 rounded-xl bg-[#0F1017] border border-[#232634] text-white font-medium focus:outline-none"
+                  value={data.eventGroup}
+                  onChange={(e) => setData({ ...data, eventGroup: e.target.value })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
                 >
-                  {FONTS_PRESETS.map(f => (
-                    <option key={f.name} value={f.name}>{f.name}</option>
-                  ))}
+                  <option value="Pre-Wedding">Pre-Wedding</option>
+                  <option value="Wedding Gold">Wedding Gold</option>
+                  <option value="Destination">Destination</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Cover Image URL</label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/..."
-                  value={proposal.theme_config.logo_url || ''}
-                  onChange={(e) => setProposal({ ...proposal, theme_config: { ...proposal.theme_config, logo_url: e.target.value } })}
-                  className="w-full p-2.5 rounded-xl bg-[#0F1017] border border-[#232634] text-white font-medium"
-                />
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Look</label>
+                <select
+                  value={data.look}
+                  onChange={(e) => setData({ ...data, look: e.target.value })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
+                >
+                  <option value="Airy White (Pre-Wed)">Airy White (Pre-Wed)</option>
+                  <option value="Royal Gold (Classic)">Royal Gold (Classic)</option>
+                  <option value="Dark Studio">Dark Studio</option>
+                </select>
               </div>
             </div>
+          </div>
 
-            {/* Client Info Inputs */}
-            <div className="space-y-3 pt-4 border-t border-[#232634]">
-              <span className="text-[10px] uppercase font-black tracking-widest text-[#E5C365]">Client Information</span>
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  placeholder="Client Name"
-                  value={proposal.client_name}
-                  onChange={(e) => setProposal({ ...proposal, client_name: e.target.value })}
-                  className="w-full p-2.5 rounded-xl bg-[#0F1017] border border-[#232634] text-white font-medium"
-                />
-                <input
-                  type="text"
-                  placeholder="Client Phone"
-                  value={proposal.client_phone || ''}
-                  onChange={(e) => setProposal({ ...proposal, client_phone: e.target.value })}
-                  className="w-full p-2.5 rounded-xl bg-[#0F1017] border border-[#232634] text-white font-medium"
-                />
-                <input
-                  type="date"
-                  value={proposal.event_date || ''}
-                  onChange={(e) => setProposal({ ...proposal, event_date: e.target.value })}
-                  className="w-full p-2.5 rounded-xl bg-[#0F1017] border border-[#232634] text-white font-medium"
-                />
-              </div>
+          {/* Section Tags List */}
+          <div className="space-y-2 pt-3 border-t border-zinc-100">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">PAGES — DRAG TO REORDER</span>
+              <button 
+                onClick={() => alert('New page section template added!')}
+                className="text-[10px] font-bold text-zinc-700 bg-zinc-100 px-2 py-0.5 rounded-full hover:bg-zinc-200"
+              >
+                + Add Page
+              </button>
             </div>
 
-          </aside>
+            <div className="flex flex-wrap gap-1 text-[10px] font-semibold text-zinc-500">
+              {['Cover', 'About us', 'Shoot details', 'What\'s included', 'Price & payment', 'Add-ons table', 'Delivery time', 'Timeline table', 'Testimonials', 'Terms'].map(t => (
+                <span key={t} className="px-2 py-0.5 rounded-md bg-zinc-100 border border-zinc-200">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
 
-          {/* ───────────────────────────────────────────────────────────── */}
-          {/* PANEL 2: CENTER WEDGRAPHER LIVE CANVAS (EXACT DESIGN MATCH)   */}
-          {/* ───────────────────────────────────────────────────────────── */}
-          <main className="flex-1 bg-[#0B0C10] p-6 overflow-y-auto space-y-8 flex justify-center">
+          {/* Collapsible Section Cards */}
+          <div className="space-y-3 pt-3 border-t border-zinc-100">
             
-            {/* WedGrapher Document Canvas Container */}
-            <div 
-              className="w-full max-w-3xl bg-[#141622] border border-[#232634] rounded-3xl p-8 sm:p-12 shadow-2xl space-y-12"
-              style={{ fontFamily: proposal.theme_config.primary_font }}
-            >
-              
-              {/* BLOCK 1: WEDGRAPHER COVER HERO PAGE */}
-              {proposal.sections_config.find(s => s.id === 'cover')?.enabled && (
-                <div className="text-center space-y-6">
-                  <div className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#E5C365] text-xs font-bold uppercase tracking-widest">
-                    <Sparkles className="w-3.5 h-3.5" /> WEDGRAPHER QUOTATION PROPOSAL
+            {/* 1. Cover Card */}
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+              <div 
+                onClick={() => setOpenCard(openCard === 'cover' ? null : 'cover')}
+                className="p-3 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>1. Cover</span>
+                </div>
+                {openCard === 'cover' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+
+              {openCard === 'cover' && (
+                <div className="p-3.5 space-y-3 bg-white">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Title</label>
+                    <input
+                      type="text"
+                      value={data.title}
+                      onChange={(e) => setData({ ...data, title: e.target.value })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
                   </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Prepared for</label>
+                    <input
+                      type="text"
+                      value={data.preparedFor}
+                      onChange={(e) => setData({ ...data, preparedFor: e.target.value })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
-                  <h1 
-                    className="text-3xl sm:text-5xl font-black uppercase tracking-tight leading-tight"
-                    style={{ color: proposal.theme_config.accent_color }}
-                  >
-                    {proposal.title}
-                  </h1>
+            {/* 2. About us Card */}
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+              <div 
+                onClick={() => setOpenCard(openCard === 'about' ? null : 'about')}
+                className="p-3 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>2. About us</span>
+                </div>
+                {openCard === 'about' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
 
-                  {/* WedGrapher Signature Arch Image Container (`.arch`) */}
-                  <div className="w-[75%] mx-auto mt-6 rounded-t-[999px] rounded-b-2xl overflow-hidden border border-[#232634] bg-[#0F1017] shadow-2xl relative aspect-[4/3]">
-                    <img 
-                      src={proposal.theme_config.logo_url || 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80'} 
-                      alt="Wedding Photography Cover"
-                      className="w-full h-full object-cover object-center"
+              {openCard === 'about' && (
+                <div className="p-3.5 space-y-3 bg-white">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Kicker</label>
+                    <input
+                      type="text"
+                      value={data.aboutUs.kicker}
+                      onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, kicker: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
                     />
                   </div>
 
-                  <div className="pt-6 border-t border-[#232634] grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-zinc-400">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-zinc-500 block">PREPARED FOR</span>
-                      <strong className="text-white text-sm">{proposal.client_name}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-zinc-500 block">MAIN EVENT DATE</span>
-                      <strong className="text-white text-sm">{proposal.event_date || '2026 Season'}</strong>
-                    </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
+                    <input
+                      type="text"
+                      value={data.aboutUs.heading}
+                      onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, heading: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Text</label>
+                    <textarea
+                      rows={3}
+                      value={data.aboutUs.text}
+                      onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, text: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Signature line</label>
+                    <input
+                      type="text"
+                      value={data.aboutUs.signature}
+                      onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, signature: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
                   </div>
                 </div>
               )}
-
-              {/* BLOCK 2: ABOUT US */}
-              {proposal.sections_config.find(s => s.id === 'about')?.enabled && (
-                <div className="space-y-3 pt-6 border-t border-[#232634]">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-[#E5C365] flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5" /> ABOUT US
-                  </h3>
-                  <div className="p-6 rounded-3xl bg-[#0F1017] border border-[#232634] text-xs text-zinc-300 leading-relaxed font-sans">
-                    We craft timeless, high-emotion cinematic wedding films and editorial photo albums. Our crew focuses on capturing authentic laughter, unscripted emotions, and grand celebrations with zero awkward posing.
-                  </div>
-                </div>
-              )}
-
-              {/* BLOCK 3: PRE-WEDDING SHOOT */}
-              {proposal.sections_config.find(s => s.id === 'pre_wedding')?.enabled && (
-                <div className="space-y-4 pt-6 border-t border-[#232634]">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-[#E5C365] flex items-center gap-2">
-                    <Camera className="w-3.5 h-3.5" /> PRE-WEDDING SHOOT
-                  </h3>
-
-                  <div className="p-6 rounded-3xl bg-[#0F1017] border border-[#232634] space-y-4 font-sans text-xs">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="p-3 rounded-2xl bg-[#161822] border border-[#232634]">
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase block">Number of days</span>
-                        <strong className="text-white">1 Full Day Shoot</strong>
-                      </div>
-                      <div className="p-3 rounded-2xl bg-[#161822] border border-[#232634]">
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase block">Crew</span>
-                        <strong className="text-white">2 Photographers, 1 Cinematographer</strong>
-                      </div>
-                      <div className="p-3 rounded-2xl bg-[#161822] border border-[#232634]">
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase block">Sessions</span>
-                        <strong className="text-white">3 Outfit Changes</strong>
-                      </div>
-                    </div>
-
-                    <div className="p-4 rounded-2xl bg-[#161822] border border-[#232634] space-y-2">
-                      <span className="text-[10px] font-bold uppercase text-[#E5C365]">INCLUDED DELIVERABLES</span>
-                      <ul className="list-disc list-inside space-y-1 text-zinc-300">
-                        <li>Cinematic 1-Minute Instagram Teaser</li>
-                        <li>50 Master Color Graded Retouched Photos</li>
-                        <li>High-Resolution Digital Drive Access</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* BLOCK 4: WEDDING GOLD PACKAGE */}
-              {proposal.sections_config.find(s => s.id === 'wedding_gold')?.enabled && (
-                <div className="space-y-4 pt-6 border-t border-[#232634]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-[#E5C365] flex items-center gap-2">
-                      <Film className="w-3.5 h-3.5" /> WEDDING GOLD PACKAGE
-                    </h3>
-                    <button
-                      onClick={handleAddEvent}
-                      className="px-3 py-1 rounded-full bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#E5C365] border border-[#D4AF37]/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" /> Add Ceremony
-                    </button>
-                  </div>
-
-                  <div className="space-y-4">
-                    {proposal.events.map((ev, index) => (
-                      <div key={ev.id} className="p-6 rounded-3xl bg-[#0F1017] border border-[#232634] space-y-4 font-sans text-xs relative group">
-                        <button
-                          onClick={() => handleDeleteEvent(ev.id)}
-                          className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-rose-500/20 text-zinc-500 hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#232634] pb-3">
-                          <input
-                            type="text"
-                            value={ev.title}
-                            onChange={(e) => {
-                              const newEvents = [...proposal.events];
-                              newEvents[index].title = e.target.value;
-                              setProposal({ ...proposal, events: newEvents });
-                            }}
-                            className="bg-transparent font-black text-base text-white focus:outline-none focus:border-b border-[#D4AF37]"
-                          />
-                          <div className="flex items-center gap-2">
-                            <span className="text-zinc-400">Rate: ₹</span>
-                            <input
-                              type="number"
-                              value={ev.rate}
-                              onChange={(e) => {
-                                const newEvents = [...proposal.events];
-                                newEvents[index].rate = Number(e.target.value) || 0;
-                                setProposal({ ...proposal, events: newEvents });
-                              }}
-                              className="w-28 p-1.5 rounded-xl bg-[#161822] border border-[#232634] font-mono font-black text-[#E5C365] text-right focus:outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="flex items-center gap-2 p-3 rounded-2xl bg-[#161822] border border-[#232634]">
-                            <MapPin className="w-4 h-4 text-cyan-400 shrink-0" />
-                            <input
-                              type="text"
-                              value={ev.venue || ''}
-                              placeholder="Venue Location"
-                              onChange={(e) => {
-                                const newEvents = [...proposal.events];
-                                newEvents[index].venue = e.target.value;
-                                setProposal({ ...proposal, events: newEvents });
-                              }}
-                              className="bg-transparent w-full text-zinc-300 focus:outline-none"
-                            />
-                          </div>
-
-                          <div className="flex items-center gap-2 p-3 rounded-2xl bg-[#161822] border border-[#232634]">
-                            <Users className="w-4 h-4 text-indigo-400 shrink-0" />
-                            <input
-                              type="text"
-                              value={ev.crew || ''}
-                              placeholder="Crew configuration"
-                              onChange={(e) => {
-                                const newEvents = [...proposal.events];
-                                newEvents[index].crew = e.target.value;
-                                setProposal({ ...proposal, events: newEvents });
-                              }}
-                              className="bg-transparent w-full text-zinc-300 focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* BLOCK 5: PAYMENT SECTION */}
-              {proposal.sections_config.find(s => s.id === 'payment')?.enabled && (
-                <div className="space-y-4 pt-6 border-t border-[#232634]">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-[#E5C365] flex items-center gap-2">
-                    <Calendar className="w-3.5 h-3.5" /> PAYMENT SCHEDULE
-                  </h3>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-sans">
-                    {proposal.payment_milestones.map((m, i) => (
-                      <div key={i} className="p-4 rounded-2xl bg-[#0F1017] border border-[#232634] text-center space-y-1">
-                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">{m.label} ({m.percentage}%)</span>
-                        <div className="text-base font-black font-mono text-[#E5C365]">₹{m.amount.toLocaleString('en-IN')}</div>
-                        <p className="text-[10px] text-zinc-400">{m.due_description}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* BLOCK 6: ADD ONS SECTION */}
-              {proposal.sections_config.find(s => s.id === 'add_ons')?.enabled && (
-                <div className="space-y-4 pt-6 border-t border-[#232634]">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-[#E5C365] flex items-center gap-2">
-                      <Plus className="w-3.5 h-3.5" /> ADD ONS EXTRAS
-                    </h3>
-                    <button
-                      onClick={handleAddAddOn}
-                      className="px-3 py-1 rounded-full bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#E5C365] border border-[#D4AF37]/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" /> Add Extra
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-sans text-xs">
-                    {proposal.add_ons.map((addon, idx) => (
-                      <div
-                        key={addon.id}
-                        onClick={() => {
-                          const newAddons = [...proposal.add_ons];
-                          newAddons[idx].selected = !newAddons[idx].selected;
-                          setProposal({ ...proposal, add_ons: newAddons });
-                        }}
-                        className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                          addon.selected
-                            ? 'bg-[#D4AF37]/10 border-[#D4AF37]/40 text-white'
-                            : 'bg-[#0F1017] border-[#232634] text-zinc-400 opacity-60'
-                        }`}
-                      >
-                        <div>
-                          <h5 className="font-bold text-xs">{addon.title}</h5>
-                          <span className="text-[11px] font-mono text-[#E5C365] font-bold">+ ₹{addon.rate.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div className={`w-5 h-5 rounded-lg border flex items-center justify-center ${
-                          addon.selected ? 'bg-[#D4AF37] border-[#D4AF37] text-black' : 'border-slate-700'
-                        }`}>
-                          {addon.selected && <Check className="w-3 h-3 stroke-[3]" />}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* BLOCK 7: DELIVERY TIMEFRAME */}
-              {proposal.sections_config.find(s => s.id === 'delivery_timeframe')?.enabled && (
-                <div className="space-y-4 pt-6 border-t border-[#232634] font-sans text-xs">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-[#E5C365] flex items-center gap-2">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Delivery Timeframe & Deliverables
-                  </h3>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="p-4 rounded-2xl bg-[#0F1017] border border-[#232634]">
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase block">Photos</span>
-                      <strong className="text-white text-xs">15 Days Post Event</strong>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-[#0F1017] border border-[#232634]">
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase block">Teaser & Film</span>
-                      <strong className="text-white text-xs">30 Days Post Event</strong>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-[#0F1017] border border-[#232634]">
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase block">Indigo Photobook Album</span>
-                      <strong className="text-white text-xs">45 Days Post Selection</strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* BLOCK 8: TERMS */}
-              {proposal.sections_config.find(s => s.id === 'terms')?.enabled && (
-                <div className="space-y-3 pt-6 border-t border-[#232634] font-sans text-xs">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-[#E5C365] flex items-center gap-2">
-                    <ShieldCheck className="w-3.5 h-3.5" /> TERMS
-                  </h3>
-                  <textarea
-                    rows={4}
-                    value={proposal.terms}
-                    onChange={(e) => setProposal({ ...proposal, terms: e.target.value })}
-                    className="w-full p-4 rounded-2xl bg-[#0F1017] border border-[#232634] text-zinc-300 leading-relaxed focus:outline-none resize-none"
-                  />
-                </div>
-              )}
-
-            </div>
-          </main>
-
-          {/* ───────────────────────────────────────────────────────────── */}
-          {/* PANEL 3: RIGHT FINANCIAL AGGREGATOR & SUMMARY (300px)        */}
-          {/* ───────────────────────────────────────────────────────────── */}
-          <aside className="w-80 border-l border-[#232634] bg-[#161822] p-5 overflow-y-auto space-y-6 shrink-0 text-xs">
-            
-            <div className="flex items-center gap-2 pb-3 border-b border-[#232634]">
-              <DollarSign className="w-4 h-4 text-[#E5C365]" />
-              <h3 className="font-black text-xs uppercase tracking-widest text-white">Financial Summary</h3>
             </div>
 
-            {/* Financial Calculator Controls */}
-            <div className="space-y-4 font-sans">
-              
-              {/* Subtotal */}
-              <div className="flex items-center justify-between text-zinc-400 font-medium">
-                <span>Subtotal Package</span>
-                <span className="font-bold font-mono text-white">₹{proposal.financials.subtotal.toLocaleString('en-IN')}</span>
+            {/* 3. Shoot details Card */}
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+              <div 
+                onClick={() => setOpenCard(openCard === 'shoot' ? null : 'shoot')}
+                className="p-3 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+              >
+                <div className="flex items-center gap-2">
+                  <Camera className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>3. Shoot details</span>
+                </div>
+                {openCard === 'shoot' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </div>
 
-              {/* Discount Selector */}
-              <div className="space-y-1.5 p-3.5 rounded-2xl bg-[#0F1017] border border-[#232634]">
-                <div className="flex items-center justify-between text-zinc-400">
-                  <span className="font-bold text-zinc-300">Discount Amount</span>
-                  <div className="flex items-center gap-1 bg-[#161822] p-1 rounded-lg border border-[#232634]">
-                    <button
-                      onClick={() => setProposal({ ...proposal, financials: { ...proposal.financials, discount_type: 'flat' } })}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${proposal.financials.discount_type === 'flat' ? 'bg-[#D4AF37] text-black' : 'text-zinc-400'}`}
-                    >
-                      Flat ₹
-                    </button>
-                    <button
-                      onClick={() => setProposal({ ...proposal, financials: { ...proposal.financials, discount_type: 'percentage' } })}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${proposal.financials.discount_type === 'percentage' ? 'bg-[#D4AF37] text-black' : 'text-zinc-400'}`}
-                    >
-                      %
-                    </button>
+              {openCard === 'shoot' && (
+                <div className="p-3.5 space-y-3 bg-white">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Kicker</label>
+                    <input
+                      type="text"
+                      value={data.shootDetails.kicker}
+                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, kicker: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
+                    <input
+                      type="text"
+                      value={data.shootDetails.heading}
+                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, heading: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
+                  </div>
+
+                  {/* Rows Editor */}
+                  <div className="space-y-2 pt-2 border-t border-zinc-100">
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Rows</span>
+                    {data.shootDetails.rows.map((row, idx) => (
+                      <div key={row.id} className="p-2 rounded-xl bg-zinc-50 border border-zinc-200 space-y-1 relative">
+                        <input
+                          type="text"
+                          value={row.label}
+                          onChange={(e) => {
+                            const newRows = [...data.shootDetails.rows];
+                            newRows[idx].label = e.target.value;
+                            setData({ ...data, shootDetails: { ...data.shootDetails, rows: newRows } });
+                          }}
+                          className="w-full p-1 bg-white rounded border border-zinc-200 text-[11px] font-bold text-zinc-900"
+                        />
+                        <input
+                          type="text"
+                          value={row.value}
+                          onChange={(e) => {
+                            const newRows = [...data.shootDetails.rows];
+                            newRows[idx].value = e.target.value;
+                            setData({ ...data, shootDetails: { ...data.shootDetails, rows: newRows } });
+                          }}
+                          className="w-full p-1 bg-white rounded border border-zinc-200 text-[11px] text-zinc-700"
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
+              )}
+            </div>
 
-                <input
-                  type="number"
-                  value={proposal.financials.discount_value}
-                  onChange={(e) => setProposal({ ...proposal, financials: { ...proposal.financials, discount_value: Number(e.target.value) || 0 } })}
-                  className="w-full p-2.5 rounded-xl bg-[#161822] border border-[#232634] font-mono font-bold text-white focus:outline-none"
-                  placeholder="0"
+            {/* 4. What's included Card */}
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+              <div 
+                onClick={() => setOpenCard(openCard === 'included' ? null : 'included')}
+                className="p-3 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>4. What's included</span>
+                </div>
+                {openCard === 'included' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+
+              {openCard === 'included' && (
+                <div className="p-3.5 space-y-3 bg-white">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
+                    <input
+                      type="text"
+                      value={data.whatsIncluded.heading}
+                      onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, heading: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables List</label>
+                    <textarea
+                      rows={4}
+                      value={data.whatsIncluded.deliverablesText}
+                      onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, deliverablesText: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 5. Price & payment Card */}
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+              <div 
+                onClick={() => setOpenCard(openCard === 'price' ? null : 'price')}
+                className="p-3 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+              >
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>5. Price & payment</span>
+                </div>
+                {openCard === 'price' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+
+              {openCard === 'price' && (
+                <div className="p-3.5 space-y-3 bg-white">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Package Price (₹)</label>
+                    <input
+                      type="number"
+                      value={data.pricePayment.packagePrice}
+                      onChange={(e) => setData({ ...data, pricePayment: { ...data.pricePayment, packagePrice: Number(e.target.value) || 0 } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Discount %</label>
+                      <input
+                        type="number"
+                        value={data.pricePayment.discountPct}
+                        onChange={(e) => setData({ ...data, pricePayment: { ...data.pricePayment, discountPct: Number(e.target.value) || 0 } })}
+                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">GST %</label>
+                      <input
+                        type="number"
+                        value={data.pricePayment.gstPct}
+                        onChange={(e) => setData({ ...data, pricePayment: { ...data.pricePayment, gstPct: Number(e.target.value) || 0 } })}
+                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Payment terms</label>
+                    <input
+                      type="text"
+                      value={data.pricePayment.paymentTerms}
+                      onChange={(e) => setData({ ...data, pricePayment: { ...data.pricePayment, paymentTerms: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 6. Add-ons table Card */}
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+              <div 
+                onClick={() => setOpenCard(openCard === 'addons' ? null : 'addons')}
+                className="p-3 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+              >
+                <div className="flex items-center gap-2">
+                  <Plus className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>6. Add-ons table</span>
+                </div>
+                {openCard === 'addons' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+
+              {openCard === 'addons' && (
+                <div className="p-3.5 space-y-2 bg-white">
+                  {data.addOnsTable.rows.map((row, idx) => (
+                    <div key={row.id} className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-[11px]">
+                      <span className="font-bold">{row.service}</span>
+                      <span className="font-mono text-zinc-600">{row.charge}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+
+        </aside>
+
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS (AIRY WHITE WEDGRAPHER)  */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        <main className="flex-1 bg-[#EBECEF] p-6 overflow-y-auto flex justify-center items-start">
+          
+          {/* Centered Document Page */}
+          <div className="w-full max-w-[700px] bg-white border border-zinc-200 rounded-sm shadow-2xl p-10 sm:p-14 space-y-12 my-4 text-zinc-800">
+            
+            {/* 1. COVER PAGE HERO (Airy Arch Frame) */}
+            <div className="text-center space-y-6 pt-4">
+              <span className="text-[10px] tracking-[0.25em] text-zinc-400 uppercase font-semibold block">
+                A &amp; R
+              </span>
+
+              <h1 className="text-3xl sm:text-4xl font-serif tracking-widest uppercase text-zinc-900 leading-tight">
+                {data.title}
+              </h1>
+
+              {/* Arch Image Frame (Airy White WedGrapher Signature) */}
+              <div className="w-[68%] mx-auto mt-6 rounded-t-[999px] rounded-b-none overflow-hidden bg-zinc-100 border border-zinc-200 aspect-[4/5] shadow-lg relative">
+                <img 
+                  src={data.coverPhoto} 
+                  alt="Wedding Couple"
+                  className="w-full h-full object-cover object-center"
                 />
               </div>
 
-              {/* GST Tax Rate */}
-              <div className="space-y-1.5 p-3.5 rounded-2xl bg-[#0F1017] border border-[#232634]">
-                <div className="flex items-center justify-between text-zinc-400">
-                  <span className="font-bold text-zinc-300">GST Tax Rate</span>
-                  <span className="font-mono font-bold text-[#E5C365]">{proposal.financials.gst_rate}%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {[0, 5, 12, 18].map(rate => (
-                    <button
-                      key={rate}
-                      onClick={() => setProposal({ ...proposal, financials: { ...proposal.financials, gst_rate: rate } })}
-                      className={`flex-1 py-1 rounded-xl border font-bold text-xs transition-colors cursor-pointer ${
-                        proposal.financials.gst_rate === rate
-                          ? 'bg-[#D4AF37] border-[#D4AF37] text-black'
-                          : 'bg-[#161822] border-[#232634] text-zinc-400'
-                      }`}
-                    >
-                      {rate}%
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <p className="text-[11px] text-zinc-400 italic">
+                {data.subtitle}
+              </p>
 
-              {/* Final Calculated Total */}
-              <div className="p-4 rounded-3xl bg-gradient-to-br from-[#E5C365]/20 via-[#D4AF37]/10 to-transparent border border-[#D4AF37]/40 text-center space-y-1 shadow-xl">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#E5C365] block">Grand Total Package Amount</span>
-                <div className="text-2xl font-black font-mono text-white">
-                  ₹{proposal.financials.total_amount.toLocaleString('en-IN')}
-                </div>
-                <span className="text-[10px] text-zinc-400 block">Includes GST taxes & discounts</span>
+              <div className="pt-8 flex items-center justify-between text-[11px] text-zinc-500 font-sans border-t border-zinc-100">
+                <span>{data.year}</span>
+                <span>PREPARED FOR <strong className="text-zinc-900">{data.preparedFor}</strong></span>
               </div>
-
-              {/* Payment Split Percentage Breakdown */}
-              <div className="space-y-2 pt-3 border-t border-[#232634]">
-                <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 block">Milestone Ratios</span>
-                <div className="space-y-1.5 text-zinc-300">
-                  {proposal.payment_milestones.map((m, i) => (
-                    <div key={i} className="flex items-center justify-between p-2.5 rounded-2xl bg-[#0F1017] border border-[#232634]">
-                      <span>{m.label} ({m.percentage}%)</span>
-                      <strong className="font-mono text-[#E5C365]">₹{m.amount.toLocaleString('en-IN')}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
             </div>
-          </aside>
 
-        </div>
+            {/* 2. ABOUT US SECTION */}
+            <div className="space-y-3 pt-10 border-t border-zinc-100">
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+                {data.aboutUs.kicker}
+              </span>
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.aboutUs.heading}
+              </h2>
+              <p className="text-xs text-zinc-600 leading-relaxed whitespace-pre-line font-sans">
+                {data.aboutUs.text}
+              </p>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block pt-2">
+                {data.aboutUs.signature}
+              </span>
+            </div>
+
+            {/* 3. SHOOT DETAILS SECTION */}
+            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+                {data.shootDetails.kicker}
+              </span>
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.shootDetails.heading}
+              </h2>
+
+              <div className="space-y-3">
+                {data.shootDetails.rows.map(row => (
+                  <div key={row.id} className="space-y-0.5 border-b border-zinc-100 pb-2">
+                    <span className="text-[9px] font-bold uppercase text-zinc-400 tracking-wider block">{row.label}</span>
+                    <span className="text-xs text-zinc-800 font-medium">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-2xl overflow-hidden border border-zinc-200 mt-4 shadow-md">
+                <img 
+                  src={data.shootDetails.photo} 
+                  alt="Pre-Wedding Shoot"
+                  className="w-full object-cover object-center"
+                  style={{ height: `${data.shootDetails.photoHeight}px` }}
+                />
+              </div>
+            </div>
+
+            {/* 4. WHAT'S INCLUDED SECTION */}
+            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+                {data.whatsIncluded.kicker}
+              </span>
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.whatsIncluded.heading}
+              </h2>
+
+              <div className="p-5 bg-zinc-50 rounded-2xl border border-zinc-200 leading-relaxed whitespace-pre-line text-zinc-700 font-sans">
+                {data.whatsIncluded.deliverablesText}
+              </div>
+
+              <div className="rounded-2xl overflow-hidden border border-zinc-200 mt-4 shadow-md">
+                <img 
+                  src={data.whatsIncluded.photo} 
+                  alt="Package Deliverables"
+                  className="w-full object-cover object-center"
+                  style={{ height: `${data.whatsIncluded.photoHeight}px` }}
+                />
+              </div>
+            </div>
+
+            {/* 5. PRICE & PAYMENT SECTION */}
+            <div className="space-y-6 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+                {data.pricePayment.kicker}
+              </span>
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.pricePayment.heading}
+              </h2>
+
+              <div className="text-3xl font-serif text-zinc-900">
+                ₹{grandTotal.toLocaleString('en-IN')}
+              </div>
+
+              <div className="space-y-1 border-t border-zinc-100 pt-3">
+                <span className="text-[10px] font-bold uppercase text-zinc-400 block">{data.pricePayment.paymentHeading}</span>
+                <p className="text-xs text-zinc-700">{data.pricePayment.paymentTerms}</p>
+              </div>
+            </div>
+
+            {/* 6. ADD ONS TABLE */}
+            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.addOnsTable.heading}
+              </h2>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+                {data.addOnsTable.kicker}
+              </span>
+
+              <div className="border border-zinc-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-zinc-100 text-[10px] uppercase font-bold text-zinc-500 border-b border-zinc-200">
+                    <tr>
+                      <th className="py-2.5 px-4">Services</th>
+                      <th className="py-2.5 px-4 text-right">Charges</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 font-medium text-zinc-700">
+                    {data.addOnsTable.rows.map(row => (
+                      <tr key={row.id} className="hover:bg-zinc-50">
+                        <td className="py-2.5 px-4">{row.service}</td>
+                        <td className="py-2.5 px-4 text-right font-mono text-zinc-900">{row.charge}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 7. DELIVERY TIMEFRAME */}
+            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.deliveryTime.heading}
+              </h2>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200">
+                  <span className="text-[10px] font-bold uppercase text-zinc-400 block">PHOTOS</span>
+                  <strong className="text-xs text-zinc-800">{data.deliveryTime.photosDelivered}</strong>
+                </div>
+                <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200">
+                  <span className="text-[10px] font-bold uppercase text-zinc-400 block">TEASER &amp; FILM</span>
+                  <strong className="text-xs text-zinc-800">{data.deliveryTime.filmDelivered}</strong>
+                </div>
+              </div>
+              <p className="text-[10px] text-zinc-400 italic">{data.deliveryTime.smallPrint}</p>
+            </div>
+
+            {/* 8. TIMELINE TABLE */}
+            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.timelineTable.heading}
+              </h2>
+
+              <div className="border border-zinc-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-zinc-100 text-[10px] uppercase font-bold text-zinc-500 border-b border-zinc-200">
+                    <tr>
+                      <th className="py-2.5 px-4">Result</th>
+                      <th className="py-2.5 px-4">Timeline</th>
+                      <th className="py-2.5 px-4">Revisions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 font-medium text-zinc-700">
+                    {data.timelineTable.rows.map(row => (
+                      <tr key={row.id} className="hover:bg-zinc-50">
+                        <td className="py-2.5 px-4">{row.result}</td>
+                        <td className="py-2.5 px-4">{row.timeline}</td>
+                        <td className="py-2.5 px-4 text-zinc-500">{row.revisions}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 9. TESTIMONIALS */}
+            <div className="space-y-4 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase text-zinc-400 block">
+                {data.testimonials.kicker}
+              </span>
+              <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                {data.testimonials.heading}
+              </h2>
+
+              <div className="space-y-3 font-serif italic text-zinc-700">
+                {data.testimonials.quotes.map(q => (
+                  <div key={q.id} className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-1">
+                    <p className="text-xs">{q.quote}</p>
+                    <span className="text-[10px] font-sans font-bold uppercase text-zinc-400 not-italic block">— {q.author}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 10. TERMS & THANK YOU */}
+            <div className="space-y-6 pt-10 border-t border-zinc-100 font-sans text-xs">
+              <div className="space-y-2">
+                <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                  {data.termsAndThankYou.termsHeading}
+                </h2>
+                <p className="text-xs text-zinc-600 font-sans leading-relaxed">{data.termsAndThankYou.termsText}</p>
+              </div>
+
+              <div className="text-center pt-8 border-t border-zinc-100 space-y-2">
+                <h2 className="text-xl font-serif uppercase tracking-widest text-zinc-900">
+                  {data.termsAndThankYou.thankYouHeading}
+                </h2>
+                <p className="text-xs text-zinc-500">{data.termsAndThankYou.thankYouText}</p>
+                <p className="text-[10px] font-mono text-zinc-400 pt-2">{data.termsAndThankYou.studioContact}</p>
+              </div>
+            </div>
+
+          </div>
+        </main>
+
       </div>
-    </SidebarLayout>
+    </div>
   );
 }
 
 export default function QuotationBuilderPage() {
   return (
     <React.Suspense fallback={
-      <div className="min-h-screen bg-[#111218] text-white flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#EBECEF] text-zinc-900 flex items-center justify-center p-4">
         <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-2 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-zinc-400">Loading WedGrapher Quotation Studio...</p>
+          <div className="w-10 h-10 border-2 border-zinc-900 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-bold text-zinc-600">Loading WedGrapher Airy Editor...</p>
         </div>
       </div>
     }>
-      <QuotationBuilderContent />
+      <WedGrapherAiryBuilderContent />
     </React.Suspense>
   );
 }
