@@ -72,11 +72,7 @@ export async function GET(req: NextRequest) {
     const hasPhone = !!(data.phone_number && (data.phone_number as string).length > 5);
     const isConnected = (rawState === 'open' || rawStatus === 'CONNECTED' || rawStatus === 'open') && hasPhone;
 
-    const qrExpired = data.qr_expires_at
-      ? new Date(data.qr_expires_at as string) < new Date()
-      : false;
-
-    const qrString = isConnected ? null : (qrExpired ? null : ((data.qr_string as string) ?? null));
+    const qrString = isConnected ? null : ((data.qr_string as string) ?? null);
 
     // AUTO-TRIGGER QR GENERATION IF UNCONNECTED AND QR IS NULL
     if (!isConnected && !qrString) {
@@ -93,8 +89,8 @@ export async function GET(req: NextRequest) {
       isConnected,
       conn_state: isConnected ? 'open' : rawState,
       status: isConnected ? 'CONNECTED' : (rawStatus || 'DISCONNECTED'),
-      qr_string: isConnected ? null : (qrExpired ? null : ((data.qr_string as string) ?? null)),
-      qr_expired: isConnected ? false : qrExpired,
+      qr_string: qrString,
+      qr_expired: false,
       phone_number: (data.phone_number as string) || null,
       last_connected: data.last_connected ?? null,
     }, {

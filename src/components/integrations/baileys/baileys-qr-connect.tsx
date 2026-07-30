@@ -121,7 +121,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   const updateQrDebounced = useCallback((newQr: string) => {
     const now = Date.now();
-    if (!qrStringRef.current || (newQr !== qrStringRef.current && now - lastQrUpdateRef.current > 20_000)) {
+    if (!qrStringRef.current || (newQr !== qrStringRef.current && now - lastQrUpdateRef.current > 15_000)) {
       qrStringRef.current = newQr;
       lastQrUpdateRef.current = now;
       setQrString(newQr);
@@ -150,7 +150,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       const d = await res.json();
       if (d.isConnected && d.phone_number) {
         setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); qrStringRef.current = null; setIsResetting(false); stopPolling();
-      } else if (d.qr_string && !d.qr_expired) {
+      } else if (d.qr_string) {
         setConnState('connecting');
         updateQrDebounced(d.qr_string);
         setIsResetting(false);
