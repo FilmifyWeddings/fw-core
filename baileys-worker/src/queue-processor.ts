@@ -269,6 +269,10 @@ export async function drainQueue(
   handler: ActionHandler,
   batchSize = 3
 ): Promise<void> {
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    return;
+  }
+
   // Acquire workspace-level processing lock
   if (!acquireLock(workspaceId)) {
     return; // Another drain cycle is already running for this workspace
@@ -279,7 +283,7 @@ export async function drainQueue(
     const { data: session } = await supabaseAdmin
       .from('baileys_sessions')
       .select('conn_state, status')
-      .eq('workspace_id', workspaceId)
+      .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
       .maybeSingle();
 
     if (session?.conn_state === 'disconnected' || session?.status === 'DISCONNECTED') {
@@ -353,6 +357,9 @@ export async function drainQueue(
  * @param workspaceId - Workspace to sweep
  */
 export async function sweepExpiredRetries(workspaceId: string): Promise<number> {
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    return 0;
+  }
   const now = new Date().toISOString();
 
   // Note: drainQueue already handles next_retry_at via the .or() filter.
@@ -400,6 +407,9 @@ export async function getQueueStats(workspaceId: string): Promise<{
   failed: number;
   nextAction?: { action_type: string; next_retry_at: string | null };
 }> {
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    return { pending: 0, processing: 0, done: 0, failed: 0 };
+  }
   const { data } = await supabaseAdmin
     .from('baileys_action_queue')
     .select('status, action_type, next_retry_at')

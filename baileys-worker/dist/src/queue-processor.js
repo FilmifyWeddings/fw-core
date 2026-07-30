@@ -216,6 +216,9 @@ export async function processQueueAction(action, handler) {
  * @param batchSize - Max actions to process per poll cycle (default: 3)
  */
 export async function drainQueue(workspaceId, handler, batchSize = 3) {
+    if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+        return;
+    }
     // Acquire workspace-level processing lock
     if (!acquireLock(workspaceId)) {
         return; // Another drain cycle is already running for this workspace
@@ -225,7 +228,7 @@ export async function drainQueue(workspaceId, handler, batchSize = 3) {
         const { data: session } = await supabaseAdmin
             .from('baileys_sessions')
             .select('conn_state, status')
-            .eq('workspace_id', workspaceId)
+            .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
             .maybeSingle();
         if (session?.conn_state === 'disconnected' || session?.status === 'DISCONNECTED') {
             console.warn(`[QueueProcessor] ⏸️ WhatsApp session is DISCONNECTED for workspace ${workspaceId} — pausing queue dispatches.`);
@@ -287,6 +290,9 @@ export async function drainQueue(workspaceId, handler, batchSize = 3) {
  * @param workspaceId - Workspace to sweep
  */
 export async function sweepExpiredRetries(workspaceId) {
+    if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+        return 0;
+    }
     const now = new Date().toISOString();
     // Note: drainQueue already handles next_retry_at via the .or() filter.
     // This sweeper is a safety net for orphaned 'processing' rows (worker crashed mid-action).
@@ -321,6 +327,9 @@ export async function sweepExpiredRetries(workspaceId) {
  * Returns queue health metrics for the admin dashboard.
  */
 export async function getQueueStats(workspaceId) {
+    if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+        return { pending: 0, processing: 0, done: 0, failed: 0 };
+    }
     const { data } = await supabaseAdmin
         .from('baileys_action_queue')
         .select('status, action_type, next_retry_at')

@@ -777,12 +777,14 @@ async function executeAction(action: {
 // ─── Queue Drain Wrapper (calls the processor engine) ─────────────────────────
 async function runQueueDrain(): Promise<void> {
   if (activeSessions.size === 0) {
-    logger.debug('No active sessions in memory — skipping queue drain');
     return;
   }
   try {
     const { drainQueue } = await import('./src/queue-processor.js');
-    await drainQueue(WORKSPACE_ID, executeAction as any, 3);
+    for (const wsId of activeSessions.keys()) {
+      if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') continue;
+      await drainQueue(wsId, executeAction as any, 3);
+    }
   } catch (err: unknown) {
     logger.error({ err }, 'Queue drain error');
   }
@@ -791,8 +793,11 @@ async function runQueueDrain(): Promise<void> {
 async function runSweeper(): Promise<void> {
   try {
     const { sweepExpiredRetries } = await import('./src/queue-processor.js');
-    const recovered = await sweepExpiredRetries(WORKSPACE_ID);
-    if (recovered > 0) logger.info({ recovered }, '🧹 Sweeper recovered stuck actions');
+    for (const wsId of activeSessions.keys()) {
+      if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') continue;
+      const recovered = await sweepExpiredRetries(wsId);
+      if (recovered > 0) logger.info({ wsId, recovered }, '🧹 Sweeper recovered stuck actions');
+    }
   } catch (err: unknown) {
     logger.error({ err }, 'Sweeper error');
   }
