@@ -148,10 +148,10 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     } catch { /* ignore */ }
   }, [stopPolling]);
 
-  const startPolling = useCallback((fast = false) => {
+  const startPolling = useCallback((fast = true) => {
     if (pollRef.current) clearInterval(pollRef.current);
     tick();
-    pollRef.current = setInterval(tick, fast ? 1000 : 2500);
+    pollRef.current = setInterval(tick, fast ? 1500 : 2500);
   }, [tick]);
 
   const initSSE = useCallback(async () => {
@@ -160,7 +160,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) { startPolling(); return; }
+      if (!token) { startPolling(true); return; }
       if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
       const sse = new EventSource(`/api/integrations/baileys/qr-init?token=${encodeURIComponent(token)}`);
       sseRef.current = sse;
@@ -173,13 +173,15 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         setConnState('open'); setPhoneNumber(d.phone ?? null); setQrString(null); setIsResetting(false);
         sse.close(); stopPolling();
       });
-      sse.onerror = () => { startPolling(); };
-      startPolling();
-    } catch { startPolling(); }
+      sse.onerror = () => { startPolling(true); };
+      startPolling(true);
+    } catch { startPolling(true); }
   }, [startPolling, stopPolling]);
 
   useEffect(() => {
-    const init = async () => {
+    let isMounted = true;
+
+    const checkStatusAndStart = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -190,23 +192,51 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           if (res.ok) {
             const d = await res.json();
             if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
-              setConnState('open'); setPhoneNumber(d.phone_number ?? null); return;
+              if (isMounted) {
+                setConnState('open'); setPhoneNumber(d.phone_number ?? null); setQrString(null); setIsResetting(false);
+              }
+              return;
             }
-            if (d.qr_string && !d.qr_expired) {
-              setConnState('connecting'); setQrString(d.qr_string); return;
+            if (d.qr_string && !d.qr_expired && isMounted) {
+              setConnState('connecting'); setQrString(d.qr_string);
             }
           }
         }
-      } catch { setConnState('connecting'); }
-      initSSE();
+      } catch { if (isMounted) setConnState('connecting'); }
+      if (isMounted) {
+        initSSE();
+        startPolling(true);
+      }
     };
-    init();
 
-    // persistent fallback: check status every 10s regardless of SSE/polling state
-    checkRef.current = setInterval(tick, 10000);
+    checkStatusAndStart();
 
-    return () => { sseRef.current?.close(); stopPolling(); };
-  }, [initSSE, stopPolling, tick]);
+    // Supabase Realtime Subscription for instant <50ms UI update on Postgres status change
+    const channel = supabase
+      .channel('baileys-qr-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'baileys_sessions' },
+        (payload) => {
+          const newState = (payload.new as any)?.conn_state;
+          const phone = (payload.new as any)?.phone_number;
+          const qr = (payload.new as any)?.qr_string;
+          if (newState === 'open' && isMounted) {
+            setConnState('open'); setPhoneNumber(phone ?? null); setQrString(null); setIsResetting(false); stopPolling();
+          } else if (qr && isMounted) {
+            setConnState('connecting'); setQrString(qr);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+      sseRef.current?.close();
+      stopPolling();
+    };
+  }, [initSSE, startPolling, stopPolling]);
 
   const handleDisconnect = async () => {
     sseRef.current?.close(); stopPolling();
