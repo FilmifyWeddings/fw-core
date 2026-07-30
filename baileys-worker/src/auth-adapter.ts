@@ -20,6 +20,9 @@ const logger = pino({
  * Ensures the target directory exists before use.
  */
 export function getSessionDir(workspaceId: string): string {
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    throw new Error('Cannot getSessionDir for empty workspaceId');
+  }
   const basePath = fs.existsSync('/var/www/fw-core')
     ? '/var/www/fw-core/sessions'
     : path.resolve(process.cwd(), 'sessions');
@@ -35,6 +38,9 @@ export function getSessionDir(workspaceId: string): string {
  * Checks if disk session credentials exist for a workspace.
  */
 export function hasDiskSession(workspaceId: string): boolean {
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    return false;
+  }
   const basePath = fs.existsSync('/var/www/fw-core')
     ? '/var/www/fw-core/sessions'
     : path.resolve(process.cwd(), 'sessions');
@@ -47,6 +53,9 @@ export function hasDiskSession(workspaceId: string): boolean {
  * Completely purges all local session files for a workspace from disk.
  */
 export function purgeSessionDir(workspaceId: string): void {
+  if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
+    return;
+  }
   try {
     const dir = getSessionDir(workspaceId);
     if (fs.existsSync(dir)) {

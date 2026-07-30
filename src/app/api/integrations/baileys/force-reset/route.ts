@@ -23,13 +23,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const workspaceId = user.id;
+    const userId = user.id;
 
     // 1. Always wipe database session state directly in Supabase Postgres
     await supabaseAdmin
       .from('baileys_sessions')
       .upsert({
-        workspace_id: workspaceId,
+        user_id: userId,
+        workspace_id: userId,
         conn_state: 'connecting',
         qr_string: null,
         qr_expires_at: null,
@@ -38,12 +39,12 @@ export async function POST(req: NextRequest) {
         keys_json: null,
         error_info: 'Force reset — fresh session initialized',
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id' });
+      }, { onConflict: 'user_id' });
 
     // 2. Best-effort notification to external worker if running
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
     try {
-      await fetch(`http://127.0.0.1:${WORKER_PORT}/force-reset?workspace_id=${encodeURIComponent(workspaceId)}`, {
+      await fetch(`http://127.0.0.1:${WORKER_PORT}/force-reset?workspace_id=${encodeURIComponent(userId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(1500),

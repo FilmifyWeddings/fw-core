@@ -915,39 +915,54 @@ async function initiateForceReset(targetWorkspaceId?: string): Promise<void> {
   });
 }
 
+const activeSocketStarts = new Map<string, Promise<void>>();
+
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
 async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string): Promise<void> {
   const wsId = targetWorkspaceId || WORKSPACE_ID;
-  logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket for workspace...');
+  if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') {
+    logger.warn('Skipping startBaileysSocket for empty or invalid workspaceId');
+    return;
+  }
 
-  const existing = activeSessions.get(wsId);
-  if (existing) {
-    if (existing.reconnectTimer) clearTimeout(existing.reconnectTimer);
-    if (existing.connectingTimeoutTimer) clearTimeout(existing.connectingTimeoutTimer);
+  const existingStart = activeSocketStarts.get(wsId);
+  if (existingStart && !forceFresh) {
+    logger.info({ workspaceId: wsId }, '🔒 Concurrent startBaileysSocket in progress — reusing active promise');
+    return existingStart;
+  }
+
+  const startPromise = (async () => {
     try {
-      (existing.sock.ev as any).removeAllListeners();
-      existing.sock.end(undefined);
-    } catch {}
-    activeSessions.delete(wsId);
-  }
+      logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket for workspace...');
 
-  clearConnectingTimeout(wsId);
+      const existing = activeSessions.get(wsId);
+      if (existing) {
+        if (existing.reconnectTimer) clearTimeout(existing.reconnectTimer);
+        if (existing.connectingTimeoutTimer) clearTimeout(existing.connectingTimeoutTimer);
+        try {
+          (existing.sock.ev as any).removeAllListeners();
+          existing.sock.end(undefined);
+        } catch {}
+        activeSessions.delete(wsId);
+      }
 
-  const authState = await useSupabaseAuthState(supabase, wsId);
-  const hasCredsMe = !!(authState.state.creds as any)?.me?.id;
+      clearConnectingTimeout(wsId);
 
-  if (forceFresh) {
-    logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
-    purgeSessionDir(wsId);
-    getSessionDir(wsId); // Guarantee directory re-creation immediately after purge
-    await updateSessionState('connecting', {}, wsId);
-  } else {
-    getSessionDir(wsId); // Guarantee directory exists
-    logger.info({ workspaceId: wsId, hasCredsMe }, '🧠 Reconnect mode: loading file-based auth state from local disk');
-    if (!hasCredsMe) {
-      await updateSessionState('connecting', {}, wsId);
-    }
-  }
+      const authState = await useSupabaseAuthState(supabase, wsId);
+      const hasCredsMe = !!(authState.state.creds as any)?.me?.id;
+
+      if (forceFresh) {
+        logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
+        purgeSessionDir(wsId);
+        getSessionDir(wsId); // Guarantee directory re-creation immediately after purge
+        await updateSessionState('connecting', {}, wsId);
+      } else {
+        getSessionDir(wsId); // Guarantee directory exists
+        logger.info({ workspaceId: wsId, hasCredsMe }, '🧠 Reconnect mode: loading file-based auth state from local disk');
+        if (!hasCredsMe) {
+          await updateSessionState('connecting', {}, wsId);
+        }
+      }
 
   let { version } = await fetchLatestBaileysVersion().catch(() => ({ 
     version: [2, 3000, 1017531287] as [number, number, number], 
@@ -1131,6 +1146,13 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       });
     }
   });
+    } finally {
+      activeSocketStarts.delete(wsId);
+    }
+  })();
+
+  activeSocketStarts.set(wsId, startPromise);
+  return startPromise;
 }
 
 function getRequestBody(req: http.IncomingMessage): Promise<string> {

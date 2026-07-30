@@ -763,195 +763,214 @@ async function initiateForceReset(targetWorkspaceId) {
         logger.error({ err, workspaceId: wsId }, 'Failed to start Baileys socket after force-reset');
     });
 }
+const activeSocketStarts = new Map();
 // ─── Main: Initialize Baileys Socket ─────────────────────────────────────────
 async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
     const wsId = targetWorkspaceId || WORKSPACE_ID;
-    logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket for workspace...');
-    const existing = activeSessions.get(wsId);
-    if (existing) {
-        if (existing.reconnectTimer)
-            clearTimeout(existing.reconnectTimer);
-        if (existing.connectingTimeoutTimer)
-            clearTimeout(existing.connectingTimeoutTimer);
+    if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') {
+        logger.warn('Skipping startBaileysSocket for empty or invalid workspaceId');
+        return;
+    }
+    const existingStart = activeSocketStarts.get(wsId);
+    if (existingStart && !forceFresh) {
+        logger.info({ workspaceId: wsId }, '🔒 Concurrent startBaileysSocket in progress — reusing active promise');
+        return existingStart;
+    }
+    const startPromise = (async () => {
         try {
-            existing.sock.ev.removeAllListeners();
-            existing.sock.end(undefined);
-        }
-        catch { }
-        activeSessions.delete(wsId);
-    }
-    clearConnectingTimeout(wsId);
-    const authState = await useSupabaseAuthState(supabase, wsId);
-    const hasCredsMe = !!authState.state.creds?.me?.id;
-    if (forceFresh) {
-        logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
-        purgeSessionDir(wsId);
-        getSessionDir(wsId); // Guarantee directory re-creation immediately after purge
-        await updateSessionState('connecting', {}, wsId);
-    }
-    else {
-        getSessionDir(wsId); // Guarantee directory exists
-        logger.info({ workspaceId: wsId, hasCredsMe }, '🧠 Reconnect mode: loading file-based auth state from local disk');
-        if (!hasCredsMe) {
-            await updateSessionState('connecting', {}, wsId);
-        }
-    }
-    let { version } = await fetchLatestBaileysVersion().catch(() => ({
-        version: [2, 3000, 1017531287],
-    }));
-    const minVersion = [2, 3000, 1017531287];
-    if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
-        version = minVersion;
-    }
-    const localSock = makeWASocket({
-        version,
-        logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
-        auth: authState.state,
-        printQRInTerminal: false,
-        generateHighQualityLinkPreview: true,
-        keepAliveIntervalMs: 10_000,
-        connectTimeoutMs: 60_000,
-        defaultQueryTimeoutMs: 60_000,
-        retryRequestDelayMs: 2500,
-        markOnlineOnConnect: true,
-        browser: Browsers.ubuntu('Chrome'),
-        syncFullHistory: false,
-    });
-    const currentSess = {
-        wsId,
-        sock: localSock,
-        authState,
-        lastQrTime: 0,
-    };
-    activeSessions.set(wsId, currentSess);
-    localSock.ev.on('creds.update', (update) => {
-        authState.saveCreds().catch((err) => {
-            logger.error({ err, workspaceId: wsId }, 'Failed to save creds to disk');
-        });
-    });
-    localSock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
-        logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
-        if (qr) {
-            const isAlreadyPaired = !!authState.state.creds?.me?.id || !!localSock.user?.id;
-            if (isAlreadyPaired) {
-                logger.info({ workspaceId: wsId }, '🛡️ Guard: Ignoring residual QR event because session already has paired user credentials');
+            logger.info({ forceFresh, workspaceId: wsId }, '🚀 Starting Baileys socket for workspace...');
+            const existing = activeSessions.get(wsId);
+            if (existing) {
+                if (existing.reconnectTimer)
+                    clearTimeout(existing.reconnectTimer);
+                if (existing.connectingTimeoutTimer)
+                    clearTimeout(existing.connectingTimeoutTimer);
+                try {
+                    existing.sock.ev.removeAllListeners();
+                    existing.sock.end(undefined);
+                }
+                catch { }
+                activeSessions.delete(wsId);
+            }
+            clearConnectingTimeout(wsId);
+            const authState = await useSupabaseAuthState(supabase, wsId);
+            const hasCredsMe = !!authState.state.creds?.me?.id;
+            if (forceFresh) {
+                logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
+                purgeSessionDir(wsId);
+                getSessionDir(wsId); // Guarantee directory re-creation immediately after purge
+                await updateSessionState('connecting', {}, wsId);
             }
             else {
-                clearConnectingTimeout(wsId);
-                startConnectingTimeout(wsId);
-                const now = Date.now();
-                if (now - currentSess.lastQrTime > 10_000) {
-                    currentSess.lastQrTime = now;
-                    logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
-                    console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
-                    await dbWrite(supabase
+                getSessionDir(wsId); // Guarantee directory exists
+                logger.info({ workspaceId: wsId, hasCredsMe }, '🧠 Reconnect mode: loading file-based auth state from local disk');
+                if (!hasCredsMe) {
+                    await updateSessionState('connecting', {}, wsId);
+                }
+            }
+            let { version } = await fetchLatestBaileysVersion().catch(() => ({
+                version: [2, 3000, 1017531287],
+            }));
+            const minVersion = [2, 3000, 1017531287];
+            if (version[0] < minVersion[0] || (version[0] === minVersion[0] && version[1] < minVersion[1]) || (version[0] === minVersion[0] && version[1] === minVersion[1] && version[2] < minVersion[2])) {
+                version = minVersion;
+            }
+            const localSock = makeWASocket({
+                version,
+                logger: logger.child({ module: `baileys-${wsId.slice(0, 8)}` }),
+                auth: authState.state,
+                printQRInTerminal: false,
+                generateHighQualityLinkPreview: true,
+                keepAliveIntervalMs: 10_000,
+                connectTimeoutMs: 60_000,
+                defaultQueryTimeoutMs: 60_000,
+                retryRequestDelayMs: 2500,
+                markOnlineOnConnect: true,
+                browser: Browsers.ubuntu('Chrome'),
+                syncFullHistory: false,
+            });
+            const currentSess = {
+                wsId,
+                sock: localSock,
+                authState,
+                lastQrTime: 0,
+            };
+            activeSessions.set(wsId, currentSess);
+            localSock.ev.on('creds.update', (update) => {
+                authState.saveCreds().catch((err) => {
+                    logger.error({ err, workspaceId: wsId }, 'Failed to save creds to disk');
+                });
+            });
+            localSock.ev.on('connection.update', async (update) => {
+                const { connection, lastDisconnect, qr } = update;
+                console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
+                logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
+                if (qr) {
+                    const isAlreadyPaired = !!authState.state.creds?.me?.id || !!localSock.user?.id;
+                    if (isAlreadyPaired) {
+                        logger.info({ workspaceId: wsId }, '🛡️ Guard: Ignoring residual QR event because session already has paired user credentials');
+                    }
+                    else {
+                        clearConnectingTimeout(wsId);
+                        startConnectingTimeout(wsId);
+                        const now = Date.now();
+                        if (now - currentSess.lastQrTime > 10_000) {
+                            currentSess.lastQrTime = now;
+                            logger.info({ workspaceId: wsId }, '📱 Storing fresh QR code in database...');
+                            console.log(`📱 Storing fresh QR code for workspace ${wsId.slice(0, 8)}`);
+                            await dbWrite(supabase
+                                .from('baileys_sessions')
+                                .upsert({
+                                workspace_id: wsId,
+                                user_id: wsId,
+                                qr_string: qr,
+                                qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+                                conn_state: 'connecting',
+                                updated_at: new Date().toISOString(),
+                            }, { onConflict: 'workspace_id' }), `upsert-qr-${wsId}`);
+                        }
+                    }
+                }
+                if (connection === 'open' || (localSock.user?.id && connection !== 'close')) {
+                    clearConnectingTimeout(wsId);
+                    // Guarantee local disk save
+                    try {
+                        await authState.saveCreds();
+                    }
+                    catch { }
+                    const phoneNumber = localSock.user?.id?.split(':')[0] || authState.state.creds?.me?.id?.split(':')[0] || null;
+                    console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
+                    // Direct, immediate non-blocking UPSERT into Supabase locking open state
+                    dbWriteCritical(supabase
                         .from('baileys_sessions')
                         .upsert({
                         workspace_id: wsId,
                         user_id: wsId,
-                        qr_string: qr,
-                        qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
-                        conn_state: 'connecting',
+                        conn_state: 'open',
+                        status: 'connected',
+                        phone_number: phoneNumber,
+                        last_connected: new Date().toISOString(),
+                        qr_string: null,
+                        qr_expires_at: null,
+                        error_info: null,
                         updated_at: new Date().toISOString(),
-                    }, { onConflict: 'workspace_id' }), `upsert-qr-${wsId}`);
+                    }, { onConflict: 'workspace_id' }), `upsert-open-status-${wsId}`).catch((err) => logger.error({ err, workspaceId: wsId }, 'Failed direct DB status upsert'));
                 }
-            }
-        }
-        if (connection === 'open' || (localSock.user?.id && connection !== 'close')) {
-            clearConnectingTimeout(wsId);
-            // Guarantee local disk save
-            try {
-                await authState.saveCreds();
-            }
-            catch { }
-            const phoneNumber = localSock.user?.id?.split(':')[0] || authState.state.creds?.me?.id?.split(':')[0] || null;
-            console.log(`🟢 SUCCESS: WhatsApp Connected for workspace ${wsId} (+${phoneNumber})`);
-            // Direct, immediate non-blocking UPSERT into Supabase locking open state
-            dbWriteCritical(supabase
-                .from('baileys_sessions')
-                .upsert({
-                workspace_id: wsId,
-                user_id: wsId,
-                conn_state: 'open',
-                status: 'connected',
-                phone_number: phoneNumber,
-                last_connected: new Date().toISOString(),
-                qr_string: null,
-                qr_expires_at: null,
-                error_info: null,
-                updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id' }), `upsert-open-status-${wsId}`).catch((err) => logger.error({ err, workspaceId: wsId }, 'Failed direct DB status upsert'));
-        }
-        if (connection === 'close') {
-            clearConnectingTimeout(wsId);
-            const error = lastDisconnect?.error;
-            const statusCode = error?.output?.statusCode;
-            const hasCredsMe = !!authState.state.creds?.me?.id;
-            // 401 is ONLY a true logout if we do NOT have paired user creds
-            const isExplicitLoggedOut = statusCode === DisconnectReason.loggedOut;
-            const isLoggedOut = isExplicitLoggedOut || (statusCode === 401 && !hasCredsMe);
-            console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'hasCredsMe:', hasCredsMe, 'isLoggedOut:', isLoggedOut);
-            logger.error({ statusCode, isLoggedOut, hasCredsMe, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
-            if (!isLoggedOut) {
-                // NON-LOGGED-OUT DISCONNECT (temporary network drop, code 515 stream restart)
-                logger.info({ statusCode, workspaceId: wsId, hasCredsMe }, '♻️ Non-logged-out disconnect — auto-reconnecting in 1.5s with local disk auth...');
-                console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 1.5s (preserving session)...`);
-                if (currentSess.reconnectTimer)
-                    clearTimeout(currentSess.reconnectTimer);
-                currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
-                return;
-            }
-            // EXPLICIT LOGOUT OR 401
-            logger.warn({ workspaceId: wsId, statusCode }, '🚪 WhatsApp session LOGGED OUT / 401 — Performing disk & memory purge');
-            try {
-                localSock.ev.removeAllListeners();
-                localSock.ws?.close();
-            }
-            catch { }
-            if (currentSess.reconnectTimer)
-                clearTimeout(currentSess.reconnectTimer);
-            if (currentSess.connectingTimeoutTimer)
-                clearTimeout(currentSess.connectingTimeoutTimer);
-            activeSessions.delete(wsId);
-            purgeSessionDir(wsId);
-            await dbWriteCritical(supabase
-                .from('baileys_sessions')
-                .update({
-                conn_state: 'disconnected',
-                status: 'DISCONNECTED',
-                qr_string: null,
-                qr_expires_at: null,
-                phone_number: null,
-                error_info: 'Logged out from mobile device — QR re-scan required',
-                last_status_change: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
-                .eq('workspace_id', wsId), `update-logged-out-${wsId}`);
-            setTimeout(() => startBaileysSocket(true, wsId), 1000);
-        }
-    });
-    localSock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify')
-            return;
-        for (const msg of messages) {
-            if (msg.key.fromMe)
-                continue;
-            const chatJid = msg.key.remoteJid;
-            const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? msg.message?.imageMessage?.caption ?? '[media]';
-            logger.info({ workspaceId: wsId, chatJid, text }, '📩 Inbound message');
-            await supabase.from('baileys_messages').insert({
-                workspace_id: wsId,
-                wa_message_id: msg.key.id,
-                chat_jid: chatJid,
-                direction: 'inbound',
-                message_text: text,
-                status: 'read',
-                sent_at: new Date(msg.messageTimestamp * 1000).toISOString(),
+                if (connection === 'close') {
+                    clearConnectingTimeout(wsId);
+                    const error = lastDisconnect?.error;
+                    const statusCode = error?.output?.statusCode;
+                    const hasCredsMe = !!authState.state.creds?.me?.id;
+                    // 401 is ONLY a true logout if we do NOT have paired user creds
+                    const isExplicitLoggedOut = statusCode === DisconnectReason.loggedOut;
+                    const isLoggedOut = isExplicitLoggedOut || (statusCode === 401 && !hasCredsMe);
+                    console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'hasCredsMe:', hasCredsMe, 'isLoggedOut:', isLoggedOut);
+                    logger.error({ statusCode, isLoggedOut, hasCredsMe, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
+                    if (!isLoggedOut) {
+                        // NON-LOGGED-OUT DISCONNECT (temporary network drop, code 515 stream restart)
+                        logger.info({ statusCode, workspaceId: wsId, hasCredsMe }, '♻️ Non-logged-out disconnect — auto-reconnecting in 1.5s with local disk auth...');
+                        console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 1.5s (preserving session)...`);
+                        if (currentSess.reconnectTimer)
+                            clearTimeout(currentSess.reconnectTimer);
+                        currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
+                        return;
+                    }
+                    // EXPLICIT LOGOUT OR 401
+                    logger.warn({ workspaceId: wsId, statusCode }, '🚪 WhatsApp session LOGGED OUT / 401 — Performing disk & memory purge');
+                    try {
+                        localSock.ev.removeAllListeners();
+                        localSock.ws?.close();
+                    }
+                    catch { }
+                    if (currentSess.reconnectTimer)
+                        clearTimeout(currentSess.reconnectTimer);
+                    if (currentSess.connectingTimeoutTimer)
+                        clearTimeout(currentSess.connectingTimeoutTimer);
+                    activeSessions.delete(wsId);
+                    purgeSessionDir(wsId);
+                    await dbWriteCritical(supabase
+                        .from('baileys_sessions')
+                        .update({
+                        conn_state: 'disconnected',
+                        status: 'DISCONNECTED',
+                        qr_string: null,
+                        qr_expires_at: null,
+                        phone_number: null,
+                        error_info: 'Logged out from mobile device — QR re-scan required',
+                        last_status_change: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                        .eq('workspace_id', wsId), `update-logged-out-${wsId}`);
+                    setTimeout(() => startBaileysSocket(true, wsId), 1000);
+                }
+            });
+            localSock.ev.on('messages.upsert', async ({ messages, type }) => {
+                if (type !== 'notify')
+                    return;
+                for (const msg of messages) {
+                    if (msg.key.fromMe)
+                        continue;
+                    const chatJid = msg.key.remoteJid;
+                    const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? msg.message?.imageMessage?.caption ?? '[media]';
+                    logger.info({ workspaceId: wsId, chatJid, text }, '📩 Inbound message');
+                    await supabase.from('baileys_messages').insert({
+                        workspace_id: wsId,
+                        wa_message_id: msg.key.id,
+                        chat_jid: chatJid,
+                        direction: 'inbound',
+                        message_text: text,
+                        status: 'read',
+                        sent_at: new Date(msg.messageTimestamp * 1000).toISOString(),
+                    });
+                }
             });
         }
-    });
+        finally {
+            activeSocketStarts.delete(wsId);
+        }
+    })();
+    activeSocketStarts.set(wsId, startPromise);
+    return startPromise;
 }
 function getRequestBody(req) {
     return new Promise((resolve, reject) => {
