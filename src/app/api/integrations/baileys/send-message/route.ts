@@ -68,18 +68,45 @@ export async function POST(req: NextRequest) {
 
     const chatJid = normalizeJid(to);
 
-    // Check session connection with relaxed phone_number and connected status validation
-    const { data: session } = await supabaseAdmin
+    // 1. Fetch user's session by user.id
+    let activeWsId = user.id;
+    let { data: session } = await supabaseAdmin
       .from('baileys_sessions')
-      .select('conn_state, status, phone_number')
+      .select('workspace_id, conn_state, status, phone_number')
       .eq('workspace_id', user.id)
       .maybeSingle();
 
-    const isConnected =
+    let isConnected =
       session?.conn_state === 'open' ||
       session?.status === 'connected' ||
       session?.status === 'CONNECTED' ||
       !!(session?.phone_number && session.phone_number.length > 5);
+
+    // 2. If user.id session is NOT connected, find ANY active connected session in baileys_sessions
+    if (!isConnected) {
+      const { data: activeSessions } = await supabaseAdmin
+        .from('baileys_sessions')
+        .select('workspace_id, conn_state, status, phone_number')
+        .order('updated_at', { ascending: false })
+        .limit(5);
+
+      if (activeSessions && activeSessions.length > 0) {
+        const activeSess = activeSessions.find(
+          (s: any) =>
+            s.conn_state === 'open' ||
+            s.status === 'connected' ||
+            s.status === 'CONNECTED' ||
+            !!(s.phone_number && s.phone_number.length > 5)
+        );
+
+        if (activeSess) {
+          session = activeSess;
+          activeWsId = activeSess.workspace_id;
+          isConnected = true;
+          console.log(`[send-message] Auto-routed dispatch to active connected workspace: ${activeWsId} (+${activeSess.phone_number})`);
+        }
+      }
+    }
 
     if (!session || !isConnected) {
       return NextResponse.json({
@@ -111,7 +138,7 @@ export async function POST(req: NextRequest) {
 
       if (type === 'text') {
         if (!body.text) return NextResponse.json({ error: 'Missing: text' }, { status: 400 });
-        result = await sendMessageServerless(supabaseAdmin, user.id, {
+        result = await sendMessageServerless(supabaseAdmin, activeWsId, {
           to: chatJid,
           type: 'text',
           text: body.text,
@@ -124,7 +151,7 @@ export async function POST(req: NextRequest) {
                           body.mimeType.startsWith('video/') ? 'video' :
                           body.mimeType.startsWith('audio/') ? 'audio' : 'document';
 
-        result = await sendMessageServerless(supabaseAdmin, user.id, {
+        result = await sendMessageServerless(supabaseAdmin, activeWsId, {
           to: chatJid,
           type: mediaType as 'image' | 'video' | 'audio' | 'document',
           mediaUrl: body.mediaUrl,
@@ -199,7 +226,7 @@ export async function POST(req: NextRequest) {
 
         // ── POLL ──────────────────────────────────────────────────────────
         if (tplType === 'poll') {
-          result = await sendMessageServerless(supabaseAdmin, user.id, {
+          result = await sendMessageServerless(supabaseAdmin, activeWsId, {
             to: chatJid,
             type: 'poll',
             text: rendered,
@@ -209,7 +236,7 @@ export async function POST(req: NextRequest) {
 
         // ── LIST ──────────────────────────────────────────────────────────
         } else if (tplType === 'list') {
-          result = await sendMessageServerless(supabaseAdmin, user.id, {
+          result = await sendMessageServerless(supabaseAdmin, activeWsId, {
             to: chatJid,
             type: 'list' as any,
             text: rendered,
@@ -245,7 +272,7 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          result = await sendMessageServerless(supabaseAdmin, user.id, {
+          result = await sendMessageServerless(supabaseAdmin, activeWsId, {
             to: chatJid,
             type: 'buttons' as any,
             text: rendered,
@@ -283,7 +310,7 @@ export async function POST(req: NextRequest) {
             const mediaType = mimeType.startsWith('image/') ? 'image' :
                               mimeType.startsWith('video/') ? 'video' :
                               mimeType.startsWith('audio/') ? 'audio' : 'document';
-            result = await sendMessageServerless(supabaseAdmin, user.id, {
+            result = await sendMessageServerless(supabaseAdmin, activeWsId, {
               to: chatJid,
               type: mediaType as any,
               mediaUrl: finalMediaUrl,
@@ -291,14 +318,14 @@ export async function POST(req: NextRequest) {
               mimeType,
             });
           } else {
-            result = await sendMessageServerless(supabaseAdmin, user.id, {
+            result = await sendMessageServerless(supabaseAdmin, activeWsId, {
               to: chatJid, type: 'text', text: rendered,
             });
           }
 
         // ── PLAIN TEXT ──────────────────────────────────────────────────────────
         } else {
-          result = await sendMessageServerless(supabaseAdmin, user.id, {
+          result = await sendMessageServerless(supabaseAdmin, activeWsId, {
             to: chatJid, type: 'text', text: rendered,
           });
         }

@@ -104,11 +104,18 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 const activeSessions = new Map();
 async function getWorkspaceSocket(wsId) {
     let sess = activeSessions.get(wsId);
-    if (!sess || !sess.sock) {
-        logger.info({ workspaceId: wsId }, '🔌 Socket not in memory — restoring socket from DB creds...');
-        await startBaileysSocket(false, wsId);
-        sess = activeSessions.get(wsId);
+    if (sess && sess.sock)
+        return sess.sock;
+    // Fallback: If requested workspace is not in memory, check if another paired workspace is active in memory
+    for (const [activeId, activeSess] of activeSessions.entries()) {
+        if (activeSess.sock && activeSess.authState.state.creds?.me?.id) {
+            logger.info({ requestedWsId: wsId, activeWsId: activeId }, '🔀 Redirecting outbound message dispatch to active in-memory socket');
+            return activeSess.sock;
+        }
     }
+    logger.info({ workspaceId: wsId }, '🔌 Socket not in memory — restoring socket from DB creds...');
+    await startBaileysSocket(false, wsId);
+    sess = activeSessions.get(wsId);
     if (!sess || !sess.sock) {
         throw new Error(`WhatsApp socket not connected for workspace ${wsId}`);
     }
