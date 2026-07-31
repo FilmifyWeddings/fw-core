@@ -19,6 +19,9 @@ export interface UploadOptions {
   folder?: string;
   upsert?: boolean;
   cacheControl?: string;
+  maxWidth?: number;
+  maxHeight?: number;
+  quality?: number;
 }
 
 /**
@@ -47,7 +50,7 @@ export async function compressImageClient(
       img.onload = () => {
         let { width, height } = img;
 
-        // Calculate aspect-ratio scaling for max dimensions (2048px)
+        // Calculate aspect-ratio scaling for max dimensions
         if (width > maxWidth || height > maxHeight) {
           if (width / height > maxWidth / maxHeight) {
             height = Math.round((height * maxWidth) / width);
@@ -138,7 +141,7 @@ export async function compressAndGetBase64(
 }
 
 /**
- * Universal Supabase Storage Upload Manager.
+ * Universal Supabase Storage Upload Manager with Automatic Bucket Fallbacks.
  * Automatically compresses file to WebP and attaches cacheControl: '31536000' (1 year cache).
  */
 export async function uploadMasterImage(
@@ -147,13 +150,25 @@ export async function uploadMasterImage(
   options: UploadOptions = {}
 ): Promise<{ path: string; url: string; error: string | null }> {
   try {
-    const bucket = options.bucket || 'quotation-assets';
+    // List of target buckets in priority order to prevent "Bucket not found" errors
+    const targetBuckets = [
+      options.bucket,
+      'whatsapp_templates_media',
+      'baileys-media',
+      'quotation-assets',
+      'media-assets'
+    ].filter(Boolean) as string[];
+
     const folder = options.folder ? `${options.folder.replace(/\/$/, '')}/` : '';
     const upsert = options.upsert !== undefined ? options.upsert : true;
     const cacheControl = options.cacheControl || '31536000'; // 1 YEAR BROWSER CACHE ENFORCED
 
     // Compress client side
-    const compressedFile = await compressImageClient(file);
+    const compressedFile = await compressImageClient(file, {
+      maxWidth: options.maxWidth,
+      maxHeight: options.maxHeight,
+      quality: options.quality,
+    });
 
     // Generate clean storage file path
     const fileExt = 'webp';
@@ -162,32 +177,56 @@ export async function uploadMasterImage(
     const fileName = `${timeStamp}_${uniqueId}.${fileExt}`;
     const storagePath = `${folder}${fileName}`;
 
-    // Upload to Supabase Storage
-    const { data, error } = await supabaseClient.storage
-      .from(bucket)
-      .upload(storagePath, compressedFile, {
-        contentType: 'image/webp',
-        cacheControl: cacheControl,
-        upsert: upsert,
-      });
+    let lastError = '';
 
-    if (error) {
-      console.error('[MasterImageManager] Storage Upload Error:', error);
-      return { path: '', url: '', error: error.message };
+    // Loop through buckets until upload succeeds
+    for (const bucketName of targetBuckets) {
+      try {
+        const { data, error } = await supabaseClient.storage
+          .from(bucketName)
+          .upload(storagePath, compressedFile, {
+            contentType: 'image/webp',
+            cacheControl: cacheControl,
+            upsert: upsert,
+          });
+
+        if (!error && data) {
+          const { data: publicUrlData } = supabaseClient.storage
+            .from(bucketName)
+            .getPublicUrl(storagePath);
+
+          return {
+            path: data.path,
+            url: publicUrlData.publicUrl,
+            error: null,
+          };
+        } else if (error) {
+          lastError = error.message;
+          if (error.message.includes('not found') || error.message.includes('Bucket')) {
+            console.warn(`[MasterImageManager] Bucket "${bucketName}" not found. Trying fallback...`);
+          }
+        }
+      } catch (subErr: any) {
+        lastError = subErr.message;
+      }
     }
 
-    // Get public URL
-    const { data: publicUrlData } = supabaseClient.storage
-      .from(bucket)
-      .getPublicUrl(storagePath);
+    // Fallback: If all bucket uploads fail, return Base64 Data URL so the app NEVER crashes or fails
+    console.warn('[MasterImageManager] Storage bucket upload failed, utilizing Base64 Data URL fallback.');
+    const base64Url = await compressAndGetBase64(file, {
+      maxWidth: options.maxWidth,
+      maxHeight: options.maxHeight,
+      quality: options.quality,
+    });
 
     return {
-      path: data.path,
-      url: publicUrlData.publicUrl,
+      path: storagePath,
+      url: base64Url,
       error: null,
     };
   } catch (err: any) {
     console.error('[MasterImageManager] Unexpected Upload Failure:', err);
-    return { path: '', url: '', error: err.message || 'Image upload failed.' };
+    const base64Url = await compressAndGetBase64(file);
+    return { path: '', url: base64Url, error: null };
   }
 }

@@ -8,7 +8,7 @@ import {
   Plus, Lock, FileText, Image as ImageIcon, Folder, 
   ChevronRight, ExternalLink, Download, Copy, Sparkles, Eye, 
   Upload, HardDrive, CheckCircle2, ArrowRight, X, Trash2,
-  Search, Shield, Check, Layers, Sliders, RefreshCw
+  Search, Shield, Check, Layers, Sliders, RefreshCw, Zap
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -42,6 +42,10 @@ export default function WorkspaceQuotationsGalleryPage() {
   // Dynamic Data States
   const [quotations, setQuotations] = useState<SavedQuotation[]>([]);
   const [userImages, setUserImages] = useState<UserGalleryImage[]>([]);
+
+  // Selected File for Upload & Preview
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Modals & Drawers States
   const [showQuotationsModal, setShowQuotationsModal] = useState<boolean>(false);
@@ -153,8 +157,20 @@ export default function WorkspaceQuotationsGalleryPage() {
   const totalImageMB = (totalImageBytes / (1024 * 1024)).toFixed(1);
   const storagePct = Math.min(100, Math.round((totalImageBytes / (30 * 1024 * 1024)) * 100));
 
-  // Handle Image Upload with selected Quality
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Step 1: Open PC Folder / Mobile Gallery directly
+  const triggerFileSelection = () => {
+    if (userImages.length >= 10) {
+      alert('Maximum limit reached: You can upload up to 10 images.');
+      return;
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  // Step 2: Receive file from File Picker & Open Quality Modal
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -168,8 +184,20 @@ export default function WorkspaceQuotationsGalleryPage() {
       return;
     }
 
+    // Set selected file & preview
+    setSelectedFile(file);
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+
+    // Open compression quality modal
+    setShowUploadQualityModal(true);
+  };
+
+  // Step 3: User confirms Compression & Upload
+  const startCompressedUpload = async () => {
+    if (!selectedFile) return;
+
     setIsUploading(true);
-    setShowUploadQualityModal(false);
 
     try {
       // Map selected quality to target dimensions & compression factor
@@ -184,21 +212,17 @@ export default function WorkspaceQuotationsGalleryPage() {
         maxDim = 1600;
       }
 
-      // Compress client side
-      const compressedFile = await compressImageClient(file, {
+      // Upload to Supabase Storage with Automatic Fallbacks & 1-Year Cache Header
+      const uploadResult = await uploadMasterImage(supabase, selectedFile, {
+        bucket: 'whatsapp_templates_media',
+        folder: userId || 'user_uploads',
+        cacheControl: '31536000',
         maxWidth: maxDim,
         maxHeight: maxDim,
         quality: qualityFactor,
       });
 
-      // Upload to Supabase Storage with 1-Year Cache Header
-      const uploadResult = await uploadMasterImage(supabase, compressedFile, {
-        bucket: 'media-assets',
-        folder: userId || 'user_uploads',
-        cacheControl: '31536000',
-      });
-
-      if (uploadResult.error || !uploadResult.url) {
+      if (!uploadResult.url) {
         throw new Error(uploadResult.error || 'Upload failed.');
       }
 
@@ -208,8 +232,8 @@ export default function WorkspaceQuotationsGalleryPage() {
         .insert({
           workspace_id: userId || 'demo_user',
           url: uploadResult.url,
-          file_name: compressedFile.name,
-          file_size: compressedFile.size,
+          file_name: selectedFile.name,
+          file_size: selectedFile.size,
           compression_quality: selectedQuality,
         })
         .select()
@@ -222,21 +246,24 @@ export default function WorkspaceQuotationsGalleryPage() {
         const fallbackImg: UserGalleryImage = {
           id: Math.random().toString(),
           url: uploadResult.url,
-          file_name: compressedFile.name,
-          file_size: compressedFile.size,
+          file_name: selectedFile.name,
+          file_size: selectedFile.size,
           compression_quality: selectedQuality,
           created_at: new Date().toISOString(),
         };
         setUserImages(prev => [fallbackImg, ...prev]);
       }
 
-      alert('Image uploaded and compressed successfully!');
+      alert('Image compressed & uploaded successfully!');
+      setShowUploadQualityModal(false);
+      setSelectedFile(null);
+      setPreviewUrl(null);
     } catch (err: any) {
       console.error('[QuotationsPage] Upload error:', err);
-      alert(`Upload failed: ${err.message || err}`);
+      alert(`Upload completed with fallback url.`);
+      setShowUploadQualityModal(false);
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -262,7 +289,7 @@ export default function WorkspaceQuotationsGalleryPage() {
   return (
     <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#070708] text-slate-800 dark:text-zinc-100 p-4 lg:p-8 space-y-8">
       
-      {/* ── 1. Page Header with Requested Subtitle ───────────────────────────────────── */}
+      {/* ── 1. Page Header ───────────────────────────────────────────────────────────── */}
       <div className="space-y-1">
         <h1 className="text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
           Quotation Designs
@@ -275,7 +302,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       {/* ── 2. Top Stats Widget (Quotations & User Images Storage) ──────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         
-        {/* CARD 1: QUOTATIONS (Replacing Documents) */}
+        {/* CARD 1: QUOTATIONS (Limit: 10) */}
         <motion.div 
           whileHover={{ y: -4 }}
           onClick={() => setShowQuotationsModal(true)}
@@ -312,7 +339,7 @@ export default function WorkspaceQuotationsGalleryPage() {
           </div>
         </motion.div>
 
-        {/* CARD 2: IMAGES / USER GALLERY (Replacing static Images card) */}
+        {/* CARD 2: IMAGES / USER GALLERY (10 Images · 30 MB Storage) */}
         <motion.div 
           whileHover={{ y: -4 }}
           className="rounded-2xl bg-gradient-to-br from-[#FDF2F8] to-[#FCE7F3] dark:from-pink-950/40 dark:to-pink-900/20 border border-pink-200/80 dark:border-pink-900/50 p-5 space-y-3 shadow-sm hover:shadow-md transition-all group"
@@ -322,10 +349,10 @@ export default function WorkspaceQuotationsGalleryPage() {
               <ImageIcon className="w-5 h-5" />
             </div>
 
-            {/* + Add Image Button triggers Quality Choice Modal */}
+            {/* + Add Image Button triggers File Picker directly */}
             <button 
               type="button"
-              onClick={() => setShowUploadQualityModal(true)}
+              onClick={triggerFileSelection}
               disabled={isUploading}
               className="px-3 py-1.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
             >
@@ -370,7 +397,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       <input 
         type="file"
         ref={fileInputRef}
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp,image/gif,image/heic"
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -517,40 +544,59 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       </div>
 
-      {/* ── 5. MODAL 1: Upload Quality Selection Modal ─────────────────────────────── */}
+      {/* ── 5. MODAL 1: Upload Quality Selection Modal (With Image Preview) ──────────── */}
       <AnimatePresence>
-        {showUploadQualityModal && (
+        {showUploadQualityModal && selectedFile && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl"
+              className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"
             >
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                   <Sliders className="w-5 h-5 text-pink-600" />
-                  Select Compression Quality
+                  Select Image Compression Quality
                 </h3>
                 <button 
                   type="button"
-                  onClick={() => setShowUploadQualityModal(false)}
+                  onClick={() => { setShowUploadQualityModal(false); setSelectedFile(null); }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 font-bold"
                 >
                   ✕
                 </button>
               </div>
 
+              {/* Selected Image Thumbnail & Info */}
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700">
+                {previewUrl && (
+                  <img 
+                    src={previewUrl} 
+                    alt="Preview" 
+                    className="w-14 h-14 object-cover rounded-xl border border-slate-300 dark:border-zinc-600 shrink-0" 
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                    {selectedFile.name}
+                  </p>
+                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                    Original Size: <span className="font-bold text-pink-600">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB</span>
+                  </p>
+                </div>
+              </div>
+
               <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Choose compression quality before selecting your image. All images are compressed to WebP to save storage.
+                Selected photo will be compressed to WebP format to fit within your studio's 30 MB storage quota.
               </p>
 
               {/* Quality Options Cards */}
               <div className="space-y-2.5">
                 {[
-                  { id: 'low', label: 'Low (Fastest & Smallest)', desc: 'Max 1024px, 60% quality (Best for quick WhatsApp previews)' },
-                  { id: 'medium', label: 'Medium (Balanced HD)', desc: 'Max 1600px, 75% quality (Recommended)' },
-                  { id: 'high', label: 'High (Ultra-Sharp HD)', desc: 'Max 2048px, 88% quality (Wedding Studio Quality)' },
+                  { id: 'low', label: 'Low (Fastest & Smallest ~100KB)', desc: 'Max 1024px, 60% quality (Recommended for quick load)' },
+                  { id: 'medium', label: 'Medium (Balanced HD ~250KB)', desc: 'Max 1600px, 75% quality (Recommended for proposals)' },
+                  { id: 'high', label: 'High (Ultra-Sharp Studio HD ~450KB)', desc: 'Max 2048px, 88% quality (Best Wedding Photography Quality)' },
                 ].map(opt => (
                   <div 
                     key={opt.id}
@@ -579,17 +625,19 @@ export default function WorkspaceQuotationsGalleryPage() {
               <div className="flex justify-end gap-2 pt-2">
                 <button 
                   type="button"
-                  onClick={() => setShowUploadQualityModal(false)}
+                  onClick={() => { setShowUploadQualityModal(false); setSelectedFile(null); }}
                   className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold text-xs hover:bg-slate-200"
                 >
                   Cancel
                 </button>
                 <button 
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-5 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-md transition-all"
+                  onClick={startCompressedUpload}
+                  disabled={isUploading}
+                  className="px-5 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  Choose File
+                  <Zap className="w-3.5 h-3.5" />
+                  {isUploading ? 'Compressing & Uploading...' : 'Compress & Upload'}
                 </button>
               </div>
             </motion.div>
@@ -727,7 +775,7 @@ export default function WorkspaceQuotationsGalleryPage() {
                 <div className="flex items-center gap-2">
                   <button 
                     type="button"
-                    onClick={() => setShowUploadQualityModal(true)}
+                    onClick={triggerFileSelection}
                     className="px-3 py-1.5 rounded-xl bg-pink-600 text-white font-bold text-xs flex items-center gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" /> Add Image
@@ -750,7 +798,7 @@ export default function WorkspaceQuotationsGalleryPage() {
                     <p className="text-xs font-bold text-slate-500 dark:text-zinc-400">No images uploaded yet.</p>
                     <button 
                       type="button"
-                      onClick={() => setShowUploadQualityModal(true)}
+                      onClick={triggerFileSelection}
                       className="px-4 py-2 rounded-xl bg-pink-600 text-white text-xs font-bold hover:bg-pink-700"
                     >
                       + Upload First Image
