@@ -1,3 +1,8 @@
+// Polyfill globalThis.WebSocket for Node 20 / Supabase client compatibility
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = class DummyWebSocket {};
+}
+
 const { createClient } = require('@supabase/supabase-js');
 const sharp = require('sharp');
 const fs = require('fs');
@@ -33,7 +38,6 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-// Polyfill WebSocket / Disable Realtime for Node 20 compatibility
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { persistSession: false, autoRefreshToken: false },
   realtime: { disabled: true },
