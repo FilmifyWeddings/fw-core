@@ -33,7 +33,11 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Polyfill WebSocket / Disable Realtime for Node 20 compatibility
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  realtime: { disabled: true },
+});
 
 async function listAllFilesRecursive(bucket, folderPath = '') {
   const fileList = [];
