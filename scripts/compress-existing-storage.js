@@ -1,9 +1,4 @@
-// Polyfill globalThis.WebSocket for Node 20 / Supabase client compatibility
-if (typeof globalThis.WebSocket === 'undefined') {
-  globalThis.WebSocket = class DummyWebSocket {};
-}
-
-const { createClient } = require('@supabase/supabase-js');
+const { StorageClient } = require('@supabase/storage-js');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
@@ -38,15 +33,16 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  realtime: { disabled: true },
+// Directly initialize StorageClient (Bypasses Realtime & WebSocket checks entirely)
+const storage = new StorageClient(`${supabaseUrl}/storage/v1`, {
+  apikey: supabaseKey,
+  Authorization: `Bearer ${supabaseKey}`,
 });
 
 async function listAllFilesRecursive(bucket, folderPath = '') {
   const fileList = [];
 
-  const { data, error } = await supabase.storage.from(bucket).list(folderPath, {
+  const { data, error } = await storage.from(bucket).list(folderPath, {
     limit: 1000,
     offset: 0,
     sortBy: { column: 'name', order: 'asc' },
@@ -78,13 +74,13 @@ async function compressAndReplaceStorageMedia() {
   console.log(`📌 Supabase URL: ${supabaseUrl}`);
 
   // Fetch all buckets dynamically
-  const { data: bucketsData, error: bucketsErr } = await supabase.storage.listBuckets();
+  const { data: bucketsData, error: bucketsErr } = await storage.listBuckets();
   
   let targetBucketNames = [];
 
   if (bucketsErr || !bucketsData || bucketsData.length === 0) {
     console.warn('⚠️ Could not fetch buckets dynamically, using default bucket list.');
-    targetBucketNames = ['quotation-assets', 'media-assets', 'client-files', 'avatars', 'whatsapp-media', 'baileys-media', 'team-avatars'];
+    targetBucketNames = ['quotation-assets', 'media-assets', 'client-files', 'avatars', 'whatsapp-media', 'baileys-media', 'team-avatars', 'whatsapp_templates_media'];
   } else {
     targetBucketNames = bucketsData.map(b => b.name);
     console.log(`📦 Discovered ${targetBucketNames.length} Storage Buckets: ${targetBucketNames.join(', ')}\n`);
@@ -117,7 +113,7 @@ async function compressAndReplaceStorageMedia() {
 
       try {
         // Download image file from Supabase Storage
-        const { data: blob, error: downloadErr } = await supabase.storage
+        const { data: blob, error: downloadErr } = await storage
           .from(bucket)
           .download(filePath);
 
@@ -148,7 +144,7 @@ async function compressAndReplaceStorageMedia() {
         const savingsBytes = originalSize - newSize;
 
         // Overwrite file in-place with 1-Year Cache Header
-        const { error: uploadErr } = await supabase.storage
+        const { error: uploadErr } = await storage
           .from(bucket)
           .upload(filePath, compressedBuffer, {
             contentType: 'image/webp',
