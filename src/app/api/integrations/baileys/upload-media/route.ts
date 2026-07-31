@@ -58,16 +58,34 @@ export async function POST(req: NextRequest) {
       }, { status: 413 });
     }
 
-    // ── Upload to Supabase Storage ─────────────────────────────────
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const extension = file.name.split('.').pop() ?? 'bin';
+    // ── Server-Side Image Compression & Storage Upload ────────────
+    let fileBuffer = Buffer.from(await file.arrayBuffer());
+    let contentType = file.type;
+    let extension = file.name.split('.').pop() ?? 'bin';
+
+    if (file.type.startsWith('image/')) {
+      try {
+        const sharp = (await import('sharp')).default;
+        const compressedBuf = await sharp(fileBuffer)
+          .resize(2048, 2048, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 88 })
+          .toBuffer();
+        fileBuffer = Buffer.from(compressedBuf);
+        contentType = 'image/webp';
+        extension = 'webp';
+      } catch (sharpErr) {
+        console.warn('[upload-media] Sharp image compression fallback:', sharpErr);
+      }
+    }
+
     const storagePath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
 
     const { error: uploadError } = await supabaseAdmin.storage
       .from('baileys-media')
-      .upload(storagePath, fileBuffer, {
-        contentType: file.type,
-        upsert: false,
+      .upload(storagePath, new Uint8Array(fileBuffer), {
+        contentType: contentType,
+        cacheControl: '31536000', // 1 YEAR BROWSER CACHE ENFORCED
+        upsert: true,
       });
 
     if (uploadError) {

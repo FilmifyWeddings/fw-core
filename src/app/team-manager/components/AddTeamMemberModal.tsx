@@ -71,20 +71,13 @@ export default function AddTeamMemberModal({
       setAvatarUrl(compressedDataUrl);
 
       try {
-        const fileExt = 'jpg';
-        const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExt}`;
-        const blob = await (await fetch(compressedDataUrl)).blob();
-
-        const { data: uploadData, error: uploadErr } = await supabase
-          .storage
-          .from('team-avatars')
-          .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
-
-        if (!uploadErr && uploadData) {
-          const { data: publicUrlData } = supabase.storage.from('team-avatars').getPublicUrl(fileName);
-          if (publicUrlData?.publicUrl) {
-            setAvatarUrl(publicUrlData.publicUrl);
-          }
+        const { uploadMasterImage } = await import('@/lib/master-image-manager');
+        const uploadResult = await uploadMasterImage(supabase, file, {
+          bucket: 'team-avatars',
+          cacheControl: '31536000'
+        });
+        if (uploadResult.url) {
+          setAvatarUrl(uploadResult.url);
         }
       } catch (storageErr) {
         console.warn('[AddTeamMemberModal] Storage bucket fallback to dataURL:', storageErr);

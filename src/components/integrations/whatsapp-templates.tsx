@@ -123,22 +123,17 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${workspaceId}/${fileName}`;
+      const { uploadMasterImage } = await import('@/lib/master-image-manager');
+      const uploadResult = await uploadMasterImage(supabase, file, {
+        bucket: 'whatsapp_templates_media',
+        folder: workspaceId,
+        cacheControl: '31536000'
+      });
 
-      const { error: uploadError } = await supabase.storage
-        .from('whatsapp_templates_media')
-        .upload(filePath, file);
+      if (uploadResult.error) throw new Error(uploadResult.error);
 
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('whatsapp_templates_media')
-        .getPublicUrl(filePath);
-
-      setMediaUrl(publicUrl);
-      setMediaMime(file.type);
+      setMediaUrl(uploadResult.url);
+      setMediaMime('image/webp');
     } catch (err: any) {
       console.error('File upload error:', err);
       alert(`File upload failed: ${err.message || err}. You can enter a public URL manually.`);
