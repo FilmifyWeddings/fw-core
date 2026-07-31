@@ -1,14 +1,14 @@
 name: Remote Dispatch Deploy
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ main ]
   workflow_dispatch:
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
     - name: Executing remote ssh commands to deploy
-      uses: appleboy/ssh-action@master
+      uses: appleboy/ssh-action@v1.2.0
       with:
         host: "143.244.133.235"
         username: "root"
