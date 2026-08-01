@@ -55,6 +55,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     photoUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
     photoHeight: 450, // Cover photo height slider: 200px to 800px
     photoWidth: 75, // Cover photo width slider: 30% to 100%
+    showPhotoBorder: false, // Frame border toggle: false = no border line around PNG/photo
     frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle',
   },
   
@@ -186,7 +187,7 @@ function WedGrapherAiryBuilderContent() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [openCard, setOpenCard] = useState<string | null>('cover');
 
-  // Media Gallery Modal State
+  // Media Gallery Modal State & User Uploaded Supabase Photos
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const [activeTargetField, setActiveTargetField] = useState<'coverLogo' | 'coverPhoto' | 'aboutUsBanner' | 'shootPhoto' | 'includedPhoto' | null>(null);
   const [galleryImages, setGalleryImages] = useState<string[]>([
@@ -196,6 +197,30 @@ function WedGrapherAiryBuilderContent() {
     'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&q=80',
     'https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=800&q=80',
   ]);
+
+  // Fetch all user-uploaded images from Supabase `user_gallery_images` table!
+  useEffect(() => {
+    async function fetchUserGalleryImages() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentWorkspaceId = session?.user?.id;
+        
+        let query = supabase.from('user_gallery_images').select('url').order('created_at', { ascending: false });
+        if (currentWorkspaceId) {
+          query = query.eq('workspace_id', currentWorkspaceId);
+        }
+        
+        const { data: dbImages, error } = await query;
+        if (!error && dbImages && dbImages.length > 0) {
+          const fetchedUrls = dbImages.map(img => img.url).filter(Boolean);
+          setGalleryImages(prev => Array.from(new Set([...fetchedUrls, ...prev])));
+        }
+      } catch (err) {
+        console.warn('Failed to fetch user gallery images from Supabase:', err);
+      }
+    }
+    fetchUserGalleryImages();
+  }, []);
 
   // Open Media Library Modal for a specific section
   const openAddImageModal = (target: 'coverLogo' | 'coverPhoto' | 'aboutUsBanner' | 'shootPhoto' | 'includedPhoto') => {
@@ -224,15 +249,30 @@ function WedGrapherAiryBuilderContent() {
   };
 
   // Direct File Upload from Modal / Device
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && activeTargetField) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const result = event.target?.result as string;
         if (result) {
           setGalleryImages(prev => [result, ...prev]);
           handleSelectImageFromGallery(result);
+
+          // Save to Supabase `user_gallery_images` table in background
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const workspaceId = session?.user?.id || 'demo_user';
+            await supabase.from('user_gallery_images').insert({
+              workspace_id: workspaceId,
+              url: result,
+              file_name: file.name,
+              file_size: file.size,
+              compression_quality: 'high',
+            });
+          } catch {
+            // silent save fallback
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -547,7 +587,7 @@ function WedGrapherAiryBuilderContent() {
                     </div>
                   </div>
 
-                  {/* Brand Name & Brand Logo Add Image Button + Resizer */}
+                  {/* Brand Name & Brand Logo Add Image + Thumbnail & Delete */}
                   <div className="space-y-2 pt-2 border-t border-zinc-100">
                     <span className="text-[10px] uppercase font-bold text-zinc-400 block">Brand Name & Logo</span>
                     <input
@@ -558,22 +598,29 @@ function WedGrapherAiryBuilderContent() {
                       className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
                     />
 
-                    {/* Logo Add Image Button */}
+                    {/* Logo Image Controls with Thumbnail Preview & Delete Button */}
                     <div className="flex items-center gap-2">
+                      {data.cover.brandLogoUrl && (
+                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+                          <img src={data.cover.brandLogoUrl} alt="Logo" className="w-full h-full object-contain bg-transparent" />
+                        </div>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => openAddImageModal('coverLogo')}
                         className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                       >
                         <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Add Image (PNG/JPG)</span>
+                        <span>{data.cover.brandLogoUrl ? 'Change Logo' : 'Add Image'}</span>
                       </button>
+
                       {data.cover.brandLogoUrl && (
                         <button
                           type="button"
                           onClick={() => setData({ ...data, cover: { ...data.cover, brandLogoUrl: '' } })}
-                          className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer"
-                          title="Remove Logo"
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+                          title="Delete Logo"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -597,18 +644,38 @@ function WedGrapherAiryBuilderContent() {
                     </div>
                   </div>
 
-                  {/* Cover Photo Add Image Button & Resizer Slider */}
+                  {/* Cover Photo Add Image + Thumbnail Preview & Delete + Border Line Toggle */}
                   <div className="space-y-2 pt-2 border-t border-zinc-100">
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Cover Photo & Size</span>
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Cover Photo & Frame</span>
                     
-                    <button
-                      type="button"
-                      onClick={() => openAddImageModal('coverPhoto')}
-                      className="w-full py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Add Image</span>
-                    </button>
+                    {/* Cover Photo Controls with Thumbnail & Delete Button */}
+                    <div className="flex items-center gap-2">
+                      {data.cover.photoUrl && (
+                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+                          <img src={data.cover.photoUrl} alt="Cover" className="w-full h-full object-cover bg-transparent" />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => openAddImageModal('coverPhoto')}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
+                        <span>{data.cover.photoUrl ? 'Change Photo' : 'Add Image'}</span>
+                      </button>
+
+                      {data.cover.photoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setData({ ...data, cover: { ...data.cover, photoUrl: '' } })}
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+                          title="Delete Photo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
                     {/* Photo Height Resizer Slider */}
                     <div>
@@ -649,6 +716,22 @@ function WedGrapherAiryBuilderContent() {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Frame Outline Border Line Toggle (Fix for PNG Arch Border) */}
+                    <div className="pt-1 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-600">Arch Border Line</span>
+                      <button
+                        type="button"
+                        onClick={() => setData({ ...data, cover: { ...data.cover, showPhotoBorder: !data.cover.showPhotoBorder } })}
+                        className={`px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border ${
+                          data.cover.showPhotoBorder
+                            ? 'bg-amber-600 text-white border-amber-600'
+                            : 'bg-zinc-100 text-zinc-600 border-zinc-300'
+                        }`}
+                      >
+                        {data.cover.showPhotoBorder ? 'Border ON' : 'Border OFF (No Line)'}
+                      </button>
                     </div>
 
                   </div>
@@ -712,17 +795,37 @@ function WedGrapherAiryBuilderContent() {
                     />
                   </div>
 
-                  {/* About Us Bottom Banner Photo Control */}
+                  {/* About Us Bottom Banner Photo Control with Thumbnail & Delete */}
                   <div className="space-y-2 pt-2 border-t border-zinc-100">
                     <span className="text-[10px] uppercase font-bold text-amber-700 block">Bottom Banner Image (15% Full Bleed)</span>
-                    <button
-                      type="button"
-                      onClick={() => openAddImageModal('aboutUsBanner')}
-                      className="w-full py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Add Image</span>
-                    </button>
+                    
+                    <div className="flex items-center gap-2">
+                      {data.aboutUs.bottomBannerPhoto && (
+                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+                          <img src={data.aboutUs.bottomBannerPhoto} alt="Banner" className="w-full h-full object-cover bg-transparent" />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => openAddImageModal('aboutUsBanner')}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
+                        <span>{data.aboutUs.bottomBannerPhoto ? 'Change Banner' : 'Add Image'}</span>
+                      </button>
+
+                      {data.aboutUs.bottomBannerPhoto && (
+                        <button
+                          type="button"
+                          onClick={() => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerPhoto: '' } })}
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+                          title="Delete Banner"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
                     <div>
                       <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
@@ -808,14 +911,33 @@ function WedGrapherAiryBuilderContent() {
                   </div>
 
                   <div className="pt-2 border-t border-zinc-100 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => openAddImageModal('shootPhoto')}
-                      className="w-full py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Add Image</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {data.shootDetails.photo && (
+                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+                          <img src={data.shootDetails.photo} alt="Shoot" className="w-full h-full object-cover bg-transparent" />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => openAddImageModal('shootPhoto')}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
+                        <span>{data.shootDetails.photo ? 'Change Photo' : 'Add Image'}</span>
+                      </button>
+
+                      {data.shootDetails.photo && (
+                        <button
+                          type="button"
+                          onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, photo: '' } })}
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+                          title="Delete Photo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
                     <div>
                       <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
@@ -871,14 +993,33 @@ function WedGrapherAiryBuilderContent() {
                   </div>
 
                   <div className="pt-2 border-t border-zinc-100 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => openAddImageModal('includedPhoto')}
-                      className="w-full py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Add Image</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {data.whatsIncluded.photo && (
+                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+                          <img src={data.whatsIncluded.photo} alt="Included" className="w-full h-full object-cover bg-transparent" />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => openAddImageModal('includedPhoto')}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
+                        <span>{data.whatsIncluded.photo ? 'Change Photo' : 'Add Image'}</span>
+                      </button>
+
+                      {data.whatsIncluded.photo && (
+                        <button
+                          type="button"
+                          onClick={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photo: '' } })}
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+                          title="Delete Photo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
                     <div>
                       <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
@@ -1058,7 +1199,7 @@ function WedGrapherAiryBuilderContent() {
                 )}
               </div>
 
-              {/* Cover Photo Frame (Arched / Resizable) */}
+              {/* Cover Photo Frame (Arched / Resizable with Optional Border Line) */}
               <div 
                 className={`mx-auto mt-6 overflow-hidden shadow-lg relative transition-all duration-200 ${
                   data.cover.frameShape === 'rounded' ? 'rounded-3xl' :
@@ -1068,8 +1209,8 @@ function WedGrapherAiryBuilderContent() {
                 style={{ 
                   width: `${data.cover.photoWidth || 75}%`,
                   height: `${data.cover.photoHeight || 450}px`,
-                  borderColor: photoBorderColor, 
-                  borderWidth: '1px', 
+                  borderColor: data.cover.showPhotoBorder ? photoBorderColor : 'transparent', 
+                  borderWidth: data.cover.showPhotoBorder ? '1px' : '0px', 
                   backgroundColor: 'transparent' 
                 }}
               >
@@ -1128,14 +1269,16 @@ function WedGrapherAiryBuilderContent() {
                 ))}
               </div>
 
-              <div className="rounded-2xl overflow-hidden mt-4 shadow-md bg-transparent" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
-                <img 
-                  src={data.shootDetails.photo} 
-                  alt="Pre-Wedding Shoot"
-                  className="w-full object-cover object-center bg-transparent"
-                  style={{ height: `${data.shootDetails.photoHeight}px` }}
-                />
-              </div>
+              {data.shootDetails.photo && (
+                <div className="rounded-2xl overflow-hidden mt-4 shadow-md bg-transparent" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
+                  <img 
+                    src={data.shootDetails.photo} 
+                    alt="Pre-Wedding Shoot"
+                    className="w-full object-cover object-center bg-transparent"
+                    style={{ height: `${data.shootDetails.photoHeight}px` }}
+                  />
+                </div>
+              )}
             </div>
 
             {/* 4. WHAT'S INCLUDED SECTION */}
@@ -1151,14 +1294,16 @@ function WedGrapherAiryBuilderContent() {
                 {data.whatsIncluded.deliverablesText}
               </div>
 
-              <div className="rounded-2xl overflow-hidden mt-4 shadow-md bg-transparent" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
-                <img 
-                  src={data.whatsIncluded.photo} 
-                  alt="Package Deliverables"
-                  className="w-full object-cover object-center bg-transparent"
-                  style={{ height: `${data.whatsIncluded.photoHeight}px` }}
-                />
-              </div>
+              {data.whatsIncluded.photo && (
+                <div className="rounded-2xl overflow-hidden mt-4 shadow-md bg-transparent" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
+                  <img 
+                    src={data.whatsIncluded.photo} 
+                    alt="Package Deliverables"
+                    className="w-full object-cover object-center bg-transparent"
+                    style={{ height: `${data.whatsIncluded.photoHeight}px` }}
+                  />
+                </div>
+              )}
             </div>
 
             {/* 5. PRICE & PAYMENT SECTION */}
