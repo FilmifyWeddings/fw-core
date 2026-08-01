@@ -98,7 +98,7 @@ export function WhatsAppTemplateMediaModal({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-white dark:bg-zinc-950 rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden relative max-h-[90vh] flex flex-col"
+          className="bg-white dark:bg-zinc-950 rounded-3xl max-w-4xl w-full p-6 space-y-4 shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden relative max-h-[90vh] flex flex-col"
         >
           {/* Header Bar */}
           <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-900 shrink-0">
@@ -152,25 +152,27 @@ export function WhatsAppTemplateMediaModal({
             </div>
           </div>
 
-          {/* JUSTIFIED PHOTO GALLERY GRID SYSTEM (grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4) */}
-          <div className="space-y-2 flex-1 overflow-hidden flex flex-col min-h-0">
-            <div className="flex items-center justify-between text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider px-1 shrink-0">
+          {/* PROPER SCROLLING JUSTIFIED PHOTO GALLERY GRID */}
+          <div className="space-y-2 shrink-0">
+            <div className="flex items-center justify-between text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider px-1">
               <span>Media Assets Gallery ({files.length})</span>
             </div>
+          </div>
 
-            {loading ? (
-              <div className="py-16 text-center space-y-2">
-                <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-xs font-bold text-zinc-500">Loading visual gallery...</p>
-              </div>
-            ) : files.length === 0 ? (
-              <div className="py-16 text-center space-y-2 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/30">
-                <ImageIcon className="w-10 h-10 text-zinc-300 dark:text-zinc-700 mx-auto" />
-                <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400">No template media files uploaded yet.</p>
-                <p className="text-[11px] text-zinc-400">Media uploaded when creating templates will appear here under your 500 MB quota.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-1 w-full overflow-y-auto max-h-[60vh] flex-1 min-h-0">
+          {loading ? (
+            <div className="py-16 text-center space-y-2">
+              <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs font-bold text-zinc-500">Loading visual gallery...</p>
+            </div>
+          ) : files.length === 0 ? (
+            <div className="py-16 text-center space-y-2 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/30">
+              <ImageIcon className="w-10 h-10 text-zinc-300 dark:text-zinc-700 mx-auto" />
+              <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400">No template media files uploaded yet.</p>
+              <p className="text-[11px] text-zinc-400">Media uploaded when creating templates will appear here under your 500 MB quota.</p>
+            </div>
+          ) : (
+            <div className="overflow-y-auto max-h-[52vh] p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 block w-full">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 w-full">
                 {files.map((file, idx) => {
                   const isVideo = file.mime_type?.includes('video') || file.name.match(/\.(mp4|webm|mov)$/i);
                   const isDoc = file.mime_type?.includes('pdf') || file.name.match(/\.(pdf|doc|docx|txt)$/i);
@@ -179,11 +181,11 @@ export function WhatsAppTemplateMediaModal({
                   return (
                     <div
                       key={idx}
-                      className="relative w-full aspect-square rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-950 group shadow-sm transition-all hover:shadow-xl hover:border-green-500 cursor-default"
+                      className="group relative w-full h-44 rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-950 shadow-sm hover:shadow-xl hover:border-green-500 transition-all cursor-default flex flex-col shrink-0"
                     >
                       {/* Media Render Layer */}
                       {isVideo ? (
-                        <div className="absolute inset-0 w-full h-full bg-zinc-950 flex flex-col items-center justify-center">
+                        <div className="relative w-full h-full bg-zinc-950 flex flex-col items-center justify-center">
                           <video 
                             src={file.url} 
                             preload="metadata" 
@@ -199,7 +201,7 @@ export function WhatsAppTemplateMediaModal({
                           </span>
                         </div>
                       ) : isDoc ? (
-                        <div className="absolute inset-0 w-full h-full p-4 bg-zinc-900 flex flex-col items-center justify-center text-center space-y-2">
+                        <div className="w-full h-full p-4 bg-zinc-900 flex flex-col items-center justify-center text-center space-y-2">
                           <FileText className="w-10 h-10 text-amber-500" />
                           <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px] font-mono font-bold uppercase border border-amber-500/20">
                             PDF / DOC
@@ -212,7 +214,7 @@ export function WhatsAppTemplateMediaModal({
                         <img 
                           src={file.url} 
                           alt={file.name} 
-                          className="absolute inset-0 w-full h-full object-cover"
+                          className="w-full h-full object-cover block"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';
                           }}
@@ -259,7 +261,7 @@ export function WhatsAppTemplateMediaModal({
 
                       {/* BOTTOM OVERLAY BADGE ON EACH CARD */}
                       <div className="absolute bottom-2 inset-x-2 z-10 pointer-events-none">
-                        <span className="px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[9px] font-bold text-white/90 border border-white/15 truncate block max-w-full">
+                        <span className="px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-bold text-white/90 border border-white/15 truncate block max-w-full">
                           Template: {templateName}
                         </span>
                       </div>
@@ -267,8 +269,8 @@ export function WhatsAppTemplateMediaModal({
                   );
                 })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           <div className="pt-3 border-t border-zinc-100 dark:border-zinc-900 flex justify-end shrink-0">
             <button
