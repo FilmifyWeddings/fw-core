@@ -246,12 +246,13 @@ function WedGrapherAiryBuilderContent() {
           }
         }
 
-        // 2. Fetch User Gallery Images from Supabase `user_gallery_images` table (synced with /workspace/quotations)
-        let query = supabase.from('user_gallery_images').select('*').order('created_at', { ascending: false });
-        if (currentUserId !== 'demo_user') {
-          query = query.eq('workspace_id', currentUserId);
-        }
-        const { data: dbImages } = await query;
+        // 2. Fetch User Gallery Images from Supabase `user_gallery_images` table (strictly isolated by user workspace_id)
+        const { data: dbImages } = await supabase
+          .from('user_gallery_images')
+          .select('*')
+          .eq('workspace_id', currentUserId)
+          .order('created_at', { ascending: false });
+
         if (dbImages && dbImages.length > 0) {
           setUserGalleryObjects(dbImages as UserGalleryImage[]);
           const fetchedUrls = dbImages.map(img => img.url).filter(Boolean);

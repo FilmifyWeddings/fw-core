@@ -121,7 +121,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         const currentUserId = session?.user?.id || 'demo_user';
         setUserId(currentUserId);
 
-        // Fetch User Quotations
+        // Fetch User Quotations for current workspace
         const { data: qData } = await supabase
           .from('quotations')
           .select('id, title, client_name, quotation_number, financials, status, updated_at')
@@ -132,7 +132,7 @@ export default function WorkspaceQuotationsGalleryPage() {
           setQuotations(qData as SavedQuotation[]);
         }
 
-        // Fetch User Gallery Images
+        // Fetch User Gallery Images strictly isolated for current workspace ID
         const { data: imgData } = await supabase
           .from('user_gallery_images')
           .select('*')
