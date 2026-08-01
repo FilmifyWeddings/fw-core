@@ -170,7 +170,7 @@ export function WhatsAppTemplateMediaModal({
                 <p className="text-[11px] text-zinc-400">Media uploaded when creating templates will appear here under your 500 MB quota.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 overflow-y-auto pr-1 flex-1 min-h-0">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-2 w-full h-auto auto-rows-fr content-start overflow-y-auto max-h-[55vh] flex-1 min-h-0">
                 {files.map((file, idx) => {
                   const isVideo = file.mime_type?.includes('video') || file.name.match(/\.(mp4|webm|mov)$/i);
                   const isDoc = file.mime_type?.includes('pdf') || file.name.match(/\.(pdf|doc|docx|txt)$/i);
@@ -179,7 +179,7 @@ export function WhatsAppTemplateMediaModal({
                   return (
                     <div
                       key={idx}
-                      className="aspect-square overflow-hidden relative group rounded-xl border border-zinc-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 flex flex-col cursor-default shadow-sm transition-all"
+                      className="relative aspect-square w-full h-full rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 group shadow-sm flex flex-col items-center justify-center cursor-default transition-all hover:shadow-md"
                     >
                       {/* Media Render Layer */}
                       {isVideo ? (

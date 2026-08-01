@@ -247,7 +247,7 @@ function WedGrapherAiryBuilderContent() {
           }
         }
 
-        // 2. Fetch User Gallery Images from Supabase `user_gallery_images` table (strictly isolated by user workspace_id)
+        // 2. Fetch User Gallery Images strictly isolated for Quotations (exclude WhatsApp Template Media)
         const { data: dbImages } = await supabase
           .from('user_gallery_images')
           .select('*')
@@ -255,8 +255,13 @@ function WedGrapherAiryBuilderContent() {
           .order('created_at', { ascending: false });
 
         if (dbImages && dbImages.length > 0) {
-          setUserGalleryObjects(dbImages as UserGalleryImage[]);
-          const fetchedUrls = dbImages.map(img => img.url).filter(Boolean);
+          // Strict filtering: filter out any images tagged for whatsapp_templates or uploaded to whatsapp_templates_media bucket
+          const quotationOnlyImages = dbImages.filter(img => 
+            img.source_module !== 'whatsapp_templates' && 
+            !img.url?.includes('whatsapp_templates_media')
+          );
+          setUserGalleryObjects(quotationOnlyImages as UserGalleryImage[]);
+          const fetchedUrls = quotationOnlyImages.map(img => img.url).filter(Boolean);
           setGalleryImages(prev => Array.from(new Set([...fetchedUrls, ...prev])));
         }
       } catch (err) {

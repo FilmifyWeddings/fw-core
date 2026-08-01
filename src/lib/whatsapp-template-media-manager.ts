@@ -49,11 +49,12 @@ export async function getWhatsAppTemplateStorageUsage(
       filesCount = storageFiles.length;
       totalBytes = storageFiles.reduce((acc, file) => acc + ((file as any).metadata?.size || (file as any).size || 0), 0);
     } else {
-      // 2. Fallback check DB table user_gallery_images or whatsapp_template_media_logs
+      // 2. Fallback check DB table user_gallery_images strictly for whatsapp_templates
       const { data: dbFiles } = await client
         .from('user_gallery_images')
         .select('file_size')
-        .eq('workspace_id', folderPath);
+        .eq('workspace_id', folderPath)
+        .eq('source_module', 'whatsapp_templates');
 
       if (dbFiles) {
         filesCount = dbFiles.length;
@@ -185,12 +186,13 @@ export async function deleteWhatsAppTemplateMediaFile(
       console.warn('[deleteWhatsAppTemplateMediaFile] Storage remove warning:', removeErr);
     }
 
-    // Delete from DB logs if present
+    // Delete from DB logs if present (strictly for whatsapp_templates)
     await client
       .from('user_gallery_images')
       .delete()
       .eq('workspace_id', folderPath)
-      .eq('file_name', fileName);
+      .eq('file_name', fileName)
+      .eq('source_module', 'whatsapp_templates');
 
     // Broadcast instant update custom event
     if (typeof window !== 'undefined') {
