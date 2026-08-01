@@ -9,9 +9,10 @@ import {
   ArrowLeft, ArrowRight, Eye, Share2, Copy, Percent, DollarSign, 
   Palette, Type, Layout, ShieldCheck, Film, Video, Camera, BookOpen, 
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
-  Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon
+  Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 
 // World-Class Premium Luxury Minimal Fonts
 const LUXURY_PRIMARY_FONTS = [
@@ -33,6 +34,15 @@ const LUXURY_SECONDARY_FONTS = [
   { name: 'Tenor Sans (Fashion Minimal)', family: "'Tenor Sans', sans-serif" },
   { name: 'Josefin Sans (Geometric Vintage)', family: "'Josefin Sans', sans-serif" },
 ];
+
+interface UserGalleryImage {
+  id?: string;
+  url: string;
+  file_name?: string;
+  file_size?: number;
+  compression_quality?: string;
+  created_at?: string;
+}
 
 // WedGrapher Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
@@ -182,14 +192,22 @@ function WedGrapherAiryBuilderContent() {
   const hiddenFileInputRef = useRef<HTMLInputElement>(null);
   
   const [data, setData] = useState(DEFAULT_AIRY_PROPOSAL);
+  const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Saved');
   const [copiedLink, setCopiedLink] = useState(false);
   const [openCard, setOpenCard] = useState<string | null>('cover');
 
-  // Media Gallery Modal State & User Uploaded Supabase Photos
+  // Media Gallery Modal State & Compression Quality Modal
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
+  const [showQualityModal, setShowQualityModal] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState<'low' | 'medium' | 'high'>('high');
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  const [isCompressingAndUploading, setIsCompressingAndUploading] = useState(false);
   const [activeTargetField, setActiveTargetField] = useState<'coverLogo' | 'coverPhoto' | 'aboutUsBanner' | 'shootPhoto' | 'includedPhoto' | null>(null);
+
+  const [userGalleryObjects, setUserGalleryObjects] = useState<UserGalleryImage[]>([]);
   const [galleryImages, setGalleryImages] = useState<string[]>([
     'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
     'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
@@ -198,29 +216,94 @@ function WedGrapherAiryBuilderContent() {
     'https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=800&q=80',
   ]);
 
-  // Fetch all user-uploaded images from Supabase `user_gallery_images` table!
+  // Load User Session & Isolated Saved Proposal
   useEffect(() => {
-    async function fetchUserGalleryImages() {
+    async function initUserAndLoadData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const currentWorkspaceId = session?.user?.id;
-        
-        let query = supabase.from('user_gallery_images').select('url').order('created_at', { ascending: false });
-        if (currentWorkspaceId) {
-          query = query.eq('workspace_id', currentWorkspaceId);
+        const currentUserId = session?.user?.id || 'demo_user';
+        setUserId(currentUserId);
+
+        // 1. Fetch user isolated quotation draft from Supabase
+        const { data: qData } = await supabase
+          .from('quotations')
+          .select('content_json, title')
+          .eq('workspace_id', currentUserId)
+          .eq('quotation_number', 'FW-2026-001')
+          .maybeSingle();
+
+        if (qData?.content_json) {
+          setData(qData.content_json);
+        } else {
+          // Check LocalStorage fallback for this user
+          const localSaved = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
+          if (localSaved) {
+            try {
+              setData(JSON.parse(localSaved));
+            } catch {
+              // fallback
+            }
+          }
         }
-        
-        const { data: dbImages, error } = await query;
-        if (!error && dbImages && dbImages.length > 0) {
+
+        // 2. Fetch User Gallery Images from Supabase `user_gallery_images` table (synced with /workspace/quotations)
+        let query = supabase.from('user_gallery_images').select('*').order('created_at', { ascending: false });
+        if (currentUserId !== 'demo_user') {
+          query = query.eq('workspace_id', currentUserId);
+        }
+        const { data: dbImages } = await query;
+        if (dbImages && dbImages.length > 0) {
+          setUserGalleryObjects(dbImages as UserGalleryImage[]);
           const fetchedUrls = dbImages.map(img => img.url).filter(Boolean);
           setGalleryImages(prev => Array.from(new Set([...fetchedUrls, ...prev])));
         }
       } catch (err) {
-        console.warn('Failed to fetch user gallery images from Supabase:', err);
+        console.warn('Initialization error:', err);
       }
     }
-    fetchUserGalleryImages();
+    initUserAndLoadData();
   }, []);
+
+  // REAL-TIME AUTO-SAVE (Debounced 1000ms - User Isolated)
+  useEffect(() => {
+    if (!userId) return;
+
+    setAutoSaveStatus('Saving...');
+    setHasUnsavedChanges(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
+        
+        // Calculate totals dynamically
+        const subtotal = data.pricePayment.packagePrice;
+        const discountAmt = (subtotal * data.pricePayment.discountPct) / 100;
+        const discountedSubtotal = subtotal - discountAmt;
+        const gstAmt = (discountedSubtotal * data.pricePayment.gstPct) / 100;
+        const grandTotal = Math.round(discountedSubtotal + gstAmt);
+
+        // Auto-save to Supabase isolated workspace
+        await supabase.from('quotations').upsert({
+          workspace_id: userId,
+          quotation_number: 'FW-2026-001',
+          title: data.designName,
+          client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
+          content_json: data,
+          financials: { total_amount: grandTotal, subtotal, gst_rate: data.pricePayment.gstPct },
+          status: 'draft',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id,quotation_number' });
+
+        setHasUnsavedChanges(false);
+        setAutoSaveStatus('Auto-saved');
+      } catch (err) {
+        setAutoSaveStatus('Saved locally');
+        setHasUnsavedChanges(false);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [data, userId]);
 
   // Open Media Library Modal for a specific section
   const openAddImageModal = (target: 'coverLogo' | 'coverPhoto' | 'aboutUsBanner' | 'shootPhoto' | 'includedPhoto') => {
@@ -244,38 +327,93 @@ function WedGrapherAiryBuilderContent() {
       setData(prev => ({ ...prev, whatsIncluded: { ...prev.whatsIncluded, photo: url } }));
     }
 
-    setHasUnsavedChanges(true);
     setMediaModalOpen(false);
   };
 
-  // Direct File Upload from Modal / Device
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Check Storage Limits (Max 30 MB / 10 images) & Trigger Quality Modal
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && activeTargetField) {
+    if (!file) return;
+
+    // Check count limit (Max 10 images)
+    if (userGalleryObjects.length >= 10) {
+      alert('Storage Limit Reached: You have reached the maximum 10 gallery images limit.');
+      return;
+    }
+
+    // Check size limit (30 MB max total)
+    const currentBytes = userGalleryObjects.reduce((acc, img) => acc + (img.file_size || 0), 0);
+    if (currentBytes + file.size > 30 * 1024 * 1024) {
+      alert('Storage Limit Reached: Uploading this file exceeds your 30 MB storage limit.');
+      return;
+    }
+
+    setPendingUploadFile(file);
+    setShowQualityModal(true);
+  };
+
+  // Confirm Compressed Upload with Master Image Manager
+  const startCompressedUpload = async () => {
+    if (!pendingUploadFile || !activeTargetField) return;
+
+    setIsCompressingAndUploading(true);
+
+    try {
+      let qualityFactor = 0.88;
+      let maxDim = 2048;
+
+      if (selectedQuality === 'low') {
+        qualityFactor = 0.60;
+        maxDim = 1024;
+      } else if (selectedQuality === 'medium') {
+        qualityFactor = 0.75;
+        maxDim = 1600;
+      }
+
+      // 1. Client-side WebP compression
+      const compressedFile = await compressImageClient(pendingUploadFile, {
+        maxWidth: maxDim,
+        maxHeight: maxDim,
+        quality: qualityFactor,
+      });
+
+      // 2. Read as data URL for instant display
       const reader = new FileReader();
       reader.onload = async (event) => {
-        const result = event.target?.result as string;
-        if (result) {
-          setGalleryImages(prev => [result, ...prev]);
-          handleSelectImageFromGallery(result);
+        const imageUrl = event.target?.result as string;
+        if (imageUrl) {
+          setGalleryImages(prev => [imageUrl, ...prev]);
+          handleSelectImageFromGallery(imageUrl);
 
-          // Save to Supabase `user_gallery_images` table in background
+          // 3. Sync to Supabase `user_gallery_images` table (Bi-directional sync with /workspace/quotations)
           try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const workspaceId = session?.user?.id || 'demo_user';
             await supabase.from('user_gallery_images').insert({
-              workspace_id: workspaceId,
-              url: result,
-              file_name: file.name,
-              file_size: file.size,
-              compression_quality: 'high',
+              workspace_id: userId || 'demo_user',
+              url: imageUrl,
+              file_name: compressedFile.name,
+              file_size: compressedFile.size,
+              compression_quality: selectedQuality,
             });
+
+            setUserGalleryObjects(prev => [{
+              url: imageUrl,
+              file_name: compressedFile.name,
+              file_size: compressedFile.size,
+              compression_quality: selectedQuality,
+            }, ...prev]);
           } catch {
-            // silent save fallback
+            // fallback
           }
         }
+        setIsCompressingAndUploading(false);
+        setShowQualityModal(false);
+        setPendingUploadFile(null);
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(compressedFile);
+    } catch (err) {
+      alert('Compression upload failed. Applied default image.');
+      setIsCompressingAndUploading(false);
+      setShowQualityModal(false);
     }
   };
 
@@ -297,30 +435,27 @@ function WedGrapherAiryBuilderContent() {
   const gstAmt = (discountedSubtotal * data.pricePayment.gstPct) / 100;
   const grandTotal = Math.round(discountedSubtotal + gstAmt);
 
-  const handleSave = async () => {
+  const handleManualSave = async () => {
     setSaving(true);
     try {
-      const publicToken = `wg_airy_${Math.random().toString(36).substring(2, 10)}`;
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
+      localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
 
       await supabase.from('quotations').upsert({
-        workspace_id: workspaceId,
+        workspace_id: userId || 'demo_user',
         quotation_number: 'FW-2026-001',
         title: data.designName,
         client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
-        public_token: publicToken,
+        content_json: data,
         financials: { total_amount: grandTotal, subtotal, gst_rate: data.pricePayment.gstPct },
-        events: data.shootDetails.rows,
         status: 'draft',
         updated_at: new Date().toISOString(),
-      });
+      }, { onConflict: 'workspace_id,quotation_number' });
 
       setHasUnsavedChanges(false);
-      alert('Quotation proposal saved successfully!');
+      setAutoSaveStatus('Saved');
+      alert('Quotation proposal saved to your workspace!');
     } catch {
-      setHasUnsavedChanges(false);
-      alert('Saved proposal settings locally!');
+      alert('Saved locally!');
     } finally {
       setSaving(false);
     }
@@ -329,20 +464,54 @@ function WedGrapherAiryBuilderContent() {
   return (
     <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 font-sans flex flex-col overflow-hidden selection:bg-black selection:text-white">
       
-      {/* ── TOP HEADER BAR (WedGrapher Light Header) ── */}
-      <header className="h-12 bg-white border-b border-zinc-200 px-5 flex items-center justify-between shrink-0 z-50 shadow-xs">
+      {/* Print PDF Custom Styles (Fixes Browser Print & Hides Viewport Controls) */}
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 0 !important;
+          }
+          body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            overflow: visible !important;
+          }
+          header, aside, .no-print, button, nav {
+            display: none !important;
+          }
+          main {
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            background: transparent !important;
+            overflow: visible !important;
+          }
+          .proposal-document-canvas {
+            max-width: 100% !important;
+            width: 100% !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 2.5rem !important;
+            border: none !important;
+            page-break-after: always;
+          }
+        }
+      `}</style>
+
+      {/* ── TOP HEADER BAR (WedGrapher Light Header - Hidden in PDF Print) ── */}
+      <header className="h-12 bg-white border-b border-zinc-200 px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
         <div className="flex items-center gap-3">
           <input
             type="text"
             value={data.designName}
-            onChange={(e) => { setData({ ...data, designName: e.target.value }); setHasUnsavedChanges(true); }}
+            onChange={(e) => { setData({ ...data, designName: e.target.value }); }}
             className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5"
           />
-          {hasUnsavedChanges && (
-            <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-              unsaved changes
-            </span>
-          )}
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+            hasUnsavedChanges ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+          }`}>
+            {autoSaveStatus}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -358,7 +527,7 @@ function WedGrapherAiryBuilderContent() {
             onClick={() => window.print()}
             className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5" /> PDF
+            <Printer className="w-3.5 h-3.5 text-amber-700" /> Clean PDF
           </button>
 
           <button
@@ -373,11 +542,11 @@ function WedGrapherAiryBuilderContent() {
           </button>
 
           <button
-            onClick={handleSave}
+            onClick={handleManualSave}
             disabled={saving}
             className="px-4 py-1 rounded-full bg-black hover:bg-zinc-800 text-white text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
           >
-            <Save className="w-3.5 h-3.5" /> {saving ? 'Saving...' : 'Save'}
+            <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? 'Saving...' : 'Save'}
           </button>
 
           <Link
@@ -394,9 +563,9 @@ function WedGrapherAiryBuilderContent() {
       <div className="flex-1 flex overflow-hidden">
         
         {/* ───────────────────────────────────────────────────────────── */}
-        {/* LEFT CONTROL SIDEBAR PANEL (320px)                            */}
+        {/* LEFT CONTROL SIDEBAR PANEL (Hidden in PDF Print)               */}
         {/* ───────────────────────────────────────────────────────────── */}
-        <aside className="w-[320px] bg-white border-r border-zinc-200 p-4 overflow-y-auto space-y-5 shrink-0 text-xs shadow-sm">
+        <aside className="w-[320px] bg-white border-r border-zinc-200 p-4 overflow-y-auto space-y-5 shrink-0 text-xs shadow-sm no-print">
           
           {/* Top Inputs & Typography Customizer */}
           <div className="space-y-3">
@@ -1132,9 +1301,9 @@ function WedGrapherAiryBuilderContent() {
         {/* ───────────────────────────────────────────────────────────── */}
         <main className="flex-1 bg-[#EBECEF] p-6 overflow-y-auto flex justify-center items-start">
           
-          {/* Dynamic Theme Centered Document Page */}
+          {/* Dynamic Theme Centered Document Page (Print A4 Container) */}
           <div 
-            className="w-full max-w-[680px] rounded-sm shadow-2xl p-10 sm:p-14 space-y-12 my-4 transition-colors duration-300"
+            className="proposal-document-canvas w-full max-w-[680px] rounded-sm shadow-2xl p-10 sm:p-14 space-y-12 my-4 transition-colors duration-300 relative"
             style={{ 
               backgroundColor: pageBgColor, 
               color: textColor,
@@ -1448,7 +1617,7 @@ function WedGrapherAiryBuilderContent() {
       {/* ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {mediaModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 no-print">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1461,7 +1630,7 @@ function WedGrapherAiryBuilderContent() {
                     <ImageIcon className="w-5 h-5 text-amber-600" />
                     <span>Select Studio Media Asset</span>
                   </h3>
-                  <p className="text-xs text-zinc-500 font-medium">Choose an existing image or upload a new PNG/JPG file</p>
+                  <p className="text-xs text-zinc-500 font-medium">Choose an existing image or upload a new WebP/PNG/JPG file</p>
                 </div>
                 <button
                   type="button"
@@ -1478,7 +1647,7 @@ function WedGrapherAiryBuilderContent() {
                   type="file"
                   ref={hiddenFileInputRef}
                   accept="image/*"
-                  onChange={handleFileUpload}
+                  onChange={handleFileSelect}
                   className="hidden"
                 />
                 <button
@@ -1489,7 +1658,7 @@ function WedGrapherAiryBuilderContent() {
                   <Upload className="w-4 h-4 text-amber-400" />
                   <span>Upload New Image from Device (PNG/JPG)</span>
                 </button>
-                <p className="text-[11px] text-amber-800 font-medium">Transparent PNG files maintain 100% transparent backgrounds</p>
+                <p className="text-[11px] text-amber-800 font-medium">Max 30 MB storage limit • Automatic high-performance WebP compression</p>
               </div>
 
               {/* Gallery Image Grid */}
@@ -1525,6 +1694,94 @@ function WedGrapherAiryBuilderContent() {
                 </button>
               </div>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* COMPRESSION QUALITY MODAL (MASTER IMAGE MANAGER INTEGRATION)   */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showQualityModal && pendingUploadFile && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 no-print">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-zinc-200"
+            >
+              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                <h3 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-amber-600" />
+                  <span>Compression & Quality Preset</span>
+                </h3>
+                <button 
+                  onClick={() => setShowQualityModal(false)}
+                  className="p-1 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-zinc-600">
+                  Select compression quality for <strong className="text-zinc-900">{pendingUploadFile.name}</strong> ({(pendingUploadFile.size / (1024 * 1024)).toFixed(2)} MB):
+                </p>
+
+                <div className="space-y-2">
+                  {[
+                    { id: 'high', label: 'Ultra HD Quality (88% - Recommended)', desc: 'Max 2048px width, crystal-clear wedding photography details.' },
+                    { id: 'medium', label: 'Balanced Web Quality (75%)', desc: 'Max 1600px width, fast loading speed with sharp visuals.' },
+                    { id: 'low', label: 'Compact Compression (60%)', desc: 'Max 1024px width, smallest file size for low bandwidth.' },
+                  ].map((q) => (
+                    <div 
+                      key={q.id}
+                      onClick={() => setSelectedQuality(q.id as any)}
+                      className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                        selectedQuality === q.id 
+                          ? 'border-amber-500 bg-amber-50/60 ring-2 ring-amber-500/20' 
+                          : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-900">{q.label}</span>
+                        {selectedQuality === q.id && <Check className="w-4 h-4 text-amber-600" />}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">{q.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setShowQualityModal(false)}
+                  className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={startCompressedUpload}
+                  disabled={isCompressingAndUploading}
+                  className="px-5 py-2 rounded-xl bg-black hover:bg-zinc-800 text-white text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md disabled:opacity-50"
+                >
+                  {isCompressingAndUploading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                      <span>Compressing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Compress & Save</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
