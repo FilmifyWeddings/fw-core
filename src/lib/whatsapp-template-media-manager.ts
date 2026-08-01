@@ -25,7 +25,7 @@ export interface StorageQuotaStats {
   filesCount: number;
 }
 
-const MAX_QUOTA_BYTES = 1024 * 1024 * 1024; // 1,024 MB (1 GB)
+const MAX_QUOTA_BYTES = 500 * 1024 * 1024; // Strictly 500 MB Limit
 
 /**
  * Calculates current storage consumed by workspace in `whatsapp_template_media` bucket.
@@ -67,7 +67,7 @@ export async function getWhatsAppTemplateStorageUsage(
     return {
       totalBytes,
       totalMB,
-      maxMB: 1024,
+      maxMB: 500,
       usagePercentage,
       filesCount,
     };
@@ -76,7 +76,7 @@ export async function getWhatsAppTemplateStorageUsage(
     return {
       totalBytes: 0,
       totalMB: 0,
-      maxMB: 1024,
+      maxMB: 500,
       usagePercentage: 0,
       filesCount: 0,
     };
@@ -85,7 +85,7 @@ export async function getWhatsAppTemplateStorageUsage(
 
 /**
  * Non-blocking Upload Quota Guard Check.
- * Returns { allowed: false, message: '...' } if new file exceeds 1GB limit.
+ * Returns { allowed: false, message: '...' } if new file exceeds 500MB limit.
  */
 export async function checkWhatsAppStorageQuotaGuard(
   workspaceId: string,
@@ -96,10 +96,9 @@ export async function checkWhatsAppStorageQuotaGuard(
   const projectedBytes = currentStats.totalBytes + newFileSizeBytes;
 
   if (projectedBytes > MAX_QUOTA_BYTES) {
-    const overflowMB = ((projectedBytes - MAX_QUOTA_BYTES) / (1024 * 1024)).toFixed(1);
     return {
       allowed: false,
-      message: `Storage Quota Exceeded (1GB Limit Reached). Uploading this file exceeds your 1,024 MB limit by ${overflowMB} MB. Please delete unused template media to free up space.`,
+      message: 'Storage Quota Exceeded (500 MB Limit Reached). Please upgrade your plan or delete existing media to continue uploading.',
     };
   }
 

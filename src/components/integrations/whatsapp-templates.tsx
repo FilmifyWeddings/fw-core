@@ -42,11 +42,11 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [showBuilder, setShowBuilder] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Dedicated WhatsApp Template Storage Quota state (1 GB / 1,024 MB Limit)
+  // Dedicated WhatsApp Template Storage Quota state (Strict 500 MB Limit)
   const [storageStats, setStorageStats] = useState<StorageQuotaStats>({
     totalBytes: 0,
     totalMB: 0,
-    maxMB: 1024,
+    maxMB: 500,
     usagePercentage: 0,
     filesCount: 0,
   });
@@ -139,10 +139,10 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 1. WhatsApp Template Storage Quota Guard (1,024 MB Limit)
+    // 1. WhatsApp Template Storage Quota Guard (Strict 500 MB Limit)
     const quotaCheck = await checkWhatsAppStorageQuotaGuard(workspaceId, file.size);
     if (!quotaCheck.allowed) {
-      setQuotaWarningModal(quotaCheck.message || 'Storage Quota Exceeded (1GB Limit Reached). Please delete unused template media.');
+      setQuotaWarningModal(quotaCheck.message || 'Storage Quota Exceeded (500 MB Limit Reached). Please upgrade your plan or delete existing media to continue uploading.');
       if (e.target) e.target.value = '';
       return;
     }
@@ -828,7 +828,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
           </div>
         </div>
 
-        {/* TEMPLATE STORAGE METER CARD (1,024 MB Limit) */}
+        {/* TEMPLATE STORAGE METER CARD (500 MB Limit) */}
         <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md flex flex-col justify-between space-y-2">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
@@ -837,7 +837,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                 Template Storage
               </span>
               <p className="text-sm font-extrabold text-zinc-900 dark:text-white">
-                {storageStats.totalMB} MB <span className="text-xs text-zinc-400 font-normal">/ 1,024 MB</span>
+                {storageStats.totalMB} MB <span className="text-xs text-zinc-400 font-normal">/ 500 MB</span>
               </p>
             </div>
             <button
