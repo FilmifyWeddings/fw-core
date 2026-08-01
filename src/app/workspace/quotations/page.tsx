@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
+import { MasterMediaModal } from '@/components/MasterMediaModal';
 
 interface SavedQuotation {
   id: string;
@@ -752,110 +753,12 @@ export default function WorkspaceQuotationsGalleryPage() {
         )}
       </AnimatePresence>
 
-      {/* ── 7. MODAL 3: User Image Gallery Modal ────────────────────────────────────── */}
-      <AnimatePresence>
-        {showGalleryModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl max-w-4xl w-full p-6 space-y-4 shadow-2xl max-h-[85vh] flex flex-col"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3 shrink-0">
-                <div>
-                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                    <ImageIcon className="w-5 h-5 text-pink-600" />
-                    Your Uploaded Images ({userImages.length} / 10 Images · {totalImageMB} MB / 30 MB)
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                    Images are stored in WebP format with 1-Year Cache Headers.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    type="button"
-                    onClick={triggerFileSelection}
-                    className="px-3 py-1.5 rounded-xl bg-pink-600 text-white font-bold text-xs flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add Image
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setShowGalleryModal(false)}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 font-bold ml-2"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-
-              {/* Image Grid */}
-              <div className="flex-1 overflow-y-auto pr-1">
-                {userImages.length === 0 ? (
-                  <div className="text-center py-16 space-y-3 bg-slate-50 dark:bg-zinc-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-zinc-700">
-                    <ImageIcon className="w-12 h-12 text-slate-300 dark:text-zinc-600 mx-auto" />
-                    <p className="text-xs font-bold text-slate-500 dark:text-zinc-400">No images uploaded yet.</p>
-                    <button 
-                      type="button"
-                      onClick={triggerFileSelection}
-                      className="px-4 py-2 rounded-xl bg-pink-600 text-white text-xs font-bold hover:bg-pink-700"
-                    >
-                      + Upload First Image
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                    {userImages.map(img => (
-                      <div 
-                        key={img.id}
-                        className="rounded-2xl border border-slate-200 dark:border-zinc-700 overflow-hidden bg-slate-100 dark:bg-zinc-800 group relative flex flex-col justify-between"
-                      >
-                        <div className="h-32 w-full overflow-hidden bg-slate-200 dark:bg-zinc-900 relative">
-                          <img 
-                            src={img.url} 
-                            alt={img.file_name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
-                          <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white text-[8px] font-extrabold uppercase">
-                            {img.compression_quality || 'WebP'}
-                          </span>
-                        </div>
-
-                        <div className="p-2 space-y-1 bg-white dark:bg-zinc-900">
-                          <p className="text-[10px] font-bold text-slate-800 dark:text-zinc-200 truncate">{img.file_name}</p>
-                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono">
-                            <span>{(img.file_size / 1024).toFixed(0)} KB</span>
-                            <button 
-                              type="button"
-                              onClick={() => handleDeleteImage(img.id, img.url)}
-                              className="text-rose-500 hover:text-rose-700 p-0.5"
-                              title="Delete Image"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-zinc-800 shrink-0">
-                <span className="text-xs text-slate-400 font-medium">Limits: Max 10 images · 30 MB Total Storage</span>
-                <button 
-                  type="button"
-                  onClick={() => setShowGalleryModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold text-xs hover:bg-slate-200"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* ── 7. UNIFIED MASTER MEDIA MODAL ────────────────────────────────────── */}
+      <MasterMediaModal 
+        isOpen={showGalleryModal} 
+        onClose={() => setShowGalleryModal(false)} 
+        userId={userId} 
+      />
 
     </div>
   );

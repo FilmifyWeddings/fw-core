@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
+import { MasterMediaModal } from '@/components/MasterMediaModal';
 
 // World-Class Premium Luxury Minimal Fonts
 const LUXURY_PRIMARY_FONTS = [
@@ -1613,180 +1614,13 @@ function WedGrapherAiryBuilderContent() {
 
       </div>
 
-      {/* ───────────────────────────────────────────────────────────── */}
-      {/* MEDIA LIBRARY / ADD IMAGE MODAL POPUP                          */}
-      {/* ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {mediaModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 no-print">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-zinc-200 overflow-hidden"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
-                <div>
-                  <h3 className="text-base font-bold text-zinc-900 flex items-center gap-2">
-                    <ImageIcon className="w-5 h-5 text-amber-600" />
-                    <span>Select Studio Media Asset</span>
-                  </h3>
-                  <p className="text-xs text-zinc-500 font-medium">Choose an existing image or upload a new WebP/PNG/JPG file</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMediaModalOpen(false)}
-                  className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Upload New Image Button inside Modal */}
-              <div className="p-4 rounded-2xl bg-amber-50/60 border border-dashed border-amber-300 flex flex-col items-center justify-center text-center space-y-2">
-                <input
-                  type="file"
-                  ref={hiddenFileInputRef}
-                  accept="image/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => hiddenFileInputRef.current?.click()}
-                  className="px-5 py-2.5 rounded-full bg-black hover:bg-zinc-800 text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-md transition-all"
-                >
-                  <Upload className="w-4 h-4 text-amber-400" />
-                  <span>Upload New Image from Device (PNG/JPG)</span>
-                </button>
-                <p className="text-[11px] text-amber-800 font-medium">Max 30 MB storage limit • Automatic high-performance WebP compression</p>
-              </div>
-
-              {/* Gallery Image Grid */}
-              <div className="space-y-2">
-                <span className="text-[11px] uppercase font-bold text-zinc-400 block tracking-wider">Your Studio Gallery ({galleryImages.length})</span>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-[260px] overflow-y-auto p-1">
-                  {galleryImages.map((imgUrl, index) => (
-                    <div
-                      key={index}
-                      onClick={() => handleSelectImageFromGallery(imgUrl)}
-                      className="group relative aspect-square rounded-2xl overflow-hidden border-2 border-zinc-200 hover:border-amber-500 cursor-pointer transition-all shadow-xs"
-                    >
-                      <img 
-                        src={imgUrl} 
-                        alt={`Gallery ${index}`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 bg-transparent"
-                      />
-                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                        <span className="px-2 py-1 rounded-full bg-white text-black text-[10px] font-bold">Select</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-zinc-100 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setMediaModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ───────────────────────────────────────────────────────────── */}
-      {/* COMPRESSION QUALITY MODAL (MASTER IMAGE MANAGER INTEGRATION)   */}
-      {/* ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showQualityModal && pendingUploadFile && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 no-print">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-zinc-200"
-            >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                <h3 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-amber-600" />
-                  <span>Compression & Quality Preset</span>
-                </h3>
-                <button 
-                  onClick={() => setShowQualityModal(false)}
-                  className="p-1 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <p className="text-xs text-zinc-600">
-                  Select compression quality for <strong className="text-zinc-900">{pendingUploadFile.name}</strong> ({(pendingUploadFile.size / (1024 * 1024)).toFixed(2)} MB):
-                </p>
-
-                <div className="space-y-2">
-                  {[
-                    { id: 'high', label: 'Ultra HD Quality (88% - Recommended)', desc: 'Max 2048px width, crystal-clear wedding photography details.' },
-                    { id: 'medium', label: 'Balanced Web Quality (75%)', desc: 'Max 1600px width, fast loading speed with sharp visuals.' },
-                    { id: 'low', label: 'Compact Compression (60%)', desc: 'Max 1024px width, smallest file size for low bandwidth.' },
-                  ].map((q) => (
-                    <div 
-                      key={q.id}
-                      onClick={() => setSelectedQuality(q.id as any)}
-                      className={`p-3 rounded-2xl border cursor-pointer transition-all ${
-                        selectedQuality === q.id 
-                          ? 'border-amber-500 bg-amber-50/60 ring-2 ring-amber-500/20' 
-                          : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-zinc-900">{q.label}</span>
-                        {selectedQuality === q.id && <Check className="w-4 h-4 text-amber-600" />}
-                      </div>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">{q.desc}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
-                <button
-                  type="button"
-                  onClick={() => setShowQualityModal(false)}
-                  className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={startCompressedUpload}
-                  disabled={isCompressingAndUploading}
-                  className="px-5 py-2 rounded-xl bg-black hover:bg-zinc-800 text-white text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md disabled:opacity-50"
-                >
-                  {isCompressingAndUploading ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                      <span>Compressing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Compress & Save</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* ── UNIFIED MASTER MEDIA MODAL ── */}
+      <MasterMediaModal 
+        isOpen={mediaModalOpen} 
+        onClose={() => setMediaModalOpen(false)} 
+        onSelectImage={handleSelectImageFromGallery} 
+        userId={userId} 
+      />
 
     </div>
   );
