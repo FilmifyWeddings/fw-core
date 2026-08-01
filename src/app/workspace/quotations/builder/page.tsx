@@ -94,7 +94,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     photoHeight: 350,
     photoFocalY: 50, // Range 0% (Top) to 100% (Bottom) vertical focal point
     photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle',
+    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     isWatermarkBackground: false,
     watermarkOpacity: 40,
     staysInFrame: 'Middle',
@@ -1119,7 +1119,7 @@ function WedGrapherAiryBuilderContent() {
                       )}
                     </div>
 
-                    {/* Photo Layout Style Dropdown (Arch, Rounded, Rectangle as requested) */}
+                    {/* Photo Layout Style Dropdown (Arch, Rounded, Rectangle, Full Width, Background) */}
                     <div>
                       <label className="block text-[9px] font-bold text-zinc-500 mb-1">Photo Layout Style</label>
                       <select
@@ -1130,6 +1130,8 @@ function WedGrapherAiryBuilderContent() {
                         <option value="arch">Arch (Cover Page Style ⋂)</option>
                         <option value="rounded">Rounded (Soft Corners ▢)</option>
                         <option value="rectangle">Rectangle (Sharp Box ▭)</option>
+                        <option value="full-width">Full Width (About Us Cut-to-Cut 0 Margin)</option>
+                        <option value="background">Background (40% Watermark Cut-to-Cut 0 Space)</option>
                       </select>
                     </div>
 
@@ -1174,27 +1176,8 @@ function WedGrapherAiryBuilderContent() {
                       </div>
                     )}
 
-                    {/* Background Watermark Mode (40% Opacity Overlay - 100% Full Bleed Cut-to-Cut) Toggle */}
-                    <div className="pt-1 flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-bold text-zinc-700 block">40% Background Watermark</span>
-                        <span className="text-[9px] text-zinc-400 block">100% Edge-to-Edge Cut-to-Cut (0 Space)</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, isWatermarkBackground: !data.shootDetails.isWatermarkBackground } })}
-                        className={`px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border ${
-                          data.shootDetails.isWatermarkBackground
-                            ? 'bg-purple-600 text-white border-purple-600'
-                            : 'bg-zinc-100 text-zinc-600 border-zinc-300'
-                        }`}
-                      >
-                        {data.shootDetails.isWatermarkBackground ? 'Watermark ON (40%)' : 'Watermark OFF'}
-                      </button>
-                    </div>
-
-                    {/* Photo Height Resizer */}
-                    {!data.shootDetails.isWatermarkBackground && (
+                    {/* Photo Height Resizer (For Arch, Rounded, Rectangle, Full-Width) */}
+                    {data.shootDetails.frameShape !== 'background' && (
                       <div>
                         <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
                           <span>Photo Height</span>
@@ -1555,16 +1538,23 @@ function WedGrapherAiryBuilderContent() {
               )}
             </div>
 
-            {/* 3. PRE-WEDDING SHOOT PAGE SECTION (EXACT REFERENCE MATCH: HEADING, 1 DAY SHOOT, CREW, DELIVERABLES, ARCH LAYOUT & 100% EDGE-TO-EDGE WATERMARK) */}
-            <div className="pt-10 border-t space-y-8 relative overflow-hidden text-xs" style={{ borderColor: borderColor }}>
+            {/* 3. PRE-WEDDING SHOOT PAGE SECTION (ALL 5 PHOTO LAYOUT STYLES: ARCH, ROUNDED, RECTANGLE, FULL-WIDTH & BACKGROUND WATERMARK) */}
+            <div 
+              className={`pt-10 border-t space-y-8 relative text-xs ${
+                data.shootDetails.frameShape === 'background'
+                  ? '-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 px-10 sm:px-14 pb-10 overflow-hidden'
+                  : 'overflow-hidden'
+              }`} 
+              style={{ borderColor: borderColor }}
+            >
               
-              {/* 100% Full Bleed Edge-To-Edge Background Watermark (0 Margin / Space on Top/Bottom/Left/Right) */}
-              {data.shootDetails.photo && data.shootDetails.isWatermarkBackground && (
-                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mt-10 sm:-mt-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] h-[calc(100%+5rem)] sm:h-[calc(100%+7rem)] absolute inset-0 z-0 pointer-events-none select-none opacity-40 overflow-hidden">
+              {/* Option 5: 100% Cut-To-Cut Edge-To-Edge Background Watermark (0 Space / 0 Overflow) */}
+              {data.shootDetails.photo && data.shootDetails.frameShape === 'background' && (
+                <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden">
                   <img 
                     src={data.shootDetails.photo} 
                     alt="Pre-Wedding Background Watermark"
-                    className="w-full h-full object-cover filter grayscale-[15%]"
+                    className="w-full h-full object-cover filter grayscale-[15%] opacity-40"
                     style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/10 to-transparent" />
@@ -1625,8 +1615,23 @@ function WedGrapherAiryBuilderContent() {
                   </ul>
                 </div>
 
-                {/* Pre-Wedding Featured Photo (Frame Shapes: Arch, Rounded, Rectangle + Custom Focal Point objectPosition) */}
-                {data.shootDetails.photo && !data.shootDetails.isWatermarkBackground && (
+                {/* Option 4: Full Width Banner (Like About Us Edge-To-Edge 0 Left/Right Margin) */}
+                {data.shootDetails.photo && data.shootDetails.frameShape === 'full-width' && (
+                  <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
+                    <img 
+                      src={data.shootDetails.photo} 
+                      alt="Pre-Wedding Full Bleed"
+                      className="w-full object-cover bg-transparent rounded-none block shadow-xs"
+                      style={{ 
+                        height: `${data.shootDetails.photoHeight || 350}px`,
+                        objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` 
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Options 1, 2, 3: Arch, Rounded, Rectangle Centered Cards */}
+                {data.shootDetails.photo && ['arch', 'rounded', 'rectangle'].includes(data.shootDetails.frameShape || 'arch') && (
                   <div className="mt-6 max-w-xl mx-auto">
                     <div 
                       className={`overflow-hidden shadow-md relative transition-all duration-300 ${
