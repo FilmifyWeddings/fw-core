@@ -122,6 +122,19 @@ export default function WorkspaceQuotationsGalleryPage() {
         const currentUserId = session?.user?.id || 'demo_user';
         setUserId(currentUserId);
 
+        // Load client-side gallery cache for immediate 0-delay display
+        const cached = localStorage.getItem(`wg_gallery_cache_${currentUserId}`);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              setUserImages(parsed);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         // Fetch User Quotations for current workspace
         const { data: qData } = await supabase
           .from('quotations')
@@ -142,6 +155,7 @@ export default function WorkspaceQuotationsGalleryPage() {
 
         if (imgData) {
           setUserImages(imgData as UserGalleryImage[]);
+          localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgData));
         }
       } catch (err) {
         console.warn('[QuotationsPage] Load user data error:', err);
@@ -350,15 +364,19 @@ export default function WorkspaceQuotationsGalleryPage() {
               <ImageIcon className="w-5 h-5" />
             </div>
 
-            {/* + Add Image Button triggers File Picker directly */}
+            {/* + Add Image Button triggers File Picker directly (Disabled during loading guard) */}
             <button 
               type="button"
               onClick={triggerFileSelection}
-              disabled={isUploading}
-              className="px-3 py-1.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              disabled={isUploading || loading}
+              className={`px-3 py-1.5 rounded-xl text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
+                loading || userImages.length >= 10 
+                  ? 'bg-zinc-400 cursor-not-allowed opacity-75' 
+                  : 'bg-pink-600 hover:bg-pink-700'
+              }`}
             >
               <Plus className="w-3.5 h-3.5" />
-              {isUploading ? 'Uploading...' : 'Add Image'}
+              {loading ? 'Syncing...' : isUploading ? 'Uploading...' : 'Add Image'}
             </button>
           </div>
 

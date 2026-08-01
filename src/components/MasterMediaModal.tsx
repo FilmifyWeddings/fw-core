@@ -3,10 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ImageIcon, Upload, X, Trash2, AlertTriangle, Check, HardDrive, Layers, RefreshCw
+  ImageIcon, Upload, X, Trash2, AlertTriangle, Check, HardDrive, Layers, RefreshCw, Loader2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
+import { compressImageClient } from '@/lib/master-image-manager';
 
 export interface UserGalleryImage {
   id?: string;
@@ -46,7 +46,26 @@ export function MasterMediaModal({
   const [isUploading, setIsUploading] = useState(false);
   const [quotaWarningModal, setQuotaWarningModal] = useState<string | null>(null);
 
-  // Fetch isolated user gallery images from Supabase `user_gallery_images`
+  // 1. Client-Side Cache (localStorage) Initialization for Zero-Delay Loading
+  useEffect(() => {
+    if (userId) {
+      const cacheKey = `wg_gallery_cache_${userId}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setImages(parsed);
+            setLoading(false);
+          }
+        } catch {
+          // ignore cache parse error
+        }
+      }
+    }
+  }, [userId]);
+
+  // 2. Fetch isolated user gallery images from Supabase & update Cache
   const fetchUserImages = async () => {
     if (!userId) return;
     setLoading(true);
@@ -59,6 +78,8 @@ export function MasterMediaModal({
 
       if (!error && data) {
         setImages(data as UserGalleryImage[]);
+        // Update client-side cache
+        localStorage.setItem(`wg_gallery_cache_${userId}`, JSON.stringify(data));
       }
     } catch (err) {
       console.warn('[MasterMediaModal] Error loading images:', err);
@@ -82,12 +103,18 @@ export function MasterMediaModal({
   const isSizeLimitReached = totalBytes >= maxStorageBytes;
   const isQuotaExceeded = isCountLimitReached || isSizeLimitReached;
 
-  // File Upload Handler with WebP Quality-Preserved Compression & Quota Enforcement
+  // File Upload Handler with WebP Quality-Preserved Compression & Database Enforcement
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Strict Dual Quota Check
+    // Loading Guard: Prevent uploads if state is still fetching
+    if (loading) {
+      alert('Please wait for gallery to sync before uploading.');
+      return;
+    }
+
+    // Strict Client Quota Check
     if (isCountLimitReached) {
       setQuotaWarningModal('Image Count Limit Exceeded: You have reached the maximum 10 images limit per user account. Please delete existing images to upload new ones.');
       return;
@@ -101,6 +128,21 @@ export function MasterMediaModal({
     setIsUploading(true);
 
     try {
+      // 3. Database Enforcement Check (Server-Side DB Verification before insert)
+      const { data: dbRecords, count: dbCount } = await supabase
+        .from('user_gallery_images')
+        .select('file_size', { count: 'exact' })
+        .eq('workspace_id', userId || 'demo_user');
+
+      const serverCount = dbCount || dbRecords?.length || 0;
+      const serverBytes = (dbRecords || []).reduce((acc, i) => acc + (i.file_size || 0), 0);
+
+      if (serverCount >= 10 || serverBytes + file.size > maxStorageBytes) {
+        setQuotaWarningModal('Database Quota Guard: Upload rejected by server. You have reached 10 Images OR 30 MB Total Storage.');
+        setIsUploading(false);
+        return;
+      }
+
       // Quality-Preserved WebP Compression (Max Dimension 2048px, Quality 85%)
       const compressedWebPFile = await compressImageClient(file, {
         maxWidth: 2048,
@@ -113,7 +155,7 @@ export function MasterMediaModal({
         const base64Url = event.target?.result as string;
         if (base64Url) {
           // Save to Supabase `user_gallery_images` table
-          const { data: newDbImg } = await supabase
+          const { data: newDbImg, error: dbInsertErr } = await supabase
             .from('user_gallery_images')
             .insert({
               workspace_id: userId || 'demo_user',
@@ -125,8 +167,12 @@ export function MasterMediaModal({
             .select()
             .single();
 
-          if (newDbImg) {
-            setImages(prev => [newDbImg as UserGalleryImage, ...prev]);
+          if (!dbInsertErr && newDbImg) {
+            setImages(prev => {
+              const updated = [newDbImg as UserGalleryImage, ...prev];
+              localStorage.setItem(`wg_gallery_cache_${userId}`, JSON.stringify(updated));
+              return updated;
+            });
             if (onSelectImage) {
               onSelectImage(newDbImg.url);
             }
@@ -138,7 +184,11 @@ export function MasterMediaModal({
               file_size: compressedWebPFile.size,
               compression_quality: '85% WebP',
             };
-            setImages(prev => [fallbackObj, ...prev]);
+            setImages(prev => {
+              const updated = [fallbackObj, ...prev];
+              localStorage.setItem(`wg_gallery_cache_${userId}`, JSON.stringify(updated));
+              return updated;
+            });
             if (onSelectImage) {
               onSelectImage(base64Url);
             }
@@ -165,7 +215,11 @@ export function MasterMediaModal({
         // fallback
       }
     }
-    setImages(prev => prev.filter(img => img.id !== imgId && img.url !== imgUrl));
+    setImages(prev => {
+      const updated = prev.filter(img => img.id !== imgId && img.url !== imgUrl);
+      localStorage.setItem(`wg_gallery_cache_${userId}`, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   if (!isOpen) return null;
@@ -205,7 +259,7 @@ export function MasterMediaModal({
                 <span>Account Storage Quota</span>
               </span>
               <span className={isQuotaExceeded ? 'text-rose-600 font-extrabold' : 'text-zinc-600'}>
-                {totalCount} / 10 Images ({totalMB} / 30 MB)
+                {loading ? 'Syncing...' : `${totalCount} / 10 Images (${totalMB} / 30 MB)`}
               </span>
             </div>
 
@@ -220,7 +274,7 @@ export function MasterMediaModal({
             </div>
           </div>
 
-          {/* Upload Area with WebP Compression & Quota Warning */}
+          {/* Upload Area with Loading Guard & Quota Warning */}
           <div className={`p-4 rounded-2xl border border-dashed flex flex-col items-center justify-center text-center space-y-2 transition-all ${
             isQuotaExceeded 
               ? 'bg-rose-50/60 border-rose-300' 
@@ -236,8 +290,9 @@ export function MasterMediaModal({
 
             <button
               type="button"
-              disabled={isUploading}
+              disabled={isUploading || loading}
               onClick={() => {
+                if (loading) return;
                 if (isQuotaExceeded) {
                   setQuotaWarningModal('Upload Blocked: Account Quota Limit Exceeded (10 Images or 30 MB total). Please delete existing media assets to free up space.');
                   return;
@@ -245,12 +300,17 @@ export function MasterMediaModal({
                 hiddenFileInputRef.current?.click();
               }}
               className={`px-5 py-2.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer ${
-                isQuotaExceeded
-                  ? 'bg-zinc-400 text-white cursor-not-allowed'
+                isQuotaExceeded || loading
+                  ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed border border-zinc-300'
                   : 'bg-black hover:bg-zinc-800 text-white'
               }`}
             >
-              {isUploading ? (
+              {loading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                  <span>Syncing Storage State...</span>
+                </>
+              ) : isUploading ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
                   <span>Compressing WebP...</span>
@@ -268,7 +328,7 @@ export function MasterMediaModal({
             </p>
           </div>
 
-          {/* User Media Assets Grid */}
+          {/* User Media Assets Grid with Skeleton Loading Guard */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-[11px] font-bold text-zinc-400 tracking-wider uppercase">
               <span>Your Media Library ({images.length})</span>
@@ -280,9 +340,11 @@ export function MasterMediaModal({
               </button>
             </div>
 
-            {loading ? (
-              <div className="py-8 text-center text-xs text-zinc-400 font-medium">
-                Loading workspace media assets...
+            {loading && images.length === 0 ? (
+              <div className="grid grid-cols-4 gap-3 py-4">
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} className="aspect-square rounded-2xl bg-zinc-100 animate-pulse border border-zinc-200" />
+                ))}
               </div>
             ) : images.length === 0 ? (
               <div className="py-6 text-center space-y-2">
