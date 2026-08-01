@@ -152,9 +152,9 @@ export function WhatsAppTemplateMediaModal({
             </div>
           </div>
 
-          {/* VISUAL GRID SYSTEM (grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4) */}
+          {/* JUSTIFIED PHOTO GALLERY GRID SYSTEM (grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4) */}
           <div className="space-y-2 flex-1 overflow-hidden flex flex-col min-h-0">
-            <div className="flex items-center justify-between text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider px-1">
+            <div className="flex items-center justify-between text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider px-1 shrink-0">
               <span>Media Assets Gallery ({files.length})</span>
             </div>
 
@@ -170,7 +170,7 @@ export function WhatsAppTemplateMediaModal({
                 <p className="text-[11px] text-zinc-400">Media uploaded when creating templates will appear here under your 500 MB quota.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-2 w-full h-auto auto-rows-fr content-start overflow-y-auto max-h-[55vh] flex-1 min-h-0">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 p-1 w-full overflow-y-auto max-h-[60vh] flex-1 min-h-0">
                 {files.map((file, idx) => {
                   const isVideo = file.mime_type?.includes('video') || file.name.match(/\.(mp4|webm|mov)$/i);
                   const isDoc = file.mime_type?.includes('pdf') || file.name.match(/\.(pdf|doc|docx|txt)$/i);
@@ -179,32 +179,32 @@ export function WhatsAppTemplateMediaModal({
                   return (
                     <div
                       key={idx}
-                      className="relative aspect-square w-full h-full rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 group shadow-sm flex flex-col items-center justify-center cursor-default transition-all hover:shadow-md"
+                      className="relative w-full aspect-square rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-950 group shadow-sm transition-all hover:shadow-xl hover:border-green-500 cursor-default"
                     >
                       {/* Media Render Layer */}
                       {isVideo ? (
-                        <div className="relative w-full h-full bg-zinc-950 flex flex-col items-center justify-center">
+                        <div className="absolute inset-0 w-full h-full bg-zinc-950 flex flex-col items-center justify-center">
                           <video 
                             src={file.url} 
                             preload="metadata" 
                             className="w-full h-full object-cover opacity-80" 
                           />
-                          <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg">
                               <Play className="w-5 h-5 fill-white ml-0.5" />
                             </div>
                           </div>
-                          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md text-[8px] font-extrabold text-green-400 uppercase tracking-wider flex items-center gap-1">
+                          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md text-[8px] font-extrabold text-green-400 uppercase tracking-wider flex items-center gap-1 z-10">
                             <Film className="w-2.5 h-2.5" /> VIDEO
                           </span>
                         </div>
                       ) : isDoc ? (
-                        <div className="w-full h-full p-4 bg-slate-100 dark:bg-zinc-900 flex flex-col items-center justify-center text-center space-y-2">
+                        <div className="absolute inset-0 w-full h-full p-4 bg-zinc-900 flex flex-col items-center justify-center text-center space-y-2">
                           <FileText className="w-10 h-10 text-amber-500" />
-                          <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-mono font-bold uppercase border border-amber-500/20">
+                          <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px] font-mono font-bold uppercase border border-amber-500/20">
                             PDF / DOC
                           </span>
-                          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate max-w-full px-2">
+                          <span className="text-[10px] text-zinc-300 truncate max-w-full px-2">
                             {file.name}
                           </span>
                         </div>
@@ -212,7 +212,7 @@ export function WhatsAppTemplateMediaModal({
                         <img 
                           src={file.url} 
                           alt={file.name} 
-                          className="w-full h-full object-cover"
+                          className="absolute inset-0 w-full h-full object-cover"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';
                           }}
@@ -220,7 +220,7 @@ export function WhatsAppTemplateMediaModal({
                       )}
 
                       {/* HOVER OVERLAY WITH EYE & DELETE BUTTONS */}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center gap-2.5 backdrop-blur-xs z-20">
                         {/* View Button (Eye Icon) */}
                         <button
                           type="button"
@@ -257,9 +257,9 @@ export function WhatsAppTemplateMediaModal({
                         </button>
                       </div>
 
-                      {/* BOTTOM BADGE ON EACH CARD */}
-                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-2 text-left pointer-events-none">
-                        <span className="inline-block max-w-full text-[9px] font-bold text-white/90 truncate bg-black/40 backdrop-blur-xs px-1.5 py-0.5 rounded border border-white/10">
+                      {/* BOTTOM OVERLAY BADGE ON EACH CARD */}
+                      <div className="absolute bottom-2 inset-x-2 z-10 pointer-events-none">
+                        <span className="px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[9px] font-bold text-white/90 border border-white/15 truncate block max-w-full">
                           Template: {templateName}
                         </span>
                       </div>
