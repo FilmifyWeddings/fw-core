@@ -82,19 +82,20 @@ const DEFAULT_AIRY_PROPOSAL = {
     background: 'Page colour',
   },
 
-  // Section 3: Shoot Details
+  // Section 3: Pre-Wedding Shoot Details
   shootDetails: {
     kicker: 'WHAT WE DO',
-    heading: 'PRE-WEDDING SHOOT',
-    rows: [
-      { id: '1', label: 'Number of days', value: '1 day photo & video shoot' },
-      { id: '2', label: 'Crew', value: '1 photographer + 1 cinematographer' },
-      { id: '3', label: 'Sessions', value: '2-3 sessions of 1-1.5 hours each' },
-    ],
-    textAlign: 'Left',
-    background: 'Page colour',
+    heading: 'Pre-Wedding Shoot',
+    daysText: '1 Day Shoot',
+    crewText: 'Candid Photography\nCinematography\nPortable Changing Room',
+    deliverablesHeading: 'Deliverables',
+    deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
     photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 599,
+    photoHeight: 350,
+    photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle',
+    isWatermarkBackground: false,
+    watermarkOpacity: 40,
     staysInFrame: 'Middle',
   },
 
@@ -1022,15 +1023,15 @@ function WedGrapherAiryBuilderContent() {
               )}
             </div>
 
-            {/* 3. Shoot details Card */}
+            {/* 3. Pre-Wedding Shoot Details Card */}
             <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
               <div 
                 onClick={() => setOpenCard(openCard === 'shoot' ? null : 'shoot')}
                 className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
               >
                 <div className="flex items-center gap-2">
-                  <Camera className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>3. Shoot details</span>
+                  <Camera className="w-3.5 h-3.5 text-amber-700" />
+                  <span>3. Pre-Wedding</span>
                 </div>
                 {openCard === 'shoot' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </div>
@@ -1038,55 +1039,57 @@ function WedGrapherAiryBuilderContent() {
               {openCard === 'shoot' && (
                 <div className="p-3 space-y-3 bg-white">
                   <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Kicker</label>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
                     <input
                       type="text"
-                      value={data.shootDetails.kicker}
-                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, kicker: e.target.value } })}
+                      value={data.shootDetails.heading || 'Pre-Wedding Shoot'}
+                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, heading: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Number of Days</label>
+                    <input
+                      type="text"
+                      value={data.shootDetails.daysText || '1 Day Shoot'}
+                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, daysText: e.target.value } })}
                       className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
-                    <input
-                      type="text"
-                      value={data.shootDetails.heading}
-                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, heading: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Crew Items (One per line)</label>
+                    <textarea
+                      rows={3}
+                      value={data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room'}
+                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, crewText: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none text-[11px]"
                     />
                   </div>
 
-                  {/* Rows Editor */}
-                  <div className="space-y-2 pt-2 border-t border-zinc-100">
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Rows</span>
-                    {data.shootDetails.rows.map((row, idx) => (
-                      <div key={row.id} className="p-2 rounded-xl bg-zinc-50 border border-zinc-200 space-y-1 relative">
-                        <input
-                          type="text"
-                          value={row.label}
-                          onChange={(e) => {
-                            const newRows = [...data.shootDetails.rows];
-                            newRows[idx].label = e.target.value;
-                            setData({ ...data, shootDetails: { ...data.shootDetails, rows: newRows } });
-                          }}
-                          className="w-full p-1 bg-white rounded border border-zinc-200 text-[11px] font-bold text-zinc-900"
-                        />
-                        <input
-                          type="text"
-                          value={row.value}
-                          onChange={(e) => {
-                            const newRows = [...data.shootDetails.rows];
-                            newRows[idx].value = e.target.value;
-                            setData({ ...data, shootDetails: { ...data.shootDetails, rows: newRows } });
-                          }}
-                          className="w-full p-1 bg-white rounded border border-zinc-200 text-[11px] text-zinc-700"
-                        />
-                      </div>
-                    ))}
+                  <div className="pt-2 border-t border-zinc-100 space-y-2">
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables Heading</label>
+                    <input
+                      type="text"
+                      value={data.shootDetails.deliverablesHeading || 'Deliverables'}
+                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesHeading: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                    />
+
+                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables Items (One per line)</label>
+                    <textarea
+                      rows={4}
+                      value={data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel'}
+                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none text-[11px]"
+                    />
                   </div>
 
-                  <div className="pt-2 border-t border-zinc-100 space-y-2">
+                  {/* Photo Customizer & Alignment Options */}
+                  <div className="pt-2 border-t border-zinc-100 space-y-2.5">
+                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Pre-Wedding Photo & Layout</span>
+                    
                     <div className="flex items-center gap-2">
                       {data.shootDetails.photo && (
                         <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
@@ -1115,19 +1118,82 @@ function WedGrapherAiryBuilderContent() {
                       )}
                     </div>
 
+                    {/* Photo Alignment Dropdown (Left Fit, Right Fit, Center Card, Full Bleed) */}
                     <div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
-                        <span>Photo Height ({data.shootDetails.photoHeight}px)</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="200"
-                        max="800"
-                        value={data.shootDetails.photoHeight}
-                        onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoHeight: Number(e.target.value) } })}
-                        className="w-full accent-black cursor-pointer"
-                      />
+                      <label className="block text-[9px] font-bold text-zinc-500 mb-1">Photo Alignment / Layout Style</label>
+                      <select
+                        value={data.shootDetails.photoAlignment || 'Center Card'}
+                        onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoAlignment: e.target.value as any } })}
+                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                      >
+                        <option value="Center Card">Center Card (Standard)</option>
+                        <option value="Left Fit">Left Fit (Side Floating)</option>
+                        <option value="Right Fit">Right Fit (Side Floating)</option>
+                        <option value="Full Bleed">Full Bleed (Cut-To-Cut Edge)</option>
+                      </select>
                     </div>
+
+                    {/* Frame Shape Options (Arch, Rounded, Rectangle) */}
+                    <div>
+                      <label className="block text-[9px] font-bold text-zinc-500 mb-1">Frame Shape</label>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { id: 'arch', label: 'Arch ⋂' },
+                          { id: 'rounded', label: 'Rounded ▢' },
+                          { id: 'rectangle', label: 'Rectangle ▭' },
+                        ].map(shape => (
+                          <button
+                            key={shape.id}
+                            type="button"
+                            onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: shape.id as any } })}
+                            className={`flex-1 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                              (data.shootDetails.frameShape || 'rounded') === shape.id
+                                ? 'bg-black text-white border-black'
+                                : 'bg-zinc-50 text-zinc-700 border-zinc-200'
+                            }`}
+                          >
+                            {shape.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Background Watermark Mode (40% Opacity Overlay) Toggle */}
+                    <div className="pt-1 flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-bold text-zinc-700 block">40% Background Watermark</span>
+                        <span className="text-[9px] text-zinc-400 block">Fill page background with 40% photo</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, isWatermarkBackground: !data.shootDetails.isWatermarkBackground } })}
+                        className={`px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border ${
+                          data.shootDetails.isWatermarkBackground
+                            ? 'bg-purple-600 text-white border-purple-600'
+                            : 'bg-zinc-100 text-zinc-600 border-zinc-300'
+                        }`}
+                      >
+                        {data.shootDetails.isWatermarkBackground ? 'Watermark ON (40%)' : 'Watermark OFF'}
+                      </button>
+                    </div>
+
+                    {/* Photo Height Resizer */}
+                    {!data.shootDetails.isWatermarkBackground && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                          <span>Photo Height</span>
+                          <span>{data.shootDetails.photoHeight || 350}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="150"
+                          max="700"
+                          value={data.shootDetails.photoHeight || 350}
+                          onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoHeight: Number(e.target.value) } })}
+                          className="w-full accent-black cursor-pointer"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1473,34 +1539,111 @@ function WedGrapherAiryBuilderContent() {
               )}
             </div>
 
-            {/* 3. SHOOT DETAILS SECTION */}
-            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
-                {data.shootDetails.kicker}
-              </span>
-              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                {data.shootDetails.heading}
-              </h2>
-
-              <div className="space-y-3">
-                {data.shootDetails.rows.map(row => (
-                  <div key={row.id} className="space-y-0.5 border-b pb-2" style={{ borderColor: borderColor }}>
-                    <span className="text-[9px] font-bold uppercase tracking-wider block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>{row.label}</span>
-                    <span className="text-xs font-medium" style={{ color: textColor, fontFamily: data.secondaryFont }}>{row.value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {data.shootDetails.photo && (
-                <div className="rounded-2xl overflow-hidden mt-4 shadow-md bg-transparent" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
+            {/* 3. PRE-WEDDING SHOOT PAGE SECTION (EXACT REFERENCE MATCH: HEADING, 1 DAY SHOOT, CREW, DELIVERABLES, ALIGNMENT & 40% WATERMARK) */}
+            <div className="pt-10 border-t space-y-8 relative overflow-hidden text-xs" style={{ borderColor: borderColor }}>
+              
+              {/* Optional 40% Background Watermark Photo Overlay */}
+              {data.shootDetails.photo && data.shootDetails.isWatermarkBackground && (
+                <div className="absolute inset-0 z-0 pointer-events-none select-none opacity-40 overflow-hidden">
                   <img 
                     src={data.shootDetails.photo} 
-                    alt="Pre-Wedding Shoot"
-                    className="w-full object-cover object-center bg-transparent"
-                    style={{ height: `${data.shootDetails.photoHeight}px` }}
+                    alt="Pre-Wedding Background Watermark"
+                    className="w-full h-full object-cover object-center filter grayscale-[20%]"
                   />
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
                 </div>
               )}
+
+              <div className="relative z-10 space-y-6">
+                
+                {/* Main Heading: Pre-Wedding Shoot */}
+                <div className="text-center space-y-1">
+                  <h2 
+                    className="text-3xl sm:text-4xl tracking-wide font-normal" 
+                    style={{ color: textColor, fontFamily: data.primaryFont }}
+                  >
+                    {data.shootDetails.heading || 'Pre-Wedding Shoot'}
+                  </h2>
+                </div>
+
+                {/* Days & Crew Bullet List (Matching User's Reference Screenshot) */}
+                <div className="space-y-3 max-w-lg mx-auto pl-4 sm:pl-8">
+                  <p 
+                    className="text-sm font-semibold tracking-wide"
+                    style={{ color: textColor, fontFamily: data.secondaryFont }}
+                  >
+                    {data.shootDetails.daysText || '1 Day Shoot'}
+                  </p>
+
+                  <ul className="space-y-1.5 list-disc list-inside text-xs font-normal opacity-90 leading-relaxed" style={{ color: textColor, fontFamily: data.secondaryFont }}>
+                    {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
+                      .split('\n')
+                      .filter(Boolean)
+                      .map((item, idx) => (
+                        <li key={idx} className="tracking-wide">
+                          <span className="font-medium ml-1">{item.trim()}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+
+                {/* Deliverables Section (Matching User's Reference Screenshot) */}
+                <div className="pt-4 space-y-4 max-w-lg mx-auto pl-4 sm:pl-8">
+                  <h3 
+                    className="text-2xl sm:text-3xl tracking-wide font-normal text-center sm:text-left" 
+                    style={{ color: textColor, fontFamily: data.primaryFont }}
+                  >
+                    {data.shootDetails.deliverablesHeading || 'Deliverables'}
+                  </h3>
+
+                  <ul className="space-y-2 list-disc list-inside text-xs font-normal opacity-90 leading-relaxed" style={{ color: textColor, fontFamily: data.secondaryFont }}>
+                    {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
+                      .split('\n')
+                      .filter(Boolean)
+                      .map((item, idx) => (
+                        <li key={idx} className="tracking-wide">
+                          <span className="font-medium ml-1">{item.trim()}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+
+                {/* Pre-Wedding Featured Photo (Supports Alignment: Center, Left Fit, Right Fit, Full Bleed + Frame Shape: Arch, Rounded, Rectangle) */}
+                {data.shootDetails.photo && !data.shootDetails.isWatermarkBackground && (
+                  <div className={`mt-6 transition-all duration-300 ${
+                    data.shootDetails.photoAlignment === 'Full Bleed'
+                      ? '-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none'
+                      : data.shootDetails.photoAlignment === 'Left Fit'
+                      ? 'max-w-md mr-auto'
+                      : data.shootDetails.photoAlignment === 'Right Fit'
+                      ? 'max-w-md ml-auto'
+                      : 'max-w-xl mx-auto'
+                  }`}>
+                    <div 
+                      className={`overflow-hidden shadow-md relative transition-all duration-300 ${
+                        data.shootDetails.frameShape === 'arch'
+                          ? 'rounded-t-[999px] rounded-b-none'
+                          : data.shootDetails.frameShape === 'rectangle'
+                          ? 'rounded-none'
+                          : 'rounded-2xl'
+                      }`}
+                      style={{ 
+                        height: `${data.shootDetails.photoHeight || 350}px`,
+                        borderColor: photoBorderColor,
+                        borderWidth: '1px',
+                        backgroundColor: 'transparent'
+                      }}
+                    >
+                      <img 
+                        src={data.shootDetails.photo} 
+                        alt="Pre-Wedding Shoot"
+                        className="w-full h-full object-cover object-center bg-transparent"
+                      />
+                    </div>
+                  </div>
+                )}
+
+              </div>
             </div>
 
             {/* 4. WHAT'S INCLUDED SECTION */}
