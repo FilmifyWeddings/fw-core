@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Folder, HardDrive, Trash2, Eye, X, FileText, Play, Film, 
-  Image as ImageIcon, RefreshCw, Tag, ExternalLink
+  Image as ImageIcon, RefreshCw, Tag, ExternalLink, Check
 } from 'lucide-react';
 import { 
   WhatsAppMediaFile, 
@@ -36,7 +36,7 @@ export function WhatsAppTemplateMediaModal({
     filesCount: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [activePreview, setActivePreview] = useState<WhatsAppMediaFile | null>(null);
+  const [selectedMediaForPreview, setSelectedMediaForPreview] = useState<WhatsAppMediaFile | null>(null);
 
   const loadMediaData = async () => {
     if (!workspaceId) return;
@@ -69,10 +69,10 @@ export function WhatsAppTemplateMediaModal({
     }
   }, [workspaceId]);
 
-  const handleDelete = async (file: WhatsAppMediaFile) => {
-    if (!confirm(`Are you sure you want to delete "${file.name}"? This will instantly free up storage.`)) return;
+  const handleDeleteFile = async (file: WhatsAppMediaFile) => {
+    if (!confirm(`Are you sure you want to delete "${file.name}"? This will instantly free up storage space under your 500 MB quota.`)) return;
 
-    // Instant local state update for zero-delay user feedback
+    // Instant local state update for zero-delay UI grid and quota meter feedback
     setFiles(prev => prev.filter(f => f.name !== file.name));
     setStats(prev => {
       const newTotalBytes = Math.max(0, prev.totalBytes - file.size);
@@ -100,7 +100,7 @@ export function WhatsAppTemplateMediaModal({
           exit={{ opacity: 0, scale: 0.95 }}
           className="bg-white dark:bg-zinc-950 rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden relative max-h-[90vh] flex flex-col"
         >
-          {/* Top Bar */}
+          {/* Header Bar */}
           <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-900 shrink-0">
             <div>
               <h3 className="text-base font-bold text-zinc-900 dark:text-white flex items-center gap-2">
@@ -118,7 +118,7 @@ export function WhatsAppTemplateMediaModal({
             </button>
           </div>
 
-          {/* Storage Quota Progress Meter Header (500 MB Limit) */}
+          {/* Storage Quota Progress Meter Header (Strict 500 MB Limit) */}
           <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-2.5 shrink-0">
             <div className="flex items-center justify-between text-xs font-bold">
               <span className="flex items-center gap-2 text-zinc-900 dark:text-white">
@@ -141,7 +141,7 @@ export function WhatsAppTemplateMediaModal({
             </div>
 
             <div className="flex justify-between items-center text-[11px] text-zinc-500 dark:text-zinc-400 font-medium pt-0.5">
-              <span>Uploaded Media Files: <strong className="text-zinc-800 dark:text-zinc-200">{stats.filesCount}</strong></span>
+              <span>Uploaded Media Assets: <strong className="text-zinc-800 dark:text-zinc-200">{stats.filesCount}</strong></span>
               <button 
                 type="button"
                 onClick={loadMediaData}
@@ -152,7 +152,7 @@ export function WhatsAppTemplateMediaModal({
             </div>
           </div>
 
-          {/* iOS-Style Visual Media Gallery Grid (3-4 Columns) */}
+          {/* VISUAL GRID SYSTEM (grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4) */}
           <div className="space-y-2 flex-1 overflow-hidden flex flex-col min-h-0">
             <div className="flex items-center justify-between text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider px-1">
               <span>Media Assets Gallery ({files.length})</span>
@@ -161,7 +161,7 @@ export function WhatsAppTemplateMediaModal({
             {loading ? (
               <div className="py-16 text-center space-y-2">
                 <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-xs font-bold text-zinc-500">Loading iOS visual gallery...</p>
+                <p className="text-xs font-bold text-zinc-500">Loading visual gallery...</p>
               </div>
             ) : files.length === 0 ? (
               <div className="py-16 text-center space-y-2 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/30">
@@ -170,108 +170,98 @@ export function WhatsAppTemplateMediaModal({
                 <p className="text-[11px] text-zinc-400">Media uploaded when creating templates will appear here under your 500 MB quota.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5 overflow-y-auto pr-1 flex-1 min-h-0">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 overflow-y-auto pr-1 flex-1 min-h-0">
                 {files.map((file, idx) => {
-                  const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
                   const isVideo = file.mime_type?.includes('video') || file.name.match(/\.(mp4|webm|mov)$/i);
                   const isDoc = file.mime_type?.includes('pdf') || file.name.match(/\.(pdf|doc|docx|txt)$/i);
+                  const templateName = file.usedInTemplates[0] || 'Unlinked';
 
                   return (
                     <div
                       key={idx}
-                      className="group relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-900 flex flex-col shadow-sm hover:border-green-500 dark:hover:border-green-500 transition-all cursor-default"
+                      className="aspect-square overflow-hidden relative group rounded-xl border border-zinc-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 flex flex-col cursor-default shadow-sm transition-all"
                     >
-                      {/* Thumbnail Container */}
-                      <div className="relative aspect-square w-full bg-zinc-950 overflow-hidden flex items-center justify-center">
-                        {isVideo ? (
-                          <div className="relative w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-white">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center shadow-lg">
-                              <Play className="w-5 h-5 text-white fill-white ml-0.5" />
-                            </div>
-                            <span className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md text-[9px] font-extrabold text-white uppercase tracking-wider flex items-center gap-1">
-                              <Film className="w-3 h-3 text-green-400" /> VIDEO
-                            </span>
-                          </div>
-                        ) : isDoc ? (
-                          <div className="w-full h-full p-4 bg-gradient-to-br from-zinc-800 to-zinc-950 flex flex-col items-center justify-center text-center space-y-2">
-                            <FileText className="w-10 h-10 text-amber-400" />
-                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold uppercase">
-                              {file.name.split('.').pop() || 'DOC'}
-                            </span>
-                          </div>
-                        ) : (
-                          <img 
+                      {/* Media Render Layer */}
+                      {isVideo ? (
+                        <div className="relative w-full h-full bg-zinc-950 flex flex-col items-center justify-center">
+                          <video 
                             src={file.url} 
-                            alt={file.name} 
-                            className="w-full h-full object-cover bg-transparent"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
+                            preload="metadata" 
+                            className="w-full h-full object-cover opacity-80" 
                           />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg">
+                              <Play className="w-5 h-5 fill-white ml-0.5" />
+                            </div>
+                          </div>
+                          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md text-[8px] font-extrabold text-green-400 uppercase tracking-wider flex items-center gap-1">
+                            <Film className="w-2.5 h-2.5" /> VIDEO
+                          </span>
+                        </div>
+                      ) : isDoc ? (
+                        <div className="w-full h-full p-4 bg-slate-100 dark:bg-zinc-900 flex flex-col items-center justify-center text-center space-y-2">
+                          <FileText className="w-10 h-10 text-amber-500" />
+                          <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-mono font-bold uppercase border border-amber-500/20">
+                            PDF / DOC
+                          </span>
+                          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate max-w-full px-2">
+                            {file.name}
+                          </span>
+                        </div>
+                      ) : (
+                        <img 
+                          src={file.url} 
+                          alt={file.name} 
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      )}
+
+                      {/* HOVER OVERLAY WITH EYE & DELETE BUTTONS */}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        {/* View Button (Eye Icon) */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMediaForPreview(file)}
+                          className="p-2.5 rounded-full bg-white text-zinc-900 hover:bg-zinc-100 cursor-pointer shadow-xl transition-transform hover:scale-110"
+                          title="View Lightbox Preview"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+
+                        {/* Select for Template Button (If invoked via builder) */}
+                        {onSelectMediaUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectMediaUrl(file.url);
+                              onClose();
+                            }}
+                            className="p-2.5 rounded-full bg-green-500 text-white hover:bg-green-600 cursor-pointer shadow-xl transition-transform hover:scale-110"
+                            title="Select for Template"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
                         )}
 
-                        {/* Sleek Hover Overlay with View (Eye) & Delete (Trash) */}
-                        <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2.5 transition-all duration-200 backdrop-blur-xs">
-                          {/* Lightbox Eye View Button */}
-                          <button
-                            type="button"
-                            onClick={() => setActivePreview(file)}
-                            className="p-2.5 rounded-full bg-white text-zinc-900 hover:bg-zinc-100 cursor-pointer shadow-xl transition-transform hover:scale-110"
-                            title="View Lightbox Preview"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-
-                          {/* Select for Template Button */}
-                          {onSelectMediaUrl && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onSelectMediaUrl(file.url);
-                                onClose();
-                              }}
-                              className="px-3 py-1.5 rounded-full bg-green-500 text-white text-[10px] font-extrabold hover:bg-green-600 cursor-pointer shadow-xl"
-                            >
-                              Use
-                            </button>
-                          )}
-
-                          {/* Delete Media Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(file)}
-                            className="p-2.5 rounded-full bg-rose-600 text-white hover:bg-rose-700 cursor-pointer shadow-xl transition-transform hover:scale-110"
-                            title="Delete File"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {/* Delete Button (Trash Icon - Red) */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFile(file)}
+                          className="p-2.5 rounded-full bg-rose-600 text-white hover:bg-rose-700 cursor-pointer shadow-xl transition-transform hover:scale-110"
+                          title="Delete File"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
 
-                      {/* File Info & Linked Template Badge */}
-                      <div className="p-2.5 bg-white dark:bg-zinc-900 space-y-1.5 border-t border-zinc-100 dark:border-zinc-800">
-                        <p className="text-[11px] font-bold text-zinc-900 dark:text-white truncate" title={file.name}>
-                          {file.name}
-                        </p>
-
-                        <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
-                          <span>{fileSizeMB} MB</span>
-                          <span>{new Date(file.created_at).toLocaleDateString()}</span>
-                        </div>
-
-                        {/* Linked Template Metadata Badge */}
-                        <div className="pt-0.5">
-                          {file.usedInTemplates.length > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400 text-[9px] font-bold border border-green-200 dark:border-green-900/50 truncate max-w-full">
-                              <Tag className="w-2.5 h-2.5 shrink-0" />
-                              <span className="truncate">Template: {file.usedInTemplates[0]}</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[9px] font-medium border border-zinc-200 dark:border-zinc-700">
-                              Unlinked
-                            </span>
-                          )}
-                        </div>
+                      {/* BOTTOM BADGE ON EACH CARD */}
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-2 text-left pointer-events-none">
+                        <span className="inline-block max-w-full text-[9px] font-bold text-white/90 truncate bg-black/40 backdrop-blur-xs px-1.5 py-0.5 rounded border border-white/10">
+                          Template: {templateName}
+                        </span>
                       </div>
                     </div>
                   );
@@ -290,13 +280,13 @@ export function WhatsAppTemplateMediaModal({
             </button>
           </div>
 
-          {/* Full-Screen Cinematic Lightbox Preview Modal */}
+          {/* Full-Screen Preview Lightbox Modal (selectedMediaForPreview) */}
           <AnimatePresence>
-            {activePreview && (
+            {selectedMediaForPreview && (
               <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
                 <button
                   type="button"
-                  onClick={() => setActivePreview(null)}
+                  onClick={() => setSelectedMediaForPreview(null)}
                   className="fixed top-6 right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all border border-white/15 cursor-pointer shadow-xl z-10 hover:scale-105"
                 >
                   <X className="w-6 h-6" />
@@ -308,30 +298,30 @@ export function WhatsAppTemplateMediaModal({
                   exit={{ opacity: 0, scale: 0.92 }}
                   className="relative max-w-4xl max-h-[85vh] w-full flex flex-col items-center justify-center"
                 >
-                  {activePreview.mime_type?.includes('video') || activePreview.name.match(/\.(mp4|webm|mov)$/i) ? (
+                  {selectedMediaForPreview.mime_type?.includes('video') || selectedMediaForPreview.name.match(/\.(mp4|webm|mov)$/i) ? (
                     <video 
-                      src={activePreview.url} 
+                      src={selectedMediaForPreview.url} 
                       controls 
                       autoPlay 
                       className="max-w-full max-h-[80vh] rounded-3xl border border-white/10 shadow-2xl"
                     />
-                  ) : activePreview.mime_type?.includes('pdf') || activePreview.name.match(/\.(pdf)$/i) ? (
+                  ) : selectedMediaForPreview.mime_type?.includes('pdf') || selectedMediaForPreview.name.match(/\.(pdf)$/i) ? (
                     <div className="w-full h-[75vh] bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 flex flex-col">
-                      <iframe src={activePreview.url} className="w-full h-full border-none" />
+                      <iframe src={selectedMediaForPreview.url} className="w-full h-full border-none" />
                     </div>
                   ) : (
                     <img 
-                      src={activePreview.url} 
-                      alt={activePreview.name} 
+                      src={selectedMediaForPreview.url} 
+                      alt={selectedMediaForPreview.name} 
                       className="max-w-full max-h-[80vh] object-contain rounded-3xl border border-white/10 shadow-2xl"
                     />
                   )}
 
                   <div className="mt-3 text-center text-white space-y-1">
                     <p className="text-sm font-bold flex items-center justify-center gap-2">
-                      <span>{activePreview.name}</span>
+                      <span>{selectedMediaForPreview.name}</span>
                       <a 
-                        href={activePreview.url} 
+                        href={selectedMediaForPreview.url} 
                         target="_blank" 
                         rel="noreferrer"
                         className="text-green-400 hover:text-green-300"
@@ -341,7 +331,7 @@ export function WhatsAppTemplateMediaModal({
                       </a>
                     </p>
                     <p className="text-xs text-zinc-300">
-                      {(activePreview.size / (1024 * 1024)).toFixed(2)} MB • {new Date(activePreview.created_at).toLocaleString()}
+                      {(selectedMediaForPreview.size / (1024 * 1024)).toFixed(2)} MB • {new Date(selectedMediaForPreview.created_at).toLocaleString()}
                     </p>
                   </div>
                 </motion.div>
