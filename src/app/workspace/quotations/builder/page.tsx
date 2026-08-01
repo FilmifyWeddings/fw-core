@@ -1399,77 +1399,78 @@ function WedGrapherAiryBuilderContent() {
 
             </div>
 
-            {/* 2. ABOUT US SECTION (EXACT DESIGN MATCH: REALISTIC BIRDS, INTERLOCKED CORMORANT U&A, CUT-TO-CUT FULL BLEED IMAGE) */}
+            {/* 2. ABOUT US SECTION (100% PIXEL-PERFECT SVG VECTOR MONOGRAM & BIRDS GRAPHIC) */}
             <div className="pt-10 border-t relative overflow-hidden space-y-6" style={{ borderColor: borderColor }}>
               
-              {/* Realistic Flying Birds Silhouette Vector (Top Right V-Formation) */}
-              <div className="absolute top-4 right-4 pointer-events-none opacity-85" style={{ color: kickerColor }}>
-                <svg width="150" height="75" viewBox="0 0 150 75" fill="currentColor">
-                  {/* Lead Crane (Top Right) */}
-                  <path d="M135,6 C131,3 127,6 123,9 C127,7 131,4 136,6 C140,7 144,10 147,11 C143,10 139,9 135,6 Z" />
-                  <path d="M134,7 C137,4 140,5 142,8 C139,7 136,7 134,7 Z" />
-                  
-                  {/* Bird 2 */}
-                  <path d="M112,16 C107,12 102,16 97,20 C102,17 107,13 113,16 C117,18 122,22 125,24 C121,22 116,20 112,16 Z" />
-                  
-                  {/* Bird 3 */}
-                  <path d="M120,26 C115,22 110,26 105,30 C110,27 115,23 121,26 C125,28 130,32 133,34 C129,32 124,30 120,26 Z" />
-                  
-                  {/* Bird 4 */}
-                  <path d="M90,27 C85,23 80,27 75,31 C80,28 85,24 91,27 C95,29 100,33 103,35 C99,33 94,31 90,27 Z" />
-                  
-                  {/* Bird 5 */}
-                  <path d="M98,37 C93,33 88,37 83,41 C88,38 93,34 99,37 C103,39 108,43 111,45 C107,43 102,41 98,37 Z" />
-                  
-                  {/* Bird 6 */}
-                  <path d="M72,38 C67,34 62,38 57,42 C62,39 67,35 73,38 C77,40 82,44 85,46 C81,44 76,42 72,38 Z" />
-                  
-                  {/* Bird 7 */}
-                  <path d="M79,49 C74,45 69,49 64,53 C69,50 74,46 80,49 C84,51 89,55 92,57 C88,55 83,53 79,49 Z" />
-                  
-                  {/* Bird 8 (Trailing Left Wing) */}
-                  <path d="M52,50 C47,46 42,50 37,54 C42,51 47,47 53,50 C57,52 62,56 65,58 C61,56 56,54 52,50 Z" />
+              {/* High-Resolution Flying Birds Graphic (Top Right V-Formation) */}
+              <div className="absolute top-2 right-2 pointer-events-none opacity-85" style={{ color: kickerColor }}>
+                <svg width="180" height="90" viewBox="0 0 180 90" fill="currentColor">
+                  <path d="M165,8 C161,5 157,8 153,11 C157,9 161,6 166,8 C170,9 174,12 177,13 C173,12 169,11 165,8 Z" />
+                  <path d="M142,18 C137,14 132,18 127,22 C132,19 137,15 143,18 C147,20 152,24 155,26 C151,24 146,22 142,18 Z" />
+                  <path d="M150,28 C145,24 140,28 135,32 C140,29 145,25 151,28 C155,30 160,34 163,36 C159,34 154,32 150,28 Z" />
+                  <path d="M120,29 C115,25 110,29 105,33 C110,30 115,26 121,29 C125,31 130,35 133,37 C129,35 124,33 120,29 Z" />
+                  <path d="M128,39 C123,35 118,39 113,43 C118,40 123,36 129,39 C133,41 138,45 141,47 C137,45 132,43 128,39 Z" />
+                  <path d="M102,40 C97,36 92,40 87,44 C92,41 97,37 103,40 C107,42 112,46 115,48 C111,46 106,44 102,40 Z" />
+                  <path d="M109,51 C104,47 99,51 94,55 C99,52 104,48 110,51 C114,53 119,57 122,59 C118,57 113,55 109,51 Z" />
+                  <path d="M82,52 C77,48 72,52 67,56 C72,53 77,49 83,52 C87,54 92,58 95,60 C91,58 86,56 82,52 Z" />
+                  <path d="M62,63 C57,59 52,63 47,67 C52,64 57,60 63,63 C67,65 72,69 75,71 C71,69 66,67 62,63 Z" />
                 </svg>
               </div>
 
-              {/* Artistic Minimalist "ABOUT US" Monogram (Fixed Cormorant Garamond Font & Interlocked U+A) */}
-              <div className="flex flex-col items-center justify-center pt-8 pb-4 relative select-none">
-                <div className="relative inline-block w-[180px] h-[120px]" style={{ color: textColor }}>
-                  {/* Giant U (Fixed Font: Cormorant Garamond - Top-right touches A's left leg) */}
-                  <span 
-                    className="absolute left-1 top-4 text-7xl sm:text-8xl font-normal leading-none select-none"
-                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              {/* Exact Artistic Layered Monogram Vector (U + A + BOUT + S) */}
+              <div className="flex flex-col items-center justify-center pt-6 pb-2 relative select-none">
+                <svg width="220" height="140" viewBox="0 0 220 140" fill="currentColor" style={{ color: textColor }}>
+                  {/* Giant Serif U (Bottom-Left) */}
+                  <text 
+                    x="12" 
+                    y="112" 
+                    fontFamily="'Cormorant Garamond', 'Bodoni Moda', 'Playfair Display', serif" 
+                    fontSize="105" 
+                    fontWeight="400"
                   >
                     U
-                  </span>
+                  </text>
 
-                  {/* Giant A (Fixed Font: Cormorant Garamond - Positioned so left leg touches U) */}
-                  <span 
-                    className="absolute left-[3.9rem] top-0 text-7xl sm:text-8xl font-normal leading-none select-none"
-                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  {/* Giant Serif A (Top-Right - Left leg touches U) */}
+                  <text 
+                    x="64" 
+                    y="68" 
+                    fontFamily="'Cormorant Garamond', 'Bodoni Moda', 'Playfair Display', serif" 
+                    fontSize="105" 
+                    fontWeight="400"
                   >
                     A
-                  </span>
+                  </text>
 
-                  {/* BOUT (Small caps, right of A) */}
-                  <span 
-                    className="absolute left-[8.2rem] top-5 text-[10px] sm:text-[11px] tracking-[0.35em] uppercase font-light opacity-85"
-                    style={{ fontFamily: data.secondaryFont }}
+                  {/* BOUT (Tracked uppercase, beside top-right leg of A) */}
+                  <text 
+                    x="132" 
+                    y="54" 
+                    fontFamily="'Plus Jakarta Sans', sans-serif" 
+                    fontSize="12" 
+                    letterSpacing="4" 
+                    fontWeight="300"
+                    opacity="0.9"
                   >
                     BOUT
-                  </span>
+                  </text>
 
-                  {/* S (Small caps, right of U / under A) */}
-                  <span 
-                    className="absolute left-[4.5rem] top-[4.6rem] text-[10px] sm:text-[11px] tracking-[0.35em] uppercase font-light opacity-85"
-                    style={{ fontFamily: data.secondaryFont }}
+                  {/* S (Tracked uppercase, inside crotch of U & A) */}
+                  <text 
+                    x="78" 
+                    y="108" 
+                    fontFamily="'Plus Jakarta Sans', sans-serif" 
+                    fontSize="12" 
+                    letterSpacing="4" 
+                    fontWeight="300"
+                    opacity="0.9"
                   >
                     S
-                  </span>
-                </div>
+                  </text>
+                </svg>
               </div>
 
-              {/* Quote Block with Large Double Quotations “ ” */}
+              {/* Central Quote Block with Elegant Double Quotation Marks “ ” */}
               <div className="my-6 px-2 sm:px-6 flex items-center justify-center gap-2 sm:gap-4 max-w-xl mx-auto text-center">
                 <span 
                   className="text-4xl sm:text-5xl font-serif leading-none select-none shrink-0" 
@@ -1491,7 +1492,7 @@ function WedGrapherAiryBuilderContent() {
                 </span>
               </div>
 
-              {/* About Us Single Featured Photo (FULL BLEED - CUT TO CUT 0 LEFT/RIGHT/BOTTOM MARGIN) */}
+              {/* About Us Single Featured Photo (Full Bleed Cut-To-Cut Edge-To-Edge 0 Margin) */}
               {data.aboutUs.bottomBannerPhoto && (
                 <div className="-mx-10 sm:-mx-14 -mb-10 sm:-mb-14 pt-4 overflow-hidden">
                   <img 
