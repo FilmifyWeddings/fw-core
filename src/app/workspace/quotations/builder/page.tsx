@@ -92,8 +92,9 @@ const DEFAULT_AIRY_PROPOSAL = {
     deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
     photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
     photoHeight: 350,
+    photoFocalY: 50, // Range 0% (Top) to 100% (Bottom) vertical focal point
     photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle',
+    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle',
     isWatermarkBackground: false,
     watermarkOpacity: 40,
     staysInFrame: 'Middle',
@@ -1118,51 +1119,66 @@ function WedGrapherAiryBuilderContent() {
                       )}
                     </div>
 
-                    {/* Photo Alignment Dropdown (Left Fit, Right Fit, Center Card, Full Bleed) */}
+                    {/* Photo Layout Style Dropdown (Arch, Rounded, Rectangle as requested) */}
                     <div>
-                      <label className="block text-[9px] font-bold text-zinc-500 mb-1">Photo Alignment / Layout Style</label>
+                      <label className="block text-[9px] font-bold text-zinc-500 mb-1">Photo Layout Style</label>
                       <select
-                        value={data.shootDetails.photoAlignment || 'Center Card'}
-                        onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoAlignment: e.target.value as any } })}
+                        value={data.shootDetails.frameShape || 'arch'}
+                        onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: e.target.value as any } })}
                         className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
                       >
-                        <option value="Center Card">Center Card (Standard)</option>
-                        <option value="Left Fit">Left Fit (Side Floating)</option>
-                        <option value="Right Fit">Right Fit (Side Floating)</option>
-                        <option value="Full Bleed">Full Bleed (Cut-To-Cut Edge)</option>
+                        <option value="arch">Arch (Cover Page Style ⋂)</option>
+                        <option value="rounded">Rounded (Soft Corners ▢)</option>
+                        <option value="rectangle">Rectangle (Sharp Box ▭)</option>
                       </select>
                     </div>
 
-                    {/* Frame Shape Options (Arch, Rounded, Rectangle) */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-zinc-500 mb-1">Frame Shape</label>
-                      <div className="flex items-center gap-1">
-                        {[
-                          { id: 'arch', label: 'Arch ⋂' },
-                          { id: 'rounded', label: 'Rounded ▢' },
-                          { id: 'rectangle', label: 'Rectangle ▭' },
-                        ].map(shape => (
+                    {/* Photo Focus Position (Vertical Crop Focal Point 0-100%) */}
+                    {data.shootDetails.photo && (
+                      <div className="space-y-1.5 p-2 rounded-xl bg-amber-50/60 border border-amber-200/80">
+                        <div className="flex items-center justify-between text-[10px] text-amber-900 font-bold">
+                          <span>Photo Focus (Up / Down)</span>
+                          <span className="font-mono text-amber-700">{data.shootDetails.photoFocalY ?? 50}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={data.shootDetails.photoFocalY ?? 50}
+                          onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoFocalY: Number(e.target.value) } })}
+                          className="w-full accent-amber-700 cursor-pointer"
+                        />
+                        <div className="flex items-center justify-between text-[9px] font-bold text-amber-800">
                           <button
-                            key={shape.id}
                             type="button"
-                            onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: shape.id as any } })}
-                            className={`flex-1 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
-                              (data.shootDetails.frameShape || 'rounded') === shape.id
-                                ? 'bg-black text-white border-black'
-                                : 'bg-zinc-50 text-zinc-700 border-zinc-200'
-                            }`}
+                            onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, photoFocalY: 0 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
                           >
-                            {shape.label}
+                            Top (Faces) ⬆
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, photoFocalY: 50 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Center ⏺
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, photoFocalY: 100 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Bottom ⬇
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Background Watermark Mode (40% Opacity Overlay) Toggle */}
+                    {/* Background Watermark Mode (40% Opacity Overlay - 100% Full Bleed Cut-to-Cut) Toggle */}
                     <div className="pt-1 flex items-center justify-between">
                       <div className="space-y-0.5">
                         <span className="text-[10px] font-bold text-zinc-700 block">40% Background Watermark</span>
-                        <span className="text-[9px] text-zinc-400 block">Fill page background with 40% photo</span>
+                        <span className="text-[9px] text-zinc-400 block">100% Edge-to-Edge Cut-to-Cut (0 Space)</span>
                       </div>
                       <button
                         type="button"
@@ -1539,18 +1555,19 @@ function WedGrapherAiryBuilderContent() {
               )}
             </div>
 
-            {/* 3. PRE-WEDDING SHOOT PAGE SECTION (EXACT REFERENCE MATCH: HEADING, 1 DAY SHOOT, CREW, DELIVERABLES, ALIGNMENT & 40% WATERMARK) */}
+            {/* 3. PRE-WEDDING SHOOT PAGE SECTION (EXACT REFERENCE MATCH: HEADING, 1 DAY SHOOT, CREW, DELIVERABLES, ARCH LAYOUT & 100% EDGE-TO-EDGE WATERMARK) */}
             <div className="pt-10 border-t space-y-8 relative overflow-hidden text-xs" style={{ borderColor: borderColor }}>
               
-              {/* Optional 40% Background Watermark Photo Overlay */}
+              {/* 100% Full Bleed Edge-To-Edge Background Watermark (0 Margin / Space on Top/Bottom/Left/Right) */}
               {data.shootDetails.photo && data.shootDetails.isWatermarkBackground && (
-                <div className="absolute inset-0 z-0 pointer-events-none select-none opacity-40 overflow-hidden">
+                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mt-10 sm:-mt-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] h-[calc(100%+5rem)] sm:h-[calc(100%+7rem)] absolute inset-0 z-0 pointer-events-none select-none opacity-40 overflow-hidden">
                   <img 
                     src={data.shootDetails.photo} 
                     alt="Pre-Wedding Background Watermark"
-                    className="w-full h-full object-cover object-center filter grayscale-[20%]"
+                    className="w-full h-full object-cover filter grayscale-[15%]"
+                    style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/10 to-transparent" />
                 </div>
               )}
 
@@ -1608,20 +1625,12 @@ function WedGrapherAiryBuilderContent() {
                   </ul>
                 </div>
 
-                {/* Pre-Wedding Featured Photo (Supports Alignment: Center, Left Fit, Right Fit, Full Bleed + Frame Shape: Arch, Rounded, Rectangle) */}
+                {/* Pre-Wedding Featured Photo (Frame Shapes: Arch, Rounded, Rectangle + Custom Focal Point objectPosition) */}
                 {data.shootDetails.photo && !data.shootDetails.isWatermarkBackground && (
-                  <div className={`mt-6 transition-all duration-300 ${
-                    data.shootDetails.photoAlignment === 'Full Bleed'
-                      ? '-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none'
-                      : data.shootDetails.photoAlignment === 'Left Fit'
-                      ? 'max-w-md mr-auto'
-                      : data.shootDetails.photoAlignment === 'Right Fit'
-                      ? 'max-w-md ml-auto'
-                      : 'max-w-xl mx-auto'
-                  }`}>
+                  <div className="mt-6 max-w-xl mx-auto">
                     <div 
                       className={`overflow-hidden shadow-md relative transition-all duration-300 ${
-                        data.shootDetails.frameShape === 'arch'
+                        (data.shootDetails.frameShape || 'arch') === 'arch'
                           ? 'rounded-t-[999px] rounded-b-none'
                           : data.shootDetails.frameShape === 'rectangle'
                           ? 'rounded-none'
@@ -1637,7 +1646,8 @@ function WedGrapherAiryBuilderContent() {
                       <img 
                         src={data.shootDetails.photo} 
                         alt="Pre-Wedding Shoot"
-                        className="w-full h-full object-cover object-center bg-transparent"
+                        className="w-full h-full object-cover bg-transparent"
+                        style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }}
                       />
                     </div>
                   </div>
