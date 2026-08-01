@@ -1541,8 +1541,8 @@ function WedGrapherAiryBuilderContent() {
             {/* 3. PRE-WEDDING SHOOT PAGE SECTION (ALL 5 PHOTO LAYOUT STYLES: ARCH, ROUNDED, RECTANGLE, FULL-WIDTH & BACKGROUND WATERMARK) */}
             <div 
               className={`pt-10 border-t space-y-8 relative text-xs ${
-                data.shootDetails.frameShape === 'background'
-                  ? '-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 px-10 sm:px-14 pb-10 overflow-hidden'
+                ['background', 'full-width'].includes(data.shootDetails.frameShape)
+                  ? '-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 px-10 sm:px-14 pb-10 sm:pb-14 overflow-hidden'
                   : 'overflow-hidden'
               }`} 
               style={{ borderColor: borderColor }}
@@ -1617,7 +1617,7 @@ function WedGrapherAiryBuilderContent() {
 
                 {/* Option 4: Full Width Banner (Like About Us Edge-To-Edge 0 Left/Right Margin) */}
                 {data.shootDetails.photo && data.shootDetails.frameShape === 'full-width' && (
-                  <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
+                  <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
                     <img 
                       src={data.shootDetails.photo} 
                       alt="Pre-Wedding Full Bleed"
