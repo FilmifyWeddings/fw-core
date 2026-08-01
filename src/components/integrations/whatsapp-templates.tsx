@@ -6,9 +6,15 @@ import {
   Search, Plus, MoreVertical, CheckCircle2, XCircle, Clock, Timer, 
   Trash2, ShieldCheck, FileText, Image as ImageIcon, 
   Vote, HelpCircle, PhoneCall, Link2, X, PlusCircle, Check, RefreshCw,
-  Edit, Copy, ChevronDown, Users, Bell, Send, MessageSquare
+  Edit, Copy, ChevronDown, Users, Bell, Send, MessageSquare, HardDrive, AlertTriangle, Folder
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { 
+  getWhatsAppTemplateStorageUsage, 
+  checkWhatsAppStorageQuotaGuard, 
+  StorageQuotaStats 
+} from '@/lib/whatsapp-template-media-manager';
+import { WhatsAppTemplateMediaModal } from '@/components/integrations/whatsapp-template-media-modal';
 
 interface WhatsappTemplatesProps {
   workspaceId: string;
@@ -35,6 +41,36 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [loading, setLoading] = useState(true);
   const [showBuilder, setShowBuilder] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dedicated WhatsApp Template Storage Quota state (1 GB / 1,024 MB Limit)
+  const [storageStats, setStorageStats] = useState<StorageQuotaStats>({
+    totalBytes: 0,
+    totalMB: 0,
+    maxMB: 1024,
+    usagePercentage: 0,
+    filesCount: 0,
+  });
+  const [showMediaGalleryModal, setShowMediaGalleryModal] = useState(false);
+  const [quotaWarningModal, setQuotaWarningModal] = useState<string | null>(null);
+
+  const loadStorageStats = async () => {
+    if (!workspaceId) return;
+    try {
+      const statsData = await getWhatsAppTemplateStorageUsage(workspaceId);
+      setStorageStats(statsData);
+    } catch (err) {
+      console.warn('[WhatsappTemplates] Storage stats error:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadStorageStats();
+    const handleUpdate = () => loadStorageStats();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('wa_template_media_updated', handleUpdate);
+      return () => window.removeEventListener('wa_template_media_updated', handleUpdate);
+    }
+  }, [workspaceId]);
 
   // Top-level section toggle
   const [activeSection, setActiveSection] = useState<'templates' | 'group-alerts'>('templates');
@@ -103,6 +139,14 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 1. WhatsApp Template Storage Quota Guard (1,024 MB Limit)
+    const quotaCheck = await checkWhatsAppStorageQuotaGuard(workspaceId, file.size);
+    if (!quotaCheck.allowed) {
+      setQuotaWarningModal(quotaCheck.message || 'Storage Quota Exceeded (1GB Limit Reached). Please delete unused template media.');
+      if (e.target) e.target.value = '';
+      return;
+    }
+
     // Size limits: Images = 50MB, Videos = 50MB, Other documents = 100MB
     let maxLimit = 100 * 1024 * 1024; // Default 100MB
     let typeName = "file";
@@ -133,7 +177,9 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       if (uploadResult.error) throw new Error(uploadResult.error);
 
       setMediaUrl(uploadResult.url);
-      setMediaMime('image/webp');
+      setMediaMime(file.type || 'image/webp');
+      // Instantly refresh template storage stats meter
+      loadStorageStats();
     } catch (err: any) {
       console.error('File upload error:', err);
       alert(`File upload failed: ${err.message || err}. You can enter a public URL manually.`);
@@ -740,8 +786,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       {/* SECTION: Templates (existing content)                                  */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeSection === 'templates' && (<>
-      {/* 1. KPI Stats Summary row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+      {/* 1. KPI Stats & Template Storage Summary row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
         {/* USED Card */}
         <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md flex items-center justify-between">
           <div className="space-y-1">
@@ -779,6 +825,38 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
             <div className="absolute text-[8px] font-bold text-zinc-500 dark:text-zinc-400 font-mono">
               {Math.round((Math.max(0, 50 - totalCount) / 50) * 100)}%
             </div>
+          </div>
+        </div>
+
+        {/* TEMPLATE STORAGE METER CARD (1,024 MB Limit) */}
+        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-bold flex items-center gap-1">
+                <HardDrive className="w-3.5 h-3.5 text-green-500" />
+                Template Storage
+              </span>
+              <p className="text-sm font-extrabold text-zinc-900 dark:text-white">
+                {storageStats.totalMB} MB <span className="text-xs text-zinc-400 font-normal">/ 1,024 MB</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMediaGalleryModal(true)}
+              className="px-2.5 py-1 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 text-[11px] font-bold border border-green-500/20 transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <Folder className="w-3 h-3" /> View Media Assets
+            </button>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+            <div 
+              className={`h-full transition-all duration-300 ${
+                storageStats.usagePercentage >= 90 ? 'bg-rose-500' : 'bg-green-500'
+              }`}
+              style={{ width: `${storageStats.usagePercentage}%` }}
+            />
           </div>
         </div>
       </div>
@@ -1671,6 +1749,60 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
           </div>
         </div>
       )}
+
+      {/* ── UNIFIED WHATSAPP TEMPLATE MEDIA GALLERY MODAL (1 GB QUOTA) ── */}
+      <WhatsAppTemplateMediaModal 
+        isOpen={showMediaGalleryModal} 
+        onClose={() => setShowMediaGalleryModal(false)} 
+        workspaceId={workspaceId} 
+        onSelectMediaUrl={(url) => setMediaUrl(url)} 
+      />
+
+      {/* ── QUOTA EXCEEDED ALERT WARNING MODAL ── */}
+      <AnimatePresence>
+        {quotaWarningModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-6 text-center">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl border border-rose-200"
+            >
+              <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+
+              <h4 className="text-sm font-extrabold text-zinc-900">Storage Quota Exceeded</h4>
+              
+              <p className="text-xs text-zinc-600 leading-relaxed font-medium">
+                {quotaWarningModal}
+              </p>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setQuotaWarningModal(null)}
+                  className="flex-1 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Dismiss
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuotaWarningModal(null);
+                    setShowMediaGalleryModal(true);
+                  }}
+                  className="flex-1 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                >
+                  Manage Storage
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
