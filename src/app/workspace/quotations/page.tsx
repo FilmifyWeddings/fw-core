@@ -8,7 +8,7 @@ import {
   Plus, Lock, FileText, Image as ImageIcon, Folder, 
   ChevronRight, ExternalLink, Download, Copy, Sparkles, Eye, 
   Upload, HardDrive, CheckCircle2, ArrowRight, X, Trash2,
-  Search, Shield, Check, Layers, Sliders, RefreshCw, Zap
+  Search, Shield, Check, Layers, Sliders, RefreshCw, Zap, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -42,7 +42,20 @@ export default function WorkspaceQuotationsGalleryPage() {
 
   // Dynamic Data States
   const [quotations, setQuotations] = useState<SavedQuotation[]>([]);
-  const [userImages, setUserImages] = useState<UserGalleryImage[]>([]);
+  const [userImages, setUserImages] = useState<UserGalleryImage[]>(() => {
+    if (typeof window !== 'undefined') {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('wg_gallery_cache_')) {
+          try {
+            const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          } catch {}
+        }
+      }
+    }
+    return [];
+  });
 
   // Selected File for Upload & Preview
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -114,9 +127,9 @@ export default function WorkspaceQuotationsGalleryPage() {
     }
   ];
 
-  // Fetch authenticated user data & isolated database records
+  // Fetch authenticated user data & isolated database records silently in background
   useEffect(() => {
-    async function loadUserData() {
+    async function loadUserDataSilently() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const currentUserId = session?.user?.id || 'demo_user';
@@ -130,9 +143,7 @@ export default function WorkspaceQuotationsGalleryPage() {
             if (Array.isArray(parsed)) {
               setUserImages(parsed);
             }
-          } catch {
-            // ignore
-          }
+          } catch {}
         }
 
         // Fetch User Quotations for current workspace
@@ -146,7 +157,7 @@ export default function WorkspaceQuotationsGalleryPage() {
           setQuotations(qData as SavedQuotation[]);
         }
 
-        // Fetch User Gallery Images strictly isolated for current workspace ID
+        // Fetch User Gallery Images silently in background
         const { data: imgData } = await supabase
           .from('user_gallery_images')
           .select('*')
@@ -158,13 +169,13 @@ export default function WorkspaceQuotationsGalleryPage() {
           localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgData));
         }
       } catch (err) {
-        console.warn('[QuotationsPage] Load user data error:', err);
+        console.warn('[QuotationsPage] Silent background sync error:', err);
       } finally {
         setLoading(false);
       }
     }
 
-    loadUserData();
+    loadUserDataSilently();
   }, []);
 
   // Calculate Image Storage Stats (Max 30 MB per user)
@@ -364,19 +375,23 @@ export default function WorkspaceQuotationsGalleryPage() {
               <ImageIcon className="w-5 h-5" />
             </div>
 
-            {/* + Add Image Button triggers File Picker directly (Disabled during loading guard) */}
+            {/* + Add Image Button (Instant zero-delay interactive state) */}
             <button 
               type="button"
               onClick={triggerFileSelection}
-              disabled={isUploading || loading}
+              disabled={isUploading || userImages.length >= 10}
               className={`px-3 py-1.5 rounded-xl text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
-                loading || userImages.length >= 10 
+                userImages.length >= 10 
                   ? 'bg-zinc-400 cursor-not-allowed opacity-75' 
                   : 'bg-pink-600 hover:bg-pink-700'
               }`}
             >
-              <Plus className="w-3.5 h-3.5" />
-              {loading ? 'Syncing...' : isUploading ? 'Uploading...' : 'Add Image'}
+              {userImages.length >= 10 ? (
+                <AlertTriangle className="w-3.5 h-3.5" />
+              ) : (
+                <Plus className="w-3.5 h-3.5" />
+              )}
+              {isUploading ? 'Uploading...' : userImages.length >= 10 ? `Limit Reached (${userImages.length}/10)` : 'Add Image'}
             </button>
           </div>
 
