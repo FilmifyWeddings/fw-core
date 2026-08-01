@@ -13,11 +13,34 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
+// World-Class Premium Luxury Minimal Fonts
+const LUXURY_PRIMARY_FONTS = [
+  { name: 'Cormorant Garamond (High Fashion)', family: "'Cormorant Garamond', serif" },
+  { name: 'Playfair Display (Classic Luxury)', family: "'Playfair Display', serif" },
+  { name: 'Bodoni Moda (Vogue Editorial)', family: "'Bodoni Moda', serif" },
+  { name: 'Cinzel (Royal Roman)', family: "'Cinzel', serif" },
+  { name: 'DM Serif Display (Modern Editorial)', family: "'DM Serif Display', serif" },
+  { name: 'Prata (Refined Minimalist)', family: "'Prata', serif" },
+  { name: 'Italiana (Italian Couture)', family: "'Italiana', serif" },
+  { name: 'Marcellus (Timeless Serif)', family: "'Marcellus', serif" },
+];
+
+const LUXURY_SECONDARY_FONTS = [
+  { name: 'Plus Jakarta Sans (Ultra Clean)', family: "'Plus Jakarta Sans', sans-serif" },
+  { name: 'Montserrat (Architectural Minimal)', family: "'Montserrat', sans-serif" },
+  { name: 'Inter (Modern Swiss)', family: "'Inter', sans-serif" },
+  { name: 'Outfit (Contemporary Sans)', family: "'Outfit', sans-serif" },
+  { name: 'Tenor Sans (Fashion Minimal)', family: "'Tenor Sans', sans-serif" },
+  { name: 'Josefin Sans (Geometric Vintage)', family: "'Josefin Sans', sans-serif" },
+];
+
 // WedGrapher Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
   eventGroup: 'Pre-Wedding',
   look: 'Airy White (Pre-Wed)',
+  primaryFont: "'Cormorant Garamond', serif",
+  secondaryFont: "'Plus Jakarta Sans', sans-serif",
 
   // Section 1: Cover Page State
   cover: {
@@ -311,7 +334,7 @@ function WedGrapherAiryBuilderContent() {
         {/* ───────────────────────────────────────────────────────────── */}
         <aside className="w-[320px] bg-white border-r border-zinc-200 p-4 overflow-y-auto space-y-5 shrink-0 text-xs shadow-sm">
           
-          {/* Top Inputs */}
+          {/* Top Inputs & Typography Customizer */}
           <div className="space-y-3">
             <div>
               <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Design name</label>
@@ -351,6 +374,40 @@ function WedGrapherAiryBuilderContent() {
                 </select>
               </div>
             </div>
+
+            {/* Typography Customizers: Main Font & Sub Font Dropdowns */}
+            <div className="space-y-2 pt-2 border-t border-zinc-100">
+              <span className="text-[10px] uppercase font-bold text-purple-700 flex items-center gap-1">
+                <Type className="w-3 h-3" /> Premium Typography Fonts
+              </span>
+
+              <div>
+                <label className="block text-[9px] font-bold text-zinc-500 mb-1">Main Font (Headings & Names)</label>
+                <select
+                  value={data.primaryFont}
+                  onChange={(e) => setData({ ...data, primaryFont: e.target.value })}
+                  className="w-full p-2 rounded-xl bg-purple-50/40 border border-purple-200 font-bold text-purple-950 focus:outline-none"
+                >
+                  {LUXURY_PRIMARY_FONTS.map(f => (
+                    <option key={f.family} value={f.family}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-bold text-zinc-500 mb-1">Sub Font (Body Text & Tables)</label>
+                <select
+                  value={data.secondaryFont}
+                  onChange={(e) => setData({ ...data, secondaryFont: e.target.value })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
+                >
+                  {LUXURY_SECONDARY_FONTS.map(f => (
+                    <option key={f.family} value={f.family}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
           </div>
 
           {/* Section Tags Header */}
@@ -377,7 +434,7 @@ function WedGrapherAiryBuilderContent() {
           {/* Collapsible Section Accordion Cards */}
           <div className="space-y-2.5 pt-2 border-t border-zinc-100">
             
-            {/* 1. COVER PAGE CARD (EXACT MATCHING CONTROLS FOR USER REQUEST) */}
+            {/* 1. COVER PAGE CARD */}
             <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
               <div 
                 onClick={() => setOpenCard(openCard === 'cover' ? null : 'cover')}
@@ -850,7 +907,7 @@ function WedGrapherAiryBuilderContent() {
         </aside>
 
         {/* ───────────────────────────────────────────────────────────── */}
-        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS (EXACT COVER PAGE LAYOUT) */}
+        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS                          */}
         {/* ───────────────────────────────────────────────────────────── */}
         <main className="flex-1 bg-[#EBECEF] p-6 overflow-y-auto flex justify-center items-start">
           
@@ -865,14 +922,14 @@ function WedGrapherAiryBuilderContent() {
             }}
           >
             
-            {/* 1. COVER PAGE HERO (EXACT USER SCREENSHOT LAYOUT MATCH) */}
+            {/* 1. COVER PAGE HERO (EXACT USER SCREENSHOT & TYPOGRAPHY MATCH) */}
             <div className="text-center space-y-6 pt-4">
               
               {/* Couple Names (Groom & Bride - NO "X" as requested) */}
               <div className="space-y-1">
                 <h1 
-                  className="text-4xl sm:text-5xl font-serif tracking-[0.15em] uppercase font-black leading-tight"
-                  style={{ color: textColor }}
+                  className="text-4xl sm:text-5xl tracking-[0.15em] uppercase font-black leading-tight"
+                  style={{ color: textColor, fontFamily: data.primaryFont }}
                 >
                   {data.cover.groomName || 'YASH'}
                 </h1>
@@ -880,8 +937,8 @@ function WedGrapherAiryBuilderContent() {
                 {/* Note: NO "X" icon/text as requested: "X hatado nahi chaiye" */}
 
                 <h1 
-                  className="text-4xl sm:text-5xl font-serif tracking-[0.15em] uppercase font-black leading-tight"
-                  style={{ color: textColor }}
+                  className="text-4xl sm:text-5xl tracking-[0.15em] uppercase font-black leading-tight"
+                  style={{ color: textColor, fontFamily: data.primaryFont }}
                 >
                   {data.cover.brideName || 'TWINKLE'}
                 </h1>
@@ -890,14 +947,14 @@ function WedGrapherAiryBuilderContent() {
               {/* Event Type Quotation & Subtitle */}
               <div className="space-y-1.5 pt-2">
                 <h3 
-                  className="text-sm sm:text-base font-serif tracking-[0.2em] uppercase font-bold"
-                  style={{ color: textColor }}
+                  className="text-sm sm:text-base tracking-[0.2em] uppercase font-bold"
+                  style={{ color: textColor, fontFamily: data.primaryFont }}
                 >
                   {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
                 </h3>
                 <p 
                   className="text-[11px] tracking-[0.15em] uppercase font-medium opacity-85"
-                  style={{ color: kickerColor }}
+                  style={{ color: kickerColor, fontFamily: data.secondaryFont }}
                 >
                   {data.cover.locationSubtitle || 'BOTH SIDES – MUMBAI'}
                 </p>
@@ -913,7 +970,7 @@ function WedGrapherAiryBuilderContent() {
                   />
                 ) : (
                   <div className="text-center space-y-0.5">
-                    <div className="text-lg sm:text-xl font-serif tracking-[0.25em] uppercase font-black" style={{ color: textColor }}>
+                    <div className="text-lg sm:text-xl tracking-[0.25em] uppercase font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.brandName || 'FILMIFY WEDDINGS'}
                     </div>
                   </div>
@@ -946,34 +1003,34 @@ function WedGrapherAiryBuilderContent() {
 
             {/* 2. ABOUT US SECTION */}
             <div className="space-y-3 pt-10 border-t" style={{ borderColor: borderColor }}>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.aboutUs.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.aboutUs.heading}
               </h2>
-              <p className="text-xs leading-relaxed whitespace-pre-line font-sans opacity-90" style={{ color: textColor }}>
+              <p className="text-xs leading-relaxed whitespace-pre-line opacity-90" style={{ color: textColor, fontFamily: data.secondaryFont }}>
                 {data.aboutUs.text}
               </p>
-              <span className="text-[10px] font-bold uppercase tracking-wider block pt-2" style={{ color: kickerColor }}>
+              <span className="text-[10px] font-bold uppercase tracking-wider block pt-2" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.aboutUs.signature}
               </span>
             </div>
 
             {/* 3. SHOOT DETAILS SECTION */}
-            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
+            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.shootDetails.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.shootDetails.heading}
               </h2>
 
               <div className="space-y-3">
                 {data.shootDetails.rows.map(row => (
                   <div key={row.id} className="space-y-0.5 border-b pb-2" style={{ borderColor: borderColor }}>
-                    <span className="text-[9px] font-bold uppercase tracking-wider block" style={{ color: kickerColor }}>{row.label}</span>
-                    <span className="text-xs font-medium" style={{ color: textColor }}>{row.value}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>{row.label}</span>
+                    <span className="text-xs font-medium" style={{ color: textColor, fontFamily: data.secondaryFont }}>{row.value}</span>
                   </div>
                 ))}
               </div>
@@ -989,15 +1046,15 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 4. WHAT'S INCLUDED SECTION */}
-            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
+            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.whatsIncluded.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.whatsIncluded.heading}
               </h2>
 
-              <div className="p-5 rounded-2xl leading-relaxed whitespace-pre-line font-sans" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px', color: textColor }}>
+              <div className="p-5 rounded-2xl leading-relaxed whitespace-pre-line" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px', color: textColor, fontFamily: data.secondaryFont }}>
                 {data.whatsIncluded.deliverablesText}
               </div>
 
@@ -1012,42 +1069,42 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 5. PRICE & PAYMENT SECTION */}
-            <div className="space-y-6 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
+            <div className="space-y-6 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.pricePayment.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.pricePayment.heading}
               </h2>
 
-              <div className="text-3xl font-serif" style={{ color: textColor }}>
+              <div className="text-3xl font-bold" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 ₹{grandTotal.toLocaleString('en-IN')}
               </div>
 
               <div className="space-y-1 border-t pt-3" style={{ borderColor: borderColor }}>
-                <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
-                <p className="text-xs" style={{ color: textColor }}>{data.pricePayment.paymentTerms}</p>
+                <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>{data.pricePayment.paymentHeading}</span>
+                <p className="text-xs" style={{ color: textColor, fontFamily: data.secondaryFont }}>{data.pricePayment.paymentTerms}</p>
               </div>
             </div>
 
             {/* 6. ADD ONS TABLE */}
-            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.addOnsTable.heading}
               </h2>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.addOnsTable.kicker}
               </span>
 
               <div className="rounded-xl overflow-hidden" style={{ borderColor: borderColor, borderWidth: '1px' }}>
                 <table className="w-full text-left text-xs">
-                  <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor: borderColor, color: textColor }}>
+                  <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor: borderColor, color: textColor, fontFamily: data.secondaryFont }}>
                     <tr>
                       <th className="py-2.5 px-4">Services</th>
                       <th className="py-2.5 px-4 text-right">Charges</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y font-medium" style={{ color: textColor }}>
+                  <tbody className="divide-y font-medium" style={{ color: textColor, fontFamily: data.secondaryFont }}>
                     {data.addOnsTable.rows.map(row => (
                       <tr key={row.id}>
                         <td className="py-2.5 px-4">{row.service}</td>
@@ -1060,40 +1117,40 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 7. DELIVERY TIMEFRAME */}
-            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.deliveryTime.heading}
               </h2>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px' }}>
-                  <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor }}>PHOTOS</span>
-                  <strong className="text-xs font-bold" style={{ color: textColor }}>{data.deliveryTime.photosDelivered}</strong>
+                  <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>PHOTOS</span>
+                  <strong className="text-xs font-bold" style={{ color: textColor, fontFamily: data.secondaryFont }}>{data.deliveryTime.photosDelivered}</strong>
                 </div>
                 <div className="p-4 rounded-xl" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px' }}>
-                  <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor }}>TEASER &amp; FILM</span>
-                  <strong className="text-xs font-bold" style={{ color: textColor }}>{data.deliveryTime.filmDelivered}</strong>
+                  <span className="text-[10px] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>TEASER &amp; FILM</span>
+                  <strong className="text-xs font-bold" style={{ color: textColor, fontFamily: data.secondaryFont }}>{data.deliveryTime.filmDelivered}</strong>
                 </div>
               </div>
-              <p className="text-[10px] italic" style={{ color: kickerColor }}>{data.deliveryTime.smallPrint}</p>
+              <p className="text-[10px] italic" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>{data.deliveryTime.smallPrint}</p>
             </div>
 
             {/* 8. TIMELINE TABLE */}
-            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.timelineTable.heading}
               </h2>
 
               <div className="rounded-xl overflow-hidden" style={{ borderColor: borderColor, borderWidth: '1px' }}>
                 <table className="w-full text-left text-xs">
-                  <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor: borderColor, color: textColor }}>
+                  <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor: borderColor, color: textColor, fontFamily: data.secondaryFont }}>
                     <tr>
                       <th className="py-2.5 px-4">Result</th>
                       <th className="py-2.5 px-4">Timeline</th>
                       <th className="py-2.5 px-4">Revisions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y font-medium" style={{ color: textColor }}>
+                  <tbody className="divide-y font-medium" style={{ color: textColor, fontFamily: data.secondaryFont }}>
                     {data.timelineTable.rows.map(row => (
                       <tr key={row.id}>
                         <td className="py-2.5 px-4">{row.result}</td>
@@ -1107,38 +1164,38 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 9. TESTIMONIALS */}
-            <div className="space-y-4 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
+            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.testimonials.kicker}
               </span>
-              <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.testimonials.heading}
               </h2>
 
-              <div className="space-y-3 font-serif italic" style={{ color: textColor }}>
+              <div className="space-y-3 italic" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.testimonials.quotes.map(q => (
                   <div key={q.id} className="p-4 rounded-xl space-y-1" style={{ backgroundColor: boxBgColor, borderColor: borderColor, borderWidth: '1px' }}>
                     <p className="text-xs">{q.quote}</p>
-                    <span className="text-[10px] font-sans font-bold uppercase not-italic block" style={{ color: kickerColor }}>— {q.author}</span>
+                    <span className="text-[10px] font-bold uppercase not-italic block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>— {q.author}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* 10. TERMS & THANK YOU */}
-            <div className="space-y-6 pt-10 border-t font-sans text-xs" style={{ borderColor: borderColor }}>
+            <div className="space-y-6 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <div className="space-y-2">
-                <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+                <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                   {data.termsAndThankYou.termsHeading}
                 </h2>
-                <p className="text-xs leading-relaxed font-sans opacity-90" style={{ color: textColor }}>{data.termsAndThankYou.termsText}</p>
+                <p className="text-xs leading-relaxed opacity-90" style={{ color: textColor, fontFamily: data.secondaryFont }}>{data.termsAndThankYou.termsText}</p>
               </div>
 
               <div className="text-center pt-8 border-t space-y-2" style={{ borderColor: borderColor }}>
-                <h2 className="text-xl font-serif uppercase tracking-widest" style={{ color: textColor }}>
+                <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                   {data.termsAndThankYou.thankYouHeading}
                 </h2>
-                <p className="text-xs" style={{ color: textColor }}>{data.termsAndThankYou.thankYouText}</p>
+                <p className="text-xs" style={{ color: textColor, fontFamily: data.secondaryFont }}>{data.termsAndThankYou.thankYouText}</p>
                 <p className="text-[10px] font-mono pt-2" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
               </div>
             </div>
