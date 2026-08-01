@@ -1399,13 +1399,13 @@ function WedGrapherAiryBuilderContent() {
 
             </div>
 
-            {/* 2. ABOUT US SECTION (INTEGRATED USER'S EXACT A&U.SVG AND BIRDS.SVG WITH DYNAMIC THEME COLOR TINTING) */}
-            <div className="pt-10 border-t relative overflow-hidden space-y-6" style={{ borderColor: borderColor }}>
+            {/* 2. ABOUT US SECTION (EXACT FIT: LARGER BIRDS MOVED INSIDE + 100% CUT-TO-CUT FULL BLEED IMAGE WITH ZERO MARGIN) */}
+            <div className="pt-10 border-t relative space-y-6" style={{ borderColor: borderColor }}>
               
-              {/* High-Resolution Flying Birds Graphic (User's Exact Birds.svg with Dynamic Theme Color) */}
-              <div className="absolute top-2 right-2 pointer-events-none opacity-85">
+              {/* High-Resolution Flying Birds Graphic (Bigger & Positioned Left Inside the Page) */}
+              <div className="absolute top-1 right-8 sm:right-14 pointer-events-none opacity-85">
                 <div 
-                  className="w-[180px] h-[90px] transition-colors duration-300"
+                  className="w-[230px] sm:w-[270px] h-[115px] sm:h-[135px] transition-colors duration-300"
                   style={{
                     backgroundColor: kickerColor || textColor,
                     WebkitMaskImage: `url(/images/Birds.svg)`,
@@ -1460,9 +1460,9 @@ function WedGrapherAiryBuilderContent() {
                 </span>
               </div>
 
-              {/* About Us Single Featured Photo (Full Bleed Cut-To-Cut Edge-To-Edge 0 Margin) */}
+              {/* About Us Single Featured Photo (100% CUT-TO-CUT ABSOLUTE FULL BLEED EDGE-TO-EDGE WITH ZERO BLANK SPACE) */}
               {data.aboutUs.bottomBannerPhoto && (
-                <div className="-mx-10 sm:-mx-14 -mb-10 sm:-mb-14 pt-4 overflow-hidden">
+                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
                   <img 
                     src={data.aboutUs.bottomBannerPhoto} 
                     alt="About Us Full Bleed"
