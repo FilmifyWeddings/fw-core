@@ -66,8 +66,9 @@ const DEFAULT_AIRY_PROPOSAL = {
     photoUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
     photoHeight: 450, // Cover photo height slider: 200px to 800px
     photoWidth: 75, // Cover photo width slider: 30% to 100%
+    photoFocalY: 50, // Vertical crop focal point 0-100%
     showPhotoBorder: false, // Frame border toggle: false = no border line around PNG/photo
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle',
+    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   },
   
   // Section 2: About Us
@@ -77,7 +78,10 @@ const DEFAULT_AIRY_PROPOSAL = {
     text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
     signature: 'FOUNDER & DIRECTOR, AS',
     bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
-    bottomBannerHeight: 180, // Single photo height slider
+    bottomBannerHeight: 200, // Photo height slider
+    frameShape: 'full-width' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    photoFocalY: 50,  // Vertical crop focal point 0-100%
+    photoWidth: 75,
     textAlign: 'Left',
     background: 'Page colour',
   },
@@ -91,8 +95,9 @@ const DEFAULT_AIRY_PROPOSAL = {
     deliverablesHeading: 'Deliverables',
     deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
     photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 350,
-    photoFocalY: 50, // Range 0% (Top) to 100% (Bottom) vertical focal point
+    photoHeight: 450, // Same default height as cover page
+    photoWidth: 75,   // Same default width as cover page
+    photoFocalY: 50,  // Range 0% (Top) to 100% (Bottom) vertical focal point
     photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
     frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     isWatermarkBackground: false,
@@ -109,7 +114,10 @@ const DEFAULT_AIRY_PROPOSAL = {
     textAlign: 'Left',
     background: 'Page colour',
     photo: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
-    photoHeight: 280,
+    photoHeight: 350,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    photoFocalY: 50,
+    photoWidth: 75,
     staysInFrame: 'Middle',
   },
 
@@ -855,6 +863,75 @@ function WedGrapherAiryBuilderContent() {
                       )}
                     </div>
 
+                    {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
+                    <div>
+                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
+                      <div className="grid grid-cols-3 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
+                        {[
+                          { value: 'arch', label: 'Arch', icon: '⋂' },
+                          { value: 'rounded', label: 'Rounded', icon: '▣' },
+                          { value: 'rectangle', label: 'Rect', icon: '▬' },
+                        ].map(opt => {
+                          const isActive = (data.cover.frameShape || 'arch') === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setData({ ...data, cover: { ...data.cover, frameShape: opt.value as any } })}
+                              className={`py-1.5 rounded-lg text-[9px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
+                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
+                              }`}
+                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
+                            >
+                              <span className="text-[13px] leading-none">{opt.icon}</span>
+                              <span>{opt.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Photo Focus Position (Vertical Crop Focal Point 0-100%) */}
+                    {data.cover.photoUrl && (
+                      <div className="space-y-1.5 p-2 rounded-xl bg-amber-50/60 border border-amber-200/80">
+                        <div className="flex items-center justify-between text-[10px] text-amber-900 font-bold">
+                          <span>Photo Focus (Up / Down)</span>
+                          <span className="font-mono text-amber-700">{data.cover.photoFocalY ?? 50}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={data.cover.photoFocalY ?? 50}
+                          onChange={(e) => setData({ ...data, cover: { ...data.cover, photoFocalY: Number(e.target.value) } })}
+                          className="w-full accent-amber-700 cursor-pointer"
+                        />
+                        <div className="flex items-center justify-between text-[9px] font-bold text-amber-800">
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, cover: { ...data.cover, photoFocalY: 0 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Top (Faces) ⬆
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, cover: { ...data.cover, photoFocalY: 50 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Center ⏺
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, cover: { ...data.cover, photoFocalY: 100 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Bottom ⬇
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Photo Height Resizer Slider */}
                     <div>
                       <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
@@ -871,29 +948,20 @@ function WedGrapherAiryBuilderContent() {
                       />
                     </div>
 
-                    {/* Photo Frame Shape Buttons */}
+                    {/* Photo Width Resizer Slider */}
                     <div>
-                      <span className="block text-[9px] font-bold text-zinc-400 mb-1">Frame Shape</span>
-                      <div className="flex items-center gap-1">
-                        {[
-                          { id: 'arch', label: 'Arch ⋂' },
-                          { id: 'rounded', label: 'Rounded ▢' },
-                          { id: 'rectangle', label: 'Rectangle ▭' },
-                        ].map(shape => (
-                          <button
-                            key={shape.id}
-                            type="button"
-                            onClick={() => setData({ ...data, cover: { ...data.cover, frameShape: shape.id as any } })}
-                            className={`flex-1 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
-                              data.cover.frameShape === shape.id
-                                ? 'bg-black text-white border-black'
-                                : 'bg-zinc-50 text-zinc-700 border-zinc-200'
-                            }`}
-                          >
-                            {shape.label}
-                          </button>
-                        ))}
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                        <span>Photo Width</span>
+                        <span>{data.cover.photoWidth || 75}%</span>
                       </div>
+                      <input
+                        type="range"
+                        min="30"
+                        max="100"
+                        value={data.cover.photoWidth || 75}
+                        onChange={(e) => setData({ ...data, cover: { ...data.cover, photoWidth: Number(e.target.value) } })}
+                        className="w-full accent-black cursor-pointer"
+                      />
                     </div>
 
                     {/* Frame Outline Border Line Toggle (Fix for PNG Arch Border) */}
@@ -1005,20 +1073,118 @@ function WedGrapherAiryBuilderContent() {
                       )}
                     </div>
 
+                    {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
                     <div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
-                        <span>Banner Height</span>
-                        <span>{data.aboutUs.bottomBannerHeight}px</span>
+                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
+                      <div className="grid grid-cols-5 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
+                        {[
+                          { value: 'arch', label: 'Arch', icon: '⋂' },
+                          { value: 'rounded', label: 'Round', icon: '▣' },
+                          { value: 'rectangle', label: 'Rect', icon: '▬' },
+                          { value: 'full-width', label: 'Full Width', icon: '◻' },
+                          { value: 'background', label: 'Background', icon: '⊡' },
+                        ].map(opt => {
+                          const isActive = (data.aboutUs.frameShape || 'full-width') === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: opt.value as any } })}
+                              className={`py-1.5 rounded-lg text-[7px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
+                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
+                              }`}
+                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
+                            >
+                              <span className="text-[11px] leading-none">{opt.icon}</span>
+                              <span className="text-center leading-[1]">{opt.label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <input
-                        type="range"
-                        min="60"
-                        max="300"
-                        value={data.aboutUs.bottomBannerHeight}
-                        onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerHeight: Number(e.target.value) } })}
-                        className="w-full accent-black cursor-pointer"
-                      />
                     </div>
+
+                    {/* Photo Focus Position (Vertical Crop Focal Point 0-100%) */}
+                    {data.aboutUs.bottomBannerPhoto && (
+                      <div className="space-y-1.5 p-2 rounded-xl bg-amber-50/60 border border-amber-200/80">
+                        <div className="flex items-center justify-between text-[10px] text-amber-900 font-bold">
+                          <span>Photo Focus (Up / Down)</span>
+                          <span className="font-mono text-amber-700">{data.aboutUs.photoFocalY ?? 50}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={data.aboutUs.photoFocalY ?? 50}
+                          onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, photoFocalY: Number(e.target.value) } })}
+                          className="w-full accent-amber-700 cursor-pointer"
+                        />
+                        <div className="flex items-center justify-between text-[9px] font-bold text-amber-800">
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, aboutUs: { ...data.aboutUs, photoFocalY: 0 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Top (Faces) ⬆
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, aboutUs: { ...data.aboutUs, photoFocalY: 50 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Center ⏺
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setData({ ...data, aboutUs: { ...data.aboutUs, photoFocalY: 100 } })}
+                            className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer"
+                          >
+                            Bottom ⬇
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Photo Height Resizer Slider */}
+                    {data.aboutUs.bottomBannerPhoto && (data.aboutUs.frameShape || 'full-width') !== 'background' && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                          <span>Photo Height</span>
+                          <span>{data.aboutUs.bottomBannerHeight || 180}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="60"
+                          max="500"
+                          value={data.aboutUs.bottomBannerHeight || 180}
+                          onChange={(e) => setData({ 
+                            ...data, 
+                            aboutUs: { 
+                              ...data.aboutUs, 
+                              bottomBannerHeight: Number(e.target.value)
+                            } 
+                          })}
+                          className="w-full accent-black cursor-pointer"
+                        />
+                      </div>
+                    )}
+
+                    {/* Photo Width Resizer Slider */}
+                    {data.aboutUs.bottomBannerPhoto && ['arch', 'rounded', 'rectangle'].includes(data.aboutUs.frameShape || 'full-width') && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                          <span>Photo Width</span>
+                          <span>{data.aboutUs.photoWidth || 75}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="30"
+                          max="100"
+                          value={data.aboutUs.photoWidth || 75}
+                          onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, photoWidth: Number(e.target.value) } })}
+                          className="w-full accent-black cursor-pointer"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1119,20 +1285,34 @@ function WedGrapherAiryBuilderContent() {
                       )}
                     </div>
 
-                    {/* Photo Layout Style Dropdown (Arch, Rounded, Rectangle, Full Width, Background) */}
+                    {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
                     <div>
-                      <label className="block text-[9px] font-bold text-zinc-500 mb-1">Photo Layout Style</label>
-                      <select
-                        value={data.shootDetails.frameShape || 'arch'}
-                        onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: e.target.value as any } })}
-                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                      >
-                        <option value="arch">Arch (Cover Page Style ⋂)</option>
-                        <option value="rounded">Rounded (Soft Corners ▢)</option>
-                        <option value="rectangle">Rectangle (Sharp Box ▭)</option>
-                        <option value="full-width">Full Width (About Us Cut-to-Cut 0 Margin)</option>
-                        <option value="background">Background (40% Watermark Cut-to-Cut 0 Space)</option>
-                      </select>
+                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
+                      <div className="grid grid-cols-5 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
+                        {[
+                          { value: 'arch', label: 'Arch', icon: '⋂' },
+                          { value: 'rounded', label: 'Round', icon: '▣' },
+                          { value: 'rectangle', label: 'Rect', icon: '▬' },
+                          { value: 'full-width', label: 'Full Width', icon: '◻' },
+                          { value: 'background', label: 'Background', icon: '⊡' },
+                        ].map(opt => {
+                          const isActive = (data.shootDetails.frameShape || 'arch') === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: opt.value as any } })}
+                              className={`py-1.5 rounded-lg text-[7px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
+                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
+                              }`}
+                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
+                            >
+                              <span className="text-[11px] leading-none">{opt.icon}</span>
+                              <span className="text-center leading-[1]">{opt.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* Photo Focus Position (Vertical Crop Focal Point 0-100%) */}
@@ -1189,6 +1369,24 @@ function WedGrapherAiryBuilderContent() {
                           max="700"
                           value={data.shootDetails.photoHeight || 350}
                           onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoHeight: Number(e.target.value) } })}
+                          className="w-full accent-black cursor-pointer"
+                        />
+                      </div>
+                    )}
+
+                    {/* Photo Width Resizer Slider */}
+                    {data.shootDetails.photo && ['arch', 'rounded', 'rectangle'].includes(data.shootDetails.frameShape || 'arch') && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                          <span>Photo Width</span>
+                          <span>{data.shootDetails.photoWidth || 75}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="30"
+                          max="100"
+                          value={data.shootDetails.photoWidth || 75}
+                          onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoWidth: Number(e.target.value) } })}
                           className="w-full accent-black cursor-pointer"
                         />
                       </div>
@@ -1262,19 +1460,86 @@ function WedGrapherAiryBuilderContent() {
                       )}
                     </div>
 
+                    {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
                     <div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
-                        <span>Photo Height ({data.whatsIncluded.photoHeight}px)</span>
+                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
+                      <div className="grid grid-cols-5 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
+                        {[
+                          { value: 'arch', label: 'Arch', icon: '⋂' },
+                          { value: 'rounded', label: 'Round', icon: '▣' },
+                          { value: 'rectangle', label: 'Rect', icon: '▬' },
+                          { value: 'full-width', label: 'Full Width', icon: '◻' },
+                          { value: 'background', label: 'Background', icon: '⊡' },
+                        ].map(opt => {
+                          const isActive = (data.whatsIncluded.frameShape || 'rounded') === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, frameShape: opt.value as any } })}
+                              className={`py-1.5 rounded-lg text-[7px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
+                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
+                              }`}
+                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
+                            >
+                              <span className="text-[11px] leading-none">{opt.icon}</span>
+                              <span className="text-center leading-[1]">{opt.label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <input
-                        type="range"
-                        min="150"
-                        max="600"
-                        value={data.whatsIncluded.photoHeight}
-                        onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoHeight: Number(e.target.value) } })}
-                        className="w-full accent-black cursor-pointer"
-                      />
                     </div>
+
+                    {/* Photo Focus Position */}
+                    {data.whatsIncluded.photo && (
+                      <div className="space-y-1.5 p-2 rounded-xl bg-amber-50/60 border border-amber-200/80">
+                        <div className="flex items-center justify-between text-[10px] text-amber-900 font-bold">
+                          <span>Photo Focus (Up / Down)</span>
+                          <span className="font-mono text-amber-700">{data.whatsIncluded.photoFocalY ?? 50}%</span>
+                        </div>
+                        <input
+                          type="range" min="0" max="100"
+                          value={data.whatsIncluded.photoFocalY ?? 50}
+                          onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoFocalY: Number(e.target.value) } })}
+                          className="w-full accent-amber-700 cursor-pointer"
+                        />
+                        <div className="flex items-center justify-between text-[9px] font-bold text-amber-800">
+                          <button type="button" onClick={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoFocalY: 0 } })} className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer">Top (Faces) ⬆</button>
+                          <button type="button" onClick={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoFocalY: 50 } })} className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer">Center ⏺</button>
+                          <button type="button" onClick={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoFocalY: 100 } })} className="px-1.5 py-0.5 rounded bg-white border border-amber-300 hover:bg-amber-100 cursor-pointer">Bottom ⬇</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Photo Height */}
+                    {data.whatsIncluded.photo && (data.whatsIncluded.frameShape || 'rounded') !== 'background' && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                          <span>Photo Height</span>
+                          <span>{data.whatsIncluded.photoHeight || 350}px</span>
+                        </div>
+                        <input type="range" min="150" max="700"
+                          value={data.whatsIncluded.photoHeight || 350}
+                          onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoHeight: Number(e.target.value) } })}
+                          className="w-full accent-black cursor-pointer"
+                        />
+                      </div>
+                    )}
+
+                    {/* Photo Width */}
+                    {data.whatsIncluded.photo && ['arch', 'rounded', 'rectangle'].includes(data.whatsIncluded.frameShape || 'rounded') && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
+                          <span>Photo Width</span>
+                          <span>{data.whatsIncluded.photoWidth || 75}%</span>
+                        </div>
+                        <input type="range" min="30" max="100"
+                          value={data.whatsIncluded.photoWidth || 75}
+                          onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoWidth: Number(e.target.value) } })}
+                          className="w-full accent-black cursor-pointer"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1525,14 +1790,45 @@ function WedGrapherAiryBuilderContent() {
                 </span>
               </div>
 
-              {/* About Us Single Featured Photo (100% CUT-TO-CUT ABSOLUTE FULL BLEED EDGE-TO-EDGE WITH ZERO BLANK SPACE) */}
-              {data.aboutUs.bottomBannerPhoto && (
+              {/* About Us Photo – Shape-Aware Rendering (Arch / Rounded / Rect / Full-Width / Background) */}
+              {data.aboutUs.bottomBannerPhoto && ['arch', 'rounded', 'rectangle'].includes(data.aboutUs.frameShape || 'full-width') && (
+                <div className="mt-4 mx-auto" style={{ width: `${data.aboutUs.photoWidth || 75}%` }}>
+                  <div
+                    className={`overflow-hidden shadow-md relative transition-all duration-300 ${
+                      (data.aboutUs.frameShape || 'full-width') === 'arch'
+                        ? 'rounded-t-[999px] rounded-b-none'
+                        : data.aboutUs.frameShape === 'rectangle'
+                        ? 'rounded-none'
+                        : 'rounded-2xl'
+                    }`}
+                    style={{ height: `${data.aboutUs.bottomBannerHeight || 200}px` }}
+                  >
+                    <img
+                      src={data.aboutUs.bottomBannerPhoto}
+                      alt="About Us"
+                      className="w-full h-full object-cover bg-transparent"
+                      style={{ objectPosition: `50% ${data.aboutUs.photoFocalY ?? 50}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              {data.aboutUs.bottomBannerPhoto && (data.aboutUs.frameShape || 'full-width') === 'background' && (
                 <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
-                  <img 
-                    src={data.aboutUs.bottomBannerPhoto} 
+                  <img
+                    src={data.aboutUs.bottomBannerPhoto}
+                    alt="About Us Background"
+                    className="w-full object-cover filter grayscale-[15%] opacity-40 rounded-none block"
+                    style={{ height: `${data.aboutUs.bottomBannerHeight || 200}px`, objectPosition: `50% ${data.aboutUs.photoFocalY ?? 50}%` }}
+                  />
+                </div>
+              )}
+              {data.aboutUs.bottomBannerPhoto && (data.aboutUs.frameShape || 'full-width') === 'full-width' && (
+                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
+                  <img
+                    src={data.aboutUs.bottomBannerPhoto}
                     alt="About Us Full Bleed"
                     className="w-full object-cover object-center bg-transparent rounded-none block shadow-xs"
-                    style={{ height: `${data.aboutUs.bottomBannerHeight || 200}px` }}
+                    style={{ height: `${data.aboutUs.bottomBannerHeight || 200}px`, objectPosition: `50% ${data.aboutUs.photoFocalY ?? 50}%` }}
                   />
                 </div>
               )}
@@ -1630,9 +1926,9 @@ function WedGrapherAiryBuilderContent() {
                   </div>
                 )}
 
-                {/* Options 1, 2, 3: Arch, Rounded, Rectangle Centered Cards */}
+                {/* Options 1, 2, 3: Arch, Rounded, Rectangle – Same width/height logic as Cover Page */}
                 {data.shootDetails.photo && ['arch', 'rounded', 'rectangle'].includes(data.shootDetails.frameShape || 'arch') && (
-                  <div className="mt-6 max-w-xl mx-auto">
+                  <div className="mt-6 mx-auto" style={{ width: `${data.shootDetails.photoWidth || 75}%` }}>
                     <div 
                       className={`overflow-hidden shadow-md relative transition-all duration-300 ${
                         (data.shootDetails.frameShape || 'arch') === 'arch'
@@ -1642,7 +1938,7 @@ function WedGrapherAiryBuilderContent() {
                           : 'rounded-2xl'
                       }`}
                       style={{ 
-                        height: `${data.shootDetails.photoHeight || 350}px`,
+                        height: `${data.shootDetails.photoHeight || 450}px`,
                         borderColor: photoBorderColor,
                         borderWidth: '1px',
                         backgroundColor: 'transparent'
@@ -1674,13 +1970,45 @@ function WedGrapherAiryBuilderContent() {
                 {data.whatsIncluded.deliverablesText}
               </div>
 
-              {data.whatsIncluded.photo && (
-                <div className="rounded-2xl overflow-hidden mt-4 shadow-md bg-transparent" style={{ borderColor: photoBorderColor, borderWidth: '1px' }}>
-                  <img 
-                    src={data.whatsIncluded.photo} 
-                    alt="Package Deliverables"
-                    className="w-full object-cover object-center bg-transparent"
-                    style={{ height: `${data.whatsIncluded.photoHeight}px` }}
+              {/* What's Included Photo – Shape-Aware Rendering */}
+              {data.whatsIncluded.photo && ['arch', 'rounded', 'rectangle'].includes(data.whatsIncluded.frameShape || 'rounded') && (
+                <div className="mt-4 mx-auto" style={{ width: `${data.whatsIncluded.photoWidth || 75}%` }}>
+                  <div
+                    className={`overflow-hidden shadow-md relative transition-all duration-300 ${
+                      (data.whatsIncluded.frameShape || 'rounded') === 'arch'
+                        ? 'rounded-t-[999px] rounded-b-none'
+                        : (data.whatsIncluded.frameShape || 'rounded') === 'rectangle'
+                        ? 'rounded-none'
+                        : 'rounded-2xl'
+                    }`}
+                    style={{ height: `${data.whatsIncluded.photoHeight || 350}px`, borderColor: photoBorderColor, borderWidth: '1px', backgroundColor: 'transparent' }}
+                  >
+                    <img
+                      src={data.whatsIncluded.photo}
+                      alt="Package Deliverables"
+                      className="w-full h-full object-cover bg-transparent"
+                      style={{ objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              {data.whatsIncluded.photo && (data.whatsIncluded.frameShape || 'rounded') === 'background' && (
+                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none mt-4 overflow-hidden">
+                  <img
+                    src={data.whatsIncluded.photo}
+                    alt="Package Background"
+                    className="w-full object-cover filter grayscale-[15%] opacity-40 rounded-none block"
+                    style={{ height: `${data.whatsIncluded.photoHeight || 350}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
+                  />
+                </div>
+              )}
+              {data.whatsIncluded.photo && (data.whatsIncluded.frameShape || 'rounded') === 'full-width' && (
+                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none mt-4 overflow-hidden">
+                  <img
+                    src={data.whatsIncluded.photo}
+                    alt="Package Deliverables Full Bleed"
+                    className="w-full object-cover bg-transparent rounded-none block shadow-xs"
+                    style={{ height: `${data.whatsIncluded.photoHeight || 350}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
                   />
                 </div>
               )}
