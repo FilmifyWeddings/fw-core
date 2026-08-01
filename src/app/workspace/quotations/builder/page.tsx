@@ -1399,55 +1399,73 @@ function WedGrapherAiryBuilderContent() {
 
             </div>
 
-            {/* 2. ABOUT US SECTION (EXACT DESIGN MATCH WITH BIRDS, MONOGRAM & QUOTES) */}
+            {/* 2. ABOUT US SECTION (EXACT DESIGN MATCH: REALISTIC BIRDS, INTERLOCKED CORMORANT U&A, CUT-TO-CUT FULL BLEED IMAGE) */}
             <div className="pt-10 border-t relative overflow-hidden space-y-6" style={{ borderColor: borderColor }}>
               
-              {/* Flying Birds Silhouette Vector (Top Right) */}
-              <div className="absolute top-8 right-2 pointer-events-none opacity-85" style={{ color: kickerColor }}>
-                <svg width="120" height="55" viewBox="0 0 120 55" fill="currentColor">
-                  <path d="M90,8 C86,6 84,8 81,10 C83,8 86,4 91,6 C94,7 97,10 100,11 C97,10 93,9 90,8 Z" />
-                  <path d="M70,18 C66,16 64,18 61,20 C63,18 66,14 71,16 C74,17 77,20 80,21 C77,20 73,19 70,18 Z" />
-                  <path d="M50,26 C46,24 44,26 41,28 C43,26 46,22 51,24 C54,25 57,28 60,29 C57,28 53,27 50,26 Z" />
-                  <path d="M102,4 C99,2 97,4 95,6 C96,4 99,1 103,3 C105,4 108,6 110,7 C108,6 104,5 102,4 Z" />
-                  <path d="M80,34 C77,32 75,34 73,36 C74,34 77,31 81,33 C83,34 86,36 88,37 C86,36 82,35 80,34 Z" />
-                  <path d="M35,33 C32,31 30,33 27,35 C29,33 32,29 37,31 C40,32 43,35 46,36 C43,35 39,34 35,33 Z" />
+              {/* Realistic Flying Birds Silhouette Vector (Top Right V-Formation) */}
+              <div className="absolute top-4 right-4 pointer-events-none opacity-85" style={{ color: kickerColor }}>
+                <svg width="150" height="75" viewBox="0 0 150 75" fill="currentColor">
+                  {/* Lead Crane (Top Right) */}
+                  <path d="M135,6 C131,3 127,6 123,9 C127,7 131,4 136,6 C140,7 144,10 147,11 C143,10 139,9 135,6 Z" />
+                  <path d="M134,7 C137,4 140,5 142,8 C139,7 136,7 134,7 Z" />
+                  
+                  {/* Bird 2 */}
+                  <path d="M112,16 C107,12 102,16 97,20 C102,17 107,13 113,16 C117,18 122,22 125,24 C121,22 116,20 112,16 Z" />
+                  
+                  {/* Bird 3 */}
+                  <path d="M120,26 C115,22 110,26 105,30 C110,27 115,23 121,26 C125,28 130,32 133,34 C129,32 124,30 120,26 Z" />
+                  
+                  {/* Bird 4 */}
+                  <path d="M90,27 C85,23 80,27 75,31 C80,28 85,24 91,27 C95,29 100,33 103,35 C99,33 94,31 90,27 Z" />
+                  
+                  {/* Bird 5 */}
+                  <path d="M98,37 C93,33 88,37 83,41 C88,38 93,34 99,37 C103,39 108,43 111,45 C107,43 102,41 98,37 Z" />
+                  
+                  {/* Bird 6 */}
+                  <path d="M72,38 C67,34 62,38 57,42 C62,39 67,35 73,38 C77,40 82,44 85,46 C81,44 76,42 72,38 Z" />
+                  
+                  {/* Bird 7 */}
+                  <path d="M79,49 C74,45 69,49 64,53 C69,50 74,46 80,49 C84,51 89,55 92,57 C88,55 83,53 79,49 Z" />
+                  
+                  {/* Bird 8 (Trailing Left Wing) */}
+                  <path d="M52,50 C47,46 42,50 37,54 C42,51 47,47 53,50 C57,52 62,56 65,58 C61,56 56,54 52,50 Z" />
                 </svg>
               </div>
 
-              {/* Artistic Minimalist "ABOUT US" Monogram Logo (A + BOUT / U + S) */}
-              <div className="flex flex-col items-center justify-center pt-4 pb-2 relative select-none">
-                <div className="relative inline-flex flex-col items-center justify-center text-center" style={{ color: textColor }}>
-                  {/* Top Row: Giant A + BOUT */}
-                  <div className="flex items-baseline justify-center relative -mr-4 sm:-mr-6">
-                    <span 
-                      className="text-7xl sm:text-8xl leading-none tracking-tight font-normal" 
-                      style={{ fontFamily: data.primaryFont || "'Cormorant Garamond', serif" }}
-                    >
-                      A
-                    </span>
-                    <span 
-                      className="text-[10px] sm:text-xs tracking-[0.35em] uppercase font-light -ml-0.5 -translate-y-6 sm:-translate-y-8 opacity-90" 
-                      style={{ fontFamily: data.secondaryFont }}
-                    >
-                      BOUT
-                    </span>
-                  </div>
+              {/* Artistic Minimalist "ABOUT US" Monogram (Fixed Cormorant Garamond Font & Interlocked U+A) */}
+              <div className="flex flex-col items-center justify-center pt-8 pb-4 relative select-none">
+                <div className="relative inline-block w-[180px] h-[120px]" style={{ color: textColor }}>
+                  {/* Giant U (Fixed Font: Cormorant Garamond - Top-right touches A's left leg) */}
+                  <span 
+                    className="absolute left-1 top-4 text-7xl sm:text-8xl font-normal leading-none select-none"
+                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  >
+                    U
+                  </span>
 
-                  {/* Bottom Row: U + S (Interlocked with A) */}
-                  <div className="flex items-baseline justify-center relative -mt-8 sm:-mt-11 -ml-6 sm:-ml-8">
-                    <span 
-                      className="text-7xl sm:text-8xl leading-none tracking-tight font-normal" 
-                      style={{ fontFamily: data.primaryFont || "'Cormorant Garamond', serif" }}
-                    >
-                      U
-                    </span>
-                    <span 
-                      className="text-[10px] sm:text-xs tracking-[0.35em] uppercase font-light -ml-0.5 -translate-y-2 opacity-90" 
-                      style={{ fontFamily: data.secondaryFont }}
-                    >
-                      S
-                    </span>
-                  </div>
+                  {/* Giant A (Fixed Font: Cormorant Garamond - Positioned so left leg touches U) */}
+                  <span 
+                    className="absolute left-[3.9rem] top-0 text-7xl sm:text-8xl font-normal leading-none select-none"
+                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  >
+                    A
+                  </span>
+
+                  {/* BOUT (Small caps, right of A) */}
+                  <span 
+                    className="absolute left-[8.2rem] top-5 text-[10px] sm:text-[11px] tracking-[0.35em] uppercase font-light opacity-85"
+                    style={{ fontFamily: data.secondaryFont }}
+                  >
+                    BOUT
+                  </span>
+
+                  {/* S (Small caps, right of U / under A) */}
+                  <span 
+                    className="absolute left-[4.5rem] top-[4.6rem] text-[10px] sm:text-[11px] tracking-[0.35em] uppercase font-light opacity-85"
+                    style={{ fontFamily: data.secondaryFont }}
+                  >
+                    S
+                  </span>
                 </div>
               </div>
 
@@ -1473,14 +1491,14 @@ function WedGrapherAiryBuilderContent() {
                 </span>
               </div>
 
-              {/* About Us Single Featured Photo Option (Resizable Height) */}
+              {/* About Us Single Featured Photo (FULL BLEED - CUT TO CUT 0 LEFT/RIGHT/BOTTOM MARGIN) */}
               {data.aboutUs.bottomBannerPhoto && (
-                <div className="pt-4 overflow-hidden rounded-xl shadow-xs">
+                <div className="-mx-10 sm:-mx-14 -mb-10 sm:-mb-14 pt-4 overflow-hidden">
                   <img 
                     src={data.aboutUs.bottomBannerPhoto} 
-                    alt="About Us Featured"
-                    className="w-full object-cover object-center bg-transparent rounded-xl"
-                    style={{ height: `${data.aboutUs.bottomBannerHeight || 240}px` }}
+                    alt="About Us Full Bleed"
+                    className="w-full object-cover object-center bg-transparent rounded-none block shadow-xs"
+                    style={{ height: `${data.aboutUs.bottomBannerHeight || 200}px` }}
                   />
                 </div>
               )}
