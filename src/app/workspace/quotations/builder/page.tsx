@@ -1399,75 +1399,43 @@ function WedGrapherAiryBuilderContent() {
 
             </div>
 
-            {/* 2. ABOUT US SECTION (100% PIXEL-PERFECT SVG VECTOR MONOGRAM & BIRDS GRAPHIC) */}
+            {/* 2. ABOUT US SECTION (INTEGRATED USER'S EXACT A&U.SVG AND BIRDS.SVG WITH DYNAMIC THEME COLOR TINTING) */}
             <div className="pt-10 border-t relative overflow-hidden space-y-6" style={{ borderColor: borderColor }}>
               
-              {/* High-Resolution Flying Birds Graphic (Top Right V-Formation) */}
-              <div className="absolute top-2 right-2 pointer-events-none opacity-85" style={{ color: kickerColor }}>
-                <svg width="180" height="90" viewBox="0 0 180 90" fill="currentColor">
-                  <path d="M165,8 C161,5 157,8 153,11 C157,9 161,6 166,8 C170,9 174,12 177,13 C173,12 169,11 165,8 Z" />
-                  <path d="M142,18 C137,14 132,18 127,22 C132,19 137,15 143,18 C147,20 152,24 155,26 C151,24 146,22 142,18 Z" />
-                  <path d="M150,28 C145,24 140,28 135,32 C140,29 145,25 151,28 C155,30 160,34 163,36 C159,34 154,32 150,28 Z" />
-                  <path d="M120,29 C115,25 110,29 105,33 C110,30 115,26 121,29 C125,31 130,35 133,37 C129,35 124,33 120,29 Z" />
-                  <path d="M128,39 C123,35 118,39 113,43 C118,40 123,36 129,39 C133,41 138,45 141,47 C137,45 132,43 128,39 Z" />
-                  <path d="M102,40 C97,36 92,40 87,44 C92,41 97,37 103,40 C107,42 112,46 115,48 C111,46 106,44 102,40 Z" />
-                  <path d="M109,51 C104,47 99,51 94,55 C99,52 104,48 110,51 C114,53 119,57 122,59 C118,57 113,55 109,51 Z" />
-                  <path d="M82,52 C77,48 72,52 67,56 C72,53 77,49 83,52 C87,54 92,58 95,60 C91,58 86,56 82,52 Z" />
-                  <path d="M62,63 C57,59 52,63 47,67 C52,64 57,60 63,63 C67,65 72,69 75,71 C71,69 66,67 62,63 Z" />
-                </svg>
+              {/* High-Resolution Flying Birds Graphic (User's Exact Birds.svg with Dynamic Theme Color) */}
+              <div className="absolute top-2 right-2 pointer-events-none opacity-85">
+                <div 
+                  className="w-[180px] h-[90px] transition-colors duration-300"
+                  style={{
+                    backgroundColor: kickerColor || textColor,
+                    WebkitMaskImage: `url(/images/Birds.svg)`,
+                    maskImage: `url(/images/Birds.svg)`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                    WebkitMaskPosition: 'top right',
+                    maskPosition: 'top right',
+                  }}
+                />
               </div>
 
-              {/* Exact Artistic Layered Monogram Vector (U + A + BOUT + S) */}
-              <div className="flex flex-col items-center justify-center pt-6 pb-2 relative select-none">
-                <svg width="220" height="140" viewBox="0 0 220 140" fill="currentColor" style={{ color: textColor }}>
-                  {/* Giant Serif U (Bottom-Left) */}
-                  <text 
-                    x="12" 
-                    y="112" 
-                    fontFamily="'Cormorant Garamond', 'Bodoni Moda', 'Playfair Display', serif" 
-                    fontSize="105" 
-                    fontWeight="400"
-                  >
-                    U
-                  </text>
-
-                  {/* Giant Serif A (Top-Right - Left leg touches U) */}
-                  <text 
-                    x="64" 
-                    y="68" 
-                    fontFamily="'Cormorant Garamond', 'Bodoni Moda', 'Playfair Display', serif" 
-                    fontSize="105" 
-                    fontWeight="400"
-                  >
-                    A
-                  </text>
-
-                  {/* BOUT (Tracked uppercase, beside top-right leg of A) */}
-                  <text 
-                    x="132" 
-                    y="54" 
-                    fontFamily="'Plus Jakarta Sans', sans-serif" 
-                    fontSize="12" 
-                    letterSpacing="4" 
-                    fontWeight="300"
-                    opacity="0.9"
-                  >
-                    BOUT
-                  </text>
-
-                  {/* S (Tracked uppercase, inside crotch of U & A) */}
-                  <text 
-                    x="78" 
-                    y="108" 
-                    fontFamily="'Plus Jakarta Sans', sans-serif" 
-                    fontSize="12" 
-                    letterSpacing="4" 
-                    fontWeight="300"
-                    opacity="0.9"
-                  >
-                    S
-                  </text>
-                </svg>
+              {/* Exact Artistic Layered Monogram (User's Exact A&U.svg with Dynamic Theme Color) */}
+              <div className="flex flex-col items-center justify-center pt-4 pb-2 relative select-none">
+                <div 
+                  className="w-[240px] sm:w-[280px] h-[120px] sm:h-[140px] transition-colors duration-300"
+                  style={{
+                    backgroundColor: textColor,
+                    WebkitMaskImage: `url(/images/A%26U.svg)`,
+                    maskImage: `url(/images/A%26U.svg)`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                    WebkitMaskPosition: 'center',
+                    maskPosition: 'center',
+                  }}
+                />
               </div>
 
               {/* Central Quote Block with Elegant Double Quotation Marks “ ” */}
