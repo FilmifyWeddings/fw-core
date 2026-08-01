@@ -74,10 +74,10 @@ const DEFAULT_AIRY_PROPOSAL = {
   aboutUs: {
     kicker: 'INTRODUCTION',
     heading: 'ABOUT US',
-    text: 'We specialize in capturing love stories of contemporary Indian couples.\n\nEvery memory is carefully selected and transformed into everlasting films and photographs.',
+    text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
     signature: 'FOUNDER & DIRECTOR, AS',
     bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
-    bottomBannerHeight: 130, // 15% height ratio of page bottom
+    bottomBannerHeight: 180, // Single photo height slider
     textAlign: 'Left',
     background: 'Page colour',
   },
@@ -1399,29 +1399,88 @@ function WedGrapherAiryBuilderContent() {
 
             </div>
 
-            {/* 2. ABOUT US SECTION (FULL BLEED BOTTOM BANNER IMAGE) */}
-            <div className="space-y-4 pt-10 border-t relative overflow-hidden" style={{ borderColor: borderColor }}>
-              <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
-                {data.aboutUs.kicker}
-              </span>
-              <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                {data.aboutUs.heading}
-              </h2>
-              <p className="text-xs leading-relaxed whitespace-pre-line opacity-90" style={{ color: textColor, fontFamily: data.secondaryFont }}>
-                {data.aboutUs.text}
-              </p>
-              <span className="text-[10px] font-bold uppercase tracking-wider block pt-2" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
-                {data.aboutUs.signature}
-              </span>
+            {/* 2. ABOUT US SECTION (EXACT DESIGN MATCH WITH BIRDS, MONOGRAM & QUOTES) */}
+            <div className="pt-10 border-t relative overflow-hidden space-y-6" style={{ borderColor: borderColor }}>
+              
+              {/* Flying Birds Silhouette Vector (Top Right) */}
+              <div className="absolute top-8 right-2 pointer-events-none opacity-85" style={{ color: kickerColor }}>
+                <svg width="120" height="55" viewBox="0 0 120 55" fill="currentColor">
+                  <path d="M90,8 C86,6 84,8 81,10 C83,8 86,4 91,6 C94,7 97,10 100,11 C97,10 93,9 90,8 Z" />
+                  <path d="M70,18 C66,16 64,18 61,20 C63,18 66,14 71,16 C74,17 77,20 80,21 C77,20 73,19 70,18 Z" />
+                  <path d="M50,26 C46,24 44,26 41,28 C43,26 46,22 51,24 C54,25 57,28 60,29 C57,28 53,27 50,26 Z" />
+                  <path d="M102,4 C99,2 97,4 95,6 C96,4 99,1 103,3 C105,4 108,6 110,7 C108,6 104,5 102,4 Z" />
+                  <path d="M80,34 C77,32 75,34 73,36 C74,34 77,31 81,33 C83,34 86,36 88,37 C86,36 82,35 80,34 Z" />
+                  <path d="M35,33 C32,31 30,33 27,35 C29,33 32,29 37,31 C40,32 43,35 46,36 C43,35 39,34 35,33 Z" />
+                </svg>
+              </div>
 
-              {/* About Us Bottom Banner Photo (15% Ratio, Full Bleed - Left to Right 0 Margin) */}
+              {/* Artistic Minimalist "ABOUT US" Monogram Logo (A + BOUT / U + S) */}
+              <div className="flex flex-col items-center justify-center pt-4 pb-2 relative select-none">
+                <div className="relative inline-flex flex-col items-center justify-center text-center" style={{ color: textColor }}>
+                  {/* Top Row: Giant A + BOUT */}
+                  <div className="flex items-baseline justify-center relative -mr-4 sm:-mr-6">
+                    <span 
+                      className="text-7xl sm:text-8xl leading-none tracking-tight font-normal" 
+                      style={{ fontFamily: data.primaryFont || "'Cormorant Garamond', serif" }}
+                    >
+                      A
+                    </span>
+                    <span 
+                      className="text-[10px] sm:text-xs tracking-[0.35em] uppercase font-light -ml-0.5 -translate-y-6 sm:-translate-y-8 opacity-90" 
+                      style={{ fontFamily: data.secondaryFont }}
+                    >
+                      BOUT
+                    </span>
+                  </div>
+
+                  {/* Bottom Row: U + S (Interlocked with A) */}
+                  <div className="flex items-baseline justify-center relative -mt-8 sm:-mt-11 -ml-6 sm:-ml-8">
+                    <span 
+                      className="text-7xl sm:text-8xl leading-none tracking-tight font-normal" 
+                      style={{ fontFamily: data.primaryFont || "'Cormorant Garamond', serif" }}
+                    >
+                      U
+                    </span>
+                    <span 
+                      className="text-[10px] sm:text-xs tracking-[0.35em] uppercase font-light -ml-0.5 -translate-y-2 opacity-90" 
+                      style={{ fontFamily: data.secondaryFont }}
+                    >
+                      S
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quote Block with Large Double Quotations “ ” */}
+              <div className="my-6 px-2 sm:px-6 flex items-center justify-center gap-2 sm:gap-4 max-w-xl mx-auto text-center">
+                <span 
+                  className="text-4xl sm:text-5xl font-serif leading-none select-none shrink-0" 
+                  style={{ color: kickerColor }}
+                >
+                  “
+                </span>
+                <p 
+                  className="text-xs sm:text-sm leading-relaxed font-normal opacity-90 tracking-wide"
+                  style={{ color: textColor, fontFamily: data.secondaryFont }}
+                >
+                  {data.aboutUs.text}
+                </p>
+                <span 
+                  className="text-4xl sm:text-5xl font-serif leading-none select-none shrink-0" 
+                  style={{ color: kickerColor }}
+                >
+                  ”
+                </span>
+              </div>
+
+              {/* About Us Single Featured Photo Option (Resizable Height) */}
               {data.aboutUs.bottomBannerPhoto && (
-                <div className="-mx-10 sm:-mx-14 -mb-10 sm:-mb-14 pt-6 overflow-hidden">
+                <div className="pt-4 overflow-hidden rounded-xl shadow-xs">
                   <img 
                     src={data.aboutUs.bottomBannerPhoto} 
-                    alt="About Us Bottom Banner"
-                    className="w-full object-cover object-center bg-transparent shadow-xs"
-                    style={{ height: `${data.aboutUs.bottomBannerHeight || 130}px` }}
+                    alt="About Us Featured"
+                    className="w-full object-cover object-center bg-transparent rounded-xl"
+                    style={{ height: `${data.aboutUs.bottomBannerHeight || 240}px` }}
                   />
                 </div>
               )}
