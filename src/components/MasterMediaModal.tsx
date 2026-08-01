@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ImageIcon, Upload, X, Trash2, AlertTriangle, Check, HardDrive, Eye, RefreshCw
+  ImageIcon, Upload, X, Trash2, AlertTriangle, HardDrive, Eye, RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient } from '@/lib/master-image-manager';
@@ -56,6 +56,7 @@ export function MasterMediaModal({
   });
 
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [quotaWarningModal, setQuotaWarningModal] = useState<string | null>(null);
   const [previewLightboxUrl, setPreviewLightboxUrl] = useState<string | null>(null);
 
@@ -100,7 +101,7 @@ export function MasterMediaModal({
   const totalCount = images.length;
   const isCountLimitReached = totalCount >= 10;
 
-  // File Upload Handler with Superfast 0.90 Quality WebP Compression & Server Guard
+  // Direct Automatic Upload Handler (Superfast WebP Compression at Quality 0.92 & Max Resolution 2048px)
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -112,6 +113,7 @@ export function MasterMediaModal({
     }
 
     setIsUploading(true);
+    setUploadProgress(15);
 
     try {
       // Server-Side DB Quota Enforcement Check (Count strictly >= 10)
@@ -125,20 +127,27 @@ export function MasterMediaModal({
       if (serverCount >= 10) {
         setQuotaWarningModal('Database Quota Guard: Upload rejected by server. Workspace has reached maximum limit of 10 Images.');
         setIsUploading(false);
+        setUploadProgress(0);
         return;
       }
 
-      // High-Quality Crisp WebP Compression (2400px HD resolution, Quality 0.90)
+      setUploadProgress(40);
+
+      // Automatic High-Quality Compression (2048px max resolution, Quality 0.92)
       const compressedWebPFile = await compressImageClient(file, {
-        maxWidth: 2400,
-        maxHeight: 2400,
-        quality: 0.90,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        quality: 0.92,
       });
+
+      setUploadProgress(70);
 
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64Url = event.target?.result as string;
         if (base64Url) {
+          setUploadProgress(88);
+
           // Insert into Supabase `user_gallery_images` table
           const { data: newDbImg, error: dbInsertErr } = await supabase
             .from('user_gallery_images')
@@ -147,16 +156,18 @@ export function MasterMediaModal({
               url: base64Url,
               file_name: compressedWebPFile.name,
               file_size: compressedWebPFile.size,
-              compression_quality: '90% WebP',
+              compression_quality: '92% WebP',
             })
             .select()
             .single();
+
+          setUploadProgress(100);
 
           const finalImgObj: UserGalleryImage = newDbImg || {
             url: base64Url,
             file_name: compressedWebPFile.name,
             file_size: compressedWebPFile.size,
-            compression_quality: '90% WebP',
+            compression_quality: '92% WebP',
           };
 
           setImages(prev => {
@@ -173,12 +184,14 @@ export function MasterMediaModal({
           }
         }
         setIsUploading(false);
+        setUploadProgress(0);
       };
       reader.readAsDataURL(compressedWebPFile);
     } catch (err) {
       console.error('[MasterMediaModal] Compression upload error:', err);
       alert('Upload failed. Please try again.');
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -258,7 +271,7 @@ export function MasterMediaModal({
             </div>
           </div>
 
-          {/* Upload Area with Clean 'Uploading...' Text */}
+          {/* Upload Area with Modern Progress UI (% Bar) */}
           <div className={`p-4 rounded-2xl border border-dashed flex flex-col items-center justify-center text-center space-y-2 transition-all ${
             isCountLimitReached 
               ? 'bg-rose-50/60 border-rose-300' 
@@ -282,27 +295,39 @@ export function MasterMediaModal({
                 }
                 hiddenFileInputRef.current?.click();
               }}
-              className={`px-5 py-2.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer ${
+              className={`px-5 py-2.5 rounded-full text-xs font-bold flex flex-col items-center gap-1 shadow-md transition-all cursor-pointer relative overflow-hidden min-w-[200px] ${
                 isCountLimitReached
                   ? 'bg-zinc-300 text-zinc-600 cursor-not-allowed border border-zinc-300'
                   : 'bg-black hover:bg-zinc-800 text-white'
               }`}
             >
-              {isUploading ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                  <span>Uploading...</span>
-                </>
-              ) : isCountLimitReached ? (
-                <>
-                  <AlertTriangle className="w-4 h-4 text-rose-600" />
-                  <span>Limit Reached ({totalCount}/10)</span>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4 text-amber-400" />
-                  <span>Upload New Image</span>
-                </>
+              <div className="flex items-center gap-2">
+                {isUploading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Uploading... {uploadProgress}%</span>
+                  </>
+                ) : isCountLimitReached ? (
+                  <>
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <span>Limit Reached ({totalCount}/10)</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 text-amber-400" />
+                    <span>Upload New Image</span>
+                  </>
+                )}
+              </div>
+
+              {/* Sleek Real-Time Progress Bar inside Upload Button */}
+              {isUploading && (
+                <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden mt-1">
+                  <div 
+                    className="h-full bg-amber-500 transition-all duration-200"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
               )}
             </button>
 
@@ -404,28 +429,31 @@ export function MasterMediaModal({
             </button>
           </div>
 
-          {/* Full-Size Image Lightbox Preview Modal */}
+          {/* ── REDESIGNED FULL-SCREEN CINEMATIC LIGHTBOX OVERLAY ── */}
           <AnimatePresence>
             {previewLightboxUrl && (
-              <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="relative max-w-xl max-h-[85vh] w-full flex flex-col items-center justify-center"
+              <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-8">
+                {/* Modern Floating Close Button (Top-Right) */}
+                <button
+                  type="button"
+                  onClick={() => setPreviewLightboxUrl(null)}
+                  className="fixed top-6 right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all border border-white/15 cursor-pointer shadow-xl z-10 hover:scale-105"
+                  title="Close Preview"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setPreviewLightboxUrl(null)}
-                    className="absolute -top-3 -right-3 p-2 rounded-full bg-white text-black font-bold shadow-lg hover:bg-zinc-200 cursor-pointer z-10"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                  <X className="w-6 h-6" />
+                </button>
 
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.92 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.92 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                  className="relative max-w-5xl max-h-[85vh] w-full flex items-center justify-center pointer-events-auto"
+                >
                   <img 
                     src={previewLightboxUrl} 
                     alt="Full Preview" 
-                    className="max-w-full max-h-[80vh] object-contain rounded-2xl border-2 border-zinc-800 shadow-2xl"
+                    className="max-w-full max-h-[85vh] object-contain rounded-3xl shadow-2xl border border-white/10"
                   />
                 </motion.div>
               </div>
