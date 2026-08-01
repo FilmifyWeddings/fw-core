@@ -178,10 +178,17 @@ export default function WorkspaceQuotationsGalleryPage() {
     loadUserDataSilently();
   }, []);
 
-  // Calculate Image Storage Stats (Max 30 MB per user)
-  const totalImageBytes = userImages.reduce((acc, img) => acc + (img.file_size || 0), 0);
-  const totalImageMB = (totalImageBytes / (1024 * 1024)).toFixed(1);
-  const storagePct = Math.min(100, Math.round((totalImageBytes / (30 * 1024 * 1024)) * 100));
+  // Real-time gallery sync event listener (instant count update across modal & card)
+  useEffect(() => {
+    const handleGalleryUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && Array.isArray(customEvent.detail)) {
+        setUserImages(customEvent.detail);
+      }
+    };
+    window.addEventListener('wg_gallery_updated', handleGalleryUpdate);
+    return () => window.removeEventListener('wg_gallery_updated', handleGalleryUpdate);
+  }, []);
 
   // Step 1: Open PC Folder / Mobile Gallery directly
   const triggerFileSelection = () => {
@@ -202,11 +209,6 @@ export default function WorkspaceQuotationsGalleryPage() {
 
     if (userImages.length >= 10) {
       alert('Maximum limit reached: You can upload up to 10 images.');
-      return;
-    }
-
-    if (totalImageBytes + file.size > 30 * 1024 * 1024) {
-      alert('Storage limit reached: Maximum 30 MB total storage per user.');
       return;
     }
 
@@ -266,7 +268,12 @@ export default function WorkspaceQuotationsGalleryPage() {
         .single();
 
       if (!dbErr && newImg) {
-        setUserImages(prev => [newImg as UserGalleryImage, ...prev]);
+        setUserImages(prev => {
+          const updated = [newImg as UserGalleryImage, ...prev];
+          localStorage.setItem(`wg_gallery_cache_${userId}`, JSON.stringify(updated));
+          window.dispatchEvent(new CustomEvent('wg_gallery_updated', { detail: updated }));
+          return updated;
+        });
       } else {
         // Fallback local addition if table isn't migrated yet
         const fallbackImg: UserGalleryImage = {
@@ -277,32 +284,40 @@ export default function WorkspaceQuotationsGalleryPage() {
           compression_quality: selectedQuality,
           created_at: new Date().toISOString(),
         };
-        setUserImages(prev => [fallbackImg, ...prev]);
+        setUserImages(prev => {
+          const updated = [fallbackImg, ...prev];
+          localStorage.setItem(`wg_gallery_cache_${userId}`, JSON.stringify(updated));
+          window.dispatchEvent(new CustomEvent('wg_gallery_updated', { detail: updated }));
+          return updated;
+        });
       }
 
-      alert('Image compressed & uploaded successfully!');
       setShowUploadQualityModal(false);
       setSelectedFile(null);
       setPreviewUrl(null);
     } catch (err: any) {
       console.error('[QuotationsPage] Upload error:', err);
-      alert(`Upload completed with fallback url.`);
       setShowUploadQualityModal(false);
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Delete User Image
+  // Delete User Image (Instant Supabase + Storage + UI Sync)
   const handleDeleteImage = async (imageId: string, imageUrl: string) => {
     if (!confirm('Are you sure you want to delete this image?')) return;
 
+    setUserImages(prev => {
+      const updated = prev.filter(img => img.id !== imageId && img.url !== imageUrl);
+      localStorage.setItem(`wg_gallery_cache_${userId}`, JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('wg_gallery_updated', { detail: updated }));
+      return updated;
+    });
+
     try {
       await supabase.from('user_gallery_images').delete().eq('id', imageId);
-      setUserImages(prev => prev.filter(img => img.id !== imageId));
     } catch (err) {
       console.warn('Image delete error:', err);
-      setUserImages(prev => prev.filter(img => img.id !== imageId));
     }
   };
 
@@ -401,9 +416,6 @@ export default function WorkspaceQuotationsGalleryPage() {
               <h4 className="text-2xl font-black text-pink-950 dark:text-white mt-0.5">
                 {userImages.length} <span className="text-sm font-normal text-pink-700/60 dark:text-pink-400">/ 10 Images</span>
               </h4>
-              <span className="text-xs font-extrabold text-pink-700 dark:text-pink-300">
-                {totalImageMB} MB / 30 MB
-              </span>
             </div>
           </div>
 
@@ -411,7 +423,7 @@ export default function WorkspaceQuotationsGalleryPage() {
             <div className="h-2 w-full bg-pink-200/70 dark:bg-pink-950 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-pink-500 rounded-full transition-all duration-500" 
-                style={{ width: `${storagePct}%` }}
+                style={{ width: `${Math.min(100, (userImages.length / 10) * 100)}%` }}
               />
             </div>
           </div>

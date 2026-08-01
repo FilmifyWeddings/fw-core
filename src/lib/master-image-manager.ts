@@ -32,9 +32,9 @@ export async function compressImageClient(
   file: File | Blob,
   options: CompressionOptions = {}
 ): Promise<File> {
-  const maxWidth = options.maxWidth || 2048;
-  const maxHeight = options.maxHeight || 2048;
-  const quality = options.quality !== undefined ? options.quality : 0.88;
+  const maxWidth = options.maxWidth || 2400;
+  const maxHeight = options.maxHeight || 2400;
+  const quality = options.quality !== undefined ? options.quality : 0.90;
 
   // Derive original filename if File
   const originalName = file instanceof File ? file.name : 'image.jpg';
