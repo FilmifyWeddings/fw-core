@@ -95,7 +95,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     deliverablesHeading: 'Deliverables',
     deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
     photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 450, // Same default height as cover page
+    photoHeight: 320, // Default compact height matching Cover page proportion for Arch/Rounded/Rect
     photoWidth: 75,   // Same default width as cover page
     photoFocalY: 50,  // Range 0% (Top) to 100% (Bottom) vertical focal point
     photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
@@ -114,7 +114,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     textAlign: 'Left',
     background: 'Page colour',
     photo: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
-    photoHeight: 350,
+    photoHeight: 320,
     frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     photoFocalY: 50,
     photoWidth: 75,
@@ -195,6 +195,56 @@ const DEFAULT_AIRY_PROPOSAL = {
     studioContact: 'FW Studio • +91 9876543210 • studio@wedgrapher.com',
   }
 };
+
+// Reusable Premium 3D Curved Segmented Selector for Photo Layout Style
+interface Photo3DLayoutSelectorProps {
+  value: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
+  onChange: (newShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background') => void;
+}
+
+const PHOTO_SHAPE_OPTIONS = [
+  { value: 'arch', label: 'Arch', icon: '⋂' },
+  { value: 'rounded', label: 'Rounded', icon: '▣' },
+  { value: 'rectangle', label: 'Rectangle', icon: '▬' },
+  { value: 'full-width', label: 'Full Width', icon: '◻' },
+  { value: 'background', label: 'Background', icon: '⊡' },
+] as const;
+
+function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) {
+  const currentVal = value || 'arch';
+  return (
+    <div className="space-y-1">
+      <label className="block text-[9px] font-bold text-amber-900/80 uppercase tracking-wider">
+        Photo Layout Style
+      </label>
+      <div 
+        className="grid grid-cols-5 gap-1 p-1.5 rounded-2xl border border-amber-300/80 bg-gradient-to-b from-amber-100/90 via-amber-50 to-amber-200/60"
+        style={{
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.12), inset 0 -1px 2px rgba(255,255,255,0.8), 0 2px 6px rgba(0,0,0,0.04)'
+        }}
+      >
+        {PHOTO_SHAPE_OPTIONS.map(opt => {
+          const isActive = currentVal === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              className={`py-1.5 px-0.5 rounded-xl text-[8px] font-black transition-all duration-200 flex flex-col items-center justify-center gap-0.5 leading-tight cursor-pointer ${
+                isActive
+                  ? 'bg-gradient-to-b from-white via-amber-50 to-amber-100 text-amber-950 scale-[0.96] border border-amber-400/90 shadow-[0_3px_8px_rgba(180,130,40,0.35),_inset_0_1px_0_rgba(255,255,255,0.95)] font-black'
+                  : 'text-zinc-500 hover:text-amber-950 hover:bg-white/60 border border-transparent'
+              }`}
+            >
+              <span className="text-[13px] leading-none font-bold">{opt.icon}</span>
+              <span className="text-center truncate w-full text-[8px] font-extrabold">{opt.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function WedGrapherAiryBuilderContent() {
   const router = useRouter();
@@ -864,32 +914,21 @@ function WedGrapherAiryBuilderContent() {
                     </div>
 
                     {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
-                      <div className="grid grid-cols-3 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
-                        {[
-                          { value: 'arch', label: 'Arch', icon: '⋂' },
-                          { value: 'rounded', label: 'Rounded', icon: '▣' },
-                          { value: 'rectangle', label: 'Rect', icon: '▬' },
-                        ].map(opt => {
-                          const isActive = (data.cover.frameShape || 'arch') === opt.value;
-                          return (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => setData({ ...data, cover: { ...data.cover, frameShape: opt.value as any } })}
-                              className={`py-1.5 rounded-lg text-[9px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
-                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
-                              }`}
-                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
-                            >
-                              <span className="text-[13px] leading-none">{opt.icon}</span>
-                              <span>{opt.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <Photo3DLayoutSelector
+                      value={data.cover.frameShape || 'arch'}
+                      onChange={(newShape) => {
+                        const isSmallShape = ['arch', 'rounded', 'rectangle'].includes(newShape);
+                        const newHeight = isSmallShape && (data.cover.photoHeight > 450 || !data.cover.photoHeight) ? 420 : data.cover.photoHeight;
+                        setData({
+                          ...data,
+                          cover: {
+                            ...data.cover,
+                            frameShape: newShape,
+                            photoHeight: newHeight,
+                          }
+                        });
+                      }}
+                    />
 
                     {/* Photo Focus Position (Vertical Crop Focal Point 0-100%) */}
                     {data.cover.photoUrl && (
@@ -1074,34 +1113,21 @@ function WedGrapherAiryBuilderContent() {
                     </div>
 
                     {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
-                      <div className="grid grid-cols-5 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
-                        {[
-                          { value: 'arch', label: 'Arch', icon: '⋂' },
-                          { value: 'rounded', label: 'Round', icon: '▣' },
-                          { value: 'rectangle', label: 'Rect', icon: '▬' },
-                          { value: 'full-width', label: 'Full Width', icon: '◻' },
-                          { value: 'background', label: 'Background', icon: '⊡' },
-                        ].map(opt => {
-                          const isActive = (data.aboutUs.frameShape || 'full-width') === opt.value;
-                          return (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: opt.value as any } })}
-                              className={`py-1.5 rounded-lg text-[7px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
-                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
-                              }`}
-                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
-                            >
-                              <span className="text-[11px] leading-none">{opt.icon}</span>
-                              <span className="text-center leading-[1]">{opt.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <Photo3DLayoutSelector
+                      value={data.aboutUs.frameShape || 'full-width'}
+                      onChange={(newShape) => {
+                        const isSmallShape = ['arch', 'rounded', 'rectangle'].includes(newShape);
+                        const newHeight = isSmallShape && (data.aboutUs.bottomBannerHeight > 340 || !data.aboutUs.bottomBannerHeight) ? 260 : data.aboutUs.bottomBannerHeight;
+                        setData({
+                          ...data,
+                          aboutUs: {
+                            ...data.aboutUs,
+                            frameShape: newShape,
+                            bottomBannerHeight: newHeight,
+                          }
+                        });
+                      }}
+                    />
 
                     {/* Photo Focus Position (Vertical Crop Focal Point 0-100%) */}
                     {data.aboutUs.bottomBannerPhoto && (
@@ -1286,34 +1312,21 @@ function WedGrapherAiryBuilderContent() {
                     </div>
 
                     {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
-                      <div className="grid grid-cols-5 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
-                        {[
-                          { value: 'arch', label: 'Arch', icon: '⋂' },
-                          { value: 'rounded', label: 'Round', icon: '▣' },
-                          { value: 'rectangle', label: 'Rect', icon: '▬' },
-                          { value: 'full-width', label: 'Full Width', icon: '◻' },
-                          { value: 'background', label: 'Background', icon: '⊡' },
-                        ].map(opt => {
-                          const isActive = (data.shootDetails.frameShape || 'arch') === opt.value;
-                          return (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: opt.value as any } })}
-                              className={`py-1.5 rounded-lg text-[7px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
-                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
-                              }`}
-                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
-                            >
-                              <span className="text-[11px] leading-none">{opt.icon}</span>
-                              <span className="text-center leading-[1]">{opt.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <Photo3DLayoutSelector
+                      value={data.shootDetails.frameShape || 'arch'}
+                      onChange={(newShape) => {
+                        const isSmallShape = ['arch', 'rounded', 'rectangle'].includes(newShape);
+                        const newHeight = isSmallShape && (data.shootDetails.photoHeight > 360 || !data.shootDetails.photoHeight) ? 320 : data.shootDetails.photoHeight;
+                        setData({
+                          ...data,
+                          shootDetails: {
+                            ...data.shootDetails,
+                            frameShape: newShape,
+                            photoHeight: newHeight,
+                          }
+                        });
+                      }}
+                    />
 
                     {/* Photo Focus Position (Vertical Crop Focal Point 0-100%) */}
                     {data.shootDetails.photo && (
@@ -1361,13 +1374,13 @@ function WedGrapherAiryBuilderContent() {
                       <div>
                         <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
                           <span>Photo Height</span>
-                          <span>{data.shootDetails.photoHeight || 350}px</span>
+                          <span>{data.shootDetails.photoHeight || 320}px</span>
                         </div>
                         <input
                           type="range"
                           min="150"
                           max="700"
-                          value={data.shootDetails.photoHeight || 350}
+                          value={data.shootDetails.photoHeight || 320}
                           onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, photoHeight: Number(e.target.value) } })}
                           className="w-full accent-black cursor-pointer"
                         />
@@ -1461,34 +1474,21 @@ function WedGrapherAiryBuilderContent() {
                     </div>
 
                     {/* Photo Layout Style – 3D Carved Segmented Pill Buttons */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Photo Layout Style</label>
-                      <div className="grid grid-cols-5 gap-0.5 p-1 rounded-xl" style={{ background: 'linear-gradient(145deg, #d0d0d4, #e8e8ec)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.13), inset 0 1px 2px rgba(0,0,0,0.08)' }}>
-                        {[
-                          { value: 'arch', label: 'Arch', icon: '⋂' },
-                          { value: 'rounded', label: 'Round', icon: '▣' },
-                          { value: 'rectangle', label: 'Rect', icon: '▬' },
-                          { value: 'full-width', label: 'Full Width', icon: '◻' },
-                          { value: 'background', label: 'Background', icon: '⊡' },
-                        ].map(opt => {
-                          const isActive = (data.whatsIncluded.frameShape || 'rounded') === opt.value;
-                          return (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, frameShape: opt.value as any } })}
-                              className={`py-1.5 rounded-lg text-[7px] font-extrabold transition-all duration-150 flex flex-col items-center gap-0.5 leading-tight cursor-pointer ${
-                                isActive ? 'bg-white text-amber-800 scale-[0.97]' : 'text-zinc-500 hover:text-zinc-700 hover:bg-white/60'
-                              }`}
-                              style={isActive ? { boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)' } : {}}
-                            >
-                              <span className="text-[11px] leading-none">{opt.icon}</span>
-                              <span className="text-center leading-[1]">{opt.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <Photo3DLayoutSelector
+                      value={data.whatsIncluded.frameShape || 'rounded'}
+                      onChange={(newShape) => {
+                        const isSmallShape = ['arch', 'rounded', 'rectangle'].includes(newShape);
+                        const newHeight = isSmallShape && (data.whatsIncluded.photoHeight > 360 || !data.whatsIncluded.photoHeight) ? 320 : data.whatsIncluded.photoHeight;
+                        setData({
+                          ...data,
+                          whatsIncluded: {
+                            ...data.whatsIncluded,
+                            frameShape: newShape,
+                            photoHeight: newHeight,
+                          }
+                        });
+                      }}
+                    />
 
                     {/* Photo Focus Position */}
                     {data.whatsIncluded.photo && (
@@ -1516,10 +1516,10 @@ function WedGrapherAiryBuilderContent() {
                       <div>
                         <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
                           <span>Photo Height</span>
-                          <span>{data.whatsIncluded.photoHeight || 350}px</span>
+                          <span>{data.whatsIncluded.photoHeight || 320}px</span>
                         </div>
                         <input type="range" min="150" max="700"
-                          value={data.whatsIncluded.photoHeight || 350}
+                          value={data.whatsIncluded.photoHeight || 320}
                           onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoHeight: Number(e.target.value) } })}
                           className="w-full accent-black cursor-pointer"
                         />
