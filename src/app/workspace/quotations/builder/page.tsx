@@ -951,46 +951,55 @@ function StudioCoreAiryBuilderContent() {
             backgroundColor: activeTheme.background || '#FFFFFF',
             windowWidth: widthPx,
             onclone: (clonedDoc, clonedElement) => {
-              // 1. Sanitize all <style> tags to replace oklch/oklab rules with safe standard fallback rgb colors
-              try {
-                const styleTags = clonedDoc.querySelectorAll('style');
-                styleTags.forEach((tag) => {
-                  if (tag.textContent) {
-                    tag.textContent = tag.textContent
-                      .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
-                      .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
-                  }
-                });
-              } catch (err) {
-                console.warn('Style tag sanitization warning:', err);
-              }
-
-              // 2. Override oklch colors with computed standard rgb/rgba on all elements
+              // 1. Flatten essential computed styles to inline attributes on all elements
               const allElements = clonedElement.querySelectorAll('*');
+              const propertiesToCopy = [
+                'color', 'backgroundColor', 'borderColor', 'borderStyle', 'borderWidth', 'borderRadius',
+                'fontSize', 'fontFamily', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'textTransform',
+                'display', 'flexDirection', 'justifyContent', 'alignItems', 'gap', 'flexWrap', 'flexGrow', 'flexShrink',
+                'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+                'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+                'width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight',
+                'position', 'top', 'right', 'bottom', 'left', 'zIndex',
+                'opacity', 'visibility', 'overflow', 'boxShadow',
+                'backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat'
+              ];
+
               allElements.forEach((el) => {
                 const htmlEl = el as HTMLElement;
                 try {
-                  // Replace in inline style cssText attributes first
-                  if (htmlEl.style && htmlEl.style.cssText) {
-                    htmlEl.style.cssText = htmlEl.style.cssText
-                      .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
-                      .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
-                  }
-
                   const style = window.getComputedStyle(htmlEl);
-                  if (style.backgroundColor && (style.backgroundColor.includes('oklab') || style.backgroundColor.includes('oklch') || style.backgroundColor.includes('okl'))) {
-                    htmlEl.style.backgroundColor = style.backgroundColor;
-                  }
-                  if (style.color && (style.color.includes('oklab') || style.color.includes('oklch') || style.color.includes('okl'))) {
-                    htmlEl.style.color = style.color;
-                  }
-                  if (style.borderColor && (style.borderColor.includes('oklab') || style.borderColor.includes('oklch') || style.borderColor.includes('okl'))) {
-                    htmlEl.style.borderColor = style.borderColor;
-                  }
+                  propertiesToCopy.forEach((prop) => {
+                    // @ts-ignore
+                    const val = style[prop];
+                    if (val) {
+                      if (val.includes('oklch') || val.includes('oklab') || val.includes('okl')) {
+                        // Replace oklch/oklab color with grey/text standard color values if computed style returns it
+                        const sanitized = val
+                          .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
+                          .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
+                        // @ts-ignore
+                        htmlEl.style[prop] = sanitized;
+                      } else {
+                        // @ts-ignore
+                        htmlEl.style[prop] = val;
+                      }
+                    }
+                  });
                 } catch (e) {
                   // ignore style read errors
                 }
               });
+
+              // 2. Completely remove all style tags and link tags to prevent html2canvas from fetching/parsing oklab/oklch colors!
+              try {
+                const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+                styles.forEach((node) => {
+                  node.parentNode?.removeChild(node);
+                });
+              } catch (err) {
+                console.warn('Stylesheet removal warning:', err);
+              }
             }
           });
         } catch (canvasErr) {
