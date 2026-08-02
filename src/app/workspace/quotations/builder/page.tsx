@@ -910,70 +910,99 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // ULTIMATE 1:1 PDF EXPORT ENGINE (html2pdf.js with dom-to-image-more & jsPDF fallback)
+  // DYNAMIC PAGE HEIGHT HIGH-DPI PDF EXPORT ENGINE (jsPDF + html2canvas 2.5x)
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
     setPdfToastMessage('Generating High-Res PDF...');
 
-    // 1. Temporarily lock zoomScale to 1.0 for true 1:1 pixel rendering
+    // 1. Temporarily lock zoomScale to 1.0 & enable PDF capture CSS
     setZoomScale(1.0);
+    document.body.classList.add('pdf-capture-active');
 
     try {
       await ensureFontsReady();
       await new Promise(r => setTimeout(r, 400));
 
-      const element = canvasRef.current;
-      
-      // Attempt html2pdf.js primary export
-      try {
-        const html2pdf = (await import('html2pdf.js')).default;
-        const opt = {
-          margin: 0,
-          filename: `${data.designName || 'StudioCore_Quotation'}.pdf`,
-          image: { type: 'jpeg' as const, quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
-          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' as const },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'], selector: '.quotation-page' }
-        };
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
 
-        await html2pdf().set(opt).from(element).save();
-      } catch (primaryErr) {
-        console.warn('html2pdf.js engine fallback to dom-to-image-more + jsPDF:', primaryErr);
-        
-        // Fallback Engine: dom-to-image-more + jsPDF
-        const domtoimage = (await import('dom-to-image-more')).default;
-        const { jsPDF } = await import('jspdf');
-
-        const pageElements = element.querySelectorAll('.quotation-page');
-        const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
-
-        for (let i = 0; i < pageElements.length; i++) {
-          const pageEl = pageElements[i] as HTMLElement;
-          const dataUrl = await domtoimage.toPng(pageEl, {
-            bgcolor: activeTheme.background || '#FFFFFF',
-            width: 794,
-            height: pageEl.offsetHeight
-          });
-
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = (pageEl.offsetHeight * pdfWidth) / 794;
-
-          if (i > 0) pdf.addPage();
-          pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        }
-
-        pdf.save(`${data.designName || 'StudioCore_Quotation'}.pdf`);
+      const pageElements = canvasRef.current.querySelectorAll('.quotation-page');
+      if (!pageElements || !pageElements.length) {
+        alert('No quotation pages found to export.');
+        return;
       }
 
-      setPdfToastMessage('PDF Downloaded Successfully!');
-      setTimeout(() => setPdfToastMessage(null), 3000);
+      let pdf: InstanceType<typeof jsPDF> | null = null;
+      const widthPx = 794;
+
+      for (let i = 0; i < pageElements.length; i++) {
+        const pageEl = pageElements[i] as HTMLElement;
+        const pageHeightPx = Math.round(pageEl.getBoundingClientRect().height || pageEl.offsetHeight || 1123);
+
+        let canvas: HTMLCanvasElement | null = null;
+
+        // High-DPI capture (scale 2.5) for crisp rendering < 10MB
+        try {
+          canvas = await html2canvas(pageEl, {
+            scale: 2.5,
+            useCORS: true,
+            allowTaint: true,
+            imageTimeout: 15000,
+            logging: false,
+            backgroundColor: activeTheme.background || '#FFFFFF',
+            scrollX: 0,
+            scrollY: 0
+          });
+        } catch (primaryErr) {
+          console.warn(`Primary html2canvas capture failed for page ${i + 1}, retrying without CORS:`, primaryErr);
+          try {
+            canvas = await html2canvas(pageEl, {
+              scale: 2.5,
+              allowTaint: true,
+              imageTimeout: 15000,
+              logging: false,
+              backgroundColor: activeTheme.background || '#FFFFFF',
+              scrollX: 0,
+              scrollY: 0
+            });
+          } catch (fallbackErr) {
+            console.error(`Page ${i + 1} capture failed:`, fallbackErr);
+            continue;
+          }
+        }
+
+        if (canvas && canvas.width > 0 && canvas.height > 0) {
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+          if (!pdf) {
+            // Initialize jsPDF with exact dynamic height of page 1
+            pdf = new jsPDF({
+              unit: 'px',
+              format: [widthPx, pageHeightPx],
+              orientation: 'portrait'
+            });
+          } else {
+            // Append page with exact dynamic height of page i
+            pdf.addPage([widthPx, pageHeightPx], 'portrait');
+          }
+
+          pdf.addImage(imgData, 'JPEG', 0, 0, widthPx, pageHeightPx);
+        }
+      }
+
+      if (pdf) {
+        pdf.save(`${data.designName || 'StudioCore_Quotation'}.pdf`);
+        setPdfToastMessage('PDF Downloaded Successfully!');
+        setTimeout(() => setPdfToastMessage(null), 3000);
+      }
     } catch (err) {
-      console.error('Ultimate PDF export error:', err);
+      console.error('Dynamic height PDF export error:', err);
       alert('Failed to generate PDF. Please try again.');
       setPdfToastMessage(null);
     } finally {
+      document.body.classList.remove('pdf-capture-active');
       setZoomScale(previousScale);
       setIsExportingPDF(false);
     }
@@ -1586,6 +1615,14 @@ function StudioCoreAiryBuilderContent() {
           print-color-adjust: exact !important;
           color-adjust: exact !important;
         }
+        .pdf-capture-active h1,
+        .pdf-capture-active h2,
+        .pdf-capture-active h3,
+        .pdf-capture-active .brand-name-heading,
+        .pdf-capture-active .couple-name-heading {
+          white-space: nowrap !important;
+          word-break: keep-all !important;
+        }
         @media print {
           @page {
             size: A4 portrait;
@@ -1772,7 +1809,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   ) : (
                     <div className="text-center space-y-0.5">
-                      <div className="text-xl tracking-[0.25em] uppercase font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      <div className="brand-name-heading text-xl tracking-[0.25em] uppercase font-black whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                         {data.cover.brandName || 'FILMIFY WEDDINGS'}
                       </div>
                     </div>
@@ -1794,11 +1831,11 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="space-y-1">
-                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.groomName || 'YASH'}
                     </h1>
                     <div className="text-2xl font-serif opacity-75 my-1" style={{ color: kickerColor }}>&amp;</div>
-                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.brideName || 'TWINKLE'}
                     </h1>
                   </div>
@@ -1816,10 +1853,10 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="space-y-2 pt-2">
-                    <h3 className="text-base tracking-[0.2em] uppercase font-bold" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    <h3 className="text-base tracking-[0.2em] uppercase font-bold whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
                     </h3>
-                    <p className="text-xs tracking-[0.18em] uppercase font-medium opacity-90" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
+                    <p className="text-xs tracking-[0.18em] uppercase font-medium opacity-90 whitespace-nowrap" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                       {`${(data.cover.sideOption || 'BOTH SIDES').toUpperCase()} – ${(data.cover.locationName || 'MUMBAI').toUpperCase()}`}
                     </p>
                   </div>
@@ -1838,7 +1875,7 @@ function StudioCoreAiryBuilderContent() {
 
                 </div>
 
-                <div className="w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80" style={{ color: kickerColor }}>
+                <div className="w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80 whitespace-nowrap" style={{ color: kickerColor }}>
                   EXCLUSIVELY PREPARED FOR YOU
                 </div>
               </div>
@@ -1894,11 +1931,11 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
 
-                <span className="text-xs tracking-[0.25em] uppercase font-bold block" style={{ color: kickerColor }}>
+                <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
                   {data.aboutUs.kicker || 'INTRODUCTION'}
                 </span>
                 
-                <h2 className="text-3xl tracking-widest uppercase font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                <h2 className="text-3xl tracking-widest uppercase font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                   {data.aboutUs.heading || 'ABOUT US'}
                 </h2>
 
@@ -1935,7 +1972,7 @@ function StudioCoreAiryBuilderContent() {
                   <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>”</span>
                 </div>
 
-                <div className="text-xs tracking-[0.2em] font-bold uppercase pt-2" style={{ color: kickerColor }}>
+                <div className="text-xs tracking-[0.2em] font-bold uppercase pt-2 whitespace-nowrap" style={{ color: kickerColor }}>
                   {data.aboutUs.signature}
                 </div>
 
@@ -1992,10 +2029,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 <div className="text-center space-y-2">
-                  <span className="text-xs tracking-[0.25em] uppercase font-bold block" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
                     {data.shootDetails.kicker || 'WHAT WE DO'}
                   </span>
-                  <h2 className="text-4xl tracking-wide font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.shootDetails.heading || 'Pre-Wedding Shoot'}
                   </h2>
                 </div>
@@ -2026,7 +2063,7 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4">
-                  <h3 className="text-2xl tracking-wide font-normal text-left" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <h3 className="text-2xl tracking-wide font-normal text-left whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.shootDetails.deliverablesHeading || 'Deliverables'}
                   </h3>
                   <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
@@ -2089,10 +2126,10 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
 
-                <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
+                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
                   {data.whatsIncluded.kicker}
                 </span>
-                <h2 className="text-3xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                   {data.whatsIncluded.heading}
                 </h2>
 
@@ -2165,19 +2202,19 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 <div className="space-y-4 border-b pb-6" style={{ borderColor }}>
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
                     {data.pricePayment.kicker}
                   </span>
-                  <h2 className="text-3xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.pricePayment.heading}
                   </h2>
 
-                  <div className="text-4xl font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <div className="text-4xl font-black whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     ₹{grandTotal.toLocaleString('en-IN')}
                   </div>
 
                   <div className="pt-1">
-                    <span className="text-xs font-bold uppercase block" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
+                    <span className="text-xs font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
                     <p className="text-xs font-medium" style={{ color: textColor }}>{data.pricePayment.paymentTerms}</p>
                   </div>
                 </div>
@@ -2195,7 +2232,7 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 <div className="space-y-3 pt-2">
-                  <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.addOnsTable.heading}
                   </h2>
                   <div className="rounded-xl overflow-hidden border" style={{ borderColor }}>
@@ -2271,7 +2308,7 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 <div className="space-y-3">
-                  <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.timelineTable.heading}
                   </h2>
 
@@ -2311,18 +2348,18 @@ function StudioCoreAiryBuilderContent() {
 
                 <div className="space-y-5 pt-4 border-t" style={{ borderColor }}>
                   <div className="space-y-1.5">
-                    <h2 className="text-xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    <h2 className="text-xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.termsAndThankYou.termsHeading}
                     </h2>
                     <p className="text-xs leading-relaxed opacity-90">{data.termsAndThankYou.termsText}</p>
                   </div>
 
                   <div className="text-center pt-6 border-t space-y-2" style={{ borderColor }}>
-                    <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.termsAndThankYou.thankYouHeading}
                     </h2>
                     <p className="text-xs">{data.termsAndThankYou.thankYouText}</p>
-                    <p className="text-[10px] font-mono font-bold pt-2 opacity-80" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
+                    <p className="text-[10px] font-mono font-bold pt-2 opacity-80 whitespace-nowrap" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
                   </div>
                 </div>
 
