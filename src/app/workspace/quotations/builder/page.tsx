@@ -760,6 +760,7 @@ function StudioCoreAiryBuilderContent() {
   // Viewport Zoom & Scaling Engine
   const [zoomScale, setZoomScale] = useState<number>(1.0);
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
+  const [pdfToastMessage, setPdfToastMessage] = useState<string | null>(null);
 
   // Responsive Auto-Scale Calculation
   const autoFitScale = () => {
@@ -810,86 +811,25 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // Clean Browser Print PDF Export
-  const handleCleanPDFExport = async () => {
-    setIsExportingPDF(true);
-    try {
-      await ensureFontsReady();
-      await new Promise(r => setTimeout(r, 150));
-      window.print();
-    } catch (err) {
-      console.error('Clean PDF export error:', err);
-      window.print();
-    } finally {
-      setIsExportingPDF(false);
-    }
-  };
-
-  // MULTI-PAGE PDF GENERATOR
+  // DIRECT PROGRAMMATIC PDF DOWNLOAD ENGINE (jsPDF + html2canvas) WITHOUT window.print()
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
-    
+    setPdfToastMessage('Generating High-Res PDF...');
+
     setZoomScale(1.0);
 
     let exportContainer: HTMLDivElement | null = null;
 
     try {
       await ensureFontsReady();
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 300));
 
-      // Attempt 1: Server-Side Puppeteer Engine Call (/api/export-pdf)
-      try {
-        const htmlPayload = `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="utf-8" />
-              <script src="https://cdn.tailwindcss.com"></script>
-              <style>
-                @page { size: A4 portrait; margin: 0; }
-                body { margin: 0; padding: 0; background: #EBECEF; }
-                .quotation-page { width: 794px; page-break-after: always; break-after: page; }
-              </style>
-            </head>
-            <body>
-              <div style="width: 794px; margin: 0 auto;">
-                ${canvasRef.current.innerHTML}
-              </div>
-            </body>
-          </html>
-        `;
-
-        const res = await fetch('/api/export-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            html: htmlPayload,
-            filename: `${data.designName || 'Quotation_Proposal'}.pdf`
-          })
-        });
-
-        if (res.ok) {
-          const blob = await res.blob();
-          const downloadUrl = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = downloadUrl;
-          link.download = `${data.designName || 'Quotation_Proposal'}.pdf`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(downloadUrl);
-          return;
-        }
-      } catch (e) {
-        console.warn('Server Puppeteer API failed, using off-screen fallback exporter:', e);
-      }
-
-      // Attempt 2: Off-Screen Container Multi-Page Canvas Fallback
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
 
+      // 1. Create a hidden off-screen export container
       exportContainer = document.createElement('div');
       exportContainer.style.position = 'absolute';
       exportContainer.style.left = '-9999px';
@@ -898,13 +838,27 @@ function StudioCoreAiryBuilderContent() {
       exportContainer.style.backgroundColor = '#EBECEF';
       exportContainer.style.zIndex = '-9999';
 
+      // 2. Clone canvasRef node into hidden container & force full DOM expansion
       const clonedCanvas = canvasRef.current.cloneNode(true) as HTMLElement;
       clonedCanvas.style.transform = 'none';
       clonedCanvas.style.margin = '0';
+      clonedCanvas.style.width = '794px';
+
+      // Force all .quotation-page elements to expand completely
+      const pageNodes = clonedCanvas.querySelectorAll('.quotation-page');
+      pageNodes.forEach(node => {
+        const el = node as HTMLElement;
+        el.style.display = 'flex';
+        el.style.visibility = 'visible';
+        el.style.opacity = '1';
+        el.style.width = '794px';
+      });
+
       exportContainer.appendChild(clonedCanvas);
       document.body.appendChild(exportContainer);
 
-      await new Promise(r => setTimeout(r, 500));
+      // 3. Wait 300ms for images and fonts to settle
+      await new Promise(r => setTimeout(r, 300));
 
       const pageElements = clonedCanvas.querySelectorAll('.quotation-page');
       if (!pageElements || !pageElements.length) return;
@@ -929,10 +883,13 @@ function StudioCoreAiryBuilderContent() {
         pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       }
 
-      pdf.save(`${data.designName || 'Quotation_Proposal'}.pdf`);
+      pdf.save(`${data.designName || 'StudioCore_Quotation'}.pdf`);
+      setPdfToastMessage('PDF Downloaded Successfully!');
+      setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err) {
-      console.error('Download PDF canvas error:', err);
-      window.print();
+      console.error('Direct PDF export error:', err);
+      alert('Failed to generate PDF. Please try again.');
+      setPdfToastMessage(null);
     } finally {
       if (exportContainer && document.body.contains(exportContainer)) {
         document.body.removeChild(exportContainer);
@@ -1542,6 +1499,21 @@ function StudioCoreAiryBuilderContent() {
   return (
     <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 font-sans flex flex-col overflow-hidden selection:bg-black selection:text-white relative">
       
+      {/* ── SLEEK PDF TOAST NOTIFICATION ── */}
+      <AnimatePresence>
+        {pdfToastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-slate-900 text-white font-bold text-xs shadow-2xl flex items-center gap-2 border border-slate-700"
+          >
+            <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <span>{pdfToastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── PRINT & PDF EXPORT CSS ── */}
       <style jsx global>{`
         @media print {
@@ -1643,21 +1615,12 @@ function StudioCoreAiryBuilderContent() {
         {/* Action Buttons */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           <button
-            onClick={handleCleanPDFExport}
-            disabled={isExportingPDF}
-            className="px-2.5 sm:px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            title="Export Clean PDF (Print View)"
-          >
-            <Printer className="w-3.5 h-3.5 text-amber-700" /> <span className="hidden sm:inline">Clean PDF</span>
-          </button>
-
-          <button
             onClick={handleDownloadPDFCanvas}
             disabled={isExportingPDF}
-            className="px-2.5 sm:px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
-            title="Download High-Res Dynamic PDF"
+            className="px-3 sm:px-4 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-black text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+            title="Download High-Res PDF"
           >
-            <Download className="w-3.5 h-3.5 text-amber-700" /> <span className="hidden sm:inline">Download PDF</span><span className="sm:hidden">PDF</span>
+            <Download className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Download PDF</span>
           </button>
 
           <button
