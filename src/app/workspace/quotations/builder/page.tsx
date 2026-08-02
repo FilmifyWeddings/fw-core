@@ -938,8 +938,8 @@ function StudioCoreAiryBuilderContent() {
 
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
-        const widthPx = 794;
-        const heightPx = pageEl.offsetHeight || 1123;
+        const widthPx = pageEl.offsetWidth || 794;
+        const heightPx = pageEl.offsetHeight;
 
         let canvas: HTMLCanvasElement;
         try {
@@ -948,8 +948,9 @@ function StudioCoreAiryBuilderContent() {
             useCORS: true,
             allowTaint: true,
             logging: false,
-            backgroundColor: activeTheme.background || '#FFFFFF',
-            windowWidth: widthPx,
+            backgroundColor: null,
+            width: widthPx,
+            height: heightPx,
             onclone: (clonedDoc, clonedElement) => {
               // 1. Flatten essential computed styles to inline attributes on all elements
               const allElements = clonedElement.querySelectorAll('*');
@@ -970,19 +971,19 @@ function StudioCoreAiryBuilderContent() {
                 const htmlEl = el as HTMLElement;
                 try {
                   const style = window.getComputedStyle(htmlEl);
-                  const isHeading = ['H1', 'H2', 'H3'].includes(htmlEl.tagName) || 
-                                    htmlEl.classList.contains('brand-name-heading') || 
-                                    htmlEl.classList.contains('couple-name-heading');
+                  const isHeadingOrP = ['H1', 'H2', 'H3', 'P'].includes(htmlEl.tagName) || 
+                                       htmlEl.classList.contains('brand-name-heading') || 
+                                       htmlEl.classList.contains('couple-name-heading');
                   propertiesToCopy.forEach((prop) => {
                     // @ts-ignore
                     let val = style[prop];
-                    if (isHeading && prop === 'letterSpacing') {
+                    if (isHeadingOrP && prop === 'letterSpacing') {
                       val = 'normal';
                     }
-                    if (isHeading && prop === 'whiteSpace') {
-                      val = 'nowrap';
+                    if (isHeadingOrP && prop === 'whiteSpace') {
+                      val = 'normal';
                     }
-                    if (isHeading && prop === 'wordBreak') {
+                    if (isHeadingOrP && prop === 'wordBreak') {
                       val = 'keep-all';
                     }
                     if (val) {
@@ -1027,14 +1028,13 @@ function StudioCoreAiryBuilderContent() {
           pdf = new jsPDF({
             unit: 'px',
             format: [widthPx, heightPx],
-            orientation: 'portrait',
-            compress: true
+            orientation: widthPx > heightPx ? 'l' : 'p'
           });
         } else {
-          pdf?.addPage([widthPx, heightPx], 'portrait');
+          pdf?.addPage([widthPx, heightPx], widthPx > heightPx ? 'l' : 'p');
         }
 
-        pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx, undefined, 'FAST');
+        pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx);
       }
 
       if (pdf) {
@@ -1663,9 +1663,10 @@ function StudioCoreAiryBuilderContent() {
         .pdf-capture-active h1,
         .pdf-capture-active h2,
         .pdf-capture-active h3,
+        .pdf-capture-active p,
         .pdf-capture-active .brand-name-heading,
         .pdf-capture-active .couple-name-heading {
-          white-space: nowrap !important;
+          white-space: normal !important;
           word-break: keep-all !important;
           letter-spacing: normal !important;
         }
