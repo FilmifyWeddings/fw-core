@@ -624,7 +624,7 @@ function UnifiedPhotoControls({
       <div className="flex items-center gap-2">
         {photoUrl && (
           <div className="w-10 h-10 rounded-xl border border-slate-200 overflow-hidden bg-slate-50 shrink-0 shadow-xs">
-            <img src={photoUrl} alt="Thumbnail" className="w-full h-full object-cover bg-transparent" />
+            <img src={photoUrl} alt="Thumbnail" crossOrigin="anonymous" className="w-full h-full object-cover bg-transparent" />
           </div>
         )}
 
@@ -772,6 +772,7 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
+          crossOrigin="anonymous"
           className="w-full h-full object-cover block"
           style={{ objectPosition: `50% ${photoFocalY}%` }}
         />
@@ -793,6 +794,7 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
+          crossOrigin="anonymous"
           className="w-full object-cover block shadow-xs"
           style={{ height: `${photoHeight}px`, objectPosition: `50% ${photoFocalY}%` }}
         />
@@ -817,6 +819,7 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
+          crossOrigin="anonymous"
           className="w-full h-full object-cover bg-transparent"
           style={{ objectPosition: `50% ${photoFocalY}%` }}
         />
@@ -907,57 +910,28 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // DIRECT PROGRAMMATIC PDF DOWNLOAD ENGINE (jsPDF + html2canvas) WITH DEFENSIVE FALLBACK
+  // DIRECT PROGRAMMATIC LIVE CANVAS PDF DOWNLOAD ENGINE (jsPDF + html2canvas)
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
     setPdfToastMessage('Generating High-Res PDF...');
 
+    // 1. Temporarily lock zoomScale to 1.0 for true 1:1 pixel rendering
     setZoomScale(1.0);
-
-    let exportContainer: HTMLDivElement | null = null;
 
     try {
       await ensureFontsReady();
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 400));
 
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
 
-      // 1. Create a hidden off-screen export container
-      exportContainer = document.createElement('div');
-      exportContainer.style.position = 'absolute';
-      exportContainer.style.left = '-9999px';
-      exportContainer.style.top = '0px';
-      exportContainer.style.width = '794px';
-      exportContainer.style.backgroundColor = '#EBECEF';
-      exportContainer.style.zIndex = '-9999';
-
-      // 2. Clone canvasRef node into hidden container & force full DOM expansion
-      const clonedCanvas = canvasRef.current.cloneNode(true) as HTMLElement;
-      clonedCanvas.style.transform = 'none';
-      clonedCanvas.style.margin = '0';
-      clonedCanvas.style.width = '794px';
-
-      // Force all .quotation-page elements to expand completely
-      const pageNodes = clonedCanvas.querySelectorAll('.quotation-page');
-      pageNodes.forEach(node => {
-        const el = node as HTMLElement;
-        el.style.display = 'flex';
-        el.style.visibility = 'visible';
-        el.style.opacity = '1';
-        el.style.width = '794px';
-      });
-
-      exportContainer.appendChild(clonedCanvas);
-      document.body.appendChild(exportContainer);
-
-      // 3. Wait 300ms for images and fonts to settle
-      await new Promise(r => setTimeout(r, 300));
-
-      const pageElements = clonedCanvas.querySelectorAll('.quotation-page');
-      if (!pageElements || !pageElements.length) return;
+      const pageElements = canvasRef.current.querySelectorAll('.quotation-page');
+      if (!pageElements || !pageElements.length) {
+        alert('No quotation pages found to export.');
+        return;
+      }
 
       const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
 
@@ -965,7 +939,7 @@ function StudioCoreAiryBuilderContent() {
         const pageEl = pageElements[i] as HTMLElement;
         let canvas: HTMLCanvasElement | null = null;
 
-        // Defensive html2canvas capture with automatic fallback logic
+        // Capture live visible page node directly on screen
         try {
           canvas = await html2canvas(pageEl, {
             scale: 2,
@@ -973,7 +947,19 @@ function StudioCoreAiryBuilderContent() {
             allowTaint: true,
             imageTimeout: 15000,
             logging: false,
-            windowWidth: 794
+            backgroundColor: activeTheme.background || '#FFFFFF',
+            scrollX: 0,
+            scrollY: 0,
+            onclone: (clonedDoc) => {
+              const clonedPages = clonedDoc.querySelectorAll('.quotation-page');
+              clonedPages.forEach((p) => {
+                const el = p as HTMLElement;
+                el.style.transform = 'none';
+                el.style.opacity = '1';
+                el.style.visibility = 'visible';
+                el.style.display = 'flex';
+              });
+            }
           });
         } catch (primaryErr) {
           console.warn(`Primary html2canvas capture failed for page ${i + 1}, retrying without CORS:`, primaryErr);
@@ -983,15 +969,17 @@ function StudioCoreAiryBuilderContent() {
               allowTaint: true,
               imageTimeout: 15000,
               logging: false,
-              windowWidth: 794
+              backgroundColor: activeTheme.background || '#FFFFFF',
+              scrollX: 0,
+              scrollY: 0
             });
           } catch (fallbackErr) {
             console.error(`Page ${i + 1} capture failed entirely:`, fallbackErr);
-            continue; // Proceed to next page without crashing PDF export!
+            continue;
           }
         }
 
-        if (canvas) {
+        if (canvas && canvas.width > 0 && canvas.height > 0) {
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
@@ -1006,12 +994,9 @@ function StudioCoreAiryBuilderContent() {
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err) {
       console.error('Direct PDF export error:', err);
-      alert('PDF generation encountered an error, but partial compilation was attempted.');
+      alert('Failed to generate PDF. Please try again.');
       setPdfToastMessage(null);
     } finally {
-      if (exportContainer && document.body.contains(exportContainer)) {
-        document.body.removeChild(exportContainer);
-      }
       setZoomScale(previousScale);
       setIsExportingPDF(false);
     }
@@ -1281,7 +1266,7 @@ function StudioCoreAiryBuilderContent() {
                 <div className="flex items-center gap-2">
                   {data.cover.brandLogoUrl && (
                     <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
-                      <img src={data.cover.brandLogoUrl} alt="Logo" className="w-full h-full object-contain bg-transparent" />
+                      <img src={data.cover.brandLogoUrl} alt="Logo" crossOrigin="anonymous" className="w-full h-full object-contain bg-transparent" />
                     </div>
                   )}
 
@@ -1798,6 +1783,7 @@ function StudioCoreAiryBuilderContent() {
                     <img 
                       src={data.cover.brandLogoUrl} 
                       alt={data.cover.brandName}
+                      crossOrigin="anonymous"
                       className="bg-transparent object-contain drop-shadow-xs"
                       style={{ height: `${data.cover.brandLogoSize || 64}px` }}
                     />
@@ -1902,6 +1888,7 @@ function StudioCoreAiryBuilderContent() {
                 <img 
                   src="/images/Birds.svg" 
                   alt="Birds" 
+                  crossOrigin="anonymous"
                   className="w-[220px] h-auto object-contain block" 
                   style={{ 
                     filter: isDark ? 'brightness(0) invert(1)' : 'none',
@@ -1948,6 +1935,7 @@ function StudioCoreAiryBuilderContent() {
                   <img 
                     src="/images/A%26U.svg" 
                     alt="Monogram" 
+                    crossOrigin="anonymous"
                     className="w-[260px] h-auto object-contain block mx-auto" 
                     style={{ 
                       filter: isDark ? 'brightness(0) invert(1)' : 'none',
