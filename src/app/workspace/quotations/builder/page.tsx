@@ -18,7 +18,7 @@ import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 
-// Exact Registered Color Palettes
+// Exact Registered Color Palettes with Inverted Counterparts
 export interface ColorTheme {
   id: string;
   name: string;
@@ -43,6 +43,18 @@ export const COLOR_THEMES: ColorTheme[] = [
     boxBgColor: 'rgba(117, 5, 5, 0.06)',
   },
   {
+    id: 'cream-cherry-red',
+    name: 'Cream & Cherry Red (Inverted)',
+    primary: '#FBFCEB',
+    background: '#750505',
+    text: '#FBFCEB',
+    kicker: '#FFECD1',
+    borderColor: 'rgba(251, 252, 235, 0.25)',
+    boxBgColor: 'rgba(251, 252, 235, 0.08)',
+    isDark: true,
+  },
+
+  {
     id: 'cyprus-sand-dune',
     name: 'Cyprus & Sand Dune',
     primary: '#004643',
@@ -52,6 +64,18 @@ export const COLOR_THEMES: ColorTheme[] = [
     borderColor: 'rgba(0, 70, 67, 0.2)',
     boxBgColor: 'rgba(0, 70, 67, 0.06)',
   },
+  {
+    id: 'sand-dune-cyprus',
+    name: 'Sand Dune & Cyprus (Inverted)',
+    primary: '#F0EDE5',
+    background: '#004643',
+    text: '#F0EDE5',
+    kicker: '#E6CFA7',
+    borderColor: 'rgba(240, 237, 229, 0.25)',
+    boxBgColor: 'rgba(240, 237, 229, 0.08)',
+    isDark: true,
+  },
+
   {
     id: 'plum-milk',
     name: 'Plum & Milk',
@@ -63,6 +87,18 @@ export const COLOR_THEMES: ColorTheme[] = [
     boxBgColor: 'rgba(56, 25, 50, 0.06)',
   },
   {
+    id: 'milk-plum',
+    name: 'Milk & Plum (Inverted)',
+    primary: '#FFF3E6',
+    background: '#381932',
+    text: '#FFF3E6',
+    kicker: '#FFECD1',
+    borderColor: 'rgba(255, 243, 230, 0.25)',
+    boxBgColor: 'rgba(255, 243, 230, 0.08)',
+    isDark: true,
+  },
+
+  {
     id: 'sand-chocolate',
     name: 'Sand & Chocolate',
     primary: '#3E000C',
@@ -72,6 +108,18 @@ export const COLOR_THEMES: ColorTheme[] = [
     borderColor: 'rgba(62, 0, 12, 0.2)',
     boxBgColor: 'rgba(62, 0, 12, 0.06)',
   },
+  {
+    id: 'chocolate-sand',
+    name: 'Chocolate & Sand (Inverted)',
+    primary: '#FFECD1',
+    background: '#3E000C',
+    text: '#FFECD1',
+    kicker: '#FFECD1',
+    borderColor: 'rgba(255, 236, 209, 0.25)',
+    boxBgColor: 'rgba(255, 236, 209, 0.08)',
+    isDark: true,
+  },
+
   {
     id: 'feldgrau-wheat',
     name: 'Feldgrau & Wheat',
@@ -83,6 +131,18 @@ export const COLOR_THEMES: ColorTheme[] = [
     boxBgColor: 'rgba(58, 75, 65, 0.06)',
   },
   {
+    id: 'wheat-feldgrau',
+    name: 'Wheat & Feldgrau (Inverted)',
+    primary: '#E6CFA7',
+    background: '#3A4B41',
+    text: '#E6CFA7',
+    kicker: '#E6CFA7',
+    borderColor: 'rgba(230, 207, 167, 0.25)',
+    boxBgColor: 'rgba(230, 207, 167, 0.08)',
+    isDark: true,
+  },
+
+  {
     id: 'noctis-marigold',
     name: 'Noctis & Marigold',
     primary: '#1F2235',
@@ -93,8 +153,20 @@ export const COLOR_THEMES: ColorTheme[] = [
     boxBgColor: 'rgba(31, 34, 53, 0.08)',
   },
   {
+    id: 'marigold-noctis',
+    name: 'Marigold & Noctis (Inverted)',
+    primary: '#E3A419',
+    background: '#1F2235',
+    text: '#E3A419',
+    kicker: '#E3A419',
+    borderColor: 'rgba(227, 164, 25, 0.25)',
+    boxBgColor: 'rgba(227, 164, 25, 0.08)',
+    isDark: true,
+  },
+
+  {
     id: 'champagne-obsidian',
-    name: 'Champagne & Obsidian (Minimal)',
+    name: 'Champagne & Obsidian',
     primary: '#111111',
     background: '#F7F4EF',
     text: '#111111',
@@ -103,8 +175,20 @@ export const COLOR_THEMES: ColorTheme[] = [
     boxBgColor: 'rgba(244, 244, 245, 1)',
   },
   {
+    id: 'obsidian-champagne',
+    name: 'Obsidian & Champagne (Inverted)',
+    primary: '#F7F4EF',
+    background: '#111111',
+    text: '#F7F4EF',
+    kicker: '#D4D4D8',
+    borderColor: 'rgba(247, 244, 239, 0.25)',
+    boxBgColor: 'rgba(247, 244, 239, 0.08)',
+    isDark: true,
+  },
+
+  {
     id: 'forest-olive-ivory',
-    name: 'Forest Olive & Ivory (Premium)',
+    name: 'Forest Olive & Ivory',
     primary: '#2C352E',
     background: '#F2EFE9',
     text: '#2C352E',
@@ -112,6 +196,18 @@ export const COLOR_THEMES: ColorTheme[] = [
     borderColor: 'rgba(44, 53, 46, 0.2)',
     boxBgColor: 'rgba(44, 53, 46, 0.06)',
   },
+  {
+    id: 'ivory-forest-olive',
+    name: 'Ivory & Forest Olive (Inverted)',
+    primary: '#F2EFE9',
+    background: '#2C352E',
+    text: '#F2EFE9',
+    kicker: '#E2DFD9',
+    borderColor: 'rgba(242, 239, 233, 0.25)',
+    boxBgColor: 'rgba(242, 239, 233, 0.08)',
+    isDark: true,
+  },
+
   {
     id: 'airy-white',
     name: 'Airy White (Pre-Wed)',
@@ -811,7 +907,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // DIRECT PROGRAMMATIC PDF DOWNLOAD ENGINE (jsPDF + html2canvas) WITHOUT window.print()
+  // DIRECT PROGRAMMATIC PDF DOWNLOAD ENGINE (jsPDF + html2canvas) WITH DEFENSIVE FALLBACK
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -867,20 +963,42 @@ function StudioCoreAiryBuilderContent() {
 
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
-        const canvas = await html2canvas(pageEl, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          windowWidth: 794
-        });
+        let canvas: HTMLCanvasElement | null = null;
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        // Defensive html2canvas capture with automatic fallback logic
+        try {
+          canvas = await html2canvas(pageEl, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            imageTimeout: 15000,
+            logging: false,
+            windowWidth: 794
+          });
+        } catch (primaryErr) {
+          console.warn(`Primary html2canvas capture failed for page ${i + 1}, retrying without CORS:`, primaryErr);
+          try {
+            canvas = await html2canvas(pageEl, {
+              scale: 2,
+              allowTaint: true,
+              imageTimeout: 15000,
+              logging: false,
+              windowWidth: 794
+            });
+          } catch (fallbackErr) {
+            console.error(`Page ${i + 1} capture failed entirely:`, fallbackErr);
+            continue; // Proceed to next page without crashing PDF export!
+          }
+        }
 
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        if (canvas) {
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+          if (i > 0 && pdf.getNumberOfPages() > 0) pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        }
       }
 
       pdf.save(`${data.designName || 'StudioCore_Quotation'}.pdf`);
@@ -888,7 +1006,7 @@ function StudioCoreAiryBuilderContent() {
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err) {
       console.error('Direct PDF export error:', err);
-      alert('Failed to generate PDF. Please try again.');
+      alert('PDF generation encountered an error, but partial compilation was attempted.');
       setPdfToastMessage(null);
     } finally {
       if (exportContainer && document.body.contains(exportContainer)) {
@@ -1781,7 +1899,15 @@ function StudioCoreAiryBuilderContent() {
               )}
 
               <div className="absolute top-6 right-10 pointer-events-none opacity-85 z-10">
-                <img src="/images/Birds.svg" alt="Birds" className="w-[220px] h-auto object-contain block" style={{ filter: isDark ? 'brightness(2)' : 'none' }} />
+                <img 
+                  src="/images/Birds.svg" 
+                  alt="Birds" 
+                  className="w-[220px] h-auto object-contain block" 
+                  style={{ 
+                    filter: isDark ? 'brightness(0) invert(1)' : 'none',
+                    color: textColor
+                  }} 
+                />
               </div>
 
               <div className="space-y-6 my-auto text-center w-full relative z-10 pt-4">
@@ -1819,7 +1945,15 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 <div className="flex flex-col items-center justify-center my-4 select-none">
-                  <img src="/images/A%26U.svg" alt="Monogram" className="w-[260px] h-auto object-contain block mx-auto" style={{ filter: isDark ? 'brightness(2)' : 'none' }} />
+                  <img 
+                    src="/images/A%26U.svg" 
+                    alt="Monogram" 
+                    className="w-[260px] h-auto object-contain block mx-auto" 
+                    style={{ 
+                      filter: isDark ? 'brightness(0) invert(1)' : 'none',
+                      color: textColor
+                    }} 
+                  />
                 </div>
 
                 <div className="my-6 px-6 flex items-center justify-center gap-3 max-w-xl mx-auto text-center">
@@ -1908,13 +2042,14 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 <div className="space-y-3 max-w-lg mx-auto pl-4">
-                  <p className="text-base font-bold tracking-wide" style={{ color: textColor }}>
-                    {data.shootDetails.daysText || '1 Day Shoot'}
+                  <p className="text-base font-bold tracking-wide flex items-center gap-2" style={{ color: textColor }}>
+                    <Camera className="w-4 h-4" style={{ color: kickerColor }} />
+                    <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
                   </p>
                   <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
                     {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
                       .split('\n').filter(Boolean).map((item, idx) => (
-                        <li key={idx} className="tracking-wide"><span className="font-medium ml-1">{item.trim()}</span></li>
+                        <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
                       ))}
                   </ul>
                 </div>
@@ -1926,7 +2061,7 @@ function StudioCoreAiryBuilderContent() {
                   <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
                     {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
                       .split('\n').filter(Boolean).map((item, idx) => (
-                        <li key={idx} className="tracking-wide"><span className="font-medium ml-1">{item.trim()}</span></li>
+                        <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
                       ))}
                   </ul>
                 </div>
