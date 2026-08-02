@@ -10,7 +10,7 @@ import {
   Palette, Type, Layout, ShieldCheck, Film, Video, Camera, BookOpen, 
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
   Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders,
-  ZoomIn, ZoomOut, Maximize2
+  ZoomIn, ZoomOut, Maximize2, Menu
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -18,37 +18,17 @@ import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 
-// World-Class Premium Luxury Minimal Fonts
-const LUXURY_PRIMARY_FONTS = [
-  { name: 'Cormorant Garamond (High Fashion)', family: "'Cormorant Garamond', serif" },
-  { name: 'Playfair Display (Classic Luxury)', family: "'Playfair Display', serif" },
-  { name: 'Bodoni Moda (Vogue Editorial)', family: "'Bodoni Moda', serif" },
-  { name: 'Cinzel (Royal Roman)', family: "'Cinzel', serif" },
-  { name: 'DM Serif Display (Modern Editorial)', family: "'DM Serif Display', serif" },
-  { name: 'Prata (Refined Minimalist)', family: "'Prata', serif" },
-  { name: 'Italiana (Italian Couture)', family: "'Italiana', serif" },
-  { name: 'Marcellus (Timeless Serif)', family: "'Marcellus', serif" },
-];
-
-const LUXURY_SECONDARY_FONTS = [
-  { name: 'Plus Jakarta Sans (Ultra Clean)', family: "'Plus Jakarta Sans', sans-serif" },
-  { name: 'Montserrat (Architectural Minimal)', family: "'Montserrat', sans-serif" },
-  { name: 'Inter (Modern Swiss)', family: "'Inter', sans-serif" },
-  { name: 'Outfit (Contemporary Sans)', family: "'Outfit', sans-serif" },
-  { name: 'Tenor Sans (Fashion Minimal)', family: "'Tenor Sans', sans-serif" },
-  { name: 'Josefin Sans (Geometric Vintage)', family: "'Josefin Sans', sans-serif" },
-];
-
-interface UserGalleryImage {
-  id?: string;
-  url: string;
-  file_name?: string;
-  file_size?: number;
-  compression_quality?: string;
-  created_at?: string;
+// Base Page Section Image Config Interface
+interface PageImageConfig {
+  photoUrl?: string;
+  photo?: string;
+  photoHeight: number;
+  photoWidth: number;
+  photoFocalY: number;
+  frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
 }
 
-// WedGrapher Presets & Full Dynamic State
+// WedGrapher Presets & Full Dynamic State (Universal Image Slot on EVERY page)
 const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
   eventGroup: 'Pre-Wedding',
@@ -56,7 +36,7 @@ const DEFAULT_AIRY_PROPOSAL = {
   primaryFont: "'Cormorant Garamond', serif",
   secondaryFont: "'Plus Jakarta Sans', sans-serif",
 
-  // Section 1: Cover Page State
+  // 1. Cover Page State
   cover: {
     groomName: 'YASH',
     brideName: 'TWINKLE',
@@ -70,26 +50,23 @@ const DEFAULT_AIRY_PROPOSAL = {
     photoHeight: 450,
     photoWidth: 75,
     photoFocalY: 50,
-    showPhotoBorder: false,
     frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   },
   
-  // Section 2: About Us
+  // 2. About Us
   aboutUs: {
     kicker: 'INTRODUCTION',
     heading: 'ABOUT US',
     text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
     signature: 'FOUNDER & DIRECTOR, AS',
     bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
-    bottomBannerHeight: 450,
+    bottomBannerHeight: 380,
     frameShape: 'full-width' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     photoFocalY: 50,
-    photoWidth: 75,
-    textAlign: 'Left',
-    background: 'Page colour',
+    photoWidth: 100,
   },
 
-  // Section 3: Pre-Wedding Shoot Details
+  // 3. Pre-Wedding Shoot Details
   shootDetails: {
     kicker: 'WHAT WE DO',
     heading: 'Pre-Wedding Shoot',
@@ -98,49 +75,41 @@ const DEFAULT_AIRY_PROPOSAL = {
     deliverablesHeading: 'Deliverables',
     deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
     photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 450,
+    photoHeight: 380,
     photoWidth: 75,
     photoFocalY: 50,
-    photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
     frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    isWatermarkBackground: false,
-    watermarkOpacity: 40,
-    staysInFrame: 'Middle',
   },
 
-  // Section 4: What's Included
+  // 4. What's Included
   whatsIncluded: {
     kicker: 'YOUR PACKAGE',
     heading: 'INCLUDED',
     deliverablesText: '75-80 retouched high-res images\n1 min teaser\n2-3 reels\n1 main film',
-    allowClientCustomization: true,
-    textAlign: 'Left',
-    background: 'Page colour',
     photo: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
-    photoHeight: 450,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    photoFocalY: 50,
+    photoHeight: 360,
     photoWidth: 75,
-    staysInFrame: 'Middle',
+    photoFocalY: 50,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   },
 
-  // Section 5: Price & Payment
+  // 5. Price & Payment
   pricePayment: {
     kicker: 'INVESTMENT',
     heading: 'WEDDING GOLD',
     packagePrice: 135000,
     discountPct: 0,
-    travel: 0,
-    accommodations: 0,
-    additionalServices: 0,
     gstPct: 18,
     paymentHeading: 'PAYMENT',
     paymentTerms: '50% booking • 40% post-shoot • 10% on final delivery',
-    textAlign: 'Left',
-    background: 'Page colour',
+    photo: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&q=80',
+    photoHeight: 300,
+    photoWidth: 75,
+    photoFocalY: 50,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   },
 
-  // Section 6: Add-ons Table
+  // 6. Add-ons Table
   addOnsTable: {
     heading: 'ADD ONS',
     kicker: "EMBRACE YOUR DAY — YOU'RE IN CONTROL",
@@ -152,21 +121,14 @@ const DEFAULT_AIRY_PROPOSAL = {
       { id: 'a5', service: 'Album', charge: '₹550 per page' },
       { id: 'a6', service: 'Instagram reel', charge: '₹2,000 per reel' },
     ],
-    textAlign: 'Left',
-    background: 'Page colour',
+    photo: '',
+    photoHeight: 280,
+    photoWidth: 75,
+    photoFocalY: 50,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   },
 
-  // Section 7: Delivery Time
-  deliveryTime: {
-    heading: 'Delivery time',
-    photosDelivered: '3-4 weeks',
-    filmDelivered: '3-4 weeks',
-    smallPrint: "Delivery timelines start from the later of the shoot's last day or the date of final payment.",
-    textAlign: 'Left',
-    background: 'Page colour',
-  },
-
-  // Section 8: Timeline Table
+  // 7. Delivery Time & Timeline Table
   timelineTable: {
     heading: 'Timeframe for delivery',
     rows: [
@@ -175,27 +137,25 @@ const DEFAULT_AIRY_PROPOSAL = {
       { id: 't3', result: 'Teaser / reels', timeline: 'A couple of months', revisions: 'No' },
       { id: 't4', result: 'Full film', timeline: 'Around two months', revisions: 'One cycle within a month' },
     ],
-    textAlign: 'Left',
-    background: 'Page colour',
+    photo: '',
+    photoHeight: 280,
+    photoWidth: 75,
+    photoFocalY: 50,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   },
 
-  // Section 9: Testimonials
-  testimonials: {
-    kicker: 'KIND WORDS',
-    heading: 'WHAT COUPLES SAY',
-    quotes: [
-      { id: 'q1', quote: '"We did not notice the team all day. Then we saw the album, and cried."', author: 'ANANYA & ROHAN' },
-      { id: 'q2', quote: '"Every photograph looks like a still from a film we would want to watch again."', author: 'MEERA & KABIR' },
-    ]
-  },
-
-  // Section 10: Terms & Thank You
+  // 8. Terms & Thank You
   termsAndThankYou: {
     termsHeading: 'TERMS',
     termsText: 'Dates are blocked only after the booking advance. Travel and stay outside the city are billed at actuals. Raw files are not shared.',
     thankYouHeading: 'THANK YOU',
     thankYouText: 'We would love to tell your story.',
     studioContact: 'FW Studio • +91 9876543210 • studio@wedgrapher.com',
+    photo: '',
+    photoHeight: 280,
+    photoWidth: 75,
+    photoFocalY: 50,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   }
 };
 
@@ -249,11 +209,155 @@ function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) 
   );
 }
 
+// Reusable Unified Universal Photo Controls Component (Card-Based Sidebar Panel)
+interface UnifiedPhotoControlsProps {
+  photoUrl?: string;
+  frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
+  photoHeight: number;
+  photoWidth: number;
+  photoFocalY: number;
+  onOpenAddModal: () => void;
+  onDeletePhoto: () => void;
+  onChangeShape: (shape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background') => void;
+  onChangeFocalY: (focalY: number) => void;
+  onChangeHeight: (height: number) => void;
+  onChangeWidth: (width: number) => void;
+}
+
+function UnifiedPhotoControls({
+  photoUrl,
+  frameShape,
+  photoHeight,
+  photoWidth,
+  photoFocalY,
+  onOpenAddModal,
+  onDeletePhoto,
+  onChangeShape,
+  onChangeFocalY,
+  onChangeHeight,
+  onChangeWidth
+}: UnifiedPhotoControlsProps) {
+  return (
+    <div className="space-y-2.5 p-3 rounded-2xl bg-amber-50/40 border border-amber-200/70 shadow-xs">
+      <span className="text-[10px] uppercase font-extrabold text-amber-900 tracking-wider block">
+        Photo &amp; Layout Controls
+      </span>
+
+      {/* Add / Change / Delete Image */}
+      <div className="flex items-center gap-2">
+        {photoUrl && (
+          <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+            <img src={photoUrl} alt="Thumbnail" className="w-full h-full object-cover bg-transparent" />
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={onOpenAddModal}
+          className="flex-1 py-1.5 px-3 rounded-xl bg-amber-100/80 hover:bg-amber-200/90 border border-amber-300/80 text-amber-950 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+        >
+          <ImageIcon className="w-3.5 h-3.5 text-amber-800" />
+          <span>{photoUrl ? 'Change Photo' : 'Add Image'}</span>
+        </button>
+
+        {photoUrl && (
+          <button
+            type="button"
+            onClick={onDeletePhoto}
+            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+            title="Delete Photo"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {photoUrl && (
+        <>
+          {/* Photo Layout Style (3D Carved Segmented Buttons) */}
+          <Photo3DLayoutSelector
+            value={frameShape}
+            onChange={onChangeShape}
+          />
+
+          {/* Photo Focus / Vertical Focal Point (0-100%) */}
+          <div className="space-y-1.5 p-2 rounded-xl bg-white/80 border border-amber-200/80">
+            <div className="flex items-center justify-between text-[10px] text-amber-950 font-bold">
+              <span>Photo Focus (Up / Down)</span>
+              <span className="font-mono text-amber-700">{photoFocalY}%</span>
+            </div>
+            <input
+              type="range" min="0" max="100"
+              value={photoFocalY}
+              onChange={(e) => onChangeFocalY(Number(e.target.value))}
+              className="w-full accent-amber-700 cursor-pointer"
+            />
+            <div className="flex items-center justify-between text-[9px] font-bold text-amber-900">
+              <button
+                type="button"
+                onClick={() => onChangeFocalY(0)}
+                className="px-1.5 py-0.5 rounded bg-zinc-100 border border-amber-200 hover:bg-amber-100 cursor-pointer"
+              >
+                Top (0%) ⬆
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeFocalY(50)}
+                className="px-1.5 py-0.5 rounded bg-zinc-100 border border-amber-200 hover:bg-amber-100 cursor-pointer"
+              >
+                Center (50%) ⏺
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeFocalY(100)}
+                className="px-1.5 py-0.5 rounded bg-zinc-100 border border-amber-200 hover:bg-amber-100 cursor-pointer"
+              >
+                Bottom (100%) ⬇
+              </button>
+            </div>
+          </div>
+
+          {/* Photo Height Slider */}
+          {frameShape !== 'background' && (
+            <div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-600 font-bold">
+                <span>Photo Height</span>
+                <span>{photoHeight}px</span>
+              </div>
+              <input
+                type="range" min="100" max="800"
+                value={photoHeight}
+                onChange={(e) => onChangeHeight(Number(e.target.value))}
+                className="w-full accent-black cursor-pointer"
+              />
+            </div>
+          )}
+
+          {/* Photo Width Slider */}
+          {['arch', 'rounded', 'rectangle'].includes(frameShape) && (
+            <div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-600 font-bold">
+                <span>Photo Width</span>
+                <span>{photoWidth}%</span>
+              </div>
+              <input
+                type="range" min="30" max="100"
+                value={photoWidth}
+                onChange={(e) => onChangeWidth(Number(e.target.value))}
+                className="w-full accent-black cursor-pointer"
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function WedGrapherAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const hiddenFileInputRef = useRef<HTMLInputElement>(null);
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   
@@ -265,6 +369,9 @@ function WedGrapherAiryBuilderContent() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [openCard, setOpenCard] = useState<string | null>('cover');
 
+  // Mobile Bottom Sheet Drawer State
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+
   // Viewport Zoom & Scaling Engine (A4 794px base)
   const [zoomScale, setZoomScale] = useState<number>(1.0);
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
@@ -272,7 +379,7 @@ function WedGrapherAiryBuilderContent() {
   // Responsive Auto-Scale Calculation
   const autoFitScale = () => {
     if (mainContainerRef.current) {
-      const availableWidth = mainContainerRef.current.clientWidth - 48;
+      const availableWidth = mainContainerRef.current.clientWidth - 32;
       if (availableWidth < 794 && availableWidth > 200) {
         const fitScale = Math.max(0.35, Math.min(1.0, Number((availableWidth / 794).toFixed(2))));
         setZoomScale(fitScale);
@@ -288,29 +395,15 @@ function WedGrapherAiryBuilderContent() {
     return () => window.removeEventListener('resize', autoFitScale);
   }, []);
 
-  // Media Gallery Modal State & Compression Quality Modal
+  // Media Gallery Modal State
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
-  const [showQualityModal, setShowQualityModal] = useState(false);
-  const [selectedQuality, setSelectedQuality] = useState<'low' | 'medium' | 'high'>('high');
-  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
-  const [isCompressingAndUploading, setIsCompressingAndUploading] = useState(false);
-  const [activeTargetField, setActiveTargetField] = useState<'coverLogo' | 'coverPhoto' | 'aboutUsBanner' | 'shootPhoto' | 'includedPhoto' | null>(null);
-
-  const [userGalleryObjects, setUserGalleryObjects] = useState<UserGalleryImage[]>([]);
-  const [galleryImages, setGalleryImages] = useState<string[]>([
-    'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
-    'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
-    'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&q=80',
-    'https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=800&q=80',
-  ]);
+  const [activeTargetField, setActiveTargetField] = useState<string | null>(null);
 
   // Load Custom Fonts from API on initial mount
   useEffect(() => {
     loadCustomFontsFromAPI();
   }, []);
 
-  // Ensure initial primary and secondary fonts are registered
   useEffect(() => {
     if (data.primaryFont) registerFontFace({ name: data.primaryFont.replace(/['"]/g, '').split(',')[0], family: data.primaryFont, category: 'Luxury Serif' });
     if (data.secondaryFont) registerFontFace({ name: data.secondaryFont.replace(/['"]/g, '').split(',')[0], family: data.secondaryFont, category: 'Minimal Sans-Serif' });
@@ -331,13 +424,12 @@ function WedGrapherAiryBuilderContent() {
     }
   };
 
-  // 1:1 Multi-Page PDF Generator (Exact Dynamic Rendered Height per Page, No Blank Pages)
+  // 1:1 Multi-Page PDF Exporter (Captures .a4-page-section & .quotation-page elements sequentially)
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
     
-    // Temporarily reset zoom scale to 1.0 for unscaled 794px capturing
     setZoomScale(1.0);
 
     try {
@@ -347,7 +439,8 @@ function WedGrapherAiryBuilderContent() {
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
 
-      const pageElements = canvasRef.current.querySelectorAll('.a4-page-section');
+      // Comprehensive selector matching all rendered DOM page cards
+      const pageElements = canvasRef.current.querySelectorAll('.a4-page-section, .quotation-page');
       
       if (pageElements && pageElements.length > 0) {
         let pdf: InstanceType<typeof jsPDF> | null = null;
@@ -372,7 +465,6 @@ function WedGrapherAiryBuilderContent() {
 
           const imgData = canvas.toDataURL('image/jpeg', 0.98);
           
-          // Calculate PDF page height in pt corresponding to exact dynamic height (794px width = 595.28 pt)
           const pdfPageWidth = 595.28;
           const pdfPageHeight = (elementHeight * pdfPageWidth) / elementWidth;
 
@@ -405,7 +497,7 @@ function WedGrapherAiryBuilderContent() {
     }
   };
 
-  // Load User Session & Isolated Saved Proposal
+  // Load User Session & Proposal
   useEffect(() => {
     async function initUserAndLoadData() {
       try {
@@ -427,26 +519,8 @@ function WedGrapherAiryBuilderContent() {
           if (localSaved) {
             try {
               setData(JSON.parse(localSaved));
-            } catch {
-              // fallback
-            }
+            } catch {}
           }
-        }
-
-        const { data: dbImages } = await supabase
-          .from('user_gallery_images')
-          .select('*')
-          .eq('workspace_id', currentUserId)
-          .order('created_at', { ascending: false });
-
-        if (dbImages && dbImages.length > 0) {
-          const quotationOnlyImages = dbImages.filter(img => 
-            img.source_module !== 'whatsapp_templates' && 
-            !img.url?.includes('whatsapp_templates_media')
-          );
-          setUserGalleryObjects(quotationOnlyImages as UserGalleryImage[]);
-          const fetchedUrls = quotationOnlyImages.map(img => img.url).filter(Boolean);
-          setGalleryImages(prev => Array.from(new Set([...fetchedUrls, ...prev])));
         }
       } catch (err) {
         console.warn('Initialization error:', err);
@@ -455,7 +529,7 @@ function WedGrapherAiryBuilderContent() {
     initUserAndLoadData();
   }, []);
 
-  // REAL-TIME AUTO-SAVE (Debounced 1000ms - User Isolated)
+  // Real-Time Auto Save
   useEffect(() => {
     if (!userId) return;
 
@@ -494,7 +568,7 @@ function WedGrapherAiryBuilderContent() {
     return () => clearTimeout(timer);
   }, [data, userId]);
 
-  const openAddImageModal = (target: 'coverLogo' | 'coverPhoto' | 'aboutUsBanner' | 'shootPhoto' | 'includedPhoto') => {
+  const openAddImageModal = (target: string) => {
     setActiveTargetField(target);
     setMediaModalOpen(true);
   };
@@ -512,12 +586,20 @@ function WedGrapherAiryBuilderContent() {
       setData(prev => ({ ...prev, shootDetails: { ...prev.shootDetails, photo: url } }));
     } else if (activeTargetField === 'includedPhoto') {
       setData(prev => ({ ...prev, whatsIncluded: { ...prev.whatsIncluded, photo: url } }));
+    } else if (activeTargetField === 'pricePhoto') {
+      setData(prev => ({ ...prev, pricePayment: { ...prev.pricePayment, photo: url } }));
+    } else if (activeTargetField === 'addOnsPhoto') {
+      setData(prev => ({ ...prev, addOnsTable: { ...prev.addOnsTable, photo: url } }));
+    } else if (activeTargetField === 'timelinePhoto') {
+      setData(prev => ({ ...prev, timelineTable: { ...prev.timelineTable, photo: url } }));
+    } else if (activeTargetField === 'termsPhoto') {
+      setData(prev => ({ ...prev, termsAndThankYou: { ...prev.termsAndThankYou, photo: url } }));
     }
 
     setMediaModalOpen(false);
   };
 
-  // Dynamic Theme Colors based on Look Selection
+  // Dynamic Theme Colors
   const isGold = data.look.toLowerCase().includes('gold');
   const isDark = data.look.toLowerCase().includes('dark');
 
@@ -560,10 +642,443 @@ function WedGrapherAiryBuilderContent() {
     }
   };
 
+  // Sidebar Controls JSX block (Shared between Desktop Sidebar & Mobile Bottom Sheet Drawer)
+  const renderSidebarControls = () => (
+    <div className="space-y-4">
+      {/* Design Name & Look Theme */}
+      <div className="space-y-3">
+        <div>
+          <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Design name</label>
+          <input
+            type="text"
+            value={data.designName}
+            onChange={(e) => setData({ ...data, designName: e.target.value })}
+            className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Event type</label>
+            <select
+              value={data.eventGroup}
+              onChange={(e) => setData({ ...data, eventGroup: e.target.value })}
+              className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
+            >
+              <option value="Pre-Wedding">Pre-Wedding</option>
+              <option value="Wedding Gold">Wedding Gold</option>
+              <option value="Destination">Destination</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-amber-700 mb-1">Look</label>
+            <select
+              value={data.look}
+              onChange={(e) => setData({ ...data, look: e.target.value })}
+              className="w-full p-2 rounded-xl bg-amber-50/60 border border-amber-200 font-bold text-amber-900 focus:outline-none"
+            >
+              <option value="Airy White (Pre-Wed)">Airy White (Pre-Wed)</option>
+              <option value="Royal Gold (Classic)">Royal Gold (Classic)</option>
+              <option value="Golden Luxe">Golden Luxe (#FFF8EA / #8A6D2F)</option>
+              <option value="Dark Studio">Dark Studio</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Canva-Style Typography Customizers */}
+        <div className="space-y-3 pt-2 border-t border-zinc-100">
+          <span className="text-[10px] uppercase font-bold text-purple-700 flex items-center gap-1">
+            <Type className="w-3 h-3" /> Canva-Style Typography Engine
+          </span>
+
+          <CanvaFontSelector
+            label="Main Font (Headings & Names)"
+            value={data.primaryFont}
+            onChange={(family, fontItem) => {
+              registerFontFace(fontItem);
+              setData({ ...data, primaryFont: family });
+            }}
+          />
+
+          <CanvaFontSelector
+            label="Sub Font (Body Text & Tables)"
+            value={data.secondaryFont}
+            onChange={(family, fontItem) => {
+              registerFontFace(fontItem);
+              setData({ ...data, secondaryFont: family });
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Accordion Cards */}
+      <div className="space-y-2.5 pt-2 border-t border-zinc-100">
+        
+        {/* 1. COVER PAGE CARD */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'cover' ? null : 'cover')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5 text-zinc-500" />
+              <span>1. Cover Page</span>
+            </div>
+            {openCard === 'cover' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'cover' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase font-bold text-amber-700 block">Couple Names</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[9px] font-bold text-zinc-400">Groom Name</label>
+                    <input
+                      type="text"
+                      value={data.cover.groomName}
+                      placeholder="e.g. YASH"
+                      onChange={(e) => setData({ ...data, cover: { ...data.cover, groomName: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-zinc-400">Bride Name</label>
+                    <input
+                      type="text"
+                      value={data.cover.brideName}
+                      placeholder="e.g. TWINKLE"
+                      onChange={(e) => setData({ ...data, cover: { ...data.cover, brideName: e.target.value } })}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-400">Event Type</label>
+                <select
+                  value={data.cover.eventType}
+                  onChange={(e) => setData({ ...data, cover: { ...data.cover, eventType: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                >
+                  <option value="Wedding">Wedding</option>
+                  <option value="Pre-Wedding">Pre-Wedding</option>
+                  <option value="Destination Wedding">Destination Wedding</option>
+                  <option value="Engagement">Engagement</option>
+                  <option value="Haldi & Sangeet">Haldi & Sangeet</option>
+                </select>
+              </div>
+
+              {/* Brand Logo */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 block">Brand Name &amp; Logo</span>
+                <input
+                  type="text"
+                  value={data.cover.brandName}
+                  placeholder="Brand Name (e.g. FILMIFY WEDDINGS)"
+                  onChange={(e) => setData({ ...data, cover: { ...data.cover, brandName: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                />
+
+                <div className="flex items-center gap-2">
+                  {data.cover.brandLogoUrl && (
+                    <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+                      <img src={data.cover.brandLogoUrl} alt="Logo" className="w-full h-full object-contain bg-transparent" />
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => openAddImageModal('coverLogo')}
+                    className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
+                    <span>{data.cover.brandLogoUrl ? 'Change Logo' : 'Add Image'}</span>
+                  </button>
+
+                  {data.cover.brandLogoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setData({ ...data, cover: { ...data.cover, brandLogoUrl: '' } })}
+                      className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Cover Unified Photo Controls */}
+              <UnifiedPhotoControls
+                photoUrl={data.cover.photoUrl}
+                frameShape={data.cover.frameShape}
+                photoHeight={data.cover.photoHeight}
+                photoWidth={data.cover.photoWidth}
+                photoFocalY={data.cover.photoFocalY}
+                onOpenAddModal={() => openAddImageModal('coverPhoto')}
+                onDeletePhoto={() => setData({ ...data, cover: { ...data.cover, photoUrl: '' } })}
+                onChangeShape={(shape) => setData({ ...data, cover: { ...data.cover, frameShape: shape } })}
+                onChangeFocalY={(focalY) => setData({ ...data, cover: { ...data.cover, photoFocalY: focalY } })}
+                onChangeHeight={(h) => setData({ ...data, cover: { ...data.cover, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, cover: { ...data.cover, photoWidth: w } })}
+              />
+
+            </div>
+          )}
+        </div>
+
+        {/* 2. About us Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'about' ? null : 'about')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
+              <span>2. About us</span>
+            </div>
+            {openCard === 'about' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'about' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Text</label>
+                <textarea
+                  rows={3}
+                  value={data.aboutUs.text}
+                  onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, text: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none"
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.aboutUs.bottomBannerPhoto}
+                frameShape={data.aboutUs.frameShape}
+                photoHeight={data.aboutUs.bottomBannerHeight}
+                photoWidth={data.aboutUs.photoWidth}
+                photoFocalY={data.aboutUs.photoFocalY}
+                onOpenAddModal={() => openAddImageModal('aboutUsBanner')}
+                onDeletePhoto={() => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerPhoto: '' } })}
+                onChangeShape={(shape) => setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: shape } })}
+                onChangeFocalY={(focalY) => setData({ ...data, aboutUs: { ...data.aboutUs, photoFocalY: focalY } })}
+                onChangeHeight={(h) => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, aboutUs: { ...data.aboutUs, photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 3. Pre-Wedding Shoot Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'shoot' ? null : 'shoot')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <Camera className="w-3.5 h-3.5 text-amber-700" />
+              <span>3. Pre-Wedding</span>
+            </div>
+            {openCard === 'shoot' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'shoot' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
+                <input
+                  type="text"
+                  value={data.shootDetails.heading || 'Pre-Wedding Shoot'}
+                  onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, heading: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables Items</label>
+                <textarea
+                  rows={4}
+                  value={data.shootDetails.deliverablesText || ''}
+                  onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none text-[11px]"
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.shootDetails.photo}
+                frameShape={data.shootDetails.frameShape}
+                photoHeight={data.shootDetails.photoHeight}
+                photoWidth={data.shootDetails.photoWidth}
+                photoFocalY={data.shootDetails.photoFocalY}
+                onOpenAddModal={() => openAddImageModal('shootPhoto')}
+                onDeletePhoto={() => setData({ ...data, shootDetails: { ...data.shootDetails, photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: shape } })}
+                onChangeFocalY={(focalY) => setData({ ...data, shootDetails: { ...data.shootDetails, photoFocalY: focalY } })}
+                onChangeHeight={(h) => setData({ ...data, shootDetails: { ...data.shootDetails, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, shootDetails: { ...data.shootDetails, photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 4. What's included Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'included' ? null : 'included')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-3.5 h-3.5 text-zinc-500" />
+              <span>4. What's included</span>
+            </div>
+            {openCard === 'included' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'included' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables List</label>
+                <textarea
+                  rows={4}
+                  value={data.whatsIncluded.deliverablesText}
+                  onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, deliverablesText: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none"
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.whatsIncluded.photo}
+                frameShape={data.whatsIncluded.frameShape}
+                photoHeight={data.whatsIncluded.photoHeight}
+                photoWidth={data.whatsIncluded.photoWidth}
+                photoFocalY={data.whatsIncluded.photoFocalY}
+                onOpenAddModal={() => openAddImageModal('includedPhoto')}
+                onDeletePhoto={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, frameShape: shape } })}
+                onChangeFocalY={(focalY) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoFocalY: focalY } })}
+                onChangeHeight={(h) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 5. Price & Payment Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'price' ? null : 'price')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-3.5 h-3.5 text-zinc-500" />
+              <span>5. Price &amp; payment</span>
+            </div>
+            {openCard === 'price' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'price' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Package Price (₹)</label>
+                <input
+                  type="number"
+                  value={data.pricePayment.packagePrice}
+                  onChange={(e) => setData({ ...data, pricePayment: { ...data.pricePayment, packagePrice: Number(e.target.value) || 0 } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.pricePayment.photo}
+                frameShape={data.pricePayment.frameShape}
+                photoHeight={data.pricePayment.photoHeight}
+                photoWidth={data.pricePayment.photoWidth}
+                photoFocalY={data.pricePayment.photoFocalY}
+                onOpenAddModal={() => openAddImageModal('pricePhoto')}
+                onDeletePhoto={() => setData({ ...data, pricePayment: { ...data.pricePayment, photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, pricePayment: { ...data.pricePayment, frameShape: shape } })}
+                onChangeFocalY={(focalY) => setData({ ...data, pricePayment: { ...data.pricePayment, photoFocalY: focalY } })}
+                onChangeHeight={(h) => setData({ ...data, pricePayment: { ...data.pricePayment, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, pricePayment: { ...data.pricePayment, photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 6. Add-ons Table Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'addons' ? null : 'addons')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <Plus className="w-3.5 h-3.5 text-zinc-500" />
+              <span>6. Add-ons table</span>
+            </div>
+            {openCard === 'addons' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'addons' && (
+            <div className="p-3 space-y-3 bg-white">
+              <UnifiedPhotoControls
+                photoUrl={data.addOnsTable.photo}
+                frameShape={data.addOnsTable.frameShape}
+                photoHeight={data.addOnsTable.photoHeight}
+                photoWidth={data.addOnsTable.photoWidth}
+                photoFocalY={data.addOnsTable.photoFocalY}
+                onOpenAddModal={() => openAddImageModal('addOnsPhoto')}
+                onDeletePhoto={() => setData({ ...data, addOnsTable: { ...data.addOnsTable, photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, addOnsTable: { ...data.addOnsTable, frameShape: shape } })}
+                onChangeFocalY={(focalY) => setData({ ...data, addOnsTable: { ...data.addOnsTable, photoFocalY: focalY } })}
+                onChangeHeight={(h) => setData({ ...data, addOnsTable: { ...data.addOnsTable, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, addOnsTable: { ...data.addOnsTable, photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 7. Timeline & Terms Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'terms' ? null : 'terms')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-zinc-500" />
+              <span>7. Timeline &amp; Terms</span>
+            </div>
+            {openCard === 'terms' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'terms' && (
+            <div className="p-3 space-y-3 bg-white">
+              <UnifiedPhotoControls
+                photoUrl={data.termsAndThankYou.photo}
+                frameShape={data.termsAndThankYou.frameShape}
+                photoHeight={data.termsAndThankYou.photoHeight}
+                photoWidth={data.termsAndThankYou.photoWidth}
+                photoFocalY={data.termsAndThankYou.photoFocalY}
+                onOpenAddModal={() => openAddImageModal('termsPhoto')}
+                onDeletePhoto={() => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, frameShape: shape } })}
+                onChangeFocalY={(focalY) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photoFocalY: focalY } })}
+                onChangeHeight={(h) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+
   return (
-    <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 font-sans flex flex-col overflow-hidden selection:bg-black selection:text-white">
+    <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 font-sans flex flex-col overflow-hidden selection:bg-black selection:text-white relative">
       
-      {/* ── PRINT & PDF EXPORT CSS (Dynamic Heights) ── */}
+      {/* ── PRINT & PDF EXPORT CSS ── */}
       <style jsx global>{`
         @media print {
           @page {
@@ -604,7 +1119,7 @@ function WedGrapherAiryBuilderContent() {
             page-break-after: always !important;
             break-after: page !important;
           }
-          .a4-page-section.content-page {
+          .a4-page-section.content-page, .quotation-page {
             width: 794px !important;
             height: auto !important;
             min-height: 0 !important;
@@ -618,13 +1133,13 @@ function WedGrapherAiryBuilderContent() {
       `}</style>
 
       {/* ── TOP HEADER BAR ── */}
-      <header className="h-12 bg-white border-b border-zinc-200 px-4 sm:px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
-        <div className="flex items-center gap-3">
+      <header className="h-12 bg-white border-b border-zinc-200 px-3 sm:px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
+        <div className="flex items-center gap-2 sm:gap-3">
           <input
             type="text"
             value={data.designName}
             onChange={(e) => { setData({ ...data, designName: e.target.value }); }}
-            className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[200px] sm:max-w-[320px] truncate"
+            className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[150px] sm:max-w-[320px] truncate"
           />
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border hidden sm:inline-block ${
             hasUnsavedChanges ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
@@ -634,7 +1149,7 @@ function WedGrapherAiryBuilderContent() {
         </div>
 
         {/* Viewport Zoom Controls */}
-        <div className="flex items-center gap-1.5 bg-zinc-100 px-2 py-1 rounded-full border border-zinc-200 text-[10px] font-bold text-zinc-700">
+        <div className="flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-full border border-zinc-200 text-[10px] font-bold text-zinc-700">
           <button 
             type="button" 
             onClick={() => setZoomScale(s => Math.max(0.35, Number((s - 0.1).toFixed(2))))} 
@@ -643,7 +1158,7 @@ function WedGrapherAiryBuilderContent() {
           >
             <ZoomOut className="w-3 h-3 text-zinc-600" />
           </button>
-          <span className="w-10 text-center font-mono font-bold text-zinc-800">{Math.round(zoomScale * 100)}%</span>
+          <span className="w-8 sm:w-10 text-center font-mono font-bold text-zinc-800 text-[10px]">{Math.round(zoomScale * 100)}%</span>
           <button 
             type="button" 
             onClick={() => setZoomScale(s => Math.min(1.5, Number((s + 0.1).toFixed(2))))} 
@@ -655,72 +1170,43 @@ function WedGrapherAiryBuilderContent() {
           <button 
             type="button" 
             onClick={autoFitScale} 
-            className="px-1.5 py-0.5 bg-white border border-zinc-300 rounded-md text-[9px] hover:bg-zinc-50 cursor-pointer transition-all ml-0.5" 
-            title="Fit to Screen Width"
+            className="px-1.5 py-0.5 bg-white border border-zinc-300 rounded-md text-[9px] hover:bg-zinc-50 cursor-pointer transition-all hidden sm:inline-block" 
           >
             Fit
-          </button>
-          <button 
-            type="button" 
-            onClick={() => setZoomScale(1.0)} 
-            className="px-1.5 py-0.5 bg-white border border-zinc-300 rounded-md text-[9px] hover:bg-zinc-50 cursor-pointer transition-all" 
-            title="100% Zoom"
-          >
-            100%
           </button>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/p/quotation/demo_token`}
-            target="_blank"
-            className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all flex items-center gap-1.5 hidden md:flex"
-          >
-            <Eye className="w-3.5 h-3.5" /> Preview
-          </Link>
-
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={handleCleanPDFExport}
             disabled={isExportingPDF}
-            className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-2.5 sm:px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
             title="Export Clean PDF (Print View)"
           >
-            <Printer className="w-3.5 h-3.5 text-amber-700" /> {isExportingPDF ? 'Preparing...' : 'Clean PDF'}
+            <Printer className="w-3.5 h-3.5 text-amber-700" /> <span className="hidden sm:inline">Clean PDF</span>
           </button>
 
           <button
             onClick={handleDownloadPDFCanvas}
             disabled={isExportingPDF}
-            className="px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-            title="Download High-Res Dynamic PDF (No Blank Pages)"
+            className="px-2.5 sm:px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
+            title="Download High-Res Dynamic PDF"
           >
-            <Download className="w-3.5 h-3.5 text-amber-700" /> Download PDF
-          </button>
-
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(window.location.href);
-              setCopiedLink(true);
-              setTimeout(() => setCopiedLink(false), 2000);
-            }}
-            className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer hidden lg:flex"
-          >
-            <Share2 className="w-3.5 h-3.5" /> {copiedLink ? 'Copied!' : 'Send'}
+            <Download className="w-3.5 h-3.5 text-amber-700" /> <span className="hidden sm:inline">Download PDF</span><span className="sm:hidden">PDF</span>
           </button>
 
           <button
             onClick={handleManualSave}
             disabled={saving}
-            className="px-4 py-1 rounded-full bg-black hover:bg-zinc-800 text-white text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
+            className="px-3 sm:px-4 py-1 rounded-full bg-black hover:bg-zinc-800 text-white text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50"
           >
-            <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? 'Saving...' : 'Save'}
+            <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? '...' : 'Save'}
           </button>
 
           <Link
             href="/workspace/quotations"
             className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-1"
-            title="Close Editor"
           >
             <X className="w-4 h-4" />
           </Link>
@@ -728,540 +1214,17 @@ function WedGrapherAiryBuilderContent() {
       </header>
 
       {/* ── MAIN WORKSPACE VIEWPORT ── */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         
-        {/* ───────────────────────────────────────────────────────────── */}
-        {/* LEFT CONTROL SIDEBAR PANEL                                    */}
-        {/* ───────────────────────────────────────────────────────────── */}
-        <aside className="w-[320px] bg-white border-r border-zinc-200 p-4 overflow-y-auto space-y-5 shrink-0 text-xs shadow-sm no-print">
-          
-          {/* Top Inputs & Typography Customizer */}
-          <div className="space-y-3">
-            <div>
-              <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Design name</label>
-              <input
-                type="text"
-                value={data.designName}
-                onChange={(e) => setData({ ...data, designName: e.target.value })}
-                className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Event type</label>
-                <select
-                  value={data.eventGroup}
-                  onChange={(e) => setData({ ...data, eventGroup: e.target.value })}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
-                >
-                  <option value="Pre-Wedding">Pre-Wedding</option>
-                  <option value="Wedding Gold">Wedding Gold</option>
-                  <option value="Destination">Destination</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-amber-700 mb-1">Look</label>
-                <select
-                  value={data.look}
-                  onChange={(e) => setData({ ...data, look: e.target.value })}
-                  className="w-full p-2 rounded-xl bg-amber-50/60 border border-amber-200 font-bold text-amber-900 focus:outline-none"
-                >
-                  <option value="Airy White (Pre-Wed)">Airy White (Pre-Wed)</option>
-                  <option value="Royal Gold (Classic)">Royal Gold (Classic)</option>
-                  <option value="Golden Luxe">Golden Luxe (#FFF8EA / #8A6D2F)</option>
-                  <option value="Dark Studio">Dark Studio</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Canva-Style Typography Customizers */}
-            <div className="space-y-3 pt-2 border-t border-zinc-100">
-              <span className="text-[10px] uppercase font-bold text-purple-700 flex items-center gap-1">
-                <Type className="w-3 h-3" /> Canva-Style Typography Engine
-              </span>
-
-              <CanvaFontSelector
-                label="Main Font (Headings & Names)"
-                value={data.primaryFont}
-                onChange={(family, fontItem) => {
-                  registerFontFace(fontItem);
-                  setData({ ...data, primaryFont: family });
-                }}
-              />
-
-              <CanvaFontSelector
-                label="Sub Font (Body Text & Tables)"
-                value={data.secondaryFont}
-                onChange={(family, fontItem) => {
-                  registerFontFace(fontItem);
-                  setData({ ...data, secondaryFont: family });
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Collapsible Section Accordion Cards */}
-          <div className="space-y-2.5 pt-2 border-t border-zinc-100">
-            
-            {/* 1. COVER PAGE CARD */}
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-              <div 
-                onClick={() => setOpenCard(openCard === 'cover' ? null : 'cover')}
-                className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-              >
-                <div className="flex items-center gap-2">
-                  <FileText className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>1. Cover Page</span>
-                </div>
-                {openCard === 'cover' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </div>
-
-              {openCard === 'cover' && (
-                <div className="p-3 space-y-3 bg-white">
-                  <div className="space-y-2">
-                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Couple Names</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[9px] font-bold text-zinc-400">Groom Name</label>
-                        <input
-                          type="text"
-                          value={data.cover.groomName}
-                          placeholder="e.g. YASH"
-                          onChange={(e) => setData({ ...data, cover: { ...data.cover, groomName: e.target.value } })}
-                          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[9px] font-bold text-zinc-400">Bride Name</label>
-                        <input
-                          type="text"
-                          value={data.cover.brideName}
-                          placeholder="e.g. TWINKLE"
-                          onChange={(e) => setData({ ...data, cover: { ...data.cover, brideName: e.target.value } })}
-                          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400">Event Type</label>
-                    <select
-                      value={data.cover.eventType}
-                      onChange={(e) => setData({ ...data, cover: { ...data.cover, eventType: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                    >
-                      <option value="Wedding">Wedding</option>
-                      <option value="Pre-Wedding">Pre-Wedding</option>
-                      <option value="Destination Wedding">Destination Wedding</option>
-                      <option value="Engagement">Engagement</option>
-                      <option value="Haldi & Sangeet">Haldi & Sangeet</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2 pt-2 border-t border-zinc-100">
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Side & Location</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[9px] font-bold text-zinc-400 mb-1">Side Option</label>
-                        <select
-                          value={data.cover.sideOption || 'Both Sides'}
-                          onChange={(e) => setData({ ...data, cover: { ...data.cover, sideOption: e.target.value } })}
-                          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                        >
-                          <option value="Both Sides">Both Sides</option>
-                          <option value="Groom Side">Groom Side</option>
-                          <option value="Bride Side">Bride Side</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[9px] font-bold text-zinc-400 mb-1">Location</label>
-                        <input
-                          type="text"
-                          value={data.cover.locationName || 'MUMBAI'}
-                          placeholder="e.g. MUMBAI"
-                          onChange={(e) => setData({ ...data, cover: { ...data.cover, locationName: e.target.value } })}
-                          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 pt-2 border-t border-zinc-100">
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Brand Name & Logo</span>
-                    <input
-                      type="text"
-                      value={data.cover.brandName}
-                      placeholder="Brand Name (e.g. FILMIFY WEDDINGS)"
-                      onChange={(e) => setData({ ...data, cover: { ...data.cover, brandName: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                    />
-
-                    <div className="flex items-center gap-2">
-                      {data.cover.brandLogoUrl && (
-                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
-                          <img src={data.cover.brandLogoUrl} alt="Logo" className="w-full h-full object-contain bg-transparent" />
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => openAddImageModal('coverLogo')}
-                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                        <span>{data.cover.brandLogoUrl ? 'Change Logo' : 'Add Image'}</span>
-                      </button>
-
-                      {data.cover.brandLogoUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setData({ ...data, cover: { ...data.cover, brandLogoUrl: '' } })}
-                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
-                          title="Delete Logo"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
-                        <span>Logo Size</span>
-                        <span>{data.cover.brandLogoSize}px</span>
-                      </div>
-                      <input
-                        type="range" min="20" max="180"
-                        value={data.cover.brandLogoSize}
-                        onChange={(e) => setData({ ...data, cover: { ...data.cover, brandLogoSize: Number(e.target.value) } })}
-                        className="w-full accent-black cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 pt-2 border-t border-zinc-100">
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">Cover Photo & Frame</span>
-                    
-                    <div className="flex items-center gap-2">
-                      {data.cover.photoUrl && (
-                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
-                          <img src={data.cover.photoUrl} alt="Cover" className="w-full h-full object-cover bg-transparent" />
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => openAddImageModal('coverPhoto')}
-                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                        <span>{data.cover.photoUrl ? 'Change Photo' : 'Add Image'}</span>
-                      </button>
-
-                      {data.cover.photoUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setData({ ...data, cover: { ...data.cover, photoUrl: '' } })}
-                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <Photo3DLayoutSelector
-                      value={data.cover.frameShape || 'arch'}
-                      onChange={(newShape) => {
-                        const isSmallShape = ['arch', 'rounded', 'rectangle'].includes(newShape);
-                        const newHeight = isSmallShape && (data.cover.photoHeight > 450 || !data.cover.photoHeight) ? 420 : data.cover.photoHeight;
-                        setData({
-                          ...data,
-                          cover: {
-                            ...data.cover,
-                            frameShape: newShape,
-                            photoHeight: newHeight,
-                          }
-                        });
-                      }}
-                    />
-
-                    {data.cover.photoUrl && (
-                      <div className="space-y-1.5 p-2 rounded-xl bg-amber-50/60 border border-amber-200/80">
-                        <div className="flex items-center justify-between text-[10px] text-amber-900 font-bold">
-                          <span>Photo Focus (Up / Down)</span>
-                          <span className="font-mono text-amber-700">{data.cover.photoFocalY ?? 50}%</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="100"
-                          value={data.cover.photoFocalY ?? 50}
-                          onChange={(e) => setData({ ...data, cover: { ...data.cover, photoFocalY: Number(e.target.value) } })}
-                          className="w-full accent-amber-700 cursor-pointer"
-                        />
-                      </div>
-                    )}
-
-                    {data.cover.frameShape !== 'background' && (
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
-                          <span>Photo Height</span>
-                          <span>{data.cover.photoHeight}px</span>
-                        </div>
-                        <input
-                          type="range" min="200" max="800"
-                          value={data.cover.photoHeight}
-                          onChange={(e) => setData({ ...data, cover: { ...data.cover, photoHeight: Number(e.target.value) } })}
-                          className="w-full accent-black cursor-pointer"
-                        />
-                      </div>
-                    )}
-
-                    {['arch', 'rounded', 'rectangle'].includes(data.cover.frameShape || 'arch') && (
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold">
-                          <span>Photo Width</span>
-                          <span>{data.cover.photoWidth || 75}%</span>
-                        </div>
-                        <input
-                          type="range" min="30" max="100"
-                          value={data.cover.photoWidth || 75}
-                          onChange={(e) => setData({ ...data, cover: { ...data.cover, photoWidth: Number(e.target.value) } })}
-                          className="w-full accent-black cursor-pointer"
-                        />
-                      </div>
-                    )}
-
-                    <div className="pt-1 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-zinc-600">Arch Border Line</span>
-                      <button
-                        type="button"
-                        onClick={() => setData({ ...data, cover: { ...data.cover, showPhotoBorder: !data.cover.showPhotoBorder } })}
-                        className={`px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border ${
-                          data.cover.showPhotoBorder
-                            ? 'bg-amber-600 text-white border-amber-600'
-                            : 'bg-zinc-100 text-zinc-600 border-zinc-300'
-                        }`}
-                      >
-                        {data.cover.showPhotoBorder ? 'Border ON' : 'Border OFF'}
-                      </button>
-                    </div>
-
-                  </div>
-
-                </div>
-              )}
-            </div>
-
-            {/* 2. About us Card */}
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-              <div 
-                onClick={() => setOpenCard(openCard === 'about' ? null : 'about')}
-                className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>2. About us</span>
-                </div>
-                {openCard === 'about' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </div>
-
-              {openCard === 'about' && (
-                <div className="p-3 space-y-3 bg-white">
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Text</label>
-                    <textarea
-                      rows={3}
-                      value={data.aboutUs.text}
-                      onChange={(e) => setData({ ...data, aboutUs: { ...data.aboutUs, text: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2 pt-2 border-t border-zinc-100">
-                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Banner Image</span>
-                    
-                    <div className="flex items-center gap-2">
-                      {data.aboutUs.bottomBannerPhoto && (
-                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
-                          <img src={data.aboutUs.bottomBannerPhoto} alt="Banner" className="w-full h-full object-cover bg-transparent" />
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => openAddImageModal('aboutUsBanner')}
-                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                        <span>{data.aboutUs.bottomBannerPhoto ? 'Change Banner' : 'Add Image'}</span>
-                      </button>
-
-                      {data.aboutUs.bottomBannerPhoto && (
-                        <button
-                          type="button"
-                          onClick={() => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerPhoto: '' } })}
-                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <Photo3DLayoutSelector
-                      value={data.aboutUs.frameShape || 'full-width'}
-                      onChange={(newShape) => {
-                        setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: newShape } });
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 3. Pre-Wedding Shoot Details Card */}
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-              <div 
-                onClick={() => setOpenCard(openCard === 'shoot' ? null : 'shoot')}
-                className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-              >
-                <div className="flex items-center gap-2">
-                  <Camera className="w-3.5 h-3.5 text-amber-700" />
-                  <span>3. Pre-Wedding</span>
-                </div>
-                {openCard === 'shoot' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </div>
-
-              {openCard === 'shoot' && (
-                <div className="p-3 space-y-3 bg-white">
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
-                    <input
-                      type="text"
-                      value={data.shootDetails.heading || 'Pre-Wedding Shoot'}
-                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, heading: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables Items</label>
-                    <textarea
-                      rows={4}
-                      value={data.shootDetails.deliverablesText || ''}
-                      onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none text-[11px]"
-                    />
-                  </div>
-
-                  <div className="pt-2 border-t border-zinc-100 space-y-2.5">
-                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Pre-Wedding Photo</span>
-                    
-                    <div className="flex items-center gap-2">
-                      {data.shootDetails.photo && (
-                        <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
-                          <img src={data.shootDetails.photo} alt="Shoot" className="w-full h-full object-cover bg-transparent" />
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => openAddImageModal('shootPhoto')}
-                        className="flex-1 py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                        <span>{data.shootDetails.photo ? 'Change Photo' : 'Add Image'}</span>
-                      </button>
-
-                      {data.shootDetails.photo && (
-                        <button
-                          type="button"
-                          onClick={() => setData({ ...data, shootDetails: { ...data.shootDetails, photo: '' } })}
-                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <Photo3DLayoutSelector
-                      value={data.shootDetails.frameShape || 'arch'}
-                      onChange={(newShape) => {
-                        setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: newShape } });
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 4. What's included Card */}
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-              <div 
-                onClick={() => setOpenCard(openCard === 'included' ? null : 'included')}
-                className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>4. What's included</span>
-                </div>
-                {openCard === 'included' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </div>
-
-              {openCard === 'included' && (
-                <div className="p-3 space-y-3 bg-white">
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables List</label>
-                    <textarea
-                      rows={4}
-                      value={data.whatsIncluded.deliverablesText}
-                      onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, deliverablesText: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 5. Price & payment Card */}
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-              <div 
-                onClick={() => setOpenCard(openCard === 'price' ? null : 'price')}
-                className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-              >
-                <div className="flex items-center gap-2">
-                  <DollarSign className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>5. Price & payment</span>
-                </div>
-                {openCard === 'price' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </div>
-
-              {openCard === 'price' && (
-                <div className="p-3 space-y-3 bg-white">
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Package Price (₹)</label>
-                    <input
-                      type="number"
-                      value={data.pricePayment.packagePrice}
-                      onChange={(e) => setData({ ...data, pricePayment: { ...data.pricePayment, packagePrice: Number(e.target.value) || 0 } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-          </div>
-
+        {/* DESKTOP SIDEBAR PANEL (>= 768px) */}
+        <aside className="w-[320px] bg-white border-r border-zinc-200 p-4 overflow-y-auto shrink-0 text-xs shadow-sm no-print hidden md:block">
+          {renderSidebarControls()}
         </aside>
 
-        {/* ───────────────────────────────────────────────────────────── */}
-        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS                          */}
-        {/* ───────────────────────────────────────────────────────────── */}
+        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS */}
         <main 
           ref={mainContainerRef}
-          className="flex-1 bg-[#EBECEF] p-4 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start space-y-8"
+          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start space-y-8 pb-20 md:pb-8"
         >
           
           {/* Scaled A4 Container Wrapper */}
@@ -1276,19 +1239,11 @@ function WedGrapherAiryBuilderContent() {
             ref={canvasRef}
           >
 
-            {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 1: COVER PAGE (STRICTLY FIXED A4 794px x 1123px)          */}
-            {/* ═════════════════════════════════════════════════════════════ */}
+            {/* PAGE 1: COVER PAGE */}
             <div 
-              className="a4-page-section cover-page w-[794px] h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 border border-zinc-300/60 select-none"
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor,
-                fontFamily: data.secondaryFont
-              }}
+              className="a4-page-section quotation-page cover-page w-[794px] h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 border border-zinc-300/60 select-none"
+              style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
-              
-              {/* FULL-BLEED ABSOLUTE BACKGROUND IMAGE (WHEN BACKGROUND SHAPE IS SELECTED) */}
               {data.cover.photoUrl && data.cover.frameShape === 'background' && (
                 <div className="absolute inset-0 z-0 overflow-hidden w-full h-full">
                   <img 
@@ -1301,10 +1256,7 @@ function WedGrapherAiryBuilderContent() {
                 </div>
               )}
 
-              {/* COVER CONTENT LAYER (VERTICALLY & HORIZONTALLY CENTERED OVERLAY) */}
               <div className="relative z-10 flex flex-col items-center justify-between h-full w-full p-12 py-16 text-center my-auto">
-                
-                {/* Brand Logo Header */}
                 <div className="w-full flex flex-col items-center justify-center space-y-2">
                   {data.cover.brandLogoUrl ? (
                     <img 
@@ -1315,31 +1267,20 @@ function WedGrapherAiryBuilderContent() {
                     />
                   ) : (
                     <div className="text-center space-y-0.5">
-                      <div 
-                        className="text-xl tracking-[0.25em] uppercase font-black" 
-                        style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}
-                      >
+                      <div className="text-xl tracking-[0.25em] uppercase font-black" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
                         {data.cover.brandName || 'FILMIFY WEDDINGS'}
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Center Content Section */}
                 <div className="w-full space-y-6 flex flex-col items-center justify-center my-auto">
-                  
                   <div className="space-y-1">
-                    <h1 
-                      className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm"
-                      style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}
-                    >
+                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
                       {data.cover.groomName || 'YASH'}
                     </h1>
                     <div className="text-2xl font-serif opacity-75 my-1" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#F3F4F6' : kickerColor }}>&amp;</div>
-                    <h1 
-                      className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm"
-                      style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}
-                    >
+                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
                       {data.cover.brideName || 'TWINKLE'}
                     </h1>
                   </div>
@@ -1352,10 +1293,7 @@ function WedGrapherAiryBuilderContent() {
                             src={data.cover.photoUrl} 
                             alt="Cover Full Bleed"
                             className="w-full object-cover block shadow-xs"
-                            style={{ 
-                              height: `${data.cover.photoHeight || 420}px`,
-                              objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` 
-                            }}
+                            style={{ height: `${data.cover.photoHeight || 420}px`, objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` }}
                           />
                         </div>
                       ) : (
@@ -1368,8 +1306,6 @@ function WedGrapherAiryBuilderContent() {
                           style={{ 
                             width: `${data.cover.photoWidth || 75}%`,
                             height: `${data.cover.photoHeight || 420}px`,
-                            borderColor: data.cover.showPhotoBorder ? photoBorderColor : 'transparent', 
-                            borderWidth: data.cover.showPhotoBorder ? '1px' : '0px', 
                             backgroundColor: 'transparent' 
                           }}
                         >
@@ -1385,49 +1321,28 @@ function WedGrapherAiryBuilderContent() {
                   )}
 
                   <div className="space-y-2 pt-2">
-                    <h3 
-                      className="text-base tracking-[0.2em] uppercase font-bold"
-                      style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}
-                    >
+                    <h3 className="text-base tracking-[0.2em] uppercase font-bold" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
                     </h3>
-                    <p 
-                      className="text-xs tracking-[0.18em] uppercase font-medium opacity-90"
-                      style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#E5E7EB' : kickerColor, fontFamily: data.secondaryFont }}
-                    >
+                    <p className="text-xs tracking-[0.18em] uppercase font-medium opacity-90" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#E5E7EB' : kickerColor, fontFamily: data.secondaryFont }}>
                       {`${(data.cover.sideOption || 'BOTH SIDES').toUpperCase()} – ${(data.cover.locationName || 'MUMBAI').toUpperCase()}`}
                     </p>
                   </div>
-
                 </div>
 
                 <div className="w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#E5E7EB' : kickerColor }}>
                   EXCLUSIVELY PREPARED FOR YOU
                 </div>
-
               </div>
             </div>
 
-            {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 2: ABOUT US & MONOGRAM (DYNAMIC HEIGHT FLEX ENGINE)      */}
-            {/* ═════════════════════════════════════════════════════════════ */}
+            {/* PAGE 2: ABOUT US */}
             <div 
-              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor,
-                fontFamily: data.secondaryFont
-              }}
+              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
-              
-              {/* Birds SVG Image (Clean 100% html2canvas rendering) */}
               <div className="absolute top-6 right-10 pointer-events-none opacity-85">
-                <img 
-                  src="/images/Birds.svg" 
-                  alt="Birds" 
-                  className="w-[220px] h-auto object-contain block"
-                  style={{ filter: isDark ? 'brightness(2)' : 'none' }}
-                />
+                <img src="/images/Birds.svg" alt="Birds" className="w-[220px] h-auto object-contain block" style={{ filter: isDark ? 'brightness(2)' : 'none' }} />
               </div>
 
               <div className="space-y-6 my-auto text-center w-full relative z-10 py-4">
@@ -1439,17 +1354,10 @@ function WedGrapherAiryBuilderContent() {
                   {data.aboutUs.heading || 'ABOUT US'}
                 </h2>
 
-                {/* Monogram SVG Image (Clean 100% html2canvas rendering) */}
                 <div className="flex flex-col items-center justify-center my-4 select-none">
-                  <img 
-                    src="/images/A%26U.svg" 
-                    alt="Monogram" 
-                    className="w-[260px] h-auto object-contain block mx-auto"
-                    style={{ filter: isDark ? 'brightness(2)' : 'none' }}
-                  />
+                  <img src="/images/A%26U.svg" alt="Monogram" className="w-[260px] h-auto object-contain block mx-auto" style={{ filter: isDark ? 'brightness(2)' : 'none' }} />
                 </div>
 
-                {/* Central Quote Block */}
                 <div className="my-6 px-6 flex items-center justify-center gap-3 max-w-xl mx-auto text-center">
                   <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>“</span>
                   <p className="text-sm leading-relaxed font-normal opacity-90 tracking-wide" style={{ color: textColor, fontFamily: data.secondaryFont }}>
@@ -1463,155 +1371,75 @@ function WedGrapherAiryBuilderContent() {
                 </div>
               </div>
 
-              {/* Full-Bleed Banner Photo */}
               {data.aboutUs.bottomBannerPhoto && (
                 <div className="-mx-12 -mb-10 w-[794px] overflow-hidden shrink-0 mt-6">
                   <img
                     src={data.aboutUs.bottomBannerPhoto}
                     alt="About Us Full Bleed"
                     className="w-full object-cover block shadow-xs"
-                    style={{ 
-                      height: `${data.aboutUs.bottomBannerHeight || 380}px`, 
-                      objectPosition: `50% ${data.aboutUs.photoFocalY ?? 50}%` 
-                    }}
+                    style={{ height: `${data.aboutUs.bottomBannerHeight || 380}px`, objectPosition: `50% ${data.aboutUs.photoFocalY ?? 50}%` }}
                   />
                 </div>
               )}
-
             </div>
 
-            {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 3: PRE-WEDDING SHOOT DETAILS (DYNAMIC HEIGHT FLEX ENGINE)*/}
-            {/* ═════════════════════════════════════════════════════════════ */}
+            {/* PAGE 3: PRE-WEDDING SHOOT */}
             <div 
-              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 p-12 py-10"
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor,
-                fontFamily: data.secondaryFont
-              }}
+              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 p-12 py-10"
+              style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
-              
-              {/* Full-Bleed Watermark Overlay */}
               {data.shootDetails.photo && data.shootDetails.frameShape === 'background' && (
                 <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden w-full h-full">
-                  <img 
-                    src={data.shootDetails.photo} 
-                    alt="Pre-Wedding Watermark"
-                    className="w-full h-full object-cover filter grayscale-[15%] opacity-35"
-                    style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }}
-                  />
+                  <img src={data.shootDetails.photo} alt="Watermark" className="w-full h-full object-cover filter grayscale-[15%] opacity-35" style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }} />
                 </div>
               )}
 
               <div className="relative z-10 space-y-6 my-auto w-full py-2">
-                
                 <div className="text-center space-y-2">
                   <span className="text-xs tracking-[0.25em] uppercase font-bold block" style={{ color: kickerColor }}>
                     {data.shootDetails.kicker || 'WHAT WE DO'}
                   </span>
-                  <h2 
-                    className="text-4xl tracking-wide font-normal" 
-                    style={{ color: textColor, fontFamily: data.primaryFont }}
-                  >
+                  <h2 className="text-4xl tracking-wide font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.shootDetails.heading || 'Pre-Wedding Shoot'}
                   </h2>
                 </div>
 
-                {/* Days & Crew List */}
                 <div className="space-y-3 max-w-lg mx-auto pl-4">
                   <p className="text-base font-bold tracking-wide" style={{ color: textColor }}>
                     {data.shootDetails.daysText || '1 Day Shoot'}
                   </p>
-
                   <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
                     {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
-                      .split('\n')
-                      .filter(Boolean)
-                      .map((item, idx) => (
-                        <li key={idx} className="tracking-wide">
-                          <span className="font-medium ml-1">{item.trim()}</span>
-                        </li>
+                      .split('\n').filter(Boolean).map((item, idx) => (
+                        <li key={idx} className="tracking-wide"><span className="font-medium ml-1">{item.trim()}</span></li>
                       ))}
                   </ul>
                 </div>
 
-                {/* Deliverables */}
                 <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4">
-                  <h3 
-                    className="text-2xl tracking-wide font-normal text-left" 
-                    style={{ color: textColor, fontFamily: data.primaryFont }}
-                  >
+                  <h3 className="text-2xl tracking-wide font-normal text-left" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.shootDetails.deliverablesHeading || 'Deliverables'}
                   </h3>
-
                   <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
                     {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
-                      .split('\n')
-                      .filter(Boolean)
-                      .map((item, idx) => (
-                        <li key={idx} className="tracking-wide">
-                          <span className="font-medium ml-1">{item.trim()}</span>
-                        </li>
+                      .split('\n').filter(Boolean).map((item, idx) => (
+                        <li key={idx} className="tracking-wide"><span className="font-medium ml-1">{item.trim()}</span></li>
                       ))}
                   </ul>
                 </div>
 
-                {/* Full-Bleed Edge-to-Edge Photo Layout */}
                 {data.shootDetails.photo && data.shootDetails.frameShape === 'full-width' && (
                   <div className="-mx-12 -mb-10 w-[794px] overflow-hidden mt-6">
-                    <img 
-                      src={data.shootDetails.photo} 
-                      alt="Pre-Wedding Full Bleed"
-                      className="w-full object-cover block shadow-xs"
-                      style={{ 
-                        height: `${data.shootDetails.photoHeight || 380}px`,
-                        objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` 
-                      }}
-                    />
+                    <img src={data.shootDetails.photo} alt="Pre-Wedding Full Bleed" className="w-full object-cover block shadow-xs" style={{ height: `${data.shootDetails.photoHeight || 380}px`, objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }} />
                   </div>
                 )}
-
-                {/* Arch / Shaped Photo */}
-                {data.shootDetails.photo && ['arch', 'rounded', 'rectangle'].includes(data.shootDetails.frameShape || 'arch') && (
-                  <div 
-                    className={`mx-auto mt-6 overflow-hidden shadow-md relative transition-all duration-300 ${
-                      (data.shootDetails.frameShape || 'arch') === 'arch'
-                        ? 'rounded-t-[999px] rounded-b-none'
-                        : data.shootDetails.frameShape === 'rectangle'
-                        ? 'rounded-none'
-                        : 'rounded-2xl'
-                    }`}
-                    style={{ 
-                      width: `${data.shootDetails.photoWidth || 75}%`,
-                      height: `${data.shootDetails.photoHeight || 380}px`,
-                      borderColor: photoBorderColor,
-                      borderWidth: '1px',
-                      backgroundColor: 'transparent'
-                    }}
-                  >
-                    <img 
-                      src={data.shootDetails.photo} 
-                      alt="Pre-Wedding Shoot"
-                      className="w-full h-full object-cover bg-transparent"
-                      style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }}
-                    />
-                  </div>
-                )}
-
               </div>
             </div>
 
-            {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 4: WHAT'S INCLUDED (DYNAMIC HEIGHT FLEX ENGINE)          */}
-            {/* ═════════════════════════════════════════════════════════════ */}
+            {/* PAGE 4: WHAT'S INCLUDED */}
             <div 
-              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor,
-                fontFamily: data.secondaryFont
-              }}
+              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
               <div className="space-y-6 my-auto w-full py-2">
                 <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
@@ -1621,7 +1449,7 @@ function WedGrapherAiryBuilderContent() {
                   {data.whatsIncluded.heading}
                 </h2>
 
-                <div className="p-8 rounded-2xl leading-relaxed whitespace-pre-line text-sm border" style={{ backgroundColor: boxBgColor, borderColor: borderColor, color: textColor }}>
+                <div className="p-8 rounded-2xl leading-relaxed whitespace-pre-line text-sm border" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
                   {data.whatsIncluded.deliverablesText}
                 </div>
 
@@ -1629,35 +1457,11 @@ function WedGrapherAiryBuilderContent() {
                   <div className="pt-2">
                     {data.whatsIncluded.frameShape === 'full-width' ? (
                       <div className="-mx-12 -mb-10 w-[794px] overflow-hidden mt-4">
-                        <img 
-                          src={data.whatsIncluded.photo} 
-                          alt="Included Full Bleed" 
-                          className="w-full object-cover block shadow-xs"
-                          style={{ height: `${data.whatsIncluded.photoHeight || 360}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
-                        />
+                        <img src={data.whatsIncluded.photo} alt="Included Full Bleed" className="w-full object-cover block shadow-xs" style={{ height: `${data.whatsIncluded.photoHeight || 360}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }} />
                       </div>
                     ) : (
-                      <div 
-                        className={`mx-auto overflow-hidden shadow-md relative transition-all duration-300 ${
-                          (data.whatsIncluded.frameShape || 'rounded') === 'arch'
-                            ? 'rounded-t-[999px] rounded-b-none'
-                            : (data.whatsIncluded.frameShape || 'rounded') === 'rectangle'
-                            ? 'rounded-none'
-                            : 'rounded-2xl'
-                        }`}
-                        style={{ 
-                          width: `${data.whatsIncluded.photoWidth || 75}%`,
-                          height: `${data.whatsIncluded.photoHeight || 360}px`, 
-                          borderColor: photoBorderColor, 
-                          borderWidth: '1px' 
-                        }}
-                      >
-                        <img
-                          src={data.whatsIncluded.photo}
-                          alt="Package Deliverables"
-                          className="w-full h-full object-cover bg-transparent"
-                          style={{ objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
-                        />
+                      <div className={`mx-auto overflow-hidden shadow-md relative transition-all duration-300 ${data.whatsIncluded.frameShape === 'arch' ? 'rounded-t-[999px]' : data.whatsIncluded.frameShape === 'rectangle' ? 'rounded-none' : 'rounded-2xl'}`} style={{ width: `${data.whatsIncluded.photoWidth || 75}%`, height: `${data.whatsIncluded.photoHeight || 360}px`, borderColor: photoBorderColor, borderWidth: '1px' }}>
+                        <img src={data.whatsIncluded.photo} alt="Package Deliverables" className="w-full h-full object-cover bg-transparent" style={{ objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }} />
                       </div>
                     )}
                   </div>
@@ -1665,20 +1469,12 @@ function WedGrapherAiryBuilderContent() {
               </div>
             </div>
 
-            {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 5: INVESTMENT & ADD-ONS TABLE (DYNAMIC HEIGHT FLEX ENGINE) */}
-            {/* ═════════════════════════════════════════════════════════════ */}
+            {/* PAGE 5: PRICE & PAYMENT */}
             <div 
-              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor,
-                fontFamily: data.secondaryFont
-              }}
+              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
               <div className="space-y-6 my-auto w-full py-2">
-                
-                {/* Price Section */}
                 <div className="space-y-4 border-b pb-6" style={{ borderColor }}>
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
                     {data.pricePayment.kicker}
@@ -1697,15 +1493,10 @@ function WedGrapherAiryBuilderContent() {
                   </div>
                 </div>
 
-                {/* Add-ons Table */}
                 <div className="space-y-3 pt-2">
                   <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.addOnsTable.heading}
                   </h2>
-                  <span className="text-[10px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor }}>
-                    {data.addOnsTable.kicker}
-                  </span>
-
                   <div className="rounded-xl overflow-hidden border" style={{ borderColor }}>
                     <table className="w-full text-left text-xs">
                       <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
@@ -1726,23 +1517,22 @@ function WedGrapherAiryBuilderContent() {
                   </div>
                 </div>
 
+                {data.pricePayment.photo && (
+                  <div className="pt-4">
+                    <div className="mx-auto overflow-hidden shadow-md rounded-2xl" style={{ width: `${data.pricePayment.photoWidth || 75}%`, height: `${data.pricePayment.photoHeight || 280}px` }}>
+                      <img src={data.pricePayment.photo} alt="Payment" className="w-full h-full object-cover" style={{ objectPosition: `50% ${data.pricePayment.photoFocalY ?? 50}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 6: DELIVERY TIMELINE & TERMS (DYNAMIC HEIGHT FLEX ENGINE)*/}
-            {/* ═════════════════════════════════════════════════════════════ */}
+            {/* PAGE 6: DELIVERY TIMELINE & TERMS */}
             <div 
-              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor,
-                fontFamily: data.secondaryFont
-              }}
+              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
               <div className="space-y-6 my-auto w-full py-2">
-                
-                {/* Timeline Table */}
                 <div className="space-y-3">
                   <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.timelineTable.heading}
@@ -1770,7 +1560,6 @@ function WedGrapherAiryBuilderContent() {
                   </div>
                 </div>
 
-                {/* Terms & Thank You */}
                 <div className="space-y-5 pt-4 border-t" style={{ borderColor }}>
                   <div className="space-y-1.5">
                     <h2 className="text-xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
@@ -1787,7 +1576,6 @@ function WedGrapherAiryBuilderContent() {
                     <p className="text-[10px] font-mono font-bold pt-2 opacity-80" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
                   </div>
                 </div>
-
               </div>
             </div>
 
@@ -1795,6 +1583,70 @@ function WedGrapherAiryBuilderContent() {
         </main>
 
       </div>
+
+      {/* ── MOBILE APP FLOATING BOTTOM BAR (< 768px) ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-zinc-200 px-4 py-2 flex items-center justify-between md:hidden shadow-2xl no-print">
+        <button
+          type="button"
+          onClick={() => setMobileSheetOpen(true)}
+          className="flex-1 py-2.5 px-4 rounded-xl bg-black text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md"
+        >
+          <Sliders className="w-4 h-4 text-amber-400" />
+          <span>Customize &amp; Controls</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDownloadPDFCanvas}
+          className="ml-2 py-2.5 px-4 rounded-xl bg-amber-500 text-black font-extrabold text-xs flex items-center gap-1.5 shadow-md"
+        >
+          <Download className="w-4 h-4" />
+          <span>PDF</span>
+        </button>
+      </div>
+
+      {/* ── MOBILE BOTTOM SHEET DRAWER (< 768px) ── */}
+      <AnimatePresence>
+        {mobileSheetOpen && (
+          <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs md:hidden">
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-white rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl border-t border-zinc-200"
+            >
+              <div className="p-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-amber-700" />
+                  <h3 className="text-sm font-extrabold text-zinc-900">Page Controls &amp; Settings</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileSheetOpen(false)}
+                  className="p-1 rounded-full bg-zinc-200 text-zinc-600 font-bold"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto flex-1">
+                {renderSidebarControls()}
+              </div>
+
+              <div className="p-3 border-t border-zinc-100 bg-white shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMobileSheetOpen(false)}
+                  className="w-full py-2.5 rounded-xl bg-black text-white font-bold text-xs"
+                >
+                  Apply &amp; Done
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ── UNIFIED MASTER MEDIA MODAL ── */}
       <MasterMediaModal 
