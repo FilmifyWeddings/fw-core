@@ -18,6 +18,133 @@ import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 
+// Exact Registered Color Palettes
+export interface ColorTheme {
+  id: string;
+  name: string;
+  primary: string;
+  background: string;
+  text: string;
+  kicker: string;
+  borderColor: string;
+  boxBgColor: string;
+  isDark?: boolean;
+}
+
+export const COLOR_THEMES: ColorTheme[] = [
+  {
+    id: 'cherry-red-cream',
+    name: 'Cherry Red & Cream',
+    primary: '#750505',
+    background: '#FBFCEB',
+    text: '#750505',
+    kicker: '#750505',
+    borderColor: 'rgba(117, 5, 5, 0.2)',
+    boxBgColor: 'rgba(117, 5, 5, 0.06)',
+  },
+  {
+    id: 'cyprus-sand-dune',
+    name: 'Cyprus & Sand Dune',
+    primary: '#004643',
+    background: '#F0EDE5',
+    text: '#004643',
+    kicker: '#004643',
+    borderColor: 'rgba(0, 70, 67, 0.2)',
+    boxBgColor: 'rgba(0, 70, 67, 0.06)',
+  },
+  {
+    id: 'plum-milk',
+    name: 'Plum & Milk',
+    primary: '#381932',
+    background: '#FFF3E6',
+    text: '#381932',
+    kicker: '#381932',
+    borderColor: 'rgba(56, 25, 50, 0.2)',
+    boxBgColor: 'rgba(56, 25, 50, 0.06)',
+  },
+  {
+    id: 'sand-chocolate',
+    name: 'Sand & Chocolate',
+    primary: '#3E000C',
+    background: '#FFECD1',
+    text: '#3E000C',
+    kicker: '#3E000C',
+    borderColor: 'rgba(62, 0, 12, 0.2)',
+    boxBgColor: 'rgba(62, 0, 12, 0.06)',
+  },
+  {
+    id: 'feldgrau-wheat',
+    name: 'Feldgrau & Wheat',
+    primary: '#3A4B41',
+    background: '#E6CFA7',
+    text: '#3A4B41',
+    kicker: '#3A4B41',
+    borderColor: 'rgba(58, 75, 65, 0.2)',
+    boxBgColor: 'rgba(58, 75, 65, 0.06)',
+  },
+  {
+    id: 'noctis-marigold',
+    name: 'Noctis & Marigold',
+    primary: '#1F2235',
+    background: '#E3A419',
+    text: '#1F2235',
+    kicker: '#1F2235',
+    borderColor: 'rgba(31, 34, 53, 0.2)',
+    boxBgColor: 'rgba(31, 34, 53, 0.08)',
+  },
+  {
+    id: 'champagne-obsidian',
+    name: 'Champagne & Obsidian (Minimal)',
+    primary: '#111111',
+    background: '#F7F4EF',
+    text: '#111111',
+    kicker: '#71717A',
+    borderColor: 'rgba(228, 228, 231, 1)',
+    boxBgColor: 'rgba(244, 244, 245, 1)',
+  },
+  {
+    id: 'forest-olive-ivory',
+    name: 'Forest Olive & Ivory (Premium)',
+    primary: '#2C352E',
+    background: '#F2EFE9',
+    text: '#2C352E',
+    kicker: '#58695C',
+    borderColor: 'rgba(44, 53, 46, 0.2)',
+    boxBgColor: 'rgba(44, 53, 46, 0.06)',
+  },
+  {
+    id: 'airy-white',
+    name: 'Airy White (Pre-Wed)',
+    primary: '#27272A',
+    background: '#FFFFFF',
+    text: '#27272A',
+    kicker: '#A1A1AA',
+    borderColor: 'rgba(228, 228, 231, 1)',
+    boxBgColor: 'rgba(244, 244, 245, 1)',
+  },
+  {
+    id: 'royal-gold',
+    name: 'Royal Gold (Classic)',
+    primary: '#8A6D2F',
+    background: '#FFF8EA',
+    text: '#8A6D2F',
+    kicker: '#8A6D2F',
+    borderColor: 'rgba(138, 109, 47, 0.25)',
+    boxBgColor: 'rgba(138, 109, 47, 0.08)',
+  },
+  {
+    id: 'dark-studio',
+    name: 'Dark Studio',
+    primary: '#F3F4F6',
+    background: '#141622',
+    text: '#F3F4F6',
+    kicker: '#E5C365',
+    borderColor: '#232634',
+    boxBgColor: '#0F1017',
+    isDark: true,
+  },
+];
+
 // Base Page Section Image Config Interface
 interface PageImageConfig {
   photoUrl?: string;
@@ -34,7 +161,7 @@ interface PageImageConfig {
 const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
   eventGroup: 'Pre-Wedding',
-  look: 'Airy White (Pre-Wed)',
+  look: 'Cherry Red & Cream',
   primaryFont: "'Cormorant Garamond', serif",
   secondaryFont: "'Plus Jakarta Sans', sans-serif",
 
@@ -177,6 +304,90 @@ const DEFAULT_AIRY_PROPOSAL = {
   }
 };
 
+// Canva-Style Visual Swatch Dropdown Component
+interface CanvaThemeSelectorProps {
+  value: string;
+  onChange: (themeName: string) => void;
+}
+
+function CanvaThemeSelector({ value, onChange }: CanvaThemeSelectorProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const activeTheme = COLOR_THEMES.find(t => t.name === value || t.id === value) || COLOR_THEMES[0];
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative space-y-1" ref={containerRef}>
+      <label className="block text-[10px] uppercase font-bold text-amber-700">Theme / Color Palette</label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full p-2 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-950 font-bold text-xs flex items-center justify-between cursor-pointer hover:bg-amber-100/70 transition-all shadow-2xs"
+      >
+        <div className="flex items-center gap-2 truncate">
+          {/* Side-by-Side Dual Color Swatch */}
+          <div className="w-5 h-5 rounded-full overflow-hidden border border-slate-300 flex shrink-0 shadow-2xs">
+            <div className="w-1/2 h-full" style={{ backgroundColor: activeTheme.primary }} />
+            <div className="w-1/2 h-full" style={{ backgroundColor: activeTheme.background }} />
+          </div>
+          <span className="truncate">{activeTheme.name}</span>
+        </div>
+        <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 space-y-1 max-h-60 overflow-y-auto"
+          >
+            {COLOR_THEMES.map(theme => {
+              const isSelected = activeTheme.name === theme.name;
+              return (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(theme.name);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full p-2 rounded-xl text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
+                    isSelected
+                      ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                      : 'hover:bg-slate-50 text-slate-800 border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 truncate">
+                    {/* Side-by-Side Dual Swatch Pill */}
+                    <div className="w-5 h-5 rounded-full overflow-hidden border border-slate-300 flex shrink-0 shadow-xs">
+                      <div className="w-1/2 h-full" style={{ backgroundColor: theme.primary }} />
+                      <div className="w-1/2 h-full" style={{ backgroundColor: theme.background }} />
+                    </div>
+                    <span className="truncate">{theme.name}</span>
+                  </div>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-amber-800 shrink-0" />}
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // Off-White System Theme Photo Layout Style Selector
 interface Photo3DLayoutSelectorProps {
   value: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
@@ -264,7 +475,7 @@ function ImagePositionSelector({ value, onChange }: ImagePositionSelectorProps) 
   );
 }
 
-// Off-White System Theme Unified Photo Controls Panel (Neutral Slate/Amber Accents)
+// Off-White System Theme Unified Photo Controls Panel
 interface UnifiedPhotoControlsProps {
   photoUrl?: string;
   frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
@@ -375,7 +586,7 @@ function UnifiedPhotoControls({
             />
           </div>
 
-          {/* Background Opacity Blending Slider (Blends with pageBgColor) */}
+          {/* Background Opacity Blending Slider */}
           {frameShape === 'background' && onChangeBgOpacity && (
             <div className="space-y-1.5 p-3 rounded-xl bg-amber-50/80 border border-amber-200/80">
               <div className="flex items-center justify-between text-[10px] text-amber-950 font-extrabold">
@@ -433,7 +644,7 @@ function UnifiedPhotoControls({
   );
 }
 
-// Unified Section Image Slot Component (Background Opacity Blends with Page Theme Color)
+// Unified Section Image Slot Component
 interface SectionImageRendererProps {
   photo?: string;
   frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
@@ -532,7 +743,7 @@ function StudioCoreAiryBuilderContent() {
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Saved');
   const [openCard, setOpenCard] = useState<string | null>('cover');
 
-  // Custom Event Types State (Persisted in localStorage & Supabase)
+  // Custom Event Types State
   const [customEventTypes, setCustomEventTypes] = useState<string[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -546,7 +757,7 @@ function StudioCoreAiryBuilderContent() {
   // Mobile Bottom Sheet Drawer State
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
 
-  // Viewport Zoom & Scaling Engine (A4 794px base)
+  // Viewport Zoom & Scaling Engine
   const [zoomScale, setZoomScale] = useState<number>(1.0);
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
 
@@ -614,7 +825,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // MULTI-PAGE PDF GENERATOR (Server-Side Puppeteer Route + Off-Screen Fallback)
+  // MULTI-PAGE PDF GENERATOR
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -833,16 +1044,15 @@ function StudioCoreAiryBuilderContent() {
     setMediaModalOpen(false);
   };
 
-  // Dynamic Theme Colors
-  const isGold = data.look.toLowerCase().includes('gold');
-  const isDark = data.look.toLowerCase().includes('dark');
-
-  const pageBgColor = isGold ? '#FFF8EA' : isDark ? '#141622' : '#FFFFFF';
-  const textColor = isGold ? '#8A6D2F' : isDark ? '#F3F4F6' : '#27272A';
-  const kickerColor = isGold ? '#8A6D2F' : isDark ? '#E5C365' : '#A1A1AA';
-  const borderColor = isGold ? 'rgba(138, 109, 47, 0.25)' : isDark ? '#232634' : 'rgba(228, 228, 231, 1)';
-  const boxBgColor = isGold ? 'rgba(138, 109, 47, 0.08)' : isDark ? '#0F1017' : 'rgba(244, 244, 245, 1)';
-  const photoBorderColor = isGold ? 'rgba(138, 109, 47, 0.3)' : isDark ? '#232634' : 'rgba(228, 228, 231, 1)';
+  // Smart Dynamic Theme Resolution
+  const activeTheme = COLOR_THEMES.find(t => t.name === data.look || t.id === data.look) || COLOR_THEMES[0];
+  
+  const pageBgColor = activeTheme.background;
+  const textColor = activeTheme.primary || activeTheme.text;
+  const kickerColor = activeTheme.kicker;
+  const borderColor = activeTheme.borderColor;
+  const boxBgColor = activeTheme.boxBgColor;
+  const isDark = !!activeTheme.isDark;
 
   const subtotal = data.pricePayment.packagePrice;
   const discountAmt = (subtotal * data.pricePayment.discountPct) / 100;
@@ -891,7 +1101,7 @@ function StudioCoreAiryBuilderContent() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-3">
           <div>
             <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Event type</label>
             <select
@@ -905,19 +1115,11 @@ function StudioCoreAiryBuilderContent() {
             </select>
           </div>
 
-          <div>
-            <label className="block text-[10px] uppercase font-bold text-amber-700 mb-1">Look</label>
-            <select
-              value={data.look}
-              onChange={(e) => setData({ ...data, look: e.target.value })}
-              className="w-full p-2 rounded-xl bg-amber-50/60 border border-amber-200 font-bold text-amber-900 focus:outline-none"
-            >
-              <option value="Airy White (Pre-Wed)">Airy White (Pre-Wed)</option>
-              <option value="Royal Gold (Classic)">Royal Gold (Classic)</option>
-              <option value="Golden Luxe">Golden Luxe (#FFF8EA / #8A6D2F)</option>
-              <option value="Dark Studio">Dark Studio</option>
-            </select>
-          </div>
+          {/* Canva-Style Visual Theme Swatch Selector */}
+          <CanvaThemeSelector
+            value={data.look}
+            onChange={(themeName) => setData({ ...data, look: themeName })}
+          />
         </div>
 
         {/* Canva-Style Typography Customizers */}
@@ -1005,7 +1207,7 @@ function StudioCoreAiryBuilderContent() {
                 </select>
               </div>
 
-              {/* Brand Logo Section with 'Upload Logo' Button */}
+              {/* Brand Logo Section */}
               <div className="space-y-2 pt-2 border-t border-zinc-100">
                 <span className="text-[10px] uppercase font-bold text-zinc-400 block">Brand Name &amp; Logo</span>
                 <input
@@ -1535,7 +1737,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   ) : (
                     <div className="text-center space-y-0.5">
-                      <div className="text-xl tracking-[0.25em] uppercase font-black" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
+                      <div className="text-xl tracking-[0.25em] uppercase font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
                         {data.cover.brandName || 'FILMIFY WEDDINGS'}
                       </div>
                     </div>
@@ -1557,11 +1759,11 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="space-y-1">
-                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
+                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.groomName || 'YASH'}
                     </h1>
-                    <div className="text-2xl font-serif opacity-75 my-1" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#F3F4F6' : kickerColor }}>&amp;</div>
-                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
+                    <div className="text-2xl font-serif opacity-75 my-1" style={{ color: kickerColor }}>&amp;</div>
+                    <h1 className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.brideName || 'TWINKLE'}
                     </h1>
                   </div>
@@ -1579,10 +1781,10 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="space-y-2 pt-2">
-                    <h3 className="text-base tracking-[0.2em] uppercase font-bold" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
+                    <h3 className="text-base tracking-[0.2em] uppercase font-bold" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
                     </h3>
-                    <p className="text-xs tracking-[0.18em] uppercase font-medium opacity-90" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#E5E7EB' : kickerColor, fontFamily: data.secondaryFont }}>
+                    <p className="text-xs tracking-[0.18em] uppercase font-medium opacity-90" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                       {`${(data.cover.sideOption || 'BOTH SIDES').toUpperCase()} – ${(data.cover.locationName || 'MUMBAI').toUpperCase()}`}
                     </p>
                   </div>
@@ -1601,7 +1803,7 @@ function StudioCoreAiryBuilderContent() {
 
                 </div>
 
-                <div className="w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#E5E7EB' : kickerColor }}>
+                <div className="w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80" style={{ color: kickerColor }}>
                   EXCLUSIVELY PREPARED FOR YOU
                 </div>
               </div>
@@ -2033,7 +2235,7 @@ function StudioCoreAiryBuilderContent() {
                           <tr key={row.id}>
                             <td className="py-3 px-4 font-semibold">{row.result}</td>
                             <td className="py-3 px-4">{row.timeline}</td>
-                            <td className="py-3 px-4 font-mono text-zinc-500">{row.revisions}</td>
+                            <td className="py-3 px-4 font-mono opacity-80">{row.revisions}</td>
                           </tr>
                         ))}
                       </tbody>
