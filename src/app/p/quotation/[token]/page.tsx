@@ -49,7 +49,7 @@ export default function PublicProposalPage() {
       console.error('Error fetching public proposal:', e);
     }
 
-    // WedGrapher Demo Proposal Fallback
+    // StudioCore Demo Proposal Fallback
     const demoProposal: QuotationProposal = {
       id: 'prop_demo',
       workspace_id: 'ws_demo',
@@ -150,10 +150,10 @@ export default function PublicProposalPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#111218] text-white flex items-center justify-center p-4">
+      <div className="h-screen w-screen bg-[#141622] text-white flex items-center justify-center p-4">
         <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-2 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-zinc-400">Loading WedGrapher Proposal...</p>
+          <div className="w-10 h-10 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-bold text-zinc-400">Loading StudioCore Proposal...</p>
         </div>
       </div>
     );

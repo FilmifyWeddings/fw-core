@@ -30,7 +30,7 @@ interface PageImageConfig {
   imagePosition?: 'top' | 'center' | 'bottom';
 }
 
-// WedGrapher Presets & Full Dynamic State
+// StudioCore Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
   eventGroup: 'Pre-Wedding',
@@ -166,7 +166,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     termsText: 'Dates are blocked only after the booking advance. Travel and stay outside the city are billed at actuals. Raw files are not shared.',
     thankYouHeading: 'THANK YOU',
     thankYouText: 'We would love to tell your story.',
-    studioContact: 'FW Studio • +91 9876543210 • studio@wedgrapher.com',
+    studioContact: 'FW Studio • +91 9876543210 • studio@studiocore.com',
     photo: '',
     photoHeight: 280,
     photoWidth: 75,
@@ -177,7 +177,7 @@ const DEFAULT_AIRY_PROPOSAL = {
   }
 };
 
-// Reusable 3D Segmented Selector for Photo Layout Style (Light Mode)
+// Off-White System Theme Photo Layout Style Selector
 interface Photo3DLayoutSelectorProps {
   value: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
   onChange: (newShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background') => void;
@@ -196,9 +196,9 @@ function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) 
   return (
     <div className="space-y-1.5">
       <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1">
-        <Layout className="w-3.5 h-3.5 text-indigo-600" /> Photo Layout Style
+        <Layout className="w-3.5 h-3.5 text-amber-600" /> Photo Layout Style
       </label>
-      <div className="grid grid-cols-5 gap-1 p-1.5 rounded-xl border border-slate-200 bg-slate-50/80 shadow-inner">
+      <div className="grid grid-cols-5 gap-1 p-1.5 rounded-xl border border-slate-200 bg-slate-100/70 shadow-inner">
         {PHOTO_SHAPE_OPTIONS.map(opt => {
           const isActive = currentVal === opt.value;
           return (
@@ -208,8 +208,8 @@ function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) 
               onClick={() => onChange(opt.value)}
               className={`py-1.5 px-0.5 rounded-lg text-[8px] font-black transition-all duration-200 flex flex-col items-center justify-center gap-0.5 leading-tight cursor-pointer ${
                 isActive
-                  ? 'bg-gradient-to-b from-white via-indigo-50 to-indigo-100 text-indigo-950 border border-indigo-300 shadow-[0_2px_8px_rgba(99,102,241,0.25)] font-black scale-95'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-white/80 border border-transparent'
+                  ? 'bg-slate-900 text-white border border-slate-900 shadow-sm font-black scale-95'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
               <span className="text-[13px] leading-none font-bold">{opt.icon}</span>
@@ -222,7 +222,7 @@ function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) 
   );
 }
 
-// Reusable 3D Segmented Selector for Image Position Alignment (Top / Center / Bottom)
+// Off-White System Theme Image Position Alignment Selector
 interface ImagePositionSelectorProps {
   value: 'top' | 'center' | 'bottom';
   onChange: (pos: 'top' | 'center' | 'bottom') => void;
@@ -233,9 +233,9 @@ function ImagePositionSelector({ value, onChange }: ImagePositionSelectorProps) 
   return (
     <div className="space-y-1.5">
       <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1">
-        <AlignVerticalSpaceAround className="w-3.5 h-3.5 text-indigo-600" /> Page Position Alignment
+        <AlignVerticalSpaceAround className="w-3.5 h-3.5 text-amber-600" /> Page Position Alignment
       </label>
-      <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl border border-slate-200 bg-slate-50/80 shadow-inner">
+      <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl border border-slate-200 bg-slate-100/70 shadow-inner">
         {[
           { id: 'top', label: 'Top', icon: ArrowUp },
           { id: 'center', label: 'Center', icon: Circle },
@@ -250,8 +250,8 @@ function ImagePositionSelector({ value, onChange }: ImagePositionSelectorProps) 
               onClick={() => onChange(opt.id as 'top' | 'center' | 'bottom')}
               className={`py-1.5 px-2 rounded-lg text-[9px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                 isActive
-                  ? 'bg-indigo-600 text-white border border-indigo-700 shadow-xs font-black'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white border border-slate-900 shadow-xs font-black'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-200/60'
               }`}
             >
               <Icon className="w-3 h-3" />
@@ -264,7 +264,7 @@ function ImagePositionSelector({ value, onChange }: ImagePositionSelectorProps) 
   );
 }
 
-// Premium Modern LIGHT Mode 3D Glassmorphism Unified Photo Controls Panel
+// Off-White System Theme Unified Photo Controls Panel (Neutral Slate/Amber Accents)
 interface UnifiedPhotoControlsProps {
   photoUrl?: string;
   frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
@@ -301,13 +301,13 @@ function UnifiedPhotoControls({
   onChangeWidth
 }: UnifiedPhotoControlsProps) {
   return (
-    <div className="space-y-4 p-5 rounded-2xl bg-white/90 backdrop-blur-md border border-slate-200/90 shadow-[0_10px_30px_rgba(0,0,0,0.06)] text-slate-800">
+    <div className="space-y-4 p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm text-slate-800">
       <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
         <span className="text-[10px] uppercase font-black tracking-wider text-slate-900 flex items-center gap-1.5">
-          <Sliders className="w-3.5 h-3.5 text-indigo-600" /> Photo &amp; Layout Controls
+          <Sliders className="w-3.5 h-3.5 text-amber-600" /> Photo &amp; Layout Controls
         </span>
         {photoUrl && (
-          <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
+          <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-200">
             Active Image
           </span>
         )}
@@ -344,7 +344,7 @@ function UnifiedPhotoControls({
 
       {photoUrl && (
         <>
-          {/* Photo Layout Style (3D Segmented Selector) */}
+          {/* Photo Layout Style Selector */}
           <Photo3DLayoutSelector
             value={frameShape}
             onChange={onChangeShape}
@@ -359,30 +359,30 @@ function UnifiedPhotoControls({
           )}
 
           {/* Smooth Photo Focus (Up / Down) Percentage Slider */}
-          <div className="space-y-1.5 p-3 rounded-xl bg-slate-50/80 border border-slate-200/80">
+          <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
             <div className="flex items-center justify-between text-[10px] text-slate-700 font-extrabold">
               <span className="flex items-center gap-1 text-slate-900">
-                <MoveVertical className="w-3.5 h-3.5 text-indigo-600" /> Photo Focus (Up / Down)
+                <MoveVertical className="w-3.5 h-3.5 text-amber-600" /> Photo Focus (Up / Down)
               </span>
-              <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">{photoFocalY}%</span>
+              <span className="font-mono font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">{photoFocalY}%</span>
             </div>
             
             <input
               type="range" min="0" max="100"
               value={photoFocalY}
               onChange={(e) => onChangeFocalY(Number(e.target.value))}
-              className="w-full accent-indigo-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"
+              className="w-full accent-amber-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"
             />
           </div>
 
-          {/* Background Opacity Slider (When Background Image mode is active) */}
+          {/* Background Opacity Blending Slider (Blends with pageBgColor) */}
           {frameShape === 'background' && onChangeBgOpacity && (
             <div className="space-y-1.5 p-3 rounded-xl bg-amber-50/80 border border-amber-200/80">
               <div className="flex items-center justify-between text-[10px] text-amber-950 font-extrabold">
                 <span className="flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-700" /> Background Opacity Tint
+                  <Sparkles className="w-3.5 h-3.5 text-amber-700" /> Background Opacity
                 </span>
-                <span className="font-mono text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">{bgOpacity}%</span>
+                <span className="font-mono text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">{bgOpacity}%</span>
               </div>
               <input
                 type="range" min="0" max="100"
@@ -394,36 +394,36 @@ function UnifiedPhotoControls({
           )}
 
           {/* Photo Height / Background Page Height Slider */}
-          <div className="space-y-1.5 p-3 rounded-xl bg-slate-50/80 border border-slate-200/80">
+          <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
             <div className="flex items-center justify-between text-[10px] text-slate-700 font-extrabold">
               <span className="flex items-center gap-1">
-                <Maximize2 className="w-3.5 h-3.5 text-indigo-600" /> 
+                <Maximize2 className="w-3.5 h-3.5 text-amber-600" /> 
                 {frameShape === 'background' ? 'Background Page Height' : 'Photo Height'}
               </span>
-              <span className="font-mono text-indigo-700">{photoHeight}px</span>
+              <span className="font-mono text-amber-900">{photoHeight}px</span>
             </div>
             <input
               type="range" min={frameShape === 'background' ? '400' : '100'} max={frameShape === 'background' ? '1400' : '800'}
               value={photoHeight}
               onChange={(e) => onChangeHeight(Number(e.target.value))}
-              className="w-full accent-indigo-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"
+              className="w-full accent-amber-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"
             />
           </div>
 
           {/* Photo Width Slider */}
           {['arch', 'rounded', 'rectangle'].includes(frameShape) && (
-            <div className="space-y-1.5 p-3 rounded-xl bg-slate-50/80 border border-slate-200/80">
+            <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
               <div className="flex items-center justify-between text-[10px] text-slate-700 font-extrabold">
                 <span className="flex items-center gap-1">
-                  <MoveHorizontal className="w-3.5 h-3.5 text-indigo-600" /> Photo Width
+                  <MoveHorizontal className="w-3.5 h-3.5 text-amber-600" /> Photo Width
                 </span>
-                <span className="font-mono text-indigo-700">{photoWidth}%</span>
+                <span className="font-mono text-amber-900">{photoWidth}%</span>
               </div>
               <input
                 type="range" min="30" max="100"
                 value={photoWidth}
                 onChange={(e) => onChangeWidth(Number(e.target.value))}
-                className="w-full accent-indigo-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"
+                className="w-full accent-amber-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"
               />
             </div>
           )}
@@ -433,7 +433,7 @@ function UnifiedPhotoControls({
   );
 }
 
-// Unified Section Image Slot Component (Flush Cut-to-Cut Bottom Edge Support)
+// Unified Section Image Slot Component (Background Opacity Blends with Page Theme Color)
 interface SectionImageRendererProps {
   photo?: string;
   frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
@@ -441,6 +441,7 @@ interface SectionImageRendererProps {
   photoWidth: number;
   photoFocalY: number;
   bgOpacity?: number;
+  pageBgColor?: string;
   isBottomFlush?: boolean;
   altText?: string;
 }
@@ -452,6 +453,7 @@ function SectionImageRenderer({
   photoWidth,
   photoFocalY,
   bgOpacity = 40,
+  pageBgColor = '#FFFFFF',
   isBottomFlush = false,
   altText = 'Section Photo'
 }: SectionImageRendererProps) {
@@ -466,9 +468,13 @@ function SectionImageRenderer({
           className="w-full h-full object-cover block"
           style={{ objectPosition: `50% ${photoFocalY}%` }}
         />
+        {/* Background Opacity Blends cleanly with pageBgColor */}
         <div 
-          className="absolute inset-0 bg-black z-0" 
-          style={{ opacity: (bgOpacity ?? 40) / 100 }} 
+          className="absolute inset-0 z-0 transition-opacity duration-200" 
+          style={{ 
+            backgroundColor: pageBgColor, 
+            opacity: 1 - ((bgOpacity ?? 40) / 100) 
+          }} 
         />
       </div>
     );
@@ -512,7 +518,7 @@ function SectionImageRenderer({
   );
 }
 
-function WedGrapherAiryBuilderContent() {
+function StudioCoreAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -577,7 +583,7 @@ function WedGrapherAiryBuilderContent() {
     if (data.secondaryFont) registerFontFace({ name: data.secondaryFont.replace(/['"]/g, '').split(',')[0], family: data.secondaryFont, category: 'Minimal Sans-Serif' });
   }, [data.primaryFont, data.secondaryFont]);
 
-  // Handle Event Type Selection (including + Add Custom Event Type)
+  // Handle Event Type Selection
   const handleEventTypeChange = (val: string) => {
     if (val === '__ADD_NEW__') {
       const newType = prompt('Enter custom event type name (e.g. Sangeet Shoot, Destination Pre-Wedding):');
@@ -608,7 +614,7 @@ function WedGrapherAiryBuilderContent() {
     }
   };
 
-  // STRICT FIX FOR MULTI-PAGE PDF GENERATOR (Off-Screen Hidden Container Export)
+  // MULTI-PAGE PDF GENERATOR (Server-Side Puppeteer Route + Off-Screen Fallback)
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -622,10 +628,57 @@ function WedGrapherAiryBuilderContent() {
       await ensureFontsReady();
       await new Promise(r => setTimeout(r, 200));
 
+      // Attempt 1: Server-Side Puppeteer Engine Call (/api/export-pdf)
+      try {
+        const htmlPayload = `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8" />
+              <script src="https://cdn.tailwindcss.com"></script>
+              <style>
+                @page { size: A4 portrait; margin: 0; }
+                body { margin: 0; padding: 0; background: #EBECEF; }
+                .quotation-page { width: 794px; page-break-after: always; break-after: page; }
+              </style>
+            </head>
+            <body>
+              <div style="width: 794px; margin: 0 auto;">
+                ${canvasRef.current.innerHTML}
+              </div>
+            </body>
+          </html>
+        `;
+
+        const res = await fetch('/api/export-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            html: htmlPayload,
+            filename: `${data.designName || 'Quotation_Proposal'}.pdf`
+          })
+        });
+
+        if (res.ok) {
+          const blob = await res.blob();
+          const downloadUrl = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = `${data.designName || 'Quotation_Proposal'}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(downloadUrl);
+          return;
+        }
+      } catch (e) {
+        console.warn('Server Puppeteer API failed, using off-screen fallback exporter:', e);
+      }
+
+      // Attempt 2: Off-Screen Container Multi-Page Canvas Fallback
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
 
-      // 1. Temporarily create a hidden off-screen export container
       exportContainer = document.createElement('div');
       exportContainer.style.position = 'absolute';
       exportContainer.style.left = '-9999px';
@@ -634,17 +687,14 @@ function WedGrapherAiryBuilderContent() {
       exportContainer.style.backgroundColor = '#EBECEF';
       exportContainer.style.zIndex = '-9999';
 
-      // 2. Clone canvasRef node into hidden container without collapse or virtualization
       const clonedCanvas = canvasRef.current.cloneNode(true) as HTMLElement;
       clonedCanvas.style.transform = 'none';
       clonedCanvas.style.margin = '0';
       exportContainer.appendChild(clonedCanvas);
       document.body.appendChild(exportContainer);
 
-      // 3. Wait 500ms for images and fonts to render fully
       await new Promise(r => setTimeout(r, 500));
 
-      // 4. Select all .quotation-page elements inside the cloned tree
       const pageElements = clonedCanvas.querySelectorAll('.quotation-page');
       if (!pageElements || !pageElements.length) return;
 
@@ -1469,6 +1519,7 @@ function WedGrapherAiryBuilderContent() {
                   photoWidth={data.cover.photoWidth}
                   photoFocalY={data.cover.photoFocalY}
                   bgOpacity={data.cover.bgOpacity}
+                  pageBgColor={pageBgColor}
                   altText="Cover Background"
                 />
               )}
@@ -1574,6 +1625,7 @@ function WedGrapherAiryBuilderContent() {
                   photoWidth={data.aboutUs.photoWidth}
                   photoFocalY={data.aboutUs.photoFocalY}
                   bgOpacity={data.aboutUs.bgOpacity}
+                  pageBgColor={pageBgColor}
                   altText="About Us Background"
                 />
               )}
@@ -1665,6 +1717,7 @@ function WedGrapherAiryBuilderContent() {
                   photoWidth={data.shootDetails.photoWidth}
                   photoFocalY={data.shootDetails.photoFocalY}
                   bgOpacity={data.shootDetails.bgOpacity}
+                  pageBgColor={pageBgColor}
                   altText="Pre-Wedding Background"
                 />
               )}
@@ -1761,6 +1814,7 @@ function WedGrapherAiryBuilderContent() {
                   photoWidth={data.whatsIncluded.photoWidth}
                   photoFocalY={data.whatsIncluded.photoFocalY}
                   bgOpacity={data.whatsIncluded.bgOpacity}
+                  pageBgColor={pageBgColor}
                   altText="Included Background"
                 />
               )}
@@ -1835,6 +1889,7 @@ function WedGrapherAiryBuilderContent() {
                   photoWidth={data.pricePayment.photoWidth}
                   photoFocalY={data.pricePayment.photoFocalY}
                   bgOpacity={data.pricePayment.bgOpacity}
+                  pageBgColor={pageBgColor}
                   altText="Price Background"
                 />
               )}
@@ -1940,6 +1995,7 @@ function WedGrapherAiryBuilderContent() {
                   photoWidth={data.termsAndThankYou.photoWidth}
                   photoFocalY={data.termsAndThankYou.photoFocalY}
                   bgOpacity={data.termsAndThankYou.bgOpacity}
+                  pageBgColor={pageBgColor}
                   altText="Terms Background"
                 />
               )}
@@ -2116,11 +2172,11 @@ export default function QuotationBuilderPage() {
       <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 flex items-center justify-center p-4">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-zinc-600">Loading WedGrapher Studio Editor...</p>
+          <p className="text-xs font-bold text-zinc-600">Loading StudioCore Editor...</p>
         </div>
       </div>
     }>
-      <WedGrapherAiryBuilderContent />
+      <StudioCoreAiryBuilderContent />
     </React.Suspense>
   );
 }
