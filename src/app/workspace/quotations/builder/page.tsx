@@ -910,14 +910,14 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // INSTANT FAST-BUFFER DYNAMIC HEIGHT PDF EXPORT ENGINE
+  // BULLETPROOF FAIL-SAFE DYNAMIC HEIGHT PDF EXPORT ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
     setPdfToastMessage('Generating High-Res PDF...');
 
-    // 1. Temporarily lock zoomScale to 1.0 & enable PDF capture CSS
+    // Lock zoomScale to 1.0 & enable PDF capture CSS
     setZoomScale(1.0);
     document.body.classList.add('pdf-capture-active');
 
@@ -928,62 +928,54 @@ function StudioCoreAiryBuilderContent() {
         new Promise(r => setTimeout(r, 500))
       ]);
 
-      const html2canvas = (await import('html2canvas')).default;
+      const { default: html2canvas } = await import('html2canvas');
       const { jsPDF } = await import('jspdf');
 
-      const pageElements = canvasRef.current.querySelectorAll('.quotation-page');
-      if (!pageElements || !pageElements.length) return;
+      const pageElements = document.querySelectorAll('.quotation-page');
+      if (!pageElements.length) throw new Error('No quotation pages found');
 
       let pdf: InstanceType<typeof jsPDF> | null = null;
-      const widthPx = 794;
 
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
+        const widthPx = 794;
         const heightPx = pageEl.offsetHeight || 1123;
 
-        let canvas: HTMLCanvasElement | null = null;
-
+        let canvas: HTMLCanvasElement;
         try {
           canvas = await html2canvas(pageEl, {
             scale: 2,
             useCORS: true,
             allowTaint: true,
             logging: false,
-            backgroundColor: null,
+            backgroundColor: activeTheme.background || '#FFFFFF',
             windowWidth: widthPx
           });
-        } catch (err) {
-          console.warn(`html2canvas page ${i + 1} capture fallback:`, err);
-          canvas = await html2canvas(pageEl, {
-            scale: 2,
-            allowTaint: true,
-            logging: false,
-            backgroundColor: null,
-            windowWidth: widthPx
-          });
+        } catch (canvasErr) {
+          console.warn(`Fallback render for page ${i + 1}:`, canvasErr);
+          // Fallback render without CORS strictness
+          canvas = await html2canvas(pageEl, { scale: 1.5, logging: false });
         }
 
-        if (canvas && canvas.width > 0 && canvas.height > 0) {
-          const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
 
-          if (i === 0) {
-            pdf = new jsPDF({ unit: 'px', format: [widthPx, heightPx], orientation: 'p' });
-          } else {
-            pdf?.addPage([widthPx, heightPx], 'p');
-          }
-
-          pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx);
+        if (i === 0) {
+          pdf = new jsPDF({ unit: 'px', format: [widthPx, heightPx], orientation: 'p' });
+        } else {
+          pdf?.addPage([widthPx, heightPx], 'p');
         }
+
+        pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx);
       }
 
       if (pdf) {
-        pdf.save(`${data.designName || 'StudioCore_Quotation'}.pdf`);
+        pdf.save(`${data?.designName || 'StudioCore_Quotation'}.pdf`);
         setPdfToastMessage('PDF Downloaded Successfully!');
         setTimeout(() => setPdfToastMessage(null), 3000);
       }
-    } catch (err) {
-      console.error('Fast PDF export error:', err);
-      alert('Failed to generate PDF. Please try again.');
+    } catch (err: any) {
+      console.error('PDF Final Error:', err);
+      alert('PDF Generation Fallback: ' + (err?.message || 'Unknown error'));
       setPdfToastMessage(null);
     } finally {
       document.body.classList.remove('pdf-capture-active');
