@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, ChevronDown, Check, Type, Sparkles, X, Crown, Zap, ShieldCheck } from 'lucide-react';
+import { Search, ChevronDown, Check, Type, X } from 'lucide-react';
 import { 
   FontItem, 
   STATIC_CUSTOM_FONTS, 
@@ -12,25 +12,10 @@ import {
   loadCustomFontsFromAPI 
 } from '@/lib/font-loader';
 
-// Flag PRO fonts
-const PRO_FONT_NAMES = new Set([
-  'Cormorant Garamond (High Fashion)',
-  'Playfair Display (Classic Luxury)',
-  'Bodoni Moda (Vogue Editorial)',
-  'Cinzel (Royal Roman)',
-  'Prata (Refined Minimalist)',
-  'Italiana (Italian Couture)',
-  'Bevola Demo Regular',
-  'Tenor Sans (Fashion Minimal)',
-  'DM Serif Display (Modern Editorial)'
-]);
-
 interface CanvaFontSelectorProps {
   label?: string;
   value: string; // The font family string or name e.g. "'Bevola Demo Regular', sans-serif"
   onChange: (selectedFontFamily: string, fontItem: FontItem) => void;
-  isUserPro?: boolean; // User subscription status (default false)
-  onUpgradeProClick?: () => void;
   className?: string;
   buttonClassName?: string;
 }
@@ -39,8 +24,6 @@ export function CanvaFontSelector({
   label,
   value,
   onChange,
-  isUserPro = false,
-  onUpgradeProClick,
   className = '',
   buttonClassName = '',
 }: CanvaFontSelectorProps) {
@@ -48,8 +31,6 @@ export function CanvaFontSelector({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTab, setSelectedTab] = useState<string>('All');
   const [customFonts, setCustomFonts] = useState<FontItem[]>(STATIC_CUSTOM_FONTS);
-  const [showProModal, setShowProModal] = useState(false);
-  const [pendingProFont, setPendingProFont] = useState<FontItem | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -66,22 +47,14 @@ export function CanvaFontSelector({
     customFonts.forEach(f => registerFontFace(f));
   }, [customFonts]);
 
-  // Combine all font items with isPro flags
+  // Combine all font items
   const allFonts = useMemo(() => {
-    const rawList = [
+    return [
       ...customFonts,
       ...SYSTEM_LUXURY_SERIF_FONTS,
       ...SYSTEM_SANS_SERIF_FONTS,
       ...SYSTEM_DISPLAY_FONTS,
     ];
-
-    return rawList.map(font => {
-      const isProFont = font.category === 'Custom Fonts' || font.category === 'Luxury Serif' || PRO_FONT_NAMES.has(font.name);
-      return {
-        ...font,
-        isPro: isProFont,
-      };
-    });
   }, [customFonts]);
 
   // Find currently selected font item
@@ -98,7 +71,7 @@ export function CanvaFontSelector({
     const displayName = cleanVal.split(',')[0].trim();
     const formattedName = displayName ? displayName.charAt(0).toUpperCase() + displayName.slice(1) : 'Select Font';
 
-    return found || { name: formattedName, family: value, category: 'Luxury Serif', isPro: false };
+    return found || { name: formattedName, family: value, category: 'Luxury Serif' };
   }, [value, allFonts]);
 
   // Close dropdown on outside click
@@ -129,14 +102,7 @@ export function CanvaFontSelector({
     });
   }, [allFonts, searchQuery, selectedTab]);
 
-  const handleSelectFont = (font: FontItem & { isPro?: boolean }) => {
-    // If PRO font and user is not PRO, trigger subscription modal
-    if (font.isPro && !isUserPro) {
-      setPendingProFont(font);
-      setShowProModal(true);
-      return;
-    }
-
+  const handleSelectFont = (font: FontItem) => {
     registerFontFace(font);
     onChange(font.family, font);
     setIsOpen(false);
@@ -166,11 +132,6 @@ export function CanvaFontSelector({
           </span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          {activeFontItem.isPro && (
-            <span className="inline-flex items-center gap-0.5 text-[8px] font-black px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-xs">
-              <Crown className="w-2.5 h-2.5 fill-black" /> PRO
-            </span>
-          )}
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
             {activeFontItem.category === 'Custom Fonts' ? 'Custom' : activeFontItem.category}
           </span>
@@ -212,7 +173,7 @@ export function CanvaFontSelector({
                   key={tab}
                   type="button"
                   onClick={() => setSelectedTab(tab)}
-                  className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 transition-all ${
+                  className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 transition-all cursor-pointer ${
                     selectedTab === tab 
                       ? 'bg-amber-900 text-amber-50 shadow-xs' 
                       : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
@@ -248,19 +209,12 @@ export function CanvaFontSelector({
                   >
                     {/* Live Font Name Preview */}
                     <div className="flex flex-col gap-0.5 overflow-hidden pr-2">
-                      <div className="flex items-center gap-1.5">
-                        <span 
-                          className="text-base truncate leading-snug tracking-wide"
-                          style={{ fontFamily: font.family }}
-                        >
-                          {font.name}
-                        </span>
-                        {font.isPro && (
-                          <span className="inline-flex items-center gap-0.5 text-[8px] font-black px-1.5 py-0.2 rounded-full bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-600 text-black shadow-2xs shrink-0">
-                            <Crown className="w-2.5 h-2.5 fill-black" /> PRO
-                          </span>
-                        )}
-                      </div>
+                      <span 
+                        className="text-base truncate leading-snug tracking-wide"
+                        style={{ fontFamily: font.family }}
+                      >
+                        {font.name}
+                      </span>
                       <span className="text-[9px] text-zinc-400 font-mono">
                         {font.category}
                       </span>
@@ -278,73 +232,6 @@ export function CanvaFontSelector({
             )}
           </div>
 
-        </div>
-      )}
-
-      {/* PRO Subscription Upgrade Modal */}
-      {showProModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-zinc-900 border border-amber-500/40 rounded-3xl p-6 max-w-md w-full text-white shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="flex items-center gap-2 text-amber-400">
-                <Crown className="w-6 h-6 fill-amber-400" />
-                <h3 className="text-base font-black uppercase tracking-wider text-white">Upgrade to Pro</h3>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setShowProModal(false)}
-                className="text-zinc-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-zinc-300 leading-relaxed">
-                The font <strong className="text-amber-400 font-bold">{pendingProFont?.name}</strong> is an exclusive Pro typography asset.
-              </p>
-
-              <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-2 text-xs text-zinc-300">
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                  <Check className="w-4 h-4 stroke-[3]" /> Unlock 50+ Exclusive Luxury Serif & Display Fonts
-                </div>
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                  <Check className="w-4 h-4 stroke-[3]" /> Custom Brand TTF/OTF Font Uploads
-                </div>
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                  <Check className="w-4 h-4 stroke-[3]" /> High-Res 300 DPI Multi-Page PDF Downloads
-                </div>
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                  <Check className="w-4 h-4 stroke-[3]" /> Remove WedGrapher Studio Watermarks
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowProModal(false)}
-                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowProModal(false);
-                  if (onUpgradeProClick) {
-                    onUpgradeProClick();
-                  } else {
-                    window.open('/pricing', '_blank');
-                  }
-                }}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-600 text-black font-black text-xs shadow-lg hover:opacity-95 transition-all flex items-center gap-1.5"
-              >
-                <Zap className="w-4 h-4 fill-black" />
-                <span>Upgrade to Pro Now</span>
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

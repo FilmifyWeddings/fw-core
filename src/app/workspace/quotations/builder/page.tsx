@@ -10,7 +10,7 @@ import {
   Palette, Type, Layout, ShieldCheck, Film, Video, Camera, BookOpen, 
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
   Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders,
-  ZoomIn, ZoomOut, Maximize2, Menu
+  ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -121,7 +121,7 @@ const DEFAULT_AIRY_PROPOSAL = {
       { id: 'a5', service: 'Album', charge: '₹550 per page' },
       { id: 'a6', service: 'Instagram reel', charge: '₹2,000 per reel' },
     ],
-    photo: '',
+    photo: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
     photoHeight: 280,
     photoWidth: 75,
     photoFocalY: 50,
@@ -176,15 +176,12 @@ const PHOTO_SHAPE_OPTIONS = [
 function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) {
   const currentVal = value || 'arch';
   return (
-    <div className="space-y-1">
-      <label className="block text-[9px] font-bold text-amber-900/80 uppercase tracking-wider">
-        Photo Layout Style
+    <div className="space-y-1.5">
+      <label className="block text-[10px] font-extrabold text-amber-300 uppercase tracking-wider flex items-center gap-1">
+        <Layout className="w-3 h-3 text-amber-400" /> Photo Layout Style
       </label>
       <div 
-        className="grid grid-cols-5 gap-1 p-1.5 rounded-2xl border border-amber-300/80 bg-gradient-to-b from-amber-100/90 via-amber-50 to-amber-200/60"
-        style={{
-          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.12), inset 0 -1px 2px rgba(255,255,255,0.8), 0 2px 6px rgba(0,0,0,0.04)'
-        }}
+        className="grid grid-cols-5 gap-1 p-1.5 rounded-xl border border-slate-700/80 bg-slate-950/90 shadow-inner"
       >
         {PHOTO_SHAPE_OPTIONS.map(opt => {
           const isActive = currentVal === opt.value;
@@ -193,10 +190,10 @@ function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) 
               key={opt.value}
               type="button"
               onClick={() => onChange(opt.value)}
-              className={`py-1.5 px-0.5 rounded-xl text-[8px] font-black transition-all duration-200 flex flex-col items-center justify-center gap-0.5 leading-tight cursor-pointer ${
+              className={`py-1.5 px-0.5 rounded-lg text-[8px] font-black transition-all duration-200 flex flex-col items-center justify-center gap-0.5 leading-tight cursor-pointer ${
                 isActive
-                  ? 'bg-gradient-to-b from-white via-amber-50 to-amber-100 text-amber-950 scale-[0.96] border border-amber-400/90 shadow-[0_3px_8px_rgba(180,130,40,0.35),_inset_0_1px_0_rgba(255,255,255,0.95)] font-black'
-                  : 'text-zinc-500 hover:text-amber-950 hover:bg-white/60 border border-transparent'
+                  ? 'bg-gradient-to-b from-amber-400 via-amber-500 to-yellow-600 text-black border border-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.5)] font-black scale-95'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/80 border border-transparent'
               }`}
             >
               <span className="text-[13px] leading-none font-bold">{opt.icon}</span>
@@ -209,7 +206,7 @@ function Photo3DLayoutSelector({ value, onChange }: Photo3DLayoutSelectorProps) 
   );
 }
 
-// Reusable Unified Universal Photo Controls Component (Card-Based Sidebar Panel)
+// Sleek 3D Glassmorphism Unified Photo Controls Panel
 interface UnifiedPhotoControlsProps {
   photoUrl?: string;
   frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
@@ -238,15 +235,22 @@ function UnifiedPhotoControls({
   onChangeWidth
 }: UnifiedPhotoControlsProps) {
   return (
-    <div className="space-y-2.5 p-3 rounded-2xl bg-amber-50/40 border border-amber-200/70 shadow-xs">
-      <span className="text-[10px] uppercase font-extrabold text-amber-900 tracking-wider block">
-        Photo &amp; Layout Controls
-      </span>
+    <div className="space-y-3.5 p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-zinc-900 border border-slate-700/60 shadow-2xl text-white">
+      <div className="flex items-center justify-between border-b border-slate-700/60 pb-2">
+        <span className="text-[10px] uppercase font-black tracking-wider text-amber-400 flex items-center gap-1.5">
+          <Sliders className="w-3.5 h-3.5 text-amber-400" /> Photo &amp; Layout Controls
+        </span>
+        {photoUrl && (
+          <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+            Active
+          </span>
+        )}
+      </div>
 
       {/* Add / Change / Delete Image */}
       <div className="flex items-center gap-2">
         {photoUrl && (
-          <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+          <div className="w-10 h-10 rounded-xl border border-slate-700 overflow-hidden bg-slate-950 shrink-0 shadow-md">
             <img src={photoUrl} alt="Thumbnail" className="w-full h-full object-cover bg-transparent" />
           </div>
         )}
@@ -254,17 +258,17 @@ function UnifiedPhotoControls({
         <button
           type="button"
           onClick={onOpenAddModal}
-          className="flex-1 py-1.5 px-3 rounded-xl bg-amber-100/80 hover:bg-amber-200/90 border border-amber-300/80 text-amber-950 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+          className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-600 hover:opacity-95 text-black font-extrabold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all"
         >
-          <ImageIcon className="w-3.5 h-3.5 text-amber-800" />
-          <span>{photoUrl ? 'Change Photo' : 'Add Image'}</span>
+          <ImageIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>{photoUrl ? 'Change Photo' : '+ Select Photo'}</span>
         </button>
 
         {photoUrl && (
           <button
             type="button"
             onClick={onDeletePhoto}
-            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+            className="p-2 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800/80 cursor-pointer shrink-0 transition-all"
             title="Delete Photo"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -274,82 +278,177 @@ function UnifiedPhotoControls({
 
       {photoUrl && (
         <>
-          {/* Photo Layout Style (3D Carved Segmented Buttons) */}
+          {/* Photo Layout Style (3D Segmented Selector) */}
           <Photo3DLayoutSelector
             value={frameShape}
             onChange={onChangeShape}
           />
 
           {/* Photo Focus / Vertical Focal Point (0-100%) */}
-          <div className="space-y-1.5 p-2 rounded-xl bg-white/80 border border-amber-200/80">
-            <div className="flex items-center justify-between text-[10px] text-amber-950 font-bold">
-              <span>Photo Focus (Up / Down)</span>
-              <span className="font-mono text-amber-700">{photoFocalY}%</span>
+          <div className="space-y-2 p-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80">
+            <div className="flex items-center justify-between text-[10px] text-slate-300 font-bold">
+              <span className="flex items-center gap-1 text-amber-300">
+                <MoveVertical className="w-3 h-3 text-amber-400" /> Photo Focus (Up / Down)
+              </span>
+              <span className="font-mono font-bold text-amber-400 bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-700/60">{photoFocalY}%</span>
             </div>
+            
             <input
               type="range" min="0" max="100"
               value={photoFocalY}
               onChange={(e) => onChangeFocalY(Number(e.target.value))}
-              className="w-full accent-amber-700 cursor-pointer"
+              className="w-full accent-amber-400 bg-slate-800 rounded-lg cursor-pointer h-1.5"
             />
-            <div className="flex items-center justify-between text-[9px] font-bold text-amber-900">
+
+            {/* Quick Alignment Toggles */}
+            <div className="grid grid-cols-3 gap-1 pt-1">
               <button
                 type="button"
                 onClick={() => onChangeFocalY(0)}
-                className="px-1.5 py-0.5 rounded bg-zinc-100 border border-amber-200 hover:bg-amber-100 cursor-pointer"
+                className={`py-1 px-1 rounded-lg text-[9px] font-bold border transition-all flex items-center justify-center gap-0.5 cursor-pointer ${
+                  photoFocalY === 0 
+                    ? 'bg-amber-400 text-black border-amber-300 shadow-xs' 
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
               >
-                Top (0%) ⬆
+                <ArrowUp className="w-3 h-3" /> Top (0%)
               </button>
+
               <button
                 type="button"
                 onClick={() => onChangeFocalY(50)}
-                className="px-1.5 py-0.5 rounded bg-zinc-100 border border-amber-200 hover:bg-amber-100 cursor-pointer"
+                className={`py-1 px-1 rounded-lg text-[9px] font-bold border transition-all flex items-center justify-center gap-0.5 cursor-pointer ${
+                  photoFocalY === 50 
+                    ? 'bg-amber-400 text-black border-amber-300 shadow-xs' 
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
               >
-                Center (50%) ⏺
+                <Circle className="w-2.5 h-2.5" /> Center (50%)
               </button>
+
               <button
                 type="button"
                 onClick={() => onChangeFocalY(100)}
-                className="px-1.5 py-0.5 rounded bg-zinc-100 border border-amber-200 hover:bg-amber-100 cursor-pointer"
+                className={`py-1 px-1 rounded-lg text-[9px] font-bold border transition-all flex items-center justify-center gap-0.5 cursor-pointer ${
+                  photoFocalY === 100 
+                    ? 'bg-amber-400 text-black border-amber-300 shadow-xs' 
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
               >
-                Bottom (100%) ⬇
+                <ArrowDown className="w-3 h-3" /> Bottom (100%)
               </button>
             </div>
           </div>
 
           {/* Photo Height Slider */}
           {frameShape !== 'background' && (
-            <div>
-              <div className="flex items-center justify-between text-[10px] text-zinc-600 font-bold">
-                <span>Photo Height</span>
-                <span>{photoHeight}px</span>
+            <div className="space-y-1.5 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
+              <div className="flex items-center justify-between text-[10px] text-slate-300 font-bold">
+                <span className="flex items-center gap-1">
+                  <Maximize2 className="w-3 h-3 text-amber-400" /> Photo Height
+                </span>
+                <span className="font-mono text-amber-400">{photoHeight}px</span>
               </div>
               <input
                 type="range" min="100" max="800"
                 value={photoHeight}
                 onChange={(e) => onChangeHeight(Number(e.target.value))}
-                className="w-full accent-black cursor-pointer"
+                className="w-full accent-amber-400 bg-slate-800 rounded-lg cursor-pointer h-1.5"
               />
             </div>
           )}
 
           {/* Photo Width Slider */}
           {['arch', 'rounded', 'rectangle'].includes(frameShape) && (
-            <div>
-              <div className="flex items-center justify-between text-[10px] text-zinc-600 font-bold">
-                <span>Photo Width</span>
-                <span>{photoWidth}%</span>
+            <div className="space-y-1.5 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
+              <div className="flex items-center justify-between text-[10px] text-slate-300 font-bold">
+                <span className="flex items-center gap-1">
+                  <MoveHorizontal className="w-3 h-3 text-amber-400" /> Photo Width
+                </span>
+                <span className="font-mono text-amber-400">{photoWidth}%</span>
               </div>
               <input
                 type="range" min="30" max="100"
                 value={photoWidth}
                 onChange={(e) => onChangeWidth(Number(e.target.value))}
-                className="w-full accent-black cursor-pointer"
+                className="w-full accent-amber-400 bg-slate-800 rounded-lg cursor-pointer h-1.5"
               />
             </div>
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// Unified Section Image Slot Component to Render Images consistently on screen
+interface SectionImageRendererProps {
+  photo?: string;
+  frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
+  photoHeight: number;
+  photoWidth: number;
+  photoFocalY: number;
+  altText?: string;
+}
+
+function SectionImageRenderer({
+  photo,
+  frameShape,
+  photoHeight,
+  photoWidth,
+  photoFocalY,
+  altText = 'Section Photo'
+}: SectionImageRendererProps) {
+  if (!photo) return null;
+
+  if (frameShape === 'background') {
+    return (
+      <div className="absolute inset-0 z-0 overflow-hidden w-full h-full pointer-events-none select-none">
+        <img
+          src={photo}
+          alt={altText}
+          className="w-full h-full object-cover block"
+          style={{ objectPosition: `50% ${photoFocalY}%` }}
+        />
+        <div className="absolute inset-0 bg-black/35 z-0" />
+      </div>
+    );
+  }
+
+  if (frameShape === 'full-width') {
+    return (
+      <div className="-mx-12 w-[794px] overflow-hidden my-4">
+        <img
+          src={photo}
+          alt={altText}
+          className="w-full object-cover block shadow-xs"
+          style={{ height: `${photoHeight}px`, objectPosition: `50% ${photoFocalY}%` }}
+        />
+      </div>
+    );
+  }
+
+  const shapeClass =
+    frameShape === 'arch' ? 'rounded-t-[999px] rounded-b-none' :
+    frameShape === 'rectangle' ? 'rounded-none' :
+    'rounded-2xl';
+
+  return (
+    <div className="w-full my-4 flex justify-center">
+      <div
+        className={`overflow-hidden shadow-md relative transition-all duration-200 ${shapeClass}`}
+        style={{
+          width: `${photoWidth}%`,
+          height: `${photoHeight}px`,
+        }}
+      >
+        <img
+          src={photo}
+          alt={altText}
+          className="w-full h-full object-cover bg-transparent"
+          style={{ objectPosition: `50% ${photoFocalY}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -424,9 +523,8 @@ function WedGrapherAiryBuilderContent() {
     }
   };
 
-  // 1:1 Multi-Page PDF Exporter (Captures .a4-page-section & .quotation-page elements sequentially)
+  // 1:1 Multi-Page PDF Exporter (Captures ALL .quotation-page elements using a for...of loop)
   const handleDownloadPDFCanvas = async () => {
-    if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
     
@@ -439,14 +537,13 @@ function WedGrapherAiryBuilderContent() {
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
 
-      // Comprehensive selector matching all rendered DOM page cards
-      const pageElements = canvasRef.current.querySelectorAll('.a4-page-section, .quotation-page');
+      // Select ALL page containers using document.querySelectorAll('.quotation-page')
+      const pages = Array.from(document.querySelectorAll('.quotation-page')) as HTMLElement[];
       
-      if (pageElements && pageElements.length > 0) {
+      if (pages && pages.length > 0) {
         let pdf: InstanceType<typeof jsPDF> | null = null;
 
-        for (let i = 0; i < pageElements.length; i++) {
-          const pageEl = pageElements[i] as HTMLElement;
+        for (const pageEl of pages) {
           const rect = pageEl.getBoundingClientRect();
           const elementHeight = Math.max(200, Math.ceil(rect.height || pageEl.offsetHeight));
           const elementWidth = 794;
@@ -468,20 +565,18 @@ function WedGrapherAiryBuilderContent() {
           const pdfPageWidth = 595.28;
           const pdfPageHeight = (elementHeight * pdfPageWidth) / elementWidth;
 
-          if (i === 0) {
+          if (!pdf) {
             pdf = new jsPDF({
               orientation: 'p',
               unit: 'pt',
               format: [pdfPageWidth, pdfPageHeight],
               compress: true,
             });
-          } else if (pdf) {
+          } else {
             pdf.addPage([pdfPageWidth, pdfPageHeight], 'p');
           }
 
-          if (pdf) {
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight, undefined, 'FAST');
-          }
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight, undefined, 'FAST');
         }
 
         if (pdf) {
@@ -642,7 +737,7 @@ function WedGrapherAiryBuilderContent() {
     }
   };
 
-  // Sidebar Controls JSX block (Shared between Desktop Sidebar & Mobile Bottom Sheet Drawer)
+  // Sidebar Controls JSX block
   const renderSidebarControls = () => (
     <div className="space-y-4">
       {/* Design Name & Look Theme */}
@@ -689,7 +784,7 @@ function WedGrapherAiryBuilderContent() {
         {/* Canva-Style Typography Customizers */}
         <div className="space-y-3 pt-2 border-t border-zinc-100">
           <span className="text-[10px] uppercase font-bold text-purple-700 flex items-center gap-1">
-            <Type className="w-3 h-3" /> Canva-Style Typography Engine
+            <Type className="w-3 h-3" /> Typography Engine
           </span>
 
           <CanvaFontSelector
@@ -1110,7 +1205,7 @@ function WedGrapherAiryBuilderContent() {
             margin: 0 !important;
             padding: 0 !important;
           }
-          .a4-page-section.cover-page {
+          .a4-page-section.cover-page, .quotation-page.cover-page {
             width: 794px !important;
             height: 1123px !important;
             margin: 0 auto !important;
@@ -1119,7 +1214,7 @@ function WedGrapherAiryBuilderContent() {
             page-break-after: always !important;
             break-after: page !important;
           }
-          .a4-page-section.content-page, .quotation-page {
+          .a4-page-section.content-page, .quotation-page.content-page {
             width: 794px !important;
             height: auto !important;
             min-height: 0 !important;
@@ -1241,7 +1336,7 @@ function WedGrapherAiryBuilderContent() {
 
             {/* PAGE 1: COVER PAGE */}
             <div 
-              className="a4-page-section quotation-page cover-page w-[794px] h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 border border-zinc-300/60 select-none"
+              className="quotation-page a4-page-section cover-page w-[794px] h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 border border-zinc-300/60 select-none"
               style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
               {data.cover.photoUrl && data.cover.frameShape === 'background' && (
@@ -1286,38 +1381,14 @@ function WedGrapherAiryBuilderContent() {
                   </div>
 
                   {data.cover.photoUrl && data.cover.frameShape !== 'background' && (
-                    <div className="w-full my-4">
-                      {data.cover.frameShape === 'full-width' ? (
-                        <div className="-mx-12 w-[794px] overflow-hidden">
-                          <img 
-                            src={data.cover.photoUrl} 
-                            alt="Cover Full Bleed"
-                            className="w-full object-cover block shadow-xs"
-                            style={{ height: `${data.cover.photoHeight || 420}px`, objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` }}
-                          />
-                        </div>
-                      ) : (
-                        <div 
-                          className={`mx-auto overflow-hidden shadow-lg relative transition-all duration-200 ${
-                            data.cover.frameShape === 'rounded' ? 'rounded-3xl' :
-                            data.cover.frameShape === 'rectangle' ? 'rounded-none' :
-                            'rounded-t-[999px] rounded-b-none'
-                          }`}
-                          style={{ 
-                            width: `${data.cover.photoWidth || 75}%`,
-                            height: `${data.cover.photoHeight || 420}px`,
-                            backgroundColor: 'transparent' 
-                          }}
-                        >
-                          <img 
-                            src={data.cover.photoUrl} 
-                            alt="Wedding Couple"
-                            className="w-full h-full object-cover bg-transparent"
-                            style={{ objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
+                    <SectionImageRenderer
+                      photo={data.cover.photoUrl}
+                      frameShape={data.cover.frameShape}
+                      photoHeight={data.cover.photoHeight}
+                      photoWidth={data.cover.photoWidth}
+                      photoFocalY={data.cover.photoFocalY}
+                      altText="Wedding Couple"
+                    />
                   )}
 
                   <div className="space-y-2 pt-2">
@@ -1338,10 +1409,21 @@ function WedGrapherAiryBuilderContent() {
 
             {/* PAGE 2: ABOUT US */}
             <div 
-              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              className="quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
-              <div className="absolute top-6 right-10 pointer-events-none opacity-85">
+              {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.aboutUs.bottomBannerPhoto}
+                  frameShape="background"
+                  photoHeight={data.aboutUs.bottomBannerHeight}
+                  photoWidth={data.aboutUs.photoWidth}
+                  photoFocalY={data.aboutUs.photoFocalY}
+                  altText="About Us Background"
+                />
+              )}
+
+              <div className="absolute top-6 right-10 pointer-events-none opacity-85 z-10">
                 <img src="/images/Birds.svg" alt="Birds" className="w-[220px] h-auto object-contain block" style={{ filter: isDark ? 'brightness(2)' : 'none' }} />
               </div>
 
@@ -1371,13 +1453,15 @@ function WedGrapherAiryBuilderContent() {
                 </div>
               </div>
 
-              {data.aboutUs.bottomBannerPhoto && (
-                <div className="-mx-12 -mb-10 w-[794px] overflow-hidden shrink-0 mt-6">
-                  <img
-                    src={data.aboutUs.bottomBannerPhoto}
-                    alt="About Us Full Bleed"
-                    className="w-full object-cover block shadow-xs"
-                    style={{ height: `${data.aboutUs.bottomBannerHeight || 380}px`, objectPosition: `50% ${data.aboutUs.photoFocalY ?? 50}%` }}
+              {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && (
+                <div className="relative z-10 w-full mt-4">
+                  <SectionImageRenderer
+                    photo={data.aboutUs.bottomBannerPhoto}
+                    frameShape={data.aboutUs.frameShape}
+                    photoHeight={data.aboutUs.bottomBannerHeight}
+                    photoWidth={data.aboutUs.photoWidth}
+                    photoFocalY={data.aboutUs.photoFocalY}
+                    altText="About Us Banner"
                   />
                 </div>
               )}
@@ -1385,13 +1469,18 @@ function WedGrapherAiryBuilderContent() {
 
             {/* PAGE 3: PRE-WEDDING SHOOT */}
             <div 
-              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 p-12 py-10"
+              className="quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 p-12 py-10"
               style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
               {data.shootDetails.photo && data.shootDetails.frameShape === 'background' && (
-                <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden w-full h-full">
-                  <img src={data.shootDetails.photo} alt="Watermark" className="w-full h-full object-cover filter grayscale-[15%] opacity-35" style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }} />
-                </div>
+                <SectionImageRenderer
+                  photo={data.shootDetails.photo}
+                  frameShape="background"
+                  photoHeight={data.shootDetails.photoHeight}
+                  photoWidth={data.shootDetails.photoWidth}
+                  photoFocalY={data.shootDetails.photoFocalY}
+                  altText="Pre-Wedding Background"
+                />
               )}
 
               <div className="relative z-10 space-y-6 my-auto w-full py-2">
@@ -1428,20 +1517,36 @@ function WedGrapherAiryBuilderContent() {
                   </ul>
                 </div>
 
-                {data.shootDetails.photo && data.shootDetails.frameShape === 'full-width' && (
-                  <div className="-mx-12 -mb-10 w-[794px] overflow-hidden mt-6">
-                    <img src={data.shootDetails.photo} alt="Pre-Wedding Full Bleed" className="w-full object-cover block shadow-xs" style={{ height: `${data.shootDetails.photoHeight || 380}px`, objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }} />
-                  </div>
+                {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && (
+                  <SectionImageRenderer
+                    photo={data.shootDetails.photo}
+                    frameShape={data.shootDetails.frameShape}
+                    photoHeight={data.shootDetails.photoHeight}
+                    photoWidth={data.shootDetails.photoWidth}
+                    photoFocalY={data.shootDetails.photoFocalY}
+                    altText="Pre-Wedding Photo"
+                  />
                 )}
               </div>
             </div>
 
             {/* PAGE 4: WHAT'S INCLUDED */}
             <div 
-              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              className="quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
-              <div className="space-y-6 my-auto w-full py-2">
+              {data.whatsIncluded.photo && data.whatsIncluded.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.whatsIncluded.photo}
+                  frameShape="background"
+                  photoHeight={data.whatsIncluded.photoHeight}
+                  photoWidth={data.whatsIncluded.photoWidth}
+                  photoFocalY={data.whatsIncluded.photoFocalY}
+                  altText="Included Background"
+                />
+              )}
+
+              <div className="relative z-10 space-y-6 my-auto w-full py-2">
                 <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
                   {data.whatsIncluded.kicker}
                 </span>
@@ -1453,28 +1558,36 @@ function WedGrapherAiryBuilderContent() {
                   {data.whatsIncluded.deliverablesText}
                 </div>
 
-                {data.whatsIncluded.photo && (
-                  <div className="pt-2">
-                    {data.whatsIncluded.frameShape === 'full-width' ? (
-                      <div className="-mx-12 -mb-10 w-[794px] overflow-hidden mt-4">
-                        <img src={data.whatsIncluded.photo} alt="Included Full Bleed" className="w-full object-cover block shadow-xs" style={{ height: `${data.whatsIncluded.photoHeight || 360}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }} />
-                      </div>
-                    ) : (
-                      <div className={`mx-auto overflow-hidden shadow-md relative transition-all duration-300 ${data.whatsIncluded.frameShape === 'arch' ? 'rounded-t-[999px]' : data.whatsIncluded.frameShape === 'rectangle' ? 'rounded-none' : 'rounded-2xl'}`} style={{ width: `${data.whatsIncluded.photoWidth || 75}%`, height: `${data.whatsIncluded.photoHeight || 360}px`, borderColor: photoBorderColor, borderWidth: '1px' }}>
-                        <img src={data.whatsIncluded.photo} alt="Package Deliverables" className="w-full h-full object-cover bg-transparent" style={{ objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }} />
-                      </div>
-                    )}
-                  </div>
+                {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && (
+                  <SectionImageRenderer
+                    photo={data.whatsIncluded.photo}
+                    frameShape={data.whatsIncluded.frameShape}
+                    photoHeight={data.whatsIncluded.photoHeight}
+                    photoWidth={data.whatsIncluded.photoWidth}
+                    photoFocalY={data.whatsIncluded.photoFocalY}
+                    altText="Package Deliverables"
+                  />
                 )}
               </div>
             </div>
 
             {/* PAGE 5: PRICE & PAYMENT */}
             <div 
-              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              className="quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
-              <div className="space-y-6 my-auto w-full py-2">
+              {data.pricePayment.photo && data.pricePayment.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.pricePayment.photo}
+                  frameShape="background"
+                  photoHeight={data.pricePayment.photoHeight}
+                  photoWidth={data.pricePayment.photoWidth}
+                  photoFocalY={data.pricePayment.photoFocalY}
+                  altText="Price Background"
+                />
+              )}
+
+              <div className="relative z-10 space-y-6 my-auto w-full py-2">
                 <div className="space-y-4 border-b pb-6" style={{ borderColor }}>
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
                     {data.pricePayment.kicker}
@@ -1517,22 +1630,36 @@ function WedGrapherAiryBuilderContent() {
                   </div>
                 </div>
 
-                {data.pricePayment.photo && (
-                  <div className="pt-4">
-                    <div className="mx-auto overflow-hidden shadow-md rounded-2xl" style={{ width: `${data.pricePayment.photoWidth || 75}%`, height: `${data.pricePayment.photoHeight || 280}px` }}>
-                      <img src={data.pricePayment.photo} alt="Payment" className="w-full h-full object-cover" style={{ objectPosition: `50% ${data.pricePayment.photoFocalY ?? 50}%` }} />
-                    </div>
-                  </div>
+                {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && (
+                  <SectionImageRenderer
+                    photo={data.pricePayment.photo}
+                    frameShape={data.pricePayment.frameShape}
+                    photoHeight={data.pricePayment.photoHeight}
+                    photoWidth={data.pricePayment.photoWidth}
+                    photoFocalY={data.pricePayment.photoFocalY}
+                    altText="Payment Photo"
+                  />
                 )}
               </div>
             </div>
 
             {/* PAGE 6: DELIVERY TIMELINE & TERMS */}
             <div 
-              className="a4-page-section quotation-page content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
+              className="quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ backgroundColor: pageBgColor, color: textColor, fontFamily: data.secondaryFont }}
             >
-              <div className="space-y-6 my-auto w-full py-2">
+              {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.termsAndThankYou.photo}
+                  frameShape="background"
+                  photoHeight={data.termsAndThankYou.photoHeight}
+                  photoWidth={data.termsAndThankYou.photoWidth}
+                  photoFocalY={data.termsAndThankYou.photoFocalY}
+                  altText="Terms Background"
+                />
+              )}
+
+              <div className="relative z-10 space-y-6 my-auto w-full py-2">
                 <div className="space-y-3">
                   <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.timelineTable.heading}
@@ -1559,6 +1686,17 @@ function WedGrapherAiryBuilderContent() {
                     </table>
                   </div>
                 </div>
+
+                {data.addOnsTable.photo && data.addOnsTable.frameShape !== 'background' && (
+                  <SectionImageRenderer
+                    photo={data.addOnsTable.photo}
+                    frameShape={data.addOnsTable.frameShape}
+                    photoHeight={data.addOnsTable.photoHeight}
+                    photoWidth={data.addOnsTable.photoWidth}
+                    photoFocalY={data.addOnsTable.photoFocalY}
+                    altText="Add-ons Photo"
+                  />
+                )}
 
                 <div className="space-y-5 pt-4 border-t" style={{ borderColor }}>
                   <div className="space-y-1.5">
