@@ -14,13 +14,15 @@ const nextConfig: any = {
     },
   ],
 
-  // Baileys must run server-side only (Node.js runtime, not Edge/browser)
+  // Server-side Node.js runtime external packages
   serverExternalPackages: [
     '@whiskeysockets/baileys',
     'bufferutil',
     'utf-8-validate',
     'pino',
     '@hapi/boom',
+    '@sparticuz/chromium',
+    'puppeteer-core',
   ],
 
   turbopack: {},
