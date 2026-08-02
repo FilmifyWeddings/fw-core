@@ -956,6 +956,7 @@ function StudioCoreAiryBuilderContent() {
               const propertiesToCopy = [
                 'color', 'backgroundColor', 'borderColor', 'borderStyle', 'borderWidth', 'borderRadius',
                 'fontSize', 'fontFamily', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'textTransform',
+                'whiteSpace', 'wordBreak',
                 'display', 'flexDirection', 'justifyContent', 'alignItems', 'gap', 'flexWrap', 'flexGrow', 'flexShrink',
                 'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
                 'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
@@ -969,9 +970,21 @@ function StudioCoreAiryBuilderContent() {
                 const htmlEl = el as HTMLElement;
                 try {
                   const style = window.getComputedStyle(htmlEl);
+                  const isHeading = ['H1', 'H2', 'H3'].includes(htmlEl.tagName) || 
+                                    htmlEl.classList.contains('brand-name-heading') || 
+                                    htmlEl.classList.contains('couple-name-heading');
                   propertiesToCopy.forEach((prop) => {
                     // @ts-ignore
-                    const val = style[prop];
+                    let val = style[prop];
+                    if (isHeading && prop === 'letterSpacing') {
+                      val = 'normal';
+                    }
+                    if (isHeading && prop === 'whiteSpace') {
+                      val = 'nowrap';
+                    }
+                    if (isHeading && prop === 'wordBreak') {
+                      val = 'keep-all';
+                    }
                     if (val) {
                       if (val.includes('oklch') || val.includes('oklab') || val.includes('okl')) {
                         // Replace oklch/oklab color with grey/text standard color values if computed style returns it
@@ -1008,15 +1021,20 @@ function StudioCoreAiryBuilderContent() {
           canvas = await html2canvas(pageEl, { scale: 1.5, logging: false });
         }
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
         if (i === 0) {
-          pdf = new jsPDF({ unit: 'px', format: [widthPx, heightPx], orientation: 'p' });
+          pdf = new jsPDF({
+            unit: 'px',
+            format: [widthPx, heightPx],
+            orientation: 'portrait',
+            compress: true
+          });
         } else {
-          pdf?.addPage([widthPx, heightPx], 'p');
+          pdf?.addPage([widthPx, heightPx], 'portrait');
         }
 
-        pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx);
+        pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx, undefined, 'FAST');
       }
 
       if (pdf) {
@@ -1649,6 +1667,7 @@ function StudioCoreAiryBuilderContent() {
         .pdf-capture-active .couple-name-heading {
           white-space: nowrap !important;
           word-break: keep-all !important;
+          letter-spacing: normal !important;
         }
         @media print {
           @page {
