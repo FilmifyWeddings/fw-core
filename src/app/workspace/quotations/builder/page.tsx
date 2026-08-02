@@ -910,7 +910,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // DYNAMIC PAGE HEIGHT HIGH-DPI PDF EXPORT ENGINE (jsPDF + html2canvas 2.5x)
+  // INSTANT FAST-BUFFER DYNAMIC HEIGHT PDF EXPORT ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -922,73 +922,57 @@ function StudioCoreAiryBuilderContent() {
     document.body.classList.add('pdf-capture-active');
 
     try {
-      await ensureFontsReady();
-      await new Promise(r => setTimeout(r, 400));
+      // Fast font readiness timeout (max 500ms) to ensure execution never hangs
+      await Promise.race([
+        ensureFontsReady(),
+        new Promise(r => setTimeout(r, 500))
+      ]);
 
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
 
       const pageElements = canvasRef.current.querySelectorAll('.quotation-page');
-      if (!pageElements || !pageElements.length) {
-        alert('No quotation pages found to export.');
-        return;
-      }
+      if (!pageElements || !pageElements.length) return;
 
       let pdf: InstanceType<typeof jsPDF> | null = null;
       const widthPx = 794;
 
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
-        const pageHeightPx = Math.round(pageEl.getBoundingClientRect().height || pageEl.offsetHeight || 1123);
+        const heightPx = pageEl.offsetHeight || 1123;
 
         let canvas: HTMLCanvasElement | null = null;
 
-        // High-DPI capture (scale 2.5) for crisp rendering < 10MB
         try {
           canvas = await html2canvas(pageEl, {
-            scale: 2.5,
+            scale: 2,
             useCORS: true,
             allowTaint: true,
-            imageTimeout: 15000,
             logging: false,
-            backgroundColor: activeTheme.background || '#FFFFFF',
-            scrollX: 0,
-            scrollY: 0
+            backgroundColor: null,
+            windowWidth: widthPx
           });
-        } catch (primaryErr) {
-          console.warn(`Primary html2canvas capture failed for page ${i + 1}, retrying without CORS:`, primaryErr);
-          try {
-            canvas = await html2canvas(pageEl, {
-              scale: 2.5,
-              allowTaint: true,
-              imageTimeout: 15000,
-              logging: false,
-              backgroundColor: activeTheme.background || '#FFFFFF',
-              scrollX: 0,
-              scrollY: 0
-            });
-          } catch (fallbackErr) {
-            console.error(`Page ${i + 1} capture failed:`, fallbackErr);
-            continue;
-          }
+        } catch (err) {
+          console.warn(`html2canvas page ${i + 1} capture fallback:`, err);
+          canvas = await html2canvas(pageEl, {
+            scale: 2,
+            allowTaint: true,
+            logging: false,
+            backgroundColor: null,
+            windowWidth: widthPx
+          });
         }
 
         if (canvas && canvas.width > 0 && canvas.height > 0) {
-          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          const imgData = canvas.toDataURL('image/jpeg', 0.92);
 
-          if (!pdf) {
-            // Initialize jsPDF with exact dynamic height of page 1
-            pdf = new jsPDF({
-              unit: 'px',
-              format: [widthPx, pageHeightPx],
-              orientation: 'portrait'
-            });
+          if (i === 0) {
+            pdf = new jsPDF({ unit: 'px', format: [widthPx, heightPx], orientation: 'p' });
           } else {
-            // Append page with exact dynamic height of page i
-            pdf.addPage([widthPx, pageHeightPx], 'portrait');
+            pdf?.addPage([widthPx, heightPx], 'p');
           }
 
-          pdf.addImage(imgData, 'JPEG', 0, 0, widthPx, pageHeightPx);
+          pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx);
         }
       }
 
@@ -998,7 +982,7 @@ function StudioCoreAiryBuilderContent() {
         setTimeout(() => setPdfToastMessage(null), 3000);
       }
     } catch (err) {
-      console.error('Dynamic height PDF export error:', err);
+      console.error('Fast PDF export error:', err);
       alert('Failed to generate PDF. Please try again.');
       setPdfToastMessage(null);
     } finally {
