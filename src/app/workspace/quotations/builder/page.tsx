@@ -304,7 +304,7 @@ const DEFAULT_AIRY_PROPOSAL = {
   }
 };
 
-// Canva-Style Visual Swatch Dropdown Component
+// Canva-Style Visual COLOR PALETTE Dropdown Component
 interface CanvaThemeSelectorProps {
   value: string;
   onChange: (themeName: string) => void;
@@ -327,20 +327,20 @@ function CanvaThemeSelector({ value, onChange }: CanvaThemeSelectorProps) {
   }, []);
 
   return (
-    <div className="relative space-y-1" ref={containerRef}>
-      <label className="block text-[10px] uppercase font-bold text-amber-700">Theme / Color Palette</label>
+    <div className="relative space-y-1 w-full" ref={containerRef}>
+      <label className="block text-[10px] uppercase font-extrabold text-amber-800 tracking-wider">COLOR PALETTE</label>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full p-2 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-950 font-bold text-xs flex items-center justify-between cursor-pointer hover:bg-amber-100/70 transition-all shadow-2xs"
+        className="w-full p-2.5 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-950 font-bold text-xs flex items-center justify-between cursor-pointer hover:bg-amber-100/80 transition-all shadow-2xs"
       >
-        <div className="flex items-center gap-2 truncate">
+        <div className="flex items-center gap-2.5 truncate">
           {/* Side-by-Side Dual Color Swatch */}
           <div className="w-5 h-5 rounded-full overflow-hidden border border-slate-300 flex shrink-0 shadow-2xs">
             <div className="w-1/2 h-full" style={{ backgroundColor: activeTheme.primary }} />
             <div className="w-1/2 h-full" style={{ backgroundColor: activeTheme.background }} />
           </div>
-          <span className="truncate">{activeTheme.name}</span>
+          <span className="truncate text-xs font-black">{activeTheme.name}</span>
         </div>
         <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" />
       </button>
@@ -351,7 +351,7 @@ function CanvaThemeSelector({ value, onChange }: CanvaThemeSelectorProps) {
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 space-y-1 max-h-60 overflow-y-auto"
+            className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 space-y-1 max-h-64 overflow-y-auto"
           >
             {COLOR_THEMES.map(theme => {
               const isSelected = activeTheme.name === theme.name;
@@ -375,7 +375,7 @@ function CanvaThemeSelector({ value, onChange }: CanvaThemeSelectorProps) {
                       <div className="w-1/2 h-full" style={{ backgroundColor: theme.primary }} />
                       <div className="w-1/2 h-full" style={{ backgroundColor: theme.background }} />
                     </div>
-                    <span className="truncate">{theme.name}</span>
+                    <span className="truncate font-bold">{theme.name}</span>
                   </div>
                   {isSelected && <Check className="w-3.5 h-3.5 text-amber-800 shrink-0" />}
                 </button>
@@ -1046,7 +1046,7 @@ function StudioCoreAiryBuilderContent() {
   // Sidebar Controls JSX block
   const renderSidebarControls = () => (
     <div className="space-y-4">
-      {/* Design Name & Look Theme */}
+      {/* Design Name & COLOR PALETTE */}
       <div className="space-y-3">
         <div>
           <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Design name</label>
@@ -1058,26 +1058,11 @@ function StudioCoreAiryBuilderContent() {
           />
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Event type</label>
-            <select
-              value={data.eventGroup}
-              onChange={(e) => setData({ ...data, eventGroup: e.target.value })}
-              className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
-            >
-              <option value="Pre-Wedding">Pre-Wedding</option>
-              <option value="Wedding Gold">Wedding Gold</option>
-              <option value="Destination">Destination</option>
-            </select>
-          </div>
-
-          {/* Canva-Style Visual Theme Swatch Selector */}
-          <CanvaThemeSelector
-            value={data.look}
-            onChange={(themeName) => setData({ ...data, look: themeName })}
-          />
-        </div>
+        {/* Canva-Style Visual COLOR PALETTE Selector (Full Width) */}
+        <CanvaThemeSelector
+          value={data.look}
+          onChange={(themeName) => setData({ ...data, look: themeName })}
+        />
 
         {/* Canva-Style Typography Customizers */}
         <div className="space-y-3 pt-2 border-t border-zinc-100">
