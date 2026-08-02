@@ -1,25 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { html, url, filename = 'Quotation_Proposal.pdf' } = body;
 
-    let chromiumModule: any;
-    let puppeteer: typeof import('puppeteer-core');
+    let chromiumModule: any = null;
+    let puppeteerModule: any = null;
 
     try {
       chromiumModule = (await import('@sparticuz/chromium')).default;
-      puppeteer = await import('puppeteer-core');
+      puppeteerModule = await import('puppeteer-core');
     } catch (e: any) {
-      return NextResponse.json({ error: `Puppeteer modules import error: ${e?.message}` }, { status: 500 });
+      console.warn('[Puppeteer Import Warning]:', e?.message);
+      return NextResponse.json({ error: 'PDF generation module unavailable on server' }, { status: 500 });
     }
 
-    const executablePath = typeof chromiumModule?.executablePath === 'function' 
-      ? await chromiumModule.executablePath() 
-      : (process.env.CHROMIUM_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe');
+    let executablePath = process.env.CHROMIUM_PATH || '';
+    if (!executablePath && chromiumModule && typeof chromiumModule.executablePath === 'function') {
+      try {
+        executablePath = await chromiumModule.executablePath();
+      } catch (err: any) {
+        console.warn('[Chromium Executable Path Warning]:', err?.message);
+      }
+    }
 
-    const browser = await puppeteer.launch({
+    if (!executablePath) {
+      return NextResponse.json({ error: 'Chromium binary path not configured on server' }, { status: 500 });
+    }
+
+    const browser = await puppeteerModule.launch({
       args: chromiumModule?.args || ['--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: { width: 794, height: 1123, deviceScaleFactor: 2 },
       executablePath,
@@ -30,9 +43,9 @@ export async function POST(req: NextRequest) {
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
 
     if (url) {
-      await page.goto(url, { waitUntil: 'networkidle0' as any, timeout: 30000 });
+      await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
     } else if (html) {
-      await page.setContent(html, { waitUntil: 'networkidle0' as any, timeout: 30000 });
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
     } else {
       await browser.close();
       return NextResponse.json({ error: 'No HTML or URL provided for PDF generation' }, { status: 400 });
