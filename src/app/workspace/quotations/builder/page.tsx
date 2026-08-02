@@ -951,13 +951,33 @@ function StudioCoreAiryBuilderContent() {
             backgroundColor: activeTheme.background || '#FFFFFF',
             windowWidth: widthPx,
             onclone: (clonedDoc, clonedElement) => {
+              // 1. Sanitize all <style> tags to replace oklch/oklab rules with safe standard fallback rgb colors
+              try {
+                const styleTags = clonedDoc.querySelectorAll('style');
+                styleTags.forEach((tag) => {
+                  if (tag.textContent) {
+                    tag.textContent = tag.textContent
+                      .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
+                      .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
+                  }
+                });
+              } catch (err) {
+                console.warn('Style tag sanitization warning:', err);
+              }
+
+              // 2. Override oklch colors with computed standard rgb/rgba on all elements
               const allElements = clonedElement.querySelectorAll('*');
               allElements.forEach((el) => {
                 const htmlEl = el as HTMLElement;
                 try {
+                  // Replace in inline style cssText attributes first
+                  if (htmlEl.style && htmlEl.style.cssText) {
+                    htmlEl.style.cssText = htmlEl.style.cssText
+                      .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
+                      .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
+                  }
+
                   const style = window.getComputedStyle(htmlEl);
-                  
-                  // Convert modern oklab/oklch colors to standard rgb/rgba to prevent parser crash
                   if (style.backgroundColor && (style.backgroundColor.includes('oklab') || style.backgroundColor.includes('oklch') || style.backgroundColor.includes('okl'))) {
                     htmlEl.style.backgroundColor = style.backgroundColor;
                   }
