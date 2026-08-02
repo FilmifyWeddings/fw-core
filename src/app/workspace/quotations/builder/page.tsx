@@ -60,17 +60,17 @@ const DEFAULT_AIRY_PROPOSAL = {
   cover: {
     groomName: 'YASH',
     brideName: 'TWINKLE',
-    eventType: 'Wedding', // Dropdown: Wedding, Pre-Wedding, Destination Wedding, Engagement, Haldi & Sangeet
-    sideOption: 'Both Sides', // Dropdown: Both Sides, Groom Side, Bride Side
-    locationName: 'MUMBAI', // Manual location text e.g. MUMBAI
+    eventType: 'Wedding',
+    sideOption: 'Both Sides',
+    locationName: 'MUMBAI',
     brandName: 'FILMIFY WEDDINGS',
-    brandLogoUrl: '', // Optional uploaded logo image (PNG/JPG)
-    brandLogoSize: 64, // Logo size slider: 20px to 180px
+    brandLogoUrl: '',
+    brandLogoSize: 64,
     photoUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
-    photoHeight: 450, // Cover photo height slider: 200px to 800px
-    photoWidth: 75, // Cover photo width slider: 30% to 100%
-    photoFocalY: 50, // Vertical crop focal point 0-100%
-    showPhotoBorder: false, // Frame border toggle: false = no border line around PNG/photo
+    photoHeight: 450,
+    photoWidth: 75,
+    photoFocalY: 50,
+    showPhotoBorder: false,
     frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
   },
   
@@ -81,9 +81,9 @@ const DEFAULT_AIRY_PROPOSAL = {
     text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
     signature: 'FOUNDER & DIRECTOR, AS',
     bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
-    bottomBannerHeight: 450, // Photo height slider
+    bottomBannerHeight: 450,
     frameShape: 'full-width' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    photoFocalY: 50,  // Vertical crop focal point 0-100%
+    photoFocalY: 50,
     photoWidth: 75,
     textAlign: 'Left',
     background: 'Page colour',
@@ -98,9 +98,9 @@ const DEFAULT_AIRY_PROPOSAL = {
     deliverablesHeading: 'Deliverables',
     deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
     photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 450, // Default height matching Cover page proportion
-    photoWidth: 75,   // Same default width as cover page
-    photoFocalY: 50,  // Range 0% (Top) to 100% (Bottom) vertical focal point
+    photoHeight: 450,
+    photoWidth: 75,
+    photoFocalY: 50,
     photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
     frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     isWatermarkBackground: false,
@@ -331,13 +331,13 @@ function WedGrapherAiryBuilderContent() {
     }
   };
 
-  // 1:1 Pixel-Perfect High-Resolution Multi-Page A4 PDF Generator
+  // 1:1 Multi-Page PDF Generator (Exact Dynamic Rendered Height per Page, No Blank Pages)
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
     
-    // Temporarily reset scale to 1.0 for accurate 1:1 capture
+    // Temporarily reset zoom scale to 1.0 for unscaled 794px capturing
     setZoomScale(1.0);
 
     try {
@@ -348,52 +348,54 @@ function WedGrapherAiryBuilderContent() {
       const { jsPDF } = await import('jspdf');
 
       const pageElements = canvasRef.current.querySelectorAll('.a4-page-section');
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'pt',
-        format: 'a4',
-        compress: true,
-      });
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();   // 595.28 pt
-      const pdfHeight = pdf.internal.pageSize.getHeight(); // 841.89 pt
-
+      
       if (pageElements && pageElements.length > 0) {
+        let pdf: InstanceType<typeof jsPDF> | null = null;
+
         for (let i = 0; i < pageElements.length; i++) {
           const pageEl = pageElements[i] as HTMLElement;
+          const rect = pageEl.getBoundingClientRect();
+          const elementHeight = Math.max(200, Math.ceil(rect.height || pageEl.offsetHeight));
+          const elementWidth = 794;
+
           const canvas = await html2canvas(pageEl, {
             scale: 3, // Crisp 300 DPI Rendering
             useCORS: true,
             allowTaint: true,
             logging: false,
-            width: 794,
-            windowWidth: 794,
+            width: elementWidth,
+            height: elementHeight,
+            windowWidth: elementWidth,
+            windowHeight: elementHeight,
             backgroundColor: pageBgColor,
           });
 
-          const imgData = canvas.toDataURL('image/jpeg', 0.96);
-          if (i > 0) {
-            pdf.addPage('a4', 'p');
+          const imgData = canvas.toDataURL('image/jpeg', 0.98);
+          
+          // Calculate PDF page height in pt corresponding to exact dynamic height (794px width = 595.28 pt)
+          const pdfPageWidth = 595.28;
+          const pdfPageHeight = (elementHeight * pdfPageWidth) / elementWidth;
+
+          if (i === 0) {
+            pdf = new jsPDF({
+              orientation: 'p',
+              unit: 'pt',
+              format: [pdfPageWidth, pdfPageHeight],
+              compress: true,
+            });
+          } else if (pdf) {
+            pdf.addPage([pdfPageWidth, pdfPageHeight], 'p');
           }
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+
+          if (pdf) {
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight, undefined, 'FAST');
+          }
         }
-      } else {
-        // Fallback single canvas mode
-        const element = canvasRef.current;
-        const canvas = await html2canvas(element, {
-          scale: 2.5,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          width: 794,
-        });
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const calculatedHeight = (canvas.height * pdfWidth) / canvas.width;
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, calculatedHeight);
+        if (pdf) {
+          pdf.save(`${data.designName || 'Quotation_Proposal'}.pdf`);
+        }
       }
-
-      pdf.save(`${data.designName || 'Quotation_Proposal'}.pdf`);
     } catch (err) {
       console.error('Download PDF canvas error:', err);
       window.print();
@@ -411,7 +413,6 @@ function WedGrapherAiryBuilderContent() {
         const currentUserId = session?.user?.id || 'demo_user';
         setUserId(currentUserId);
 
-        // 1. Fetch user isolated quotation draft from Supabase
         const { data: qData } = await supabase
           .from('quotations')
           .select('content_json, title')
@@ -422,7 +423,6 @@ function WedGrapherAiryBuilderContent() {
         if (qData?.content_json) {
           setData(qData.content_json);
         } else {
-          // Check LocalStorage fallback for this user
           const localSaved = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
           if (localSaved) {
             try {
@@ -433,7 +433,6 @@ function WedGrapherAiryBuilderContent() {
           }
         }
 
-        // 2. Fetch User Gallery Images strictly isolated for Quotations
         const { data: dbImages } = await supabase
           .from('user_gallery_images')
           .select('*')
@@ -467,14 +466,12 @@ function WedGrapherAiryBuilderContent() {
       try {
         localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
         
-        // Calculate totals dynamically
         const subtotal = data.pricePayment.packagePrice;
         const discountAmt = (subtotal * data.pricePayment.discountPct) / 100;
         const discountedSubtotal = subtotal - discountAmt;
         const gstAmt = (discountedSubtotal * data.pricePayment.gstPct) / 100;
         const grandTotal = Math.round(discountedSubtotal + gstAmt);
 
-        // Auto-save to Supabase isolated workspace
         await supabase.from('quotations').upsert({
           workspace_id: userId,
           quotation_number: 'FW-2026-001',
@@ -497,13 +494,11 @@ function WedGrapherAiryBuilderContent() {
     return () => clearTimeout(timer);
   }, [data, userId]);
 
-  // Open Media Library Modal for a specific section
   const openAddImageModal = (target: 'coverLogo' | 'coverPhoto' | 'aboutUsBanner' | 'shootPhoto' | 'includedPhoto') => {
     setActiveTargetField(target);
     setMediaModalOpen(true);
   };
 
-  // Select an image from Gallery
   const handleSelectImageFromGallery = (url: string) => {
     if (!activeTargetField) return;
 
@@ -522,88 +517,6 @@ function WedGrapherAiryBuilderContent() {
     setMediaModalOpen(false);
   };
 
-  // Check Storage Limits (Max 30 MB / 10 images) & Trigger Quality Modal
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (userGalleryObjects.length >= 10) {
-      alert('Storage Limit Reached: You have reached the maximum 10 gallery images limit.');
-      return;
-    }
-
-    const currentBytes = userGalleryObjects.reduce((acc, img) => acc + (img.file_size || 0), 0);
-    if (currentBytes + file.size > 30 * 1024 * 1024) {
-      alert('Storage Limit Reached: Uploading this file exceeds your 30 MB storage limit.');
-      return;
-    }
-
-    setPendingUploadFile(file);
-    setShowQualityModal(true);
-  };
-
-  // Confirm Compressed Upload with Master Image Manager
-  const startCompressedUpload = async () => {
-    if (!pendingUploadFile || !activeTargetField) return;
-
-    setIsCompressingAndUploading(true);
-
-    try {
-      let qualityFactor = 0.88;
-      let maxDim = 2048;
-
-      if (selectedQuality === 'low') {
-        qualityFactor = 0.60;
-        maxDim = 1024;
-      } else if (selectedQuality === 'medium') {
-        qualityFactor = 0.75;
-        maxDim = 1600;
-      }
-
-      const compressedFile = await compressImageClient(pendingUploadFile, {
-        maxWidth: maxDim,
-        maxHeight: maxDim,
-        quality: qualityFactor,
-      });
-
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const imageUrl = event.target?.result as string;
-        if (imageUrl) {
-          setGalleryImages(prev => [imageUrl, ...prev]);
-          handleSelectImageFromGallery(imageUrl);
-
-          try {
-            await supabase.from('user_gallery_images').insert({
-              workspace_id: userId || 'demo_user',
-              url: imageUrl,
-              file_name: compressedFile.name,
-              file_size: compressedFile.size,
-              compression_quality: selectedQuality,
-            });
-
-            setUserGalleryObjects(prev => [{
-              url: imageUrl,
-              file_name: compressedFile.name,
-              file_size: compressedFile.size,
-              compression_quality: selectedQuality,
-            }, ...prev]);
-          } catch {
-            // fallback
-          }
-        }
-        setIsCompressingAndUploading(false);
-        setShowQualityModal(false);
-        setPendingUploadFile(null);
-      };
-      reader.readAsDataURL(compressedFile);
-    } catch (err) {
-      alert('Compression upload failed. Applied default image.');
-      setIsCompressingAndUploading(false);
-      setShowQualityModal(false);
-    }
-  };
-
   // Dynamic Theme Colors based on Look Selection
   const isGold = data.look.toLowerCase().includes('gold');
   const isDark = data.look.toLowerCase().includes('dark');
@@ -615,7 +528,6 @@ function WedGrapherAiryBuilderContent() {
   const boxBgColor = isGold ? 'rgba(138, 109, 47, 0.08)' : isDark ? '#0F1017' : 'rgba(244, 244, 245, 1)';
   const photoBorderColor = isGold ? 'rgba(138, 109, 47, 0.3)' : isDark ? '#232634' : 'rgba(228, 228, 231, 1)';
 
-  // Calculate totals dynamically
   const subtotal = data.pricePayment.packagePrice;
   const discountAmt = (subtotal * data.pricePayment.discountPct) / 100;
   const discountedSubtotal = subtotal - discountAmt;
@@ -651,7 +563,7 @@ function WedGrapherAiryBuilderContent() {
   return (
     <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 font-sans flex flex-col overflow-hidden selection:bg-black selection:text-white">
       
-      {/* ── PRINT & PDF EXPORT CSS (0px Margins, Exact A4 Page Breaks) ── */}
+      {/* ── PRINT & PDF EXPORT CSS (Dynamic Heights) ── */}
       <style jsx global>{`
         @media print {
           @page {
@@ -683,17 +595,24 @@ function WedGrapherAiryBuilderContent() {
             margin: 0 !important;
             padding: 0 !important;
           }
-          .a4-page-section {
+          .a4-page-section.cover-page {
             width: 794px !important;
-            min-height: 1123px !important;
             height: 1123px !important;
             margin: 0 auto !important;
             box-shadow: none !important;
             border: none !important;
             page-break-after: always !important;
             break-after: page !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
+          }
+          .a4-page-section.content-page {
+            width: 794px !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 auto !important;
+            box-shadow: none !important;
+            border: none !important;
+            page-break-after: always !important;
+            break-after: page !important;
           }
         }
       `}</style>
@@ -774,7 +693,7 @@ function WedGrapherAiryBuilderContent() {
             onClick={handleDownloadPDFCanvas}
             disabled={isExportingPDF}
             className="px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-            title="Download High-Res 300 DPI Multi-Page PDF"
+            title="Download High-Res Dynamic PDF (No Blank Pages)"
           >
             <Download className="w-3.5 h-3.5 text-amber-700" /> Download PDF
           </button>
@@ -901,8 +820,6 @@ function WedGrapherAiryBuilderContent() {
 
               {openCard === 'cover' && (
                 <div className="p-3 space-y-3 bg-white">
-                  
-                  {/* Couple Names (Groom & Bride) */}
                   <div className="space-y-2">
                     <span className="text-[10px] uppercase font-bold text-amber-700 block">Couple Names</span>
                     <div className="grid grid-cols-2 gap-2">
@@ -929,7 +846,6 @@ function WedGrapherAiryBuilderContent() {
                     </div>
                   </div>
 
-                  {/* Event Type Dropdown */}
                   <div className="space-y-1">
                     <label className="block text-[10px] uppercase font-bold text-zinc-400">Event Type</label>
                     <select
@@ -945,7 +861,6 @@ function WedGrapherAiryBuilderContent() {
                     </select>
                   </div>
 
-                  {/* Subtitle / Side & Location Controls */}
                   <div className="space-y-2 pt-2 border-t border-zinc-100">
                     <span className="text-[10px] uppercase font-bold text-zinc-400 block">Side & Location</span>
                     <div className="grid grid-cols-2 gap-2">
@@ -975,7 +890,6 @@ function WedGrapherAiryBuilderContent() {
                     </div>
                   </div>
 
-                  {/* Brand Name & Brand Logo */}
                   <div className="space-y-2 pt-2 border-t border-zinc-100">
                     <span className="text-[10px] uppercase font-bold text-zinc-400 block">Brand Name & Logo</span>
                     <input
@@ -1028,7 +942,6 @@ function WedGrapherAiryBuilderContent() {
                     </div>
                   </div>
 
-                  {/* Cover Photo Add Image & Layout Selector */}
                   <div className="space-y-2 pt-2 border-t border-zinc-100">
                     <span className="text-[10px] uppercase font-bold text-zinc-400 block">Cover Photo & Frame</span>
                     
@@ -1053,7 +966,6 @@ function WedGrapherAiryBuilderContent() {
                           type="button"
                           onClick={() => setData({ ...data, cover: { ...data.cover, photoUrl: '' } })}
                           className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
-                          title="Delete Photo"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1359,16 +1271,16 @@ function WedGrapherAiryBuilderContent() {
               transform: `scale(${zoomScale})`, 
               transformOrigin: 'top center',
               width: '794px',
-              marginBottom: `${(zoomScale - 1) * 2400}px`
+              marginBottom: `${(zoomScale - 1) * 2000}px`
             }}
             ref={canvasRef}
           >
 
             {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 1: COVER PAGE (FIXED A4 794px x 1123px ASPECT RATIO)     */}
+            {/* PAGE 1: COVER PAGE (STRICTLY FIXED A4 794px x 1123px)          */}
             {/* ═════════════════════════════════════════════════════════════ */}
             <div 
-              className="a4-page-section w-[794px] h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 border border-zinc-300/60 select-none"
+              className="a4-page-section cover-page w-[794px] h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 border border-zinc-300/60 select-none"
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor,
@@ -1385,15 +1297,14 @@ function WedGrapherAiryBuilderContent() {
                     className="w-full h-full object-cover block"
                     style={{ objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` }}
                   />
-                  {/* Subtle Contrast Overlay Tint */}
                   <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
                 </div>
               )}
 
-              {/* COVER CONTENT LAYER (ALWAYS STRICTLY VERTICALLY & HORIZONTALLY CENTERED) */}
+              {/* COVER CONTENT LAYER (VERTICALLY & HORIZONTALLY CENTERED OVERLAY) */}
               <div className="relative z-10 flex flex-col items-center justify-between h-full w-full p-12 py-16 text-center my-auto">
                 
-                {/* Top Section / Brand Header */}
+                {/* Brand Logo Header */}
                 <div className="w-full flex flex-col items-center justify-center space-y-2">
                   {data.cover.brandLogoUrl ? (
                     <img 
@@ -1414,10 +1325,9 @@ function WedGrapherAiryBuilderContent() {
                   )}
                 </div>
 
-                {/* Center Content Section (Couple Names & Event Type) */}
+                {/* Center Content Section */}
                 <div className="w-full space-y-6 flex flex-col items-center justify-center my-auto">
                   
-                  {/* Couple Names */}
                   <div className="space-y-1">
                     <h1 
                       className="text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm"
@@ -1434,7 +1344,6 @@ function WedGrapherAiryBuilderContent() {
                     </h1>
                   </div>
 
-                  {/* Non-Background Frame Shapes (Arch, Rounded, Rectangle, Full Width) */}
                   {data.cover.photoUrl && data.cover.frameShape !== 'background' && (
                     <div className="w-full my-4">
                       {data.cover.frameShape === 'full-width' ? (
@@ -1475,7 +1384,6 @@ function WedGrapherAiryBuilderContent() {
                     </div>
                   )}
 
-                  {/* Event Type & Subtitle */}
                   <div className="space-y-2 pt-2">
                     <h3 
                       className="text-base tracking-[0.2em] uppercase font-bold"
@@ -1493,7 +1401,6 @@ function WedGrapherAiryBuilderContent() {
 
                 </div>
 
-                {/* Footer Tag */}
                 <div className="w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80" style={{ color: data.cover.frameShape === 'background' && data.cover.photoUrl ? '#E5E7EB' : kickerColor }}>
                   EXCLUSIVELY PREPARED FOR YOU
                 </div>
@@ -1502,10 +1409,10 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 2: ABOUT US & MONOGRAM (FIXED A4 794px x 1123px)         */}
+            {/* PAGE 2: ABOUT US & MONOGRAM (DYNAMIC HEIGHT FLEX ENGINE)      */}
             {/* ═════════════════════════════════════════════════════════════ */}
             <div 
-              className="a4-page-section w-[794px] min-h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 transition-colors duration-300 border border-zinc-300/60"
+              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor,
@@ -1513,23 +1420,17 @@ function WedGrapherAiryBuilderContent() {
               }}
             >
               
-              {/* Birds Graphic */}
-              <div className="absolute top-8 right-12 pointer-events-none opacity-85">
-                <div 
-                  className="w-[240px] h-[120px]"
-                  style={{
-                    backgroundColor: kickerColor || textColor,
-                    WebkitMaskImage: `url(/images/Birds.svg)`,
-                    maskImage: `url(/images/Birds.svg)`,
-                    WebkitMaskRepeat: 'no-repeat',
-                    maskRepeat: 'no-repeat',
-                    WebkitMaskSize: 'contain',
-                    maskSize: 'contain',
-                  }}
+              {/* Birds SVG Image (Clean 100% html2canvas rendering) */}
+              <div className="absolute top-6 right-10 pointer-events-none opacity-85">
+                <img 
+                  src="/images/Birds.svg" 
+                  alt="Birds" 
+                  className="w-[220px] h-auto object-contain block"
+                  style={{ filter: isDark ? 'brightness(2)' : 'none' }}
                 />
               </div>
 
-              <div className="space-y-8 my-auto text-center w-full relative z-10">
+              <div className="space-y-6 my-auto text-center w-full relative z-10 py-4">
                 <span className="text-xs tracking-[0.25em] uppercase font-bold block" style={{ color: kickerColor }}>
                   {data.aboutUs.kicker || 'INTRODUCTION'}
                 </span>
@@ -1538,20 +1439,13 @@ function WedGrapherAiryBuilderContent() {
                   {data.aboutUs.heading || 'ABOUT US'}
                 </h2>
 
-                {/* Artistic Layered Monogram */}
+                {/* Monogram SVG Image (Clean 100% html2canvas rendering) */}
                 <div className="flex flex-col items-center justify-center my-4 select-none">
-                  <div 
-                    className="w-[280px] h-[140px]"
-                    style={{
-                      backgroundColor: textColor,
-                      WebkitMaskImage: `url(/images/A%26U.svg)`,
-                      maskImage: `url(/images/A%26U.svg)`,
-                      WebkitMaskRepeat: 'no-repeat',
-                      maskRepeat: 'no-repeat',
-                      WebkitMaskSize: 'contain',
-                      maskSize: 'contain',
-                      WebkitMaskPosition: 'center',
-                    }}
+                  <img 
+                    src="/images/A%26U.svg" 
+                    alt="Monogram" 
+                    className="w-[260px] h-auto object-contain block mx-auto"
+                    style={{ filter: isDark ? 'brightness(2)' : 'none' }}
                   />
                 </div>
 
@@ -1569,9 +1463,9 @@ function WedGrapherAiryBuilderContent() {
                 </div>
               </div>
 
-              {/* Full-Bleed Banner Photo (100% 0px Gap) */}
+              {/* Full-Bleed Banner Photo */}
               {data.aboutUs.bottomBannerPhoto && (
-                <div className="-mx-12 -mb-12 w-[794px] overflow-hidden shrink-0 mt-6">
+                <div className="-mx-12 -mb-10 w-[794px] overflow-hidden shrink-0 mt-6">
                   <img
                     src={data.aboutUs.bottomBannerPhoto}
                     alt="About Us Full Bleed"
@@ -1587,10 +1481,10 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 3: PRE-WEDDING SHOOT DETAILS (FIXED A4 794px x 1123px)    */}
+            {/* PAGE 3: PRE-WEDDING SHOOT DETAILS (DYNAMIC HEIGHT FLEX ENGINE)*/}
             {/* ═════════════════════════════════════════════════════════════ */}
             <div 
-              className="a4-page-section w-[794px] min-h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 p-12"
+              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 p-12 py-10"
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor,
@@ -1598,7 +1492,7 @@ function WedGrapherAiryBuilderContent() {
               }}
             >
               
-              {/* Full-Bleed Watermark Overlay (Option 5) */}
+              {/* Full-Bleed Watermark Overlay */}
               {data.shootDetails.photo && data.shootDetails.frameShape === 'background' && (
                 <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden w-full h-full">
                   <img 
@@ -1610,7 +1504,7 @@ function WedGrapherAiryBuilderContent() {
                 </div>
               )}
 
-              <div className="relative z-10 space-y-8 my-auto w-full">
+              <div className="relative z-10 space-y-6 my-auto w-full py-2">
                 
                 <div className="text-center space-y-2">
                   <span className="text-xs tracking-[0.25em] uppercase font-bold block" style={{ color: kickerColor }}>
@@ -1643,7 +1537,7 @@ function WedGrapherAiryBuilderContent() {
                 </div>
 
                 {/* Deliverables */}
-                <div className="pt-4 space-y-4 max-w-lg mx-auto pl-4">
+                <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4">
                   <h3 
                     className="text-2xl tracking-wide font-normal text-left" 
                     style={{ color: textColor, fontFamily: data.primaryFont }}
@@ -1665,7 +1559,7 @@ function WedGrapherAiryBuilderContent() {
 
                 {/* Full-Bleed Edge-to-Edge Photo Layout */}
                 {data.shootDetails.photo && data.shootDetails.frameShape === 'full-width' && (
-                  <div className="-mx-12 -mb-12 w-[794px] overflow-hidden mt-6">
+                  <div className="-mx-12 -mb-10 w-[794px] overflow-hidden mt-6">
                     <img 
                       src={data.shootDetails.photo} 
                       alt="Pre-Wedding Full Bleed"
@@ -1709,17 +1603,17 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 4: WHAT'S INCLUDED (FIXED A4 794px x 1123px)             */}
+            {/* PAGE 4: WHAT'S INCLUDED (DYNAMIC HEIGHT FLEX ENGINE)          */}
             {/* ═════════════════════════════════════════════════════════════ */}
             <div 
-              className="a4-page-section w-[794px] min-h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 transition-colors duration-300 border border-zinc-300/60"
+              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor,
                 fontFamily: data.secondaryFont
               }}
             >
-              <div className="space-y-6 my-auto w-full">
+              <div className="space-y-6 my-auto w-full py-2">
                 <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
                   {data.whatsIncluded.kicker}
                 </span>
@@ -1732,9 +1626,9 @@ function WedGrapherAiryBuilderContent() {
                 </div>
 
                 {data.whatsIncluded.photo && (
-                  <div className="pt-4">
+                  <div className="pt-2">
                     {data.whatsIncluded.frameShape === 'full-width' ? (
-                      <div className="-mx-12 w-[794px] overflow-hidden">
+                      <div className="-mx-12 -mb-10 w-[794px] overflow-hidden mt-4">
                         <img 
                           src={data.whatsIncluded.photo} 
                           alt="Included Full Bleed" 
@@ -1772,20 +1666,20 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 5: INVESTMENT & ADD-ONS TABLE (FIXED A4 794px x 1123px)   */}
+            {/* PAGE 5: INVESTMENT & ADD-ONS TABLE (DYNAMIC HEIGHT FLEX ENGINE) */}
             {/* ═════════════════════════════════════════════════════════════ */}
             <div 
-              className="a4-page-section w-[794px] min-h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 transition-colors duration-300 border border-zinc-300/60"
+              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor,
                 fontFamily: data.secondaryFont
               }}
             >
-              <div className="space-y-8 my-auto w-full">
+              <div className="space-y-6 my-auto w-full py-2">
                 
                 {/* Price Section */}
-                <div className="space-y-4 border-b pb-8" style={{ borderColor }}>
+                <div className="space-y-4 border-b pb-6" style={{ borderColor }}>
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: kickerColor }}>
                     {data.pricePayment.kicker}
                   </span>
@@ -1797,14 +1691,14 @@ function WedGrapherAiryBuilderContent() {
                     ₹{grandTotal.toLocaleString('en-IN')}
                   </div>
 
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <span className="text-xs font-bold uppercase block" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
                     <p className="text-xs font-medium" style={{ color: textColor }}>{data.pricePayment.paymentTerms}</p>
                   </div>
                 </div>
 
                 {/* Add-ons Table */}
-                <div className="space-y-4 pt-4">
+                <div className="space-y-3 pt-2">
                   <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.addOnsTable.heading}
                   </h2>
@@ -1836,20 +1730,20 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* ═════════════════════════════════════════════════════════════ */}
-            {/* PAGE 6: DELIVERY TIMELINE & TERMS (FIXED A4 794px x 1123px)   */}
+            {/* PAGE 6: DELIVERY TIMELINE & TERMS (DYNAMIC HEIGHT FLEX ENGINE)*/}
             {/* ═════════════════════════════════════════════════════════════ */}
             <div 
-              className="a4-page-section w-[794px] min-h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 transition-colors duration-300 border border-zinc-300/60"
+              className="a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between p-12 py-10 transition-colors duration-300 border border-zinc-300/60"
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor,
                 fontFamily: data.secondaryFont
               }}
             >
-              <div className="space-y-8 my-auto w-full">
+              <div className="space-y-6 my-auto w-full py-2">
                 
                 {/* Timeline Table */}
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.timelineTable.heading}
                   </h2>
@@ -1877,15 +1771,15 @@ function WedGrapherAiryBuilderContent() {
                 </div>
 
                 {/* Terms & Thank You */}
-                <div className="space-y-6 pt-6 border-t" style={{ borderColor }}>
-                  <div className="space-y-2">
+                <div className="space-y-5 pt-4 border-t" style={{ borderColor }}>
+                  <div className="space-y-1.5">
                     <h2 className="text-xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.termsAndThankYou.termsHeading}
                     </h2>
                     <p className="text-xs leading-relaxed opacity-90">{data.termsAndThankYou.termsText}</p>
                   </div>
 
-                  <div className="text-center pt-8 border-t space-y-2" style={{ borderColor }}>
+                  <div className="text-center pt-6 border-t space-y-2" style={{ borderColor }}>
                     <h2 className="text-2xl uppercase tracking-widest font-normal" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.termsAndThankYou.thankYouHeading}
                     </h2>
