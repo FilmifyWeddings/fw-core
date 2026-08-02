@@ -949,7 +949,29 @@ function StudioCoreAiryBuilderContent() {
             allowTaint: true,
             logging: false,
             backgroundColor: activeTheme.background || '#FFFFFF',
-            windowWidth: widthPx
+            windowWidth: widthPx,
+            onclone: (clonedDoc, clonedElement) => {
+              const allElements = clonedElement.querySelectorAll('*');
+              allElements.forEach((el) => {
+                const htmlEl = el as HTMLElement;
+                try {
+                  const style = window.getComputedStyle(htmlEl);
+                  
+                  // Convert modern oklab/oklch colors to standard rgb/rgba to prevent parser crash
+                  if (style.backgroundColor && (style.backgroundColor.includes('oklab') || style.backgroundColor.includes('oklch') || style.backgroundColor.includes('okl'))) {
+                    htmlEl.style.backgroundColor = style.backgroundColor;
+                  }
+                  if (style.color && (style.color.includes('oklab') || style.color.includes('oklch') || style.color.includes('okl'))) {
+                    htmlEl.style.color = style.color;
+                  }
+                  if (style.borderColor && (style.borderColor.includes('oklab') || style.borderColor.includes('oklch') || style.borderColor.includes('okl'))) {
+                    htmlEl.style.borderColor = style.borderColor;
+                  }
+                } catch (e) {
+                  // ignore style read errors
+                }
+              });
+            }
           });
         } catch (canvasErr) {
           console.warn(`Fallback render for page ${i + 1}:`, canvasErr);
