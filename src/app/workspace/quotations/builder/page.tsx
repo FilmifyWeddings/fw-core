@@ -14,6 +14,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
+import { CanvaFontSelector } from '@/components/CanvaFontSelector';
+import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 
 // World-Class Premium Luxury Minimal Fonts
 const LUXURY_PRIMARY_FONTS = [
@@ -78,7 +80,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
     signature: 'FOUNDER & DIRECTOR, AS',
     bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
-    bottomBannerHeight: 200, // Photo height slider
+    bottomBannerHeight: 450, // Photo height slider
     frameShape: 'full-width' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     photoFocalY: 50,  // Vertical crop focal point 0-100%
     photoWidth: 75,
@@ -95,7 +97,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     deliverablesHeading: 'Deliverables',
     deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
     photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 320, // Default compact height matching Cover page proportion for Arch/Rounded/Rect
+    photoHeight: 450, // Default height matching Cover page proportion
     photoWidth: 75,   // Same default width as cover page
     photoFocalY: 50,  // Range 0% (Top) to 100% (Bottom) vertical focal point
     photoAlignment: 'Center Card' as 'Left Fit' | 'Right Fit' | 'Center Card' | 'Full Bleed',
@@ -114,7 +116,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     textAlign: 'Left',
     background: 'Page colour',
     photo: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
-    photoHeight: 320,
+    photoHeight: 450,
     frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     photoFocalY: 50,
     photoWidth: 75,
@@ -251,6 +253,8 @@ function WedGrapherAiryBuilderContent() {
   const searchParams = useSearchParams();
 
   const hiddenFileInputRef = useRef<HTMLInputElement>(null);
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   
   const [data, setData] = useState(DEFAULT_AIRY_PROPOSAL);
   const [userId, setUserId] = useState<string>('');
@@ -259,6 +263,10 @@ function WedGrapherAiryBuilderContent() {
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Saved');
   const [copiedLink, setCopiedLink] = useState(false);
   const [openCard, setOpenCard] = useState<string | null>('cover');
+
+  // Viewport Zoom & Scaling Engine (A4 794px base)
+  const [zoomScale, setZoomScale] = useState<number>(1.0);
+  const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
 
   // Media Gallery Modal State & Compression Quality Modal
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
@@ -276,6 +284,65 @@ function WedGrapherAiryBuilderContent() {
     'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&q=80',
     'https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=800&q=80',
   ]);
+
+  // Load Custom Fonts from API on initial mount
+  useEffect(() => {
+    loadCustomFontsFromAPI();
+  }, []);
+
+  // Ensure initial primary and secondary fonts are registered
+  useEffect(() => {
+    if (data.primaryFont) registerFontFace({ name: data.primaryFont.replace(/['"]/g, '').split(',')[0], family: data.primaryFont, category: 'Luxury Serif' });
+    if (data.secondaryFont) registerFontFace({ name: data.secondaryFont.replace(/['"]/g, '').split(',')[0], family: data.secondaryFont, category: 'Minimal Sans-Serif' });
+  }, [data.primaryFont, data.secondaryFont]);
+
+  // High Quality PDF Export Handlers with Font Preloading
+  const handleCleanPDFExport = async () => {
+    setIsExportingPDF(true);
+    try {
+      await ensureFontsReady();
+      await new Promise(r => setTimeout(r, 150));
+      window.print();
+    } catch (err) {
+      console.error('Clean PDF export error:', err);
+      window.print();
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
+  const handleDownloadPDFCanvas = async () => {
+    if (!canvasRef.current) return;
+    setIsExportingPDF(true);
+    try {
+      await ensureFontsReady();
+      await new Promise(r => setTimeout(r, 200));
+
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+
+      const element = canvasRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'pt', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${data.designName || 'Quotation'}.pdf`);
+    } catch (err) {
+      console.error('Download PDF canvas error:', err);
+      window.print();
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
 
   // Load User Session & Isolated Saved Proposal
   useEffect(() => {
@@ -542,6 +609,8 @@ function WedGrapherAiryBuilderContent() {
             background: #ffffff !important;
             color: #000000 !important;
             overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           header, aside, .no-print, button, nav {
             display: none !important;
@@ -558,9 +627,12 @@ function WedGrapherAiryBuilderContent() {
             width: 100% !important;
             box-shadow: none !important;
             margin: 0 !important;
-            padding: 2.5rem !important;
+            padding: 12mm 15mm !important;
             border: none !important;
-            page-break-after: always;
+          }
+          .pdf-section-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
@@ -591,10 +663,21 @@ function WedGrapherAiryBuilderContent() {
           </Link>
 
           <button
-            onClick={() => window.print()}
-            className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            onClick={handleCleanPDFExport}
+            disabled={isExportingPDF}
+            className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="Export Clean PDF (Print View)"
           >
-            <Printer className="w-3.5 h-3.5 text-amber-700" /> Clean PDF
+            <Printer className="w-3.5 h-3.5 text-amber-700" /> {isExportingPDF ? 'Preparing PDF...' : 'Clean PDF'}
+          </button>
+
+          <button
+            onClick={handleDownloadPDFCanvas}
+            disabled={isExportingPDF}
+            className="px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+            title="Download Vector Canvas PDF"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-700" /> Download PDF
           </button>
 
           <button
@@ -675,37 +758,29 @@ function WedGrapherAiryBuilderContent() {
               </div>
             </div>
 
-            {/* Typography Customizers: Main Font & Sub Font Dropdowns */}
-            <div className="space-y-2 pt-2 border-t border-zinc-100">
+            {/* Canva-Style Typography Customizers: Main Font & Sub Font */}
+            <div className="space-y-3 pt-2 border-t border-zinc-100">
               <span className="text-[10px] uppercase font-bold text-purple-700 flex items-center gap-1">
-                <Type className="w-3 h-3" /> Premium Typography Fonts
+                <Type className="w-3 h-3" /> Canva-Style Typography Engine
               </span>
 
-              <div>
-                <label className="block text-[9px] font-bold text-zinc-500 mb-1">Main Font (Headings & Names)</label>
-                <select
-                  value={data.primaryFont}
-                  onChange={(e) => setData({ ...data, primaryFont: e.target.value })}
-                  className="w-full p-2 rounded-xl bg-purple-50/40 border border-purple-200 font-bold text-purple-950 focus:outline-none"
-                >
-                  {LUXURY_PRIMARY_FONTS.map(f => (
-                    <option key={f.family} value={f.family}>{f.name}</option>
-                  ))}
-                </select>
-              </div>
+              <CanvaFontSelector
+                label="Main Font (Headings & Names)"
+                value={data.primaryFont}
+                onChange={(family, fontItem) => {
+                  registerFontFace(fontItem);
+                  setData({ ...data, primaryFont: family });
+                }}
+              />
 
-              <div>
-                <label className="block text-[9px] font-bold text-zinc-500 mb-1">Sub Font (Body Text & Tables)</label>
-                <select
-                  value={data.secondaryFont}
-                  onChange={(e) => setData({ ...data, secondaryFont: e.target.value })}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 font-medium text-zinc-900 focus:outline-none"
-                >
-                  {LUXURY_SECONDARY_FONTS.map(f => (
-                    <option key={f.family} value={f.family}>{f.name}</option>
-                  ))}
-                </select>
-              </div>
+              <CanvaFontSelector
+                label="Sub Font (Body Text & Tables)"
+                value={data.secondaryFont}
+                onChange={(family, fontItem) => {
+                  registerFontFace(fontItem);
+                  setData({ ...data, secondaryFont: family });
+                }}
+              />
             </div>
 
           </div>
@@ -1636,106 +1711,196 @@ function WedGrapherAiryBuilderContent() {
         {/* ───────────────────────────────────────────────────────────── */}
         {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS                          */}
         {/* ───────────────────────────────────────────────────────────── */}
-        <main className="flex-1 bg-[#EBECEF] p-6 overflow-y-auto flex justify-center items-start">
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS                          */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        <main className="flex-1 bg-[#EBECEF] p-4 sm:p-6 overflow-y-auto overflow-x-auto flex justify-center items-start">
           
           {/* Dynamic Theme Centered Document Page (Print A4 Container) */}
           <div 
-            className="proposal-document-canvas w-full max-w-[680px] rounded-sm shadow-2xl p-10 sm:p-14 space-y-12 my-4 transition-colors duration-300 relative"
+            ref={canvasRef}
+            className="proposal-document-canvas w-[680px] shrink-0 rounded-sm shadow-2xl p-12 space-y-12 my-4 transition-colors duration-300 relative"
             style={{ 
               backgroundColor: pageBgColor, 
               color: textColor,
               borderColor: borderColor,
-              borderWidth: '1px'
+              borderWidth: '1px',
+              fontFamily: data.secondaryFont
             }}
           >
             
             {/* 1. COVER PAGE HERO (EXACT USER SCREENSHOT & TYPOGRAPHY MATCH) */}
-            <div className="text-center space-y-6 pt-4">
-              
-              {/* Couple Names (Groom & Bride - NO "X" as requested) */}
-              <div className="space-y-1">
-                <h1 
-                  className="text-4xl sm:text-5xl tracking-[0.15em] uppercase font-black leading-tight"
-                  style={{ color: textColor, fontFamily: data.primaryFont }}
-                >
-                  {data.cover.groomName || 'YASH'}
-                </h1>
-                
-                {/* Note: NO "X" icon/text as requested: "X hatado nahi chaiye" */}
+            <div className="pdf-section-break relative">
+              {data.cover.frameShape === 'background' ? (
+                /* COVER OPTION: BACKGROUND PHOTO OVERLAY (A4 Cover Sheet Style) */
+                <div className="-mx-12 -mt-12 pt-16 pb-16 px-12 relative overflow-hidden min-h-[640px] flex flex-col items-center justify-center text-center border-b" style={{ borderColor }}>
+                  {data.cover.photoUrl && (
+                    <div className="absolute inset-0 z-0 overflow-hidden">
+                      <img 
+                        src={data.cover.photoUrl} 
+                        alt="Cover Background" 
+                        className="w-full h-full object-cover"
+                        style={{ objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` }}
+                      />
+                      <div className="absolute inset-0 bg-black/40" />
+                    </div>
+                  )}
 
-                <h1 
-                  className="text-4xl sm:text-5xl tracking-[0.15em] uppercase font-black leading-tight"
-                  style={{ color: textColor, fontFamily: data.primaryFont }}
-                >
-                  {data.cover.brideName || 'TWINKLE'}
-                </h1>
-              </div>
+                  <div className="relative z-10 flex flex-col items-center justify-center space-y-6 my-auto text-center w-full">
+                    {/* Couple Names */}
+                    <div className="space-y-1">
+                      <h1 
+                        className="text-4xl tracking-[0.15em] uppercase font-black leading-tight drop-shadow-md"
+                        style={{ color: data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}
+                      >
+                        {data.cover.groomName || 'YASH'}
+                      </h1>
+                      <h1 
+                        className="text-4xl tracking-[0.15em] uppercase font-black leading-tight drop-shadow-md"
+                        style={{ color: data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}
+                      >
+                        {data.cover.brideName || 'TWINKLE'}
+                      </h1>
+                    </div>
 
-              {/* Event Type Quotation & Subtitle (Side + Location) */}
-              <div className="space-y-1.5 pt-2">
-                <h3 
-                  className="text-sm sm:text-base tracking-[0.2em] uppercase font-bold"
-                  style={{ color: textColor, fontFamily: data.primaryFont }}
-                >
-                  {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
-                </h3>
-                <p 
-                  className="text-[11px] tracking-[0.15em] uppercase font-medium opacity-85"
-                  style={{ color: kickerColor, fontFamily: data.secondaryFont }}
-                >
-                  {`${(data.cover.sideOption || 'BOTH SIDES').toUpperCase()} – ${(data.cover.locationName || 'MUMBAI').toUpperCase()}`}
-                </p>
-              </div>
+                    {/* Event Type & Subtitle */}
+                    <div className="space-y-1.5 pt-2">
+                      <h3 
+                        className="text-sm tracking-[0.2em] uppercase font-bold drop-shadow-xs"
+                        style={{ color: data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}
+                      >
+                        {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
+                      </h3>
+                      <p 
+                        className="text-[11px] tracking-[0.15em] uppercase font-medium opacity-90"
+                        style={{ color: data.cover.photoUrl ? '#F3F4F6' : kickerColor, fontFamily: data.secondaryFont }}
+                      >
+                        {`${(data.cover.sideOption || 'BOTH SIDES').toUpperCase()} – ${(data.cover.locationName || 'MUMBAI').toUpperCase()}`}
+                      </p>
+                    </div>
 
-              {/* Brand Logo / Studio Name (Transparent PNG Support) */}
-              <div className="pt-2 flex flex-col items-center justify-center bg-transparent">
-                {data.cover.brandLogoUrl ? (
-                  <img 
-                    src={data.cover.brandLogoUrl} 
-                    alt={data.cover.brandName}
-                    className="bg-transparent object-contain"
-                    style={{ height: `${data.cover.brandLogoSize || 64}px` }}
-                  />
-                ) : (
-                  <div className="text-center space-y-0.5">
-                    <div className="text-lg sm:text-xl tracking-[0.25em] uppercase font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.cover.brandName || 'FILMIFY WEDDINGS'}
+                    {/* Brand Logo / Studio Name */}
+                    <div className="pt-2 flex flex-col items-center justify-center bg-transparent">
+                      {data.cover.brandLogoUrl ? (
+                        <img 
+                          src={data.cover.brandLogoUrl} 
+                          alt={data.cover.brandName}
+                          className="bg-transparent object-contain drop-shadow-xs"
+                          style={{ height: `${data.cover.brandLogoSize || 64}px` }}
+                        />
+                      ) : (
+                        <div className="text-center space-y-0.5">
+                          <div className="text-lg tracking-[0.25em] uppercase font-black" style={{ color: data.cover.photoUrl ? '#FFFFFF' : textColor, fontFamily: data.primaryFont }}>
+                            {data.cover.brandName || 'FILMIFY WEDDINGS'}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                /* COVER OPTIONS: ARCH, ROUNDED, RECTANGLE, FULL-WIDTH */
+                <div className="text-center space-y-6 pt-4">
+                  {/* Couple Names */}
+                  <div className="space-y-1">
+                    <h1 
+                      className="text-4xl tracking-[0.15em] uppercase font-black leading-tight"
+                      style={{ color: textColor, fontFamily: data.primaryFont }}
+                    >
+                      {data.cover.groomName || 'YASH'}
+                    </h1>
+                    <h1 
+                      className="text-4xl tracking-[0.15em] uppercase font-black leading-tight"
+                      style={{ color: textColor, fontFamily: data.primaryFont }}
+                    >
+                      {data.cover.brideName || 'TWINKLE'}
+                    </h1>
+                  </div>
 
-              {/* Cover Photo Frame (Arched / Resizable with Optional Border Line) */}
-              <div 
-                className={`mx-auto mt-6 overflow-hidden shadow-lg relative transition-all duration-200 ${
-                  data.cover.frameShape === 'rounded' ? 'rounded-3xl' :
-                  data.cover.frameShape === 'rectangle' ? 'rounded-none' :
-                  'rounded-t-[999px] rounded-b-none'
-                }`}
-                style={{ 
-                  width: `${data.cover.photoWidth || 75}%`,
-                  height: `${data.cover.photoHeight || 450}px`,
-                  borderColor: data.cover.showPhotoBorder ? photoBorderColor : 'transparent', 
-                  borderWidth: data.cover.showPhotoBorder ? '1px' : '0px', 
-                  backgroundColor: 'transparent' 
-                }}
-              >
-                <img 
-                  src={data.cover.photoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80'} 
-                  alt="Wedding Couple"
-                  className="w-full h-full object-cover object-center bg-transparent"
-                />
-              </div>
+                  {/* Event Type & Subtitle */}
+                  <div className="space-y-1.5 pt-2">
+                    <h3 
+                      className="text-sm tracking-[0.2em] uppercase font-bold"
+                      style={{ color: textColor, fontFamily: data.primaryFont }}
+                    >
+                      {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
+                    </h3>
+                    <p 
+                      className="text-[11px] tracking-[0.15em] uppercase font-medium opacity-85"
+                      style={{ color: kickerColor, fontFamily: data.secondaryFont }}
+                    >
+                      {`${(data.cover.sideOption || 'BOTH SIDES').toUpperCase()} – ${(data.cover.locationName || 'MUMBAI').toUpperCase()}`}
+                    </p>
+                  </div>
 
+                  {/* Brand Logo / Studio Name */}
+                  <div className="pt-2 flex flex-col items-center justify-center bg-transparent">
+                    {data.cover.brandLogoUrl ? (
+                      <img 
+                        src={data.cover.brandLogoUrl} 
+                        alt={data.cover.brandName}
+                        className="bg-transparent object-contain"
+                        style={{ height: `${data.cover.brandLogoSize || 64}px` }}
+                      />
+                    ) : (
+                      <div className="text-center space-y-0.5">
+                        <div className="text-lg tracking-[0.25em] uppercase font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                          {data.cover.brandName || 'FILMIFY WEDDINGS'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Cover Photo - Full Width (0 margin left/right) */}
+                  {data.cover.photoUrl && data.cover.frameShape === 'full-width' && (
+                    <div className="-mx-12 -mb-12 w-[calc(100%+6rem)] max-w-none pt-4 overflow-hidden">
+                      <img 
+                        src={data.cover.photoUrl} 
+                        alt="Cover Full Bleed"
+                        className="w-full object-cover block shadow-xs"
+                        style={{ 
+                          height: `${data.cover.photoHeight || 450}px`,
+                          objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` 
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Cover Photo - Arched, Rounded, Rectangle */}
+                  {data.cover.photoUrl && ['arch', 'rounded', 'rectangle'].includes(data.cover.frameShape || 'arch') && (
+                    <div 
+                      className={`mx-auto mt-6 overflow-hidden shadow-lg relative transition-all duration-200 ${
+                        data.cover.frameShape === 'rounded' ? 'rounded-3xl' :
+                        data.cover.frameShape === 'rectangle' ? 'rounded-none' :
+                        'rounded-t-[999px] rounded-b-none'
+                      }`}
+                      style={{ 
+                        width: `${data.cover.photoWidth || 75}%`,
+                        height: `${data.cover.photoHeight || 450}px`,
+                        borderColor: data.cover.showPhotoBorder ? photoBorderColor : 'transparent', 
+                        borderWidth: data.cover.showPhotoBorder ? '1px' : '0px', 
+                        backgroundColor: 'transparent' 
+                      }}
+                    >
+                      <img 
+                        src={data.cover.photoUrl} 
+                        alt="Wedding Couple"
+                        className="w-full h-full object-cover bg-transparent"
+                        style={{ objectPosition: `50% ${data.cover.photoFocalY ?? 50}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* 2. ABOUT US SECTION (EXACT FIT: LARGER BIRDS MOVED INSIDE + 100% CUT-TO-CUT FULL BLEED IMAGE WITH ZERO MARGIN) */}
-            <div className="pt-10 border-t relative space-y-6" style={{ borderColor: borderColor }}>
+            {/* 2. ABOUT US SECTION */}
+            <div className="pdf-section-break pt-10 border-t relative space-y-6" style={{ borderColor: borderColor }}>
               
-              {/* High-Resolution Flying Birds Graphic (Bigger & Positioned Left Inside the Page) */}
-              <div className="absolute top-1 right-8 sm:right-14 pointer-events-none opacity-85">
+              {/* High-Resolution Flying Birds Graphic */}
+              <div className="absolute top-1 right-10 pointer-events-none opacity-85">
                 <div 
-                  className="w-[230px] sm:w-[270px] h-[115px] sm:h-[135px] transition-colors duration-300"
+                  className="w-[250px] h-[125px] transition-colors duration-300"
                   style={{
                     backgroundColor: kickerColor || textColor,
                     WebkitMaskImage: `url(/images/Birds.svg)`,
@@ -1750,10 +1915,10 @@ function WedGrapherAiryBuilderContent() {
                 />
               </div>
 
-              {/* Exact Artistic Layered Monogram (User's Exact A&U.svg with Dynamic Theme Color) */}
+              {/* Exact Artistic Layered Monogram */}
               <div className="flex flex-col items-center justify-center pt-4 pb-2 relative select-none">
                 <div 
-                  className="w-[240px] sm:w-[280px] h-[120px] sm:h-[140px] transition-colors duration-300"
+                  className="w-[260px] h-[130px] transition-colors duration-300"
                   style={{
                     backgroundColor: textColor,
                     WebkitMaskImage: `url(/images/A%26U.svg)`,
@@ -1768,29 +1933,16 @@ function WedGrapherAiryBuilderContent() {
                 />
               </div>
 
-              {/* Central Quote Block with Elegant Double Quotation Marks “ ” */}
-              <div className="my-6 px-2 sm:px-6 flex items-center justify-center gap-2 sm:gap-4 max-w-xl mx-auto text-center">
-                <span 
-                  className="text-4xl sm:text-5xl font-serif leading-none select-none shrink-0" 
-                  style={{ color: kickerColor }}
-                >
-                  “
-                </span>
-                <p 
-                  className="text-xs sm:text-sm leading-relaxed font-normal opacity-90 tracking-wide"
-                  style={{ color: textColor, fontFamily: data.secondaryFont }}
-                >
+              {/* Central Quote Block */}
+              <div className="my-6 px-4 flex items-center justify-center gap-3 max-w-xl mx-auto text-center">
+                <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>“</span>
+                <p className="text-xs leading-relaxed font-normal opacity-90 tracking-wide" style={{ color: textColor, fontFamily: data.secondaryFont }}>
                   {data.aboutUs.text}
                 </p>
-                <span 
-                  className="text-4xl sm:text-5xl font-serif leading-none select-none shrink-0" 
-                  style={{ color: kickerColor }}
-                >
-                  ”
-                </span>
+                <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>”</span>
               </div>
 
-              {/* About Us Photo – Shape-Aware Rendering (Arch / Rounded / Rect / Full-Width / Background) */}
+              {/* About Us Photo – Shape-Aware Rendering */}
               {data.aboutUs.bottomBannerPhoto && ['arch', 'rounded', 'rectangle'].includes(data.aboutUs.frameShape || 'full-width') && (
                 <div className="mt-4 mx-auto" style={{ width: `${data.aboutUs.photoWidth || 75}%` }}>
                   <div
@@ -1813,7 +1965,7 @@ function WedGrapherAiryBuilderContent() {
                 </div>
               )}
               {data.aboutUs.bottomBannerPhoto && (data.aboutUs.frameShape || 'full-width') === 'background' && (
-                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
+                <div className="-mx-12 -mb-12 w-[calc(100%+6rem)] max-w-none pt-4 overflow-hidden">
                   <img
                     src={data.aboutUs.bottomBannerPhoto}
                     alt="About Us Background"
@@ -1823,7 +1975,7 @@ function WedGrapherAiryBuilderContent() {
                 </div>
               )}
               {data.aboutUs.bottomBannerPhoto && (data.aboutUs.frameShape || 'full-width') === 'full-width' && (
-                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
+                <div className="-mx-12 -mb-12 w-[calc(100%+6rem)] max-w-none pt-4 overflow-hidden">
                   <img
                     src={data.aboutUs.bottomBannerPhoto}
                     alt="About Us Full Bleed"
@@ -1834,17 +1986,17 @@ function WedGrapherAiryBuilderContent() {
               )}
             </div>
 
-            {/* 3. PRE-WEDDING SHOOT PAGE SECTION (ALL 5 PHOTO LAYOUT STYLES: ARCH, ROUNDED, RECTANGLE, FULL-WIDTH & BACKGROUND WATERMARK) */}
+            {/* 3. PRE-WEDDING SHOOT PAGE SECTION */}
             <div 
-              className={`pt-10 border-t space-y-8 relative text-xs ${
+              className={`pdf-section-break pt-10 border-t space-y-8 relative text-xs ${
                 ['background', 'full-width'].includes(data.shootDetails.frameShape)
-                  ? '-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 px-10 sm:px-14 pb-10 sm:pb-14 overflow-hidden'
+                  ? '-mx-12 px-12 pb-12 overflow-hidden'
                   : 'overflow-hidden'
               }`} 
               style={{ borderColor: borderColor }}
             >
               
-              {/* Option 5: 100% Cut-To-Cut Edge-To-Edge Background Watermark (0 Space / 0 Overflow) */}
+              {/* Option 5: 100% Cut-To-Cut Background Watermark */}
               {data.shootDetails.photo && data.shootDetails.frameShape === 'background' && (
                 <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden">
                   <img 
@@ -1862,15 +2014,15 @@ function WedGrapherAiryBuilderContent() {
                 {/* Main Heading: Pre-Wedding Shoot */}
                 <div className="text-center space-y-1">
                   <h2 
-                    className="text-3xl sm:text-4xl tracking-wide font-normal" 
+                    className="text-3xl tracking-wide font-normal" 
                     style={{ color: textColor, fontFamily: data.primaryFont }}
                   >
                     {data.shootDetails.heading || 'Pre-Wedding Shoot'}
                   </h2>
                 </div>
 
-                {/* Days & Crew Bullet List (Matching User's Reference Screenshot) */}
-                <div className="space-y-3 max-w-lg mx-auto pl-4 sm:pl-8">
+                {/* Days & Crew Bullet List */}
+                <div className="space-y-3 max-w-lg mx-auto pl-6">
                   <p 
                     className="text-sm font-semibold tracking-wide"
                     style={{ color: textColor, fontFamily: data.secondaryFont }}
@@ -1890,10 +2042,10 @@ function WedGrapherAiryBuilderContent() {
                   </ul>
                 </div>
 
-                {/* Deliverables Section (Matching User's Reference Screenshot) */}
-                <div className="pt-4 space-y-4 max-w-lg mx-auto pl-4 sm:pl-8">
+                {/* Deliverables Section */}
+                <div className="pt-4 space-y-4 max-w-lg mx-auto pl-6">
                   <h3 
-                    className="text-2xl sm:text-3xl tracking-wide font-normal text-center sm:text-left" 
+                    className="text-2xl tracking-wide font-normal text-left" 
                     style={{ color: textColor, fontFamily: data.primaryFont }}
                   >
                     {data.shootDetails.deliverablesHeading || 'Deliverables'}
@@ -1911,46 +2063,45 @@ function WedGrapherAiryBuilderContent() {
                   </ul>
                 </div>
 
-                {/* Option 4: Full Width Banner (Like About Us Edge-To-Edge 0 Left/Right Margin) */}
+                {/* Option 4: Full Width Banner (0 Left/Right Margin Cut-To-Cut) */}
                 {data.shootDetails.photo && data.shootDetails.frameShape === 'full-width' && (
-                  <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 -mb-10 sm:-mb-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none pt-4 overflow-hidden">
+                  <div className="-mx-12 -mb-12 w-[calc(100%+6rem)] max-w-none pt-4 overflow-hidden">
                     <img 
                       src={data.shootDetails.photo} 
                       alt="Pre-Wedding Full Bleed"
                       className="w-full object-cover bg-transparent rounded-none block shadow-xs"
                       style={{ 
-                        height: `${data.shootDetails.photoHeight || 350}px`,
+                        height: `${data.shootDetails.photoHeight || 320}px`,
                         objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` 
                       }}
                     />
                   </div>
                 )}
 
-                {/* Options 1, 2, 3: Arch, Rounded, Rectangle – Same width/height logic as Cover Page */}
+                {/* Options 1, 2, 3: Arch, Rounded, Rectangle */}
                 {data.shootDetails.photo && ['arch', 'rounded', 'rectangle'].includes(data.shootDetails.frameShape || 'arch') && (
-                  <div className="mt-6 mx-auto" style={{ width: `${data.shootDetails.photoWidth || 75}%` }}>
-                    <div 
-                      className={`overflow-hidden shadow-md relative transition-all duration-300 ${
-                        (data.shootDetails.frameShape || 'arch') === 'arch'
-                          ? 'rounded-t-[999px] rounded-b-none'
-                          : data.shootDetails.frameShape === 'rectangle'
-                          ? 'rounded-none'
-                          : 'rounded-2xl'
-                      }`}
-                      style={{ 
-                        height: `${data.shootDetails.photoHeight || 450}px`,
-                        borderColor: photoBorderColor,
-                        borderWidth: '1px',
-                        backgroundColor: 'transparent'
-                      }}
-                    >
-                      <img 
-                        src={data.shootDetails.photo} 
-                        alt="Pre-Wedding Shoot"
-                        className="w-full h-full object-cover bg-transparent"
-                        style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }}
-                      />
-                    </div>
+                  <div 
+                    className={`mx-auto mt-6 overflow-hidden shadow-md relative transition-all duration-300 ${
+                      (data.shootDetails.frameShape || 'arch') === 'arch'
+                        ? 'rounded-t-[999px] rounded-b-none'
+                        : data.shootDetails.frameShape === 'rectangle'
+                        ? 'rounded-none'
+                        : 'rounded-2xl'
+                    }`}
+                    style={{ 
+                      width: `${data.shootDetails.photoWidth || 75}%`,
+                      height: `${data.shootDetails.photoHeight || 320}px`,
+                      borderColor: photoBorderColor,
+                      borderWidth: '1px',
+                      backgroundColor: 'transparent'
+                    }}
+                  >
+                    <img 
+                      src={data.shootDetails.photo} 
+                      alt="Pre-Wedding Shoot"
+                      className="w-full h-full object-cover bg-transparent"
+                      style={{ objectPosition: `50% ${data.shootDetails.photoFocalY ?? 50}%` }}
+                    />
                   </div>
                 )}
 
@@ -1958,7 +2109,7 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 4. WHAT'S INCLUDED SECTION */}
-            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+            <div className="pdf-section-break space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.whatsIncluded.kicker}
               </span>
@@ -1972,50 +2123,54 @@ function WedGrapherAiryBuilderContent() {
 
               {/* What's Included Photo – Shape-Aware Rendering */}
               {data.whatsIncluded.photo && ['arch', 'rounded', 'rectangle'].includes(data.whatsIncluded.frameShape || 'rounded') && (
-                <div className="mt-4 mx-auto" style={{ width: `${data.whatsIncluded.photoWidth || 75}%` }}>
-                  <div
-                    className={`overflow-hidden shadow-md relative transition-all duration-300 ${
-                      (data.whatsIncluded.frameShape || 'rounded') === 'arch'
-                        ? 'rounded-t-[999px] rounded-b-none'
-                        : (data.whatsIncluded.frameShape || 'rounded') === 'rectangle'
-                        ? 'rounded-none'
-                        : 'rounded-2xl'
-                    }`}
-                    style={{ height: `${data.whatsIncluded.photoHeight || 350}px`, borderColor: photoBorderColor, borderWidth: '1px', backgroundColor: 'transparent' }}
-                  >
-                    <img
-                      src={data.whatsIncluded.photo}
-                      alt="Package Deliverables"
-                      className="w-full h-full object-cover bg-transparent"
-                      style={{ objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
-                    />
-                  </div>
+                <div 
+                  className={`mx-auto mt-4 overflow-hidden shadow-md relative transition-all duration-300 ${
+                    (data.whatsIncluded.frameShape || 'rounded') === 'arch'
+                      ? 'rounded-t-[999px] rounded-b-none'
+                      : (data.whatsIncluded.frameShape || 'rounded') === 'rectangle'
+                      ? 'rounded-none'
+                      : 'rounded-2xl'
+                  }`}
+                  style={{ 
+                    width: `${data.whatsIncluded.photoWidth || 75}%`,
+                    height: `${data.whatsIncluded.photoHeight || 320}px`, 
+                    borderColor: photoBorderColor, 
+                    borderWidth: '1px', 
+                    backgroundColor: 'transparent' 
+                  }}
+                >
+                  <img
+                    src={data.whatsIncluded.photo}
+                    alt="Package Deliverables"
+                    className="w-full h-full object-cover bg-transparent"
+                    style={{ objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
+                  />
                 </div>
               )}
               {data.whatsIncluded.photo && (data.whatsIncluded.frameShape || 'rounded') === 'background' && (
-                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none mt-4 overflow-hidden">
+                <div className="-mx-12 w-[calc(100%+6rem)] max-w-none mt-4 overflow-hidden">
                   <img
                     src={data.whatsIncluded.photo}
                     alt="Package Background"
                     className="w-full object-cover filter grayscale-[15%] opacity-40 rounded-none block"
-                    style={{ height: `${data.whatsIncluded.photoHeight || 350}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
+                    style={{ height: `${data.whatsIncluded.photoHeight || 320}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
                   />
                 </div>
               )}
               {data.whatsIncluded.photo && (data.whatsIncluded.frameShape || 'rounded') === 'full-width' && (
-                <div className="-ml-10 sm:-ml-14 -mr-10 sm:-mr-14 w-[calc(100%+5rem)] sm:w-[calc(100%+7rem)] max-w-none mt-4 overflow-hidden">
+                <div className="-mx-12 w-[calc(100%+6rem)] max-w-none mt-4 overflow-hidden">
                   <img
                     src={data.whatsIncluded.photo}
                     alt="Package Deliverables Full Bleed"
                     className="w-full object-cover bg-transparent rounded-none block shadow-xs"
-                    style={{ height: `${data.whatsIncluded.photoHeight || 350}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
+                    style={{ height: `${data.whatsIncluded.photoHeight || 320}px`, objectPosition: `50% ${data.whatsIncluded.photoFocalY ?? 50}%` }}
                   />
                 </div>
               )}
             </div>
 
             {/* 5. PRICE & PAYMENT SECTION */}
-            <div className="space-y-6 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+            <div className="pdf-section-break space-y-6 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.pricePayment.kicker}
               </span>
@@ -2034,7 +2189,7 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 6. ADD ONS TABLE */}
-            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+            <div className="pdf-section-break space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.addOnsTable.heading}
               </h2>
@@ -2063,7 +2218,7 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 7. DELIVERY TIMEFRAME */}
-            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+            <div className="pdf-section-break space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.deliveryTime.heading}
               </h2>
@@ -2082,7 +2237,7 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 8. TIMELINE TABLE */}
-            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+            <div className="pdf-section-break space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                 {data.timelineTable.heading}
               </h2>
@@ -2110,7 +2265,7 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 9. TESTIMONIALS */}
-            <div className="space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+            <div className="pdf-section-break space-y-4 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <span className="text-[9px] tracking-[0.2em] font-bold uppercase block" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
                 {data.testimonials.kicker}
               </span>
@@ -2129,7 +2284,7 @@ function WedGrapherAiryBuilderContent() {
             </div>
 
             {/* 10. TERMS & THANK YOU */}
-            <div className="space-y-6 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
+            <div className="pdf-section-break space-y-6 pt-10 border-t text-xs" style={{ borderColor: borderColor }}>
               <div className="space-y-2">
                 <h2 className="text-xl uppercase tracking-widest" style={{ color: textColor, fontFamily: data.primaryFont }}>
                   {data.termsAndThankYou.termsHeading}
