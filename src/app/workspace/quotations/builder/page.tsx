@@ -910,7 +910,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // DIRECT PROGRAMMATIC LIVE CANVAS PDF DOWNLOAD ENGINE (jsPDF + html2canvas)
+  // ULTIMATE 1:1 PDF EXPORT ENGINE (html2pdf.js with dom-to-image-more & jsPDF fallback)
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -924,76 +924,53 @@ function StudioCoreAiryBuilderContent() {
       await ensureFontsReady();
       await new Promise(r => setTimeout(r, 400));
 
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
+      const element = canvasRef.current;
+      
+      // Attempt html2pdf.js primary export
+      try {
+        const html2pdf = (await import('html2pdf.js')).default;
+        const opt = {
+          margin: 0,
+          filename: `${data.designName || 'StudioCore_Quotation'}.pdf`,
+          image: { type: 'jpeg' as const, quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' as const },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'], selector: '.quotation-page' }
+        };
 
-      const pageElements = canvasRef.current.querySelectorAll('.quotation-page');
-      if (!pageElements || !pageElements.length) {
-        alert('No quotation pages found to export.');
-        return;
-      }
+        await html2pdf().set(opt).from(element).save();
+      } catch (primaryErr) {
+        console.warn('html2pdf.js engine fallback to dom-to-image-more + jsPDF:', primaryErr);
+        
+        // Fallback Engine: dom-to-image-more + jsPDF
+        const domtoimage = (await import('dom-to-image-more')).default;
+        const { jsPDF } = await import('jspdf');
 
-      const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+        const pageElements = element.querySelectorAll('.quotation-page');
+        const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
 
-      for (let i = 0; i < pageElements.length; i++) {
-        const pageEl = pageElements[i] as HTMLElement;
-        let canvas: HTMLCanvasElement | null = null;
-
-        // Capture live visible page node directly on screen
-        try {
-          canvas = await html2canvas(pageEl, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true,
-            imageTimeout: 15000,
-            logging: false,
-            backgroundColor: activeTheme.background || '#FFFFFF',
-            scrollX: 0,
-            scrollY: 0,
-            onclone: (clonedDoc) => {
-              const clonedPages = clonedDoc.querySelectorAll('.quotation-page');
-              clonedPages.forEach((p) => {
-                const el = p as HTMLElement;
-                el.style.transform = 'none';
-                el.style.opacity = '1';
-                el.style.visibility = 'visible';
-                el.style.display = 'flex';
-              });
-            }
+        for (let i = 0; i < pageElements.length; i++) {
+          const pageEl = pageElements[i] as HTMLElement;
+          const dataUrl = await domtoimage.toPng(pageEl, {
+            bgcolor: activeTheme.background || '#FFFFFF',
+            width: 794,
+            height: pageEl.offsetHeight
           });
-        } catch (primaryErr) {
-          console.warn(`Primary html2canvas capture failed for page ${i + 1}, retrying without CORS:`, primaryErr);
-          try {
-            canvas = await html2canvas(pageEl, {
-              scale: 2,
-              allowTaint: true,
-              imageTimeout: 15000,
-              logging: false,
-              backgroundColor: activeTheme.background || '#FFFFFF',
-              scrollX: 0,
-              scrollY: 0
-            });
-          } catch (fallbackErr) {
-            console.error(`Page ${i + 1} capture failed entirely:`, fallbackErr);
-            continue;
-          }
-        }
 
-        if (canvas && canvas.width > 0 && canvas.height > 0) {
-          const imgData = canvas.toDataURL('image/jpeg', 0.95);
           const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+          const pdfHeight = (pageEl.offsetHeight * pdfWidth) / 794;
 
-          if (i > 0 && pdf.getNumberOfPages() > 0) pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+          if (i > 0) pdf.addPage();
+          pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
         }
+
+        pdf.save(`${data.designName || 'StudioCore_Quotation'}.pdf`);
       }
 
-      pdf.save(`${data.designName || 'StudioCore_Quotation'}.pdf`);
       setPdfToastMessage('PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err) {
-      console.error('Direct PDF export error:', err);
+      console.error('Ultimate PDF export error:', err);
       alert('Failed to generate PDF. Please try again.');
       setPdfToastMessage(null);
     } finally {
@@ -1602,8 +1579,13 @@ function StudioCoreAiryBuilderContent() {
         )}
       </AnimatePresence>
 
-      {/* ── PRINT & PDF EXPORT CSS ── */}
+      {/* ── PRINT & STRICT PRINT-COLOR ADJUST CSS ── */}
       <style jsx global>{`
+        @media print, .pdf-capture-active {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color-adjust: exact !important;
+        }
         @media print {
           @page {
             size: A4 portrait;
@@ -1744,6 +1726,7 @@ function StudioCoreAiryBuilderContent() {
           
           {/* Scaled A4 Container Wrapper */}
           <div 
+            id="quotation-canvas-container"
             className="proposal-canvas-container flex flex-col items-center space-y-12 transition-transform duration-200 origin-top"
             style={{ 
               transform: `scale(${zoomScale})`, 
