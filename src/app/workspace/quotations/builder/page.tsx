@@ -17,6 +17,7 @@ import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manag
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
+// @ts-ignore
 import html2canvasPro from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 
@@ -924,6 +925,7 @@ function StudioCoreAiryBuilderContent() {
     document.body.classList.add('pdf-capture-active');
 
     try {
+      // @ts-ignore
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
@@ -1753,12 +1755,15 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
-              className="w-full flex flex-col items-center justify-start gap-6 py-6 bg-[#f3f4f6] min-h-screen overflow-y-auto"
+              className="w-full flex flex-col items-center justify-start gap-4 py-6 transition-colors duration-300 min-h-screen overflow-y-auto"
+              style={{ 
+                backgroundColor: activeTheme?.background || pageBgColor || '#f3f4f6' 
+              }}
             >
               <div 
                 id="quotation-full-canvas" 
                 style={{ width: '794px' }} 
-                className="flex flex-col gap-6"
+                className="flex flex-col gap-4"
               >
                 <section 
                   className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
@@ -1875,12 +1880,6 @@ function StudioCoreAiryBuilderContent() {
                 </div>
               </div>
             </section>
-
-            {/* Between consecutive quotation page blocks */}
-            <div 
-              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
-              style={{ backgroundColor: textColor || '#ffffff' }} 
-            />
 
             {/* SECTION 2: ABOUT US */}
             <section 
@@ -2002,12 +2001,6 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
-            {/* Between consecutive quotation page blocks */}
-            <div 
-              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
-              style={{ backgroundColor: textColor || '#ffffff' }} 
-            />
-
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2116,12 +2109,6 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
-            {/* Between consecutive quotation page blocks */}
-            <div 
-              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
-              style={{ backgroundColor: textColor || '#ffffff' }} 
-            />
-
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2206,12 +2193,6 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
-
-            {/* Between consecutive quotation page blocks */}
-            <div 
-              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
-              style={{ backgroundColor: textColor || '#ffffff' }} 
-            />
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
@@ -2328,12 +2309,6 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
-
-            {/* Between consecutive quotation page blocks */}
-            <div 
-              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
-              style={{ backgroundColor: textColor || '#ffffff' }} 
-            />
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
