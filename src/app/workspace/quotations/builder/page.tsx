@@ -980,6 +980,7 @@ function StudioCoreAiryBuilderContent() {
   // Load User Session & Proposal
   useEffect(() => {
     console.log('[BUILD_VER: A4_STRICT_V2]');
+    console.log('[TEMPLET_1_A4_STRICT_V3_SUCCESS]');
     async function initUserAndLoadData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();

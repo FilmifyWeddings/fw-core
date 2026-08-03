@@ -1,9 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import QuotationBuilderPage from '../../page';
 
 export default function TemplateQuotationBuilderPage() {
+  useEffect(() => {
+    console.log('[TEMPLET_1_A4_STRICT_V3_SUCCESS]');
+  }, []);
+
   return (
     <React.Suspense fallback={
       <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 flex items-center justify-center p-4">
