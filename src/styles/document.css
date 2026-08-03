@@ -1,33 +1,34 @@
-/* STUDIOCORE CONTINUOUS SEAMLESS DOCUMENT MODEL CSS */
-/* Replaces all legacy pagination rules with one continuous seamless layout */
+/* STUDIOCORE SEAMLESS DOCUMENT MODEL CSS (wedgrapher.in structure) */
 
 #quotation-seamless-container,
-#quotation-document {
+.qt {
   display: flex !important;
   flex-direction: column !important;
   gap: 0 !important;
   margin: 0 auto !important;
   padding: 0 !important;
-  width: 794px !important;
-  background-color: #ffffff !important;
+  width: 100% !important;
+  max-width: 820px !important;
+  background-color: #F7F6F3 !important;
   box-shadow: none !important;
   border-radius: 0 !important;
   border: none !important;
 }
 
-#quotation-seamless-container section,
-#quotation-document section {
+#quotation-seamless-container section.pg,
+section.pg {
   margin: 0 !important;
-  padding: 0 !important;
-  display: block !important;
-  width: 794px !important;
+  padding: 50px 56px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.10) !important;
+  width: 100% !important;
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
   overflow: visible !important;
-  position: relative !important;
-  box-sizing: border-box !important;
-  border: none !important;
 }
 
 img, svg {

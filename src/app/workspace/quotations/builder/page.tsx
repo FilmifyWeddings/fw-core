@@ -927,7 +927,7 @@ function StudioCoreAiryBuilderContent() {
       const container = document.getElementById('quotation-seamless-container') || document.getElementById('quotation-document');
       if (!container) throw new Error('Quotation seamless container not found');
 
-      const widthPx = 794;
+      const widthPx = container.offsetWidth || 820;
       const totalHeightPx = container.offsetHeight;
 
       const canvas = await html2canvasPro(container as HTMLElement, {
@@ -972,6 +972,7 @@ function StudioCoreAiryBuilderContent() {
 
   // Load User Session & Proposal
   useEffect(() => {
+    console.log('[BUILD_VER: SEAMLESS_QT_V1]');
     async function initUserAndLoadData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -1751,11 +1752,10 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-seamless-container" 
-              className="w-[794px] bg-white flex flex-col gap-0 p-0 m-0 overflow-hidden shadow-none border-0 font-sans"
-              style={{ width: '794px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 0, padding: 0 }}
+              className="qt max-w-[820px] mx-auto bg-[#F7F6F3]"
             >
               <section 
-                className="cover-page w-[794px] relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 select-none"
+                className="pg cover-page p-[50px_56px] flex flex-col relative border-b border-black/10 items-center justify-between text-center transition-colors duration-300 select-none"
                 style={{ 
                   backgroundColor: pageBgColor, 
                   color: textColor, 
@@ -1861,7 +1861,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`pg p-[50px_56px] flex flex-col relative border-b border-black/10 transition-colors duration-300 ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -1971,7 +1971,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`pg p-[50px_56px] flex flex-col relative border-b border-black/10 transition-colors duration-300 ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -2069,7 +2069,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`pg p-[50px_56px] flex flex-col relative border-b border-black/10 transition-colors duration-300 ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -2144,7 +2144,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`pg p-[50px_56px] flex flex-col relative border-b border-black/10 transition-colors duration-300 ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -2250,7 +2250,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`pg p-[50px_56px] flex flex-col relative border-b border-black/10 transition-colors duration-300 ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
