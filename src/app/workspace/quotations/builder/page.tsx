@@ -1035,7 +1035,18 @@ function StudioCoreAiryBuilderContent() {
       const pageElements = document.querySelectorAll('.quotation-page');
       if (!pageElements.length) throw new Error('No quotation pages found');
 
-      // 2. Pre-fetch and pre-sanitize same-origin stylesheets to prevent oklch parser crash
+      // Helper: Robust CSS Color Sanitizer for html2canvas compatibility
+      const sanitizeCssColors = (cssText: string): string => {
+        if (!cssText) return '';
+        return cssText
+          .replace(/oklch\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
+          .replace(/oklab\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
+          .replace(/color-mix\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
+          .replace(/light-dark\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
+          .replace(/color\([a-zA-Z0-9-]+\s+[\s\S]*?\)/gi, 'rgb(128, 128, 128)');
+      };
+
+      // 2. Pre-fetch and pre-sanitize same-origin stylesheets to prevent oklch/oklab parser crash
       const fallbackStyles: string[] = [];
       try {
         const links = document.querySelectorAll('link[rel="stylesheet"]');
@@ -1048,11 +1059,7 @@ function StudioCoreAiryBuilderContent() {
               const res = await fetch(absoluteHref);
               if (res.ok) {
                 let cssText = await res.text();
-                // Sanitize modern colors to standard fallback gray color
-                cssText = cssText
-                  .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
-                  .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
-                fallbackStyles.push(cssText);
+                fallbackStyles.push(sanitizeCssColors(cssText));
               }
             }
           }
@@ -1063,6 +1070,72 @@ function StudioCoreAiryBuilderContent() {
       
       const combinedSanitizedCss = fallbackStyles.join('\n');
       let pdf: InstanceType<typeof jsPDF> | null = null;
+
+      const handleOnClone = (clonedDoc: Document, clonedElement: HTMLElement) => {
+        // Remove original link tags and style tags
+        try {
+          const existingStyles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+          existingStyles.forEach((node) => {
+            node.parentNode?.removeChild(node);
+          });
+        } catch (err) {
+          console.warn('Removing styles warning:', err);
+        }
+
+        // Inject pre-sanitized styles
+        try {
+          const head = clonedDoc.querySelector('head') || clonedDoc.documentElement;
+          const styleTag = clonedDoc.createElement('style');
+          styleTag.textContent = combinedSanitizedCss;
+          head.appendChild(styleTag);
+        } catch (err) {
+          console.warn('Injecting sanitized styles warning:', err);
+        }
+
+        // Sanitize inline element styles in cloned document
+        try {
+          const allNodes = clonedDoc.querySelectorAll('*');
+          allNodes.forEach((node) => {
+            const htmlNode = node as HTMLElement;
+            if (htmlNode.style && htmlNode.style.cssText) {
+              const rawStyle = htmlNode.style.cssText;
+              if (/oklch|oklab|color-mix|light-dark|color\(/i.test(rawStyle)) {
+                htmlNode.style.cssText = sanitizeCssColors(rawStyle);
+              }
+            }
+          });
+        } catch (nodeErr) {
+          console.warn('Inline style sanitization warning:', nodeErr);
+        }
+
+        // Apply custom PDF viewport styles
+        try {
+          const pageRuleTag = clonedDoc.createElement('style');
+          pageRuleTag.textContent = `
+            .quotation-page {
+              width: 794px !important;
+              min-width: 794px !important;
+              max-width: 794px !important;
+              box-sizing: border-box !important;
+            }
+            .quotation-page img {
+              object-fit: cover !important;
+              max-width: 100% !important;
+            }
+            svg, img {
+              transform-box: fill-box !important;
+            }
+            h1, h2, h3, p, .brand-name-heading, .couple-name-heading {
+              white-space: normal !important;
+              word-break: keep-all !important;
+              letter-spacing: normal !important;
+            }
+          `;
+          clonedDoc.head?.appendChild(pageRuleTag);
+        } catch (err) {
+          console.warn('Adding custom PDF styles warning:', err);
+        }
+      };
 
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
@@ -1079,60 +1152,17 @@ function StudioCoreAiryBuilderContent() {
             backgroundColor: null,
             width: widthPx,
             height: heightPx,
-            onclone: (clonedDoc, clonedElement) => {
-              // Remove original link tags and style tags
-              try {
-                const existingStyles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-                existingStyles.forEach((node) => {
-                  node.parentNode?.removeChild(node);
-                });
-              } catch (err) {
-                console.warn('Removing styles warning:', err);
-              }
-
-              // Inject pre-sanitized styles
-              try {
-                const head = clonedDoc.querySelector('head') || clonedDoc.documentElement;
-                const styleTag = clonedDoc.createElement('style');
-                styleTag.textContent = combinedSanitizedCss;
-                head.appendChild(styleTag);
-              } catch (err) {
-                console.warn('Injecting sanitized styles warning:', err);
-              }
-
-              // Apply custom PDF viewport styles
-              try {
-                const pageRuleTag = clonedDoc.createElement('style');
-                pageRuleTag.textContent = `
-                  .quotation-page {
-                    width: 794px !important;
-                    min-width: 794px !important;
-                    max-width: 794px !important;
-                    box-sizing: border-box !important;
-                  }
-                  .quotation-page img {
-                    object-fit: cover !important;
-                    max-width: 100% !important;
-                  }
-                  svg, img {
-                    transform-box: fill-box !important;
-                  }
-                  h1, h2, h3, p, .brand-name-heading, .couple-name-heading {
-                    white-space: normal !important;
-                    word-break: keep-all !important;
-                    letter-spacing: normal !important;
-                  }
-                `;
-                clonedDoc.head?.appendChild(pageRuleTag);
-              } catch (err) {
-                console.warn('Adding custom PDF styles warning:', err);
-              }
-            }
+            onclone: handleOnClone
           });
         } catch (canvasErr) {
-          console.warn(`Fallback render for page ${i + 1}:`, canvasErr);
-          // Fallback render without CORS strictness
-          canvas = await html2canvas(pageEl, { scale: 1.5, logging: false });
+          console.warn(`Primary canvas render for page ${i + 1} failed, using secondary sanitized render:`, canvasErr);
+          canvas = await html2canvas(pageEl, { 
+            scale: 1.5, 
+            logging: false,
+            useCORS: true,
+            allowTaint: true,
+            onclone: handleOnClone
+          });
         }
 
         const imgData = canvas.toDataURL('image/jpeg', 0.95);

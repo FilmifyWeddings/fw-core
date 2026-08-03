@@ -29,6 +29,28 @@ export async function POST(req: NextRequest) {
     }
 
     if (!executablePath) {
+      try {
+        const fs = await import('fs');
+        const commonPaths = [
+          '/usr/bin/google-chrome',
+          '/usr/bin/chromium',
+          '/usr/bin/chromium-browser',
+          '/snap/bin/chromium',
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+        ];
+        for (const p of commonPaths) {
+          if (fs.existsSync(p)) {
+            executablePath = p;
+            break;
+          }
+        }
+      } catch (fsErr) {
+        console.warn('[Chromium Common Paths Search Warning]:', fsErr);
+      }
+    }
+
+    if (!executablePath) {
       return NextResponse.json({ error: 'Chromium binary path not configured on server' }, { status: 500 });
     }
 
