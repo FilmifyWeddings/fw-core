@@ -96,28 +96,28 @@ export default function WorkspaceQuotationsGalleryPage() {
       id: '3',
       title: 'Engagement — In Black, Rose',
       subtitle: 'Engagement - 8 pages',
-      price: '₹599/mo',
+      price: '₹799/mo',
       category: 'Engagement'
     },
     {
       id: '4',
       title: 'Maternity — Peach & Bronze',
       subtitle: 'Maternity - 6 pages',
-      price: '₹599/mo',
+      price: '₹799/mo',
       category: 'Maternity'
     },
     {
       id: '5',
       title: 'Baby / Newborn — Dynamic Trend',
       subtitle: 'Newborn - 7 pages',
-      price: '₹599/mo',
+      price: '₹799/mo',
       category: 'Baby & Kids'
     },
     {
       id: '6',
       title: 'Birthday — Gold Hues',
       subtitle: 'Birthday - 5 pages',
-      price: '₹599/mo',
+      price: '₹799/mo',
       category: 'Events'
     }
   ];
