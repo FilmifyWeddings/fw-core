@@ -1737,8 +1737,7 @@ function StudioCoreAiryBuilderContent() {
         {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS */}
         <main 
           ref={mainContainerRef}
-          className="flex-1 p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-20 md:pb-8 transition-colors duration-300"
-          style={{ backgroundColor: textColor || '#EBECEF' }}
+          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-20 md:pb-8"
         >
           
           {/* Scaled Continuous Canvas Container Wrapper */}
@@ -1756,15 +1755,12 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
-              className="w-full flex flex-col items-center justify-start gap-4 py-6 transition-colors duration-300 min-h-screen overflow-y-auto"
-              style={{ 
-                backgroundColor: textColor || '#f3f4f6' 
-              }}
+              className="w-full flex flex-col items-center justify-start py-8 bg-[#f3f4f6] min-h-screen overflow-y-auto"
             >
               <div 
                 id="quotation-full-canvas" 
                 style={{ width: '794px' }} 
-                className="flex flex-col gap-4"
+                className="flex flex-col gap-0"
               >
                 <section 
                   className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
@@ -1881,6 +1877,12 @@ function StudioCoreAiryBuilderContent() {
                 </div>
               </div>
             </section>
+
+            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            <div 
+              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
+              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+            />
 
             {/* SECTION 2: ABOUT US */}
             <section 
@@ -2002,6 +2004,12 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            <div 
+              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
+              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+            />
+
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2110,6 +2118,12 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            <div 
+              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
+              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+            />
+
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2194,6 +2208,12 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+
+            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            <div 
+              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
+              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+            />
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
@@ -2310,6 +2330,12 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+
+            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            <div 
+              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
+              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+            />
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
