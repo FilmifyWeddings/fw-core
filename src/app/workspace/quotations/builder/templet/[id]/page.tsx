@@ -1765,16 +1765,21 @@ function StudioCoreAiryBuilderContent() {
               className="flex flex-col gap-8 items-center"
             >
               <section 
-                className="quotation-page cover-page w-[794px] h-[1123px] transition-colors duration-300 select-none"
-                style={{ 
+                className={`quotation-page cover-page flex flex-col transition-colors duration-300 select-none ${
+                  !data.cover.photoUrl
+                    ? 'justify-center items-center text-center p-12'
+                    : 'justify-between'
+                }`}
+                style={{
                   width: '794px',
                   height: '1123px',
                   minHeight: '1123px',
                   maxHeight: '1123px',
+                  boxSizing: 'border-box',
                   overflow: 'hidden',
                   position: 'relative',
-                  backgroundColor: pageBgColor, 
-                  color: textColor, 
+                  backgroundColor: pageBgColor,
+                  color: textColor,
                   fontFamily: data.secondaryFont,
                 }}
               >
@@ -1877,16 +1882,21 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.aboutUs.bottomBannerPhoto ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+                !data.aboutUs.bottomBannerPhoto
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
                 width: '794px',
                 height: '1123px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
+                boxSizing: 'border-box',
                 overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
@@ -1992,16 +2002,21 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.shootDetails.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+                !data.shootDetails.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
                 width: '794px',
                 height: '1123px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
+                boxSizing: 'border-box',
                 overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
@@ -2095,16 +2110,21 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.whatsIncluded.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+                !data.whatsIncluded.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
                 width: '794px',
                 height: '1123px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
+                boxSizing: 'border-box',
                 overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
@@ -2175,16 +2195,21 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.pricePayment.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+                !data.pricePayment.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
                 width: '794px',
                 height: '1123px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
+                boxSizing: 'border-box',
                 overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
@@ -2286,16 +2311,21 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.termsAndThankYou.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+                !data.termsAndThankYou.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
                 width: '794px',
                 height: '1123px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
+                boxSizing: 'border-box',
                 overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
@@ -2479,7 +2509,11 @@ function StudioCoreAiryBuilderContent() {
   );
 }
 
-export default function QuotationBuilderPage() {
+export default function TemplateQuotationBuilderPage() {
+  useEffect(() => {
+    console.log('=== EXACT_TEMPLET_ID_PAGE_V6_ACTIVE ===');
+  }, []);
+
   return (
     <React.Suspense fallback={
       <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 flex items-center justify-center p-4">
