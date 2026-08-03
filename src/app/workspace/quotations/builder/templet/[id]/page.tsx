@@ -927,35 +927,25 @@ function StudioCoreAiryBuilderContent() {
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
-      const pageElements = document.querySelectorAll('.quotation-page');
-      if (!pageElements.length) throw new Error('No quotation pages found (.quotation-page)');
-
-      // Standard A4 dimensions in px (794 x 1123)
-      const a4Width = 794;
-      const a4Height = 1123;
-
       const pdf = new jsPDF({
+        orientation: 'portrait',
         unit: 'px',
-        format: [a4Width, a4Height],
-        orientation: 'portrait'
+        format: [794, 1123]
       });
 
+      const pageElements = document.querySelectorAll('.quotation-page');
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
-
         const canvas = await html2canvasPro(pageEl, {
           scale: 2,
           useCORS: true,
-          allowTaint: true,
-          logging: false,
-          width: a4Width,
-          height: a4Height,
-          windowWidth: a4Width
+          width: 794,
+          height: 1123,
+          backgroundColor: null
         });
-
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        if (i > 0) pdf.addPage([a4Width, a4Height], 'portrait');
-        pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height, undefined, 'FAST');
+        if (i > 0) pdf.addPage([794, 1123], 'portrait');
+        pdf.addImage(imgData, 'JPEG', 0, 0, 794, 1123);
       }
 
       const cleanDesignName = (data?.designName || 'Quotation')
@@ -963,7 +953,7 @@ function StudioCoreAiryBuilderContent() {
         .replace(/\u2014/g, '-')
         .replace(/[^\x20-\x7E]/g, '-');
 
-      pdf.save(`${cleanDesignName}.pdf`);
+      pdf.save(`${cleanDesignName}-A4.pdf`);
 
       setPdfToastMessage('A4 PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
@@ -1764,8 +1754,8 @@ function StudioCoreAiryBuilderContent() {
               <section 
                 className={`quotation-page cover-page flex flex-col transition-colors duration-300 select-none ${
                   !data.cover.photoUrl
-                    ? 'justify-center items-center text-center p-12'
-                    : 'justify-between'
+                    ? 'justify-center items-center text-center p-12 h-full'
+                    : 'justify-between p-12'
                 }`}
                 style={{
                   width: '794px',
@@ -1796,7 +1786,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 flex flex-col items-center w-full my-auto ${!data.cover.photoUrl ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'justify-between h-full p-12 py-16'}`}>
+              <div className={`relative z-10 flex flex-col items-center w-full ${!data.cover.photoUrl ? 'justify-center items-center text-center' : 'justify-between h-full'}`}>
                 <div className="w-full flex flex-col items-center justify-center space-y-2">
                   {data.cover.brandLogoUrl ? (
                     <img 
@@ -1884,8 +1874,8 @@ function StudioCoreAiryBuilderContent() {
             <section 
               className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.aboutUs.bottomBannerPhoto
-                  ? 'justify-center items-center text-center p-12'
-                  : 'justify-between'
+                  ? 'justify-center items-center text-center p-12 h-full'
+                  : 'justify-between p-12'
               }`}
               style={{
                 width: '794px',
@@ -1929,7 +1919,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               </div>
 
-              <div className={`relative z-10 w-full ${!data.aboutUs.bottomBannerPhoto ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto text-center pt-4'}`}>
+              <div className={`relative z-10 w-full ${!data.aboutUs.bottomBannerPhoto ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto text-center pt-4'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'top' && (
@@ -2007,8 +1997,8 @@ function StudioCoreAiryBuilderContent() {
             <section 
               className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.shootDetails.photo
-                  ? 'justify-center items-center text-center p-12'
-                  : 'justify-between'
+                  ? 'justify-center items-center text-center p-12 h-full'
+                  : 'justify-between p-12'
               }`}
               style={{
                 width: '794px',
@@ -2039,7 +2029,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.shootDetails.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 w-full ${!data.shootDetails.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'top' && (
@@ -2118,8 +2108,8 @@ function StudioCoreAiryBuilderContent() {
             <section 
               className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.whatsIncluded.photo
-                  ? 'justify-center items-center text-center p-12'
-                  : 'justify-between'
+                  ? 'justify-center items-center text-center p-12 h-full'
+                  : 'justify-between p-12'
               }`}
               style={{
                 width: '794px',
@@ -2150,7 +2140,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.whatsIncluded.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 w-full ${!data.whatsIncluded.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'top' && (
@@ -2206,8 +2196,8 @@ function StudioCoreAiryBuilderContent() {
             <section 
               className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.pricePayment.photo
-                  ? 'justify-center items-center text-center p-12'
-                  : 'justify-between'
+                  ? 'justify-center items-center text-center p-12 h-full'
+                  : 'justify-between p-12'
               }`}
               style={{
                 width: '794px',
@@ -2238,7 +2228,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.pricePayment.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 w-full ${!data.pricePayment.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'top' && (
@@ -2325,8 +2315,8 @@ function StudioCoreAiryBuilderContent() {
             <section 
               className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.termsAndThankYou.photo
-                  ? 'justify-center items-center text-center p-12'
-                  : 'justify-between'
+                  ? 'justify-center items-center text-center p-12 h-full'
+                  : 'justify-between p-12'
               }`}
               style={{
                 width: '794px',
@@ -2357,7 +2347,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.termsAndThankYou.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 w-full ${!data.termsAndThankYou.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && data.termsAndThankYou.imagePosition === 'top' && (
