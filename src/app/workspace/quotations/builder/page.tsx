@@ -773,7 +773,10 @@ function SectionImageRenderer({
 
   if (frameShape === 'background') {
     return (
-      <div className="absolute inset-0 z-0 overflow-hidden w-full h-full pointer-events-none select-none">
+      <div 
+        className="absolute top-0 left-0 right-0 z-0 overflow-hidden w-full pointer-events-none select-none transition-all duration-200"
+        style={{ height: photoHeight ? `${photoHeight}px` : '100%' }}
+      >
         <img
           src={photo}
           alt={altText}
@@ -833,6 +836,87 @@ function SectionImageRenderer({
   );
 }
 
+function ThreeDCurvedMultiSelect({
+  title,
+  availableOptions,
+  selectedText,
+  onChangeSelectedText,
+  onAddCustomOption,
+}: {
+  title: string;
+  availableOptions: string[];
+  selectedText: string;
+  onChangeSelectedText: (newText: string) => void;
+  onAddCustomOption: (newItem: string) => void;
+}) {
+  const selectedItems = (selectedText || '').split('\n').map(s => s.trim()).filter(Boolean);
+
+  const toggleItem = (item: string) => {
+    let newSelected: string[];
+    if (selectedItems.includes(item)) {
+      newSelected = selectedItems.filter(i => i !== item);
+    } else {
+      newSelected = [...selectedItems, item];
+    }
+    onChangeSelectedText(newSelected.join('\n'));
+  };
+
+  const handleAdd = () => {
+    const newItem = prompt(`Enter custom ${title.toLowerCase()} item:`);
+    if (newItem && newItem.trim()) {
+      const trimmed = newItem.trim();
+      onAddCustomOption(trimmed);
+      toggleItem(trimmed);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3 space-y-2.5 transition-all">
+      <div className="flex items-center justify-between">
+        <label className="text-[11px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+          <span>{title}</span>
+        </label>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="px-2.5 py-1 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all flex items-center gap-1"
+        >
+          <span>+ Add {title === 'Requirements' ? 'Requirement' : 'Deliverable'}</span>
+        </button>
+      </div>
+
+      <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+        {availableOptions.map((item) => {
+          const isSelected = selectedItems.includes(item);
+          return (
+            <div
+              key={item}
+              onClick={() => toggleItem(item)}
+              className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                isSelected
+                  ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                  : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100/80'
+              }`}
+            >
+              <span className="leading-tight select-none pr-2">{item}</span>
+              <div
+                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                  isSelected
+                    ? 'border-amber-600 bg-amber-600 text-white'
+                    : 'border-zinc-300 bg-white'
+                }`}
+              >
+                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StudioCoreAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -857,6 +941,26 @@ function StudioCoreAiryBuilderContent() {
     }
     return ['Wedding', 'Pre-Wedding', 'Destination Wedding', 'Engagement', 'Haldi & Sangeet'];
   });
+
+  // Pre-Wedding Multi-Select Available Options States
+  const [availableRequirements, setAvailableRequirements] = useState<string[]>([
+    'Candid Photography',
+    'Cinematography',
+    'Drone',
+    'Traditional Video',
+    'Pre-Wedding Film',
+    'Portable Changing Room',
+  ]);
+
+  const [availableDeliverables, setAvailableDeliverables] = useState<string[]>([
+    'Full Ultra HD Super-Fine Raw Photos',
+    'Approx. 50 High Resolution Edited Images',
+    '3 Save The Dates Photos',
+    '1 Countdown Reel',
+    '1 Video Reel',
+    'Teaser Video (1-2 Min)',
+    'Main Highlight Film (15-20 Min)',
+  ]);
 
   // Mobile Bottom Sheet Drawer State
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -1196,6 +1300,21 @@ function StudioCoreAiryBuilderContent() {
                 />
               </div>
 
+              {/* Event Type Dropdown with Custom Event Option */}
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-400">Event Type</label>
+                <select
+                  value={data.cover.eventType}
+                  onChange={(e) => handleEventTypeChange(e.target.value)}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
+                >
+                  {customEventTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                  <option value="__ADD_NEW__">+ Add Custom Event Type...</option>
+                </select>
+              </div>
+
               {/* Side Type & Location 2-Column Grid */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1221,21 +1340,6 @@ function StudioCoreAiryBuilderContent() {
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
                   />
                 </div>
-              </div>
-
-              {/* Event Type Dropdown with Custom Event Option */}
-              <div className="space-y-1">
-                <label className="block text-[10px] uppercase font-bold text-zinc-400">Event Type</label>
-                <select
-                  value={data.cover.eventType}
-                  onChange={(e) => handleEventTypeChange(e.target.value)}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                >
-                  {customEventTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                  <option value="__ADD_NEW__">+ Add Custom Event Type...</option>
-                </select>
               </div>
 
               {/* Brand Logo Section */}
@@ -1371,15 +1475,35 @@ function StudioCoreAiryBuilderContent() {
                 />
               </div>
 
+              {/* Editable Day Shoot Input */}
               <div>
-                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables Items</label>
-                <textarea
-                  rows={4}
-                  value={data.shootDetails.deliverablesText || ''}
-                  onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: e.target.value } })}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none text-[11px]"
+                <label className="block text-[10px] uppercase font-bold text-amber-700 mb-1">Day Shoot Label</label>
+                <input
+                  type="text"
+                  value={data.shootDetails.daysText !== undefined ? data.shootDetails.daysText : '1 Day Shoot'}
+                  placeholder="e.g. 1 Day Shoot or 2 Days Shoot"
+                  onChange={(e) => setData({ ...data, shootDetails: { ...data.shootDetails, daysText: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                 />
               </div>
+
+              {/* 3D Curved UI Multi-Select Dropdown: Requirements */}
+              <ThreeDCurvedMultiSelect
+                title="Requirements"
+                availableOptions={availableRequirements}
+                selectedText={data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room'}
+                onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, crewText: newText } })}
+                onAddCustomOption={(newItem) => setAvailableRequirements(prev => Array.from(new Set([...prev, newItem])))}
+              />
+
+              {/* 3D Curved UI Multi-Select Dropdown: Deliverables */}
+              <ThreeDCurvedMultiSelect
+                title="Deliverables"
+                availableOptions={availableDeliverables}
+                selectedText={data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 Countdown Reel\n1 Video Reel'}
+                onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: newText } })}
+                onAddCustomOption={(newItem) => setAvailableDeliverables(prev => Array.from(new Set([...prev, newItem])))}
+              />
 
               <UnifiedPhotoControls
                 photoUrl={data.shootDetails.photo}
@@ -1827,10 +1951,13 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className={`space-y-1 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  <div className={`space-y-2 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                     <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-pre-line text-center" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
                     </h1>
+                    <h3 className="text-base tracking-[0.2em] uppercase font-bold whitespace-nowrap pt-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
+                    </h3>
                   </div>
 
                   {/* CENTER POSITION IMAGE (DEFAULT) */}
@@ -1845,10 +1972,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className={`space-y-2 pt-2 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                    <h3 className="text-base tracking-[0.2em] uppercase font-bold whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
-                    </h3>
+                  <div className={`space-y-2 pt-1 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
 
                     {/* Brand Name & Logo Shifted Directly Below Event Type */}
                     <div className="w-full flex flex-col items-center justify-center space-y-1 py-1">
@@ -1964,10 +2088,6 @@ function StudioCoreAiryBuilderContent() {
                   <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
                     {data.aboutUs.kicker || 'INTRODUCTION'}
                   </span>
-                  
-                  <h2 className="text-3xl tracking-widest uppercase font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.aboutUs.heading || 'ABOUT US'}
-                  </h2>
 
                   {/* CENTER IMAGE POSITION */}
                   {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'center' && (
@@ -1991,10 +2111,6 @@ function StudioCoreAiryBuilderContent() {
                       {data.aboutUs.text}
                     </p>
                     <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>”</span>
-                  </div>
-
-                  <div className="text-xs tracking-[0.2em] font-bold uppercase pt-2 whitespace-nowrap" style={{ color: kickerColor }}>
-                    {data.aboutUs.signature}
                   </div>
                 </div>
 
@@ -2072,9 +2188,6 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="text-center space-y-2">
-                    <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
-                      {data.shootDetails.kicker || 'WHAT WE DO'}
-                    </span>
                     <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.shootDetails.heading || 'Pre-Wedding Shoot'}
                     </h2>
