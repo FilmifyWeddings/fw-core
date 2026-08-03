@@ -1794,8 +1794,12 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.cover.photoUrl ? 'justify-center items-center' : 'justify-between'}`}>
-                <div className="w-full flex flex-col items-center justify-center space-y-2">
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+                data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'p-12'
+              } ${!data.cover.photoUrl ? 'justify-center items-center' : 'justify-between'}`}>
+                <div className={`w-full flex flex-col items-center justify-center space-y-2 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                   {data.cover.brandLogoUrl ? (
                     <img 
                       src={data.cover.brandLogoUrl} 
@@ -1813,7 +1817,7 @@ function StudioCoreAiryBuilderContent() {
                   )}
                 </div>
 
-                <div className="w-full space-y-6 flex flex-col items-center justify-center my-auto">
+                <div className={`w-full space-y-6 flex flex-col items-center justify-center my-auto ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-0' : ''}`}>
                   
                   {/* TOP POSITION IMAGE */}
                   {data.cover.photoUrl && data.cover.frameShape !== 'background' && data.cover.imagePosition === 'top' && (
@@ -1827,7 +1831,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="space-y-1">
+                  <div className={`space-y-1 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                     <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.groomName || 'YASH'}
                     </h1>
@@ -1849,7 +1853,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="space-y-2 pt-2">
+                  <div className={`space-y-2 pt-2 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                     <h3 className="text-base tracking-[0.2em] uppercase font-bold whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
                     </h3>
@@ -1872,7 +1876,7 @@ function StudioCoreAiryBuilderContent() {
 
                 </div>
 
-                <div className="w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80 whitespace-nowrap" style={{ color: kickerColor }}>
+                <div className={`w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80 whitespace-nowrap ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12 pb-6' : ''}`} style={{ color: kickerColor }}>
                   EXCLUSIVELY PREPARED FOR YOU
                 </div>
               </div>
@@ -1918,19 +1922,15 @@ function StudioCoreAiryBuilderContent() {
               )}
 
               <div className="absolute top-6 right-10 pointer-events-none opacity-85 z-10">
-                <div
-                  className="w-[220px] h-16 block"
-                  style={{
-                    backgroundColor: textColor,
-                    WebkitMaskImage: `url('/images/Birds.svg')`,
-                    WebkitMaskRepeat: 'no-repeat',
-                    WebkitMaskSize: 'contain',
-                    WebkitMaskPosition: 'center',
-                    maskImage: `url('/images/Birds.svg')`,
-                    maskRepeat: 'no-repeat',
-                    maskSize: 'contain',
-                    maskPosition: 'center',
-                  }}
+                <img 
+                  src="/images/Birds.svg" 
+                  alt="Birds" 
+                  crossOrigin="anonymous"
+                  className="w-[220px] h-auto object-contain block" 
+                  style={{ 
+                    filter: isDark ? 'brightness(0) invert(1)' : 'none',
+                    color: textColor
+                  }} 
                 />
               </div>
 
@@ -1974,19 +1974,15 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="flex flex-col items-center justify-center my-4 select-none">
-                    <div
-                      className="w-[260px] h-20 mx-auto select-none"
-                      style={{
-                        backgroundColor: textColor,
-                        WebkitMaskImage: `url('/images/A%26U.svg')`,
-                        WebkitMaskRepeat: 'no-repeat',
-                        WebkitMaskSize: 'contain',
-                        WebkitMaskPosition: 'center',
-                        maskImage: `url('/images/A%26U.svg')`,
-                        maskRepeat: 'no-repeat',
-                        maskSize: 'contain',
-                        maskPosition: 'center',
-                      }}
+                    <img 
+                      src="/images/A%26U.svg" 
+                      alt="Monogram" 
+                      crossOrigin="anonymous"
+                      className="w-[260px] h-auto object-contain block mx-auto" 
+                      style={{ 
+                        filter: isDark ? 'brightness(0) invert(1)' : 'none',
+                        color: textColor
+                      }} 
                     />
                   </div>
 
@@ -2057,64 +2053,70 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.shootDetails.photo ? 'justify-center items-center' : 'justify-between'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+                data.shootDetails.frameShape === 'full-width' || (data.shootDetails.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'p-12'
+              } ${!data.shootDetails.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
-                {/* TOP IMAGE POSITION */}
-                {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'top' && (
-                  <SectionImageRenderer
-                    photo={data.shootDetails.photo}
-                    frameShape={data.shootDetails.frameShape}
-                    photoHeight={data.shootDetails.photoHeight}
-                    photoWidth={data.shootDetails.photoWidth}
-                    photoFocalY={data.shootDetails.photoFocalY}
-                    altText="Pre-Wedding Photo"
-                  />
-                )}
+                <div className={`flex flex-col items-center justify-center w-full ${data.shootDetails.frameShape === 'full-width' || (data.shootDetails.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.shootDetails.photo}
+                      frameShape={data.shootDetails.frameShape}
+                      photoHeight={data.shootDetails.photoHeight}
+                      photoWidth={data.shootDetails.photoWidth}
+                      photoFocalY={data.shootDetails.photoFocalY}
+                      altText="Pre-Wedding Photo"
+                    />
+                  )}
 
-                <div className="text-center space-y-2">
-                  <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
-                    {data.shootDetails.kicker || 'WHAT WE DO'}
-                  </span>
-                  <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.shootDetails.heading || 'Pre-Wedding Shoot'}
-                  </h2>
-                </div>
+                  <div className="text-center space-y-2">
+                    <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
+                      {data.shootDetails.kicker || 'WHAT WE DO'}
+                    </span>
+                    <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {data.shootDetails.heading || 'Pre-Wedding Shoot'}
+                    </h2>
+                  </div>
 
-                {/* CENTER IMAGE POSITION */}
-                {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'center' && (
-                  <SectionImageRenderer
-                    photo={data.shootDetails.photo}
-                    frameShape={data.shootDetails.frameShape}
-                    photoHeight={data.shootDetails.photoHeight}
-                    photoWidth={data.shootDetails.photoWidth}
-                    photoFocalY={data.shootDetails.photoFocalY}
-                    altText="Pre-Wedding Photo"
-                  />
-                )}
+                  {/* CENTER IMAGE POSITION */}
+                  {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.shootDetails.photo}
+                      frameShape={data.shootDetails.frameShape}
+                      photoHeight={data.shootDetails.photoHeight}
+                      photoWidth={data.shootDetails.photoWidth}
+                      photoFocalY={data.shootDetails.photoFocalY}
+                      altText="Pre-Wedding Photo"
+                    />
+                  )}
 
-                <div className="space-y-3 max-w-lg mx-auto pl-4">
-                  <p className="text-base font-bold tracking-wide flex items-center gap-2" style={{ color: textColor }}>
-                    <Camera className="w-4 h-4" style={{ color: kickerColor }} />
-                    <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
-                  </p>
-                  <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
-                    {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
-                      .split('\n').filter(Boolean).map((item, idx) => (
-                        <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
-                      ))}
-                  </ul>
-                </div>
+                  <div className="space-y-3 max-w-lg mx-auto pl-4">
+                    <p className="text-base font-bold tracking-wide flex items-center gap-2" style={{ color: textColor }}>
+                      <Camera className="w-4 h-4" style={{ color: kickerColor }} />
+                      <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
+                    </p>
+                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
+                      {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
+                        .split('\n').filter(Boolean).map((item, idx) => (
+                          <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
+                        ))}
+                    </ul>
+                  </div>
 
-                <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4">
-                  <h3 className="text-2xl tracking-wide font-normal text-left whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.shootDetails.deliverablesHeading || 'Deliverables'}
-                  </h3>
-                  <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
-                    {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
-                      .split('\n').filter(Boolean).map((item, idx) => (
-                        <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
-                      ))}
-                  </ul>
+                  <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4">
+                    <h3 className="text-2xl tracking-wide font-normal text-left whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {data.shootDetails.deliverablesHeading || 'Deliverables'}
+                    </h3>
+                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
+                      {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
+                        .split('\n').filter(Boolean).map((item, idx) => (
+                          <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
+                        ))}
+                    </ul>
+                  </div>
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
@@ -2171,41 +2173,47 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.whatsIncluded.photo ? 'justify-center items-center' : 'justify-between'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+                data.whatsIncluded.frameShape === 'full-width' || (data.whatsIncluded.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'p-12'
+              } ${!data.whatsIncluded.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
-                {/* TOP IMAGE POSITION */}
-                {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'top' && (
-                  <SectionImageRenderer
-                    photo={data.whatsIncluded.photo}
-                    frameShape={data.whatsIncluded.frameShape}
-                    photoHeight={data.whatsIncluded.photoHeight}
-                    photoWidth={data.whatsIncluded.photoWidth}
-                    photoFocalY={data.whatsIncluded.photoFocalY}
-                    altText="Package Deliverables"
-                  />
-                )}
+                <div className={`flex flex-col items-center justify-center w-full ${data.whatsIncluded.frameShape === 'full-width' || (data.whatsIncluded.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.whatsIncluded.photo}
+                      frameShape={data.whatsIncluded.frameShape}
+                      photoHeight={data.whatsIncluded.photoHeight}
+                      photoWidth={data.whatsIncluded.photoWidth}
+                      photoFocalY={data.whatsIncluded.photoFocalY}
+                      altText="Package Deliverables"
+                    />
+                  )}
 
-                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                  {data.whatsIncluded.kicker}
-                </span>
-                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                  {data.whatsIncluded.heading}
-                </h2>
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                    {data.whatsIncluded.kicker}
+                  </span>
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.whatsIncluded.heading}
+                  </h2>
 
-                {/* CENTER IMAGE POSITION */}
-                {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'center' && (
-                  <SectionImageRenderer
-                    photo={data.whatsIncluded.photo}
-                    frameShape={data.whatsIncluded.frameShape}
-                    photoHeight={data.whatsIncluded.photoHeight}
-                    photoWidth={data.whatsIncluded.photoWidth}
-                    photoFocalY={data.whatsIncluded.photoFocalY}
-                    altText="Package Deliverables"
-                  />
-                )}
+                  {/* CENTER IMAGE POSITION */}
+                  {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.whatsIncluded.photo}
+                      frameShape={data.whatsIncluded.frameShape}
+                      photoHeight={data.whatsIncluded.photoHeight}
+                      photoWidth={data.whatsIncluded.photoWidth}
+                      photoFocalY={data.whatsIncluded.photoFocalY}
+                      altText="Package Deliverables"
+                    />
+                  )}
 
-                <div className="p-8 rounded-2xl leading-relaxed whitespace-pre-line text-sm border" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
-                  {data.whatsIncluded.deliverablesText}
+                  <div className="p-8 rounded-2xl leading-relaxed whitespace-pre-line text-sm border" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
+                    {data.whatsIncluded.deliverablesText}
+                  </div>
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
@@ -2262,71 +2270,77 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.pricePayment.photo ? 'justify-center items-center' : 'justify-between'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+                data.pricePayment.frameShape === 'full-width' || (data.pricePayment.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'p-12'
+              } ${!data.pricePayment.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
-                {/* TOP IMAGE POSITION */}
-                {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'top' && (
-                  <SectionImageRenderer
-                    photo={data.pricePayment.photo}
-                    frameShape={data.pricePayment.frameShape}
-                    photoHeight={data.pricePayment.photoHeight}
-                    photoWidth={data.pricePayment.photoWidth}
-                    photoFocalY={data.pricePayment.photoFocalY}
-                    altText="Payment Photo"
-                  />
-                )}
+                <div className={`flex flex-col items-center justify-center w-full ${data.pricePayment.frameShape === 'full-width' || (data.pricePayment.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.pricePayment.photo}
+                      frameShape={data.pricePayment.frameShape}
+                      photoHeight={data.pricePayment.photoHeight}
+                      photoWidth={data.pricePayment.photoWidth}
+                      photoFocalY={data.pricePayment.photoFocalY}
+                      altText="Payment Photo"
+                    />
+                  )}
 
-                <div className="space-y-4 border-b pb-6" style={{ borderColor }}>
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                    {data.pricePayment.kicker}
-                  </span>
-                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.pricePayment.heading}
-                  </h2>
+                  <div className="space-y-4 border-b pb-6 w-full" style={{ borderColor }}>
+                    <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                      {data.pricePayment.kicker}
+                    </span>
+                    <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {data.pricePayment.heading}
+                    </h2>
 
-                  <div className="text-4xl font-black whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    ₹{grandTotal.toLocaleString('en-IN')}
+                    <div className="text-4xl font-black whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      ₹{grandTotal.toLocaleString('en-IN')}
+                    </div>
+
+                    <div className="pt-1">
+                      <span className="text-xs font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
+                      <p className="text-xs font-medium" style={{ color: textColor }}>{data.pricePayment.paymentTerms}</p>
+                    </div>
                   </div>
 
-                  <div className="pt-1">
-                    <span className="text-xs font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
-                    <p className="text-xs font-medium" style={{ color: textColor }}>{data.pricePayment.paymentTerms}</p>
-                  </div>
-                </div>
+                  {/* CENTER IMAGE POSITION */}
+                  {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.pricePayment.photo}
+                      frameShape={data.pricePayment.frameShape}
+                      photoHeight={data.pricePayment.photoHeight}
+                      photoWidth={data.pricePayment.photoWidth}
+                      photoFocalY={data.pricePayment.photoFocalY}
+                      altText="Payment Photo"
+                    />
+                  )}
 
-                {/* CENTER IMAGE POSITION */}
-                {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'center' && (
-                  <SectionImageRenderer
-                    photo={data.pricePayment.photo}
-                    frameShape={data.pricePayment.frameShape}
-                    photoHeight={data.pricePayment.photoHeight}
-                    photoWidth={data.pricePayment.photoWidth}
-                    photoFocalY={data.pricePayment.photoFocalY}
-                    altText="Payment Photo"
-                  />
-                )}
-
-                <div className="space-y-3 pt-2">
-                  <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.addOnsTable.heading}
-                  </h2>
-                  <div className="rounded-xl overflow-hidden border" style={{ borderColor }}>
-                    <table className="w-full text-left text-xs">
-                      <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
-                        <tr>
-                          <th className="py-3 px-4">Services</th>
-                          <th className="py-3 px-4 text-right">Charges</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y font-medium" style={{ color: textColor }}>
-                        {data.addOnsTable.rows.map(row => (
-                          <tr key={row.id}>
-                            <td className="py-3 px-4 font-semibold">{row.service}</td>
-                            <td className="py-3 px-4 text-right font-mono font-bold">{row.charge}</td>
+                  <div className="space-y-3 pt-2 w-full">
+                    <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {data.addOnsTable.heading}
+                    </h2>
+                    <div className="rounded-xl overflow-hidden border" style={{ borderColor }}>
+                      <table className="w-full text-left text-xs">
+                        <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
+                          <tr>
+                            <th className="py-3 px-4">Services</th>
+                            <th className="py-3 px-4 text-right">Charges</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y font-medium" style={{ color: textColor }}>
+                          {data.addOnsTable.rows.map(row => (
+                            <tr key={row.id}>
+                              <td className="py-3 px-4 font-semibold">{row.service}</td>
+                              <td className="py-3 px-4 text-right font-mono font-bold">{row.charge}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
 
