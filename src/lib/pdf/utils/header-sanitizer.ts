@@ -9,16 +9,28 @@ export function sanitizeUnicodeText(input?: string): string {
     .replace(/\u00A0/g, ' ');      // NON-BREAKING SPACE -> ' '
 }
 
+/**
+ * Strict RFC 5987 percent-encoding for HTTP headers.
+ */
+export function encodeRFC5987(str: string): string {
+  return encodeURIComponent(str)
+    .replace(/['()]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+    .replace(/\*/g, '%2A');
+}
+
+/**
+ * Constructs RFC 5987 compliant Content-Disposition header.
+ * Ensures zero raw non-ASCII bytes enter HTTP Response headers.
+ */
 export function formatContentDispositionHeader(rawFilename?: string): string {
   const filename = rawFilename || 'Document.pdf';
   
-  const safeAsciiFilename = filename
-    .replace(/\u2013/g, '-')
-    .replace(/\u2014/g, '-')
-    .replace(/[^\x20-\x7E]/g, '-')
+  // Strict ASCII-only fallback filename for legacy clients
+  const asciiFallback = filename
+    .replace(/[^\x20-\x7E]/g, '_')
     .replace(/"/g, "'");
 
-  const encodedFilename = encodeURIComponent(filename);
+  const rfc5987Encoded = encodeRFC5987(filename);
 
-  return `attachment; filename="${safeAsciiFilename}"; filename*=UTF-8''${encodedFilename}`;
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${rfc5987Encoded}`;
 }
