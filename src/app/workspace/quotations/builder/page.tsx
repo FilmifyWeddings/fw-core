@@ -922,6 +922,107 @@ function StudioCoreAiryBuilderContent() {
     document.body.classList.add('pdf-capture-active');
 
     try {
+      // 1. Construct self-contained HTML payload for Server-Side Puppeteer
+      const stylesheetLinks = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map(el => {
+          if (el.tagName === 'LINK') {
+            const href = (el as HTMLLinkElement).getAttribute('href');
+            if (href && href.startsWith('/')) {
+              return `<link rel="stylesheet" href="${window.location.origin}${href}">`;
+            }
+          }
+          return el.outerHTML;
+        })
+        .join('\n');
+
+      let htmlContent = canvasRef.current.innerHTML || '';
+      // Convert relative images to absolute paths
+      htmlContent = htmlContent.replace(/src="\/images\//g, `src="${window.location.origin}/images/`);
+
+      const fullHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>${data.designName || 'Quotation'}</title>
+            ${stylesheetLinks}
+            <style>
+              body {
+                background-color: #F3F4F6 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .quotation-page {
+                width: 794px !important;
+                min-width: 794px !important;
+                max-width: 794px !important;
+                box-sizing: border-box !important;
+                margin: 0 auto !important;
+                box-shadow: none !important;
+                border: none !important;
+                page-break-after: always !important;
+                break-after: page !important;
+              }
+              .quotation-page img {
+                object-fit: cover !important;
+                max-width: 100% !important;
+              }
+              svg, img {
+                transform-box: fill-box !important;
+              }
+              .no-print, button {
+                display: none !important;
+              }
+            </style>
+          </head>
+          <body>
+            <div style="width: 794px; margin: 0 auto;">
+              ${htmlContent}
+            </div>
+          </body>
+        </html>
+      `;
+
+      const res = await fetch('/api/export-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          html: fullHtml,
+          filename: `${data?.designName || 'StudioCore_Quotation'}.pdf`
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error('Server export returned non-OK status');
+      }
+
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${data?.designName || 'StudioCore_Quotation'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+
+      setPdfToastMessage('PDF Downloaded Successfully!');
+      setTimeout(() => setPdfToastMessage(null), 3000);
+      setIsExportingPDF(false);
+      document.body.classList.remove('pdf-capture-active');
+      setZoomScale(previousScale);
+      return;
+    } catch (apiErr) {
+      console.warn('Server-side PDF export failed or unavailable, falling back to Client-Side Render:', apiErr);
+      setPdfToastMessage('Generating High-Res PDF (Client Fallback)...');
+    }
+
+    // CLIENT-SIDE FALLBACK (html2canvas + jsPDF with pre-fetched and pre-sanitized same-origin stylesheets)
+    try {
       // Fast font readiness timeout (max 500ms) to ensure execution never hangs
       await Promise.race([
         ensureFontsReady(),
@@ -934,12 +1035,39 @@ function StudioCoreAiryBuilderContent() {
       const pageElements = document.querySelectorAll('.quotation-page');
       if (!pageElements.length) throw new Error('No quotation pages found');
 
+      // 2. Pre-fetch and pre-sanitize same-origin stylesheets to prevent oklch parser crash
+      const fallbackStyles: string[] = [];
+      try {
+        const links = document.querySelectorAll('link[rel="stylesheet"]');
+        for (let i = 0; i < links.length; i++) {
+          const link = links[i] as HTMLLinkElement;
+          const href = link.getAttribute('href');
+          if (href) {
+            const absoluteHref = href.startsWith('/') ? `${window.location.origin}${href}` : href;
+            if (absoluteHref.startsWith(window.location.origin)) {
+              const res = await fetch(absoluteHref);
+              if (res.ok) {
+                let cssText = await res.text();
+                // Sanitize modern colors to standard fallback gray color
+                cssText = cssText
+                  .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
+                  .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
+                fallbackStyles.push(cssText);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Error pre-fetching/sanitizing fallback styles:', err);
+      }
+      
+      const combinedSanitizedCss = fallbackStyles.join('\n');
       let pdf: InstanceType<typeof jsPDF> | null = null;
 
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
-        const widthPx = pageEl.offsetWidth || 794;
-        const heightPx = pageEl.offsetHeight;
+        const widthPx = 794;
+        const heightPx = pageEl.offsetHeight || 1123;
 
         let canvas: HTMLCanvasElement;
         try {
@@ -952,67 +1080,52 @@ function StudioCoreAiryBuilderContent() {
             width: widthPx,
             height: heightPx,
             onclone: (clonedDoc, clonedElement) => {
-              // 1. Flatten essential computed styles to inline attributes on all elements
-              const allElements = clonedElement.querySelectorAll('*');
-              const propertiesToCopy = [
-                'color', 'backgroundColor', 'borderColor', 'borderStyle', 'borderWidth', 'borderRadius',
-                'fontSize', 'fontFamily', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'textTransform',
-                'whiteSpace', 'wordBreak',
-                'display', 'flexDirection', 'justifyContent', 'alignItems', 'gap', 'flexWrap', 'flexGrow', 'flexShrink',
-                'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-                'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
-                'width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight',
-                'position', 'top', 'right', 'bottom', 'left', 'zIndex',
-                'opacity', 'visibility', 'overflow', 'boxShadow',
-                'backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat'
-              ];
-
-              allElements.forEach((el) => {
-                const htmlEl = el as HTMLElement;
-                try {
-                  const style = window.getComputedStyle(htmlEl);
-                  const isHeadingOrP = ['H1', 'H2', 'H3', 'P'].includes(htmlEl.tagName) || 
-                                       htmlEl.classList.contains('brand-name-heading') || 
-                                       htmlEl.classList.contains('couple-name-heading');
-                  propertiesToCopy.forEach((prop) => {
-                    // @ts-ignore
-                    let val = style[prop];
-                    if (isHeadingOrP && prop === 'letterSpacing') {
-                      val = 'normal';
-                    }
-                    if (isHeadingOrP && prop === 'whiteSpace') {
-                      val = 'normal';
-                    }
-                    if (isHeadingOrP && prop === 'wordBreak') {
-                      val = 'keep-all';
-                    }
-                    if (val) {
-                      if (val.includes('oklch') || val.includes('oklab') || val.includes('okl')) {
-                        // Replace oklch/oklab color with grey/text standard color values if computed style returns it
-                        const sanitized = val
-                          .replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)')
-                          .replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
-                        // @ts-ignore
-                        htmlEl.style[prop] = sanitized;
-                      } else {
-                        // @ts-ignore
-                        htmlEl.style[prop] = val;
-                      }
-                    }
-                  });
-                } catch (e) {
-                  // ignore style read errors
-                }
-              });
-
-              // 2. Completely remove all style tags and link tags to prevent html2canvas from fetching/parsing oklab/oklch colors!
+              // Remove original link tags and style tags
               try {
-                const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-                styles.forEach((node) => {
+                const existingStyles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+                existingStyles.forEach((node) => {
                   node.parentNode?.removeChild(node);
                 });
               } catch (err) {
-                console.warn('Stylesheet removal warning:', err);
+                console.warn('Removing styles warning:', err);
+              }
+
+              // Inject pre-sanitized styles
+              try {
+                const head = clonedDoc.querySelector('head') || clonedDoc.documentElement;
+                const styleTag = clonedDoc.createElement('style');
+                styleTag.textContent = combinedSanitizedCss;
+                head.appendChild(styleTag);
+              } catch (err) {
+                console.warn('Injecting sanitized styles warning:', err);
+              }
+
+              // Apply custom PDF viewport styles
+              try {
+                const pageRuleTag = clonedDoc.createElement('style');
+                pageRuleTag.textContent = `
+                  .quotation-page {
+                    width: 794px !important;
+                    min-width: 794px !important;
+                    max-width: 794px !important;
+                    box-sizing: border-box !important;
+                  }
+                  .quotation-page img {
+                    object-fit: cover !important;
+                    max-width: 100% !important;
+                  }
+                  svg, img {
+                    transform-box: fill-box !important;
+                  }
+                  h1, h2, h3, p, .brand-name-heading, .couple-name-heading {
+                    white-space: normal !important;
+                    word-break: keep-all !important;
+                    letter-spacing: normal !important;
+                  }
+                `;
+                clonedDoc.head?.appendChild(pageRuleTag);
+              } catch (err) {
+                console.warn('Adding custom PDF styles warning:', err);
               }
             }
           });
@@ -1028,13 +1141,14 @@ function StudioCoreAiryBuilderContent() {
           pdf = new jsPDF({
             unit: 'px',
             format: [widthPx, heightPx],
-            orientation: widthPx > heightPx ? 'l' : 'p'
+            orientation: 'p',
+            compress: true
           });
         } else {
-          pdf?.addPage([widthPx, heightPx], widthPx > heightPx ? 'l' : 'p');
+          pdf?.addPage([widthPx, heightPx], 'p');
         }
 
-        pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx);
+        pdf?.addImage(imgData, 'JPEG', 0, 0, widthPx, heightPx, undefined, 'FAST');
       }
 
       if (pdf) {
@@ -1659,6 +1773,20 @@ function StudioCoreAiryBuilderContent() {
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
           color-adjust: exact !important;
+        }
+        .pdf-capture-active .quotation-page {
+          width: 794px !important;
+          min-width: 794px !important;
+          max-width: 794px !important;
+          box-sizing: border-box !important;
+        }
+        .pdf-capture-active .quotation-page img {
+          object-fit: cover !important;
+          max-width: 100% !important;
+        }
+        .pdf-capture-active svg,
+        .pdf-capture-active img {
+          transform-box: fill-box !important;
         }
         .pdf-capture-active h1,
         .pdf-capture-active h2,
