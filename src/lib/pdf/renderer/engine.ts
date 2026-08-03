@@ -12,6 +12,7 @@ export class PDFRenderingEngine {
 
     const pool = BrowserPool.getInstance();
     const browserWrapper = await pool.acquire();
+    console.log('[PDF NEW ENGINE] Chromium launched/acquired');
 
     try {
       PDFLogger.info(`Rendering document "${payload.title || 'Untitled'}" with ${payload.pages.length} page(s)...`);

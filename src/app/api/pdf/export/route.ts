@@ -20,8 +20,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log('[PDF NEW ENGINE] request received');
+
     // 1. Asynchronous Job Queue Request
     if (body.async) {
+      console.log('[PDF NEW ENGINE] dispatching async job queue request');
       const queue = PDFJobQueue.getInstance();
       const job = queue.createJob(body);
       return NextResponse.json(
@@ -36,11 +39,14 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Synchronous Render Request
+    console.log('[PDF NEW ENGINE] rendering started');
     const pdfBuffer = await PDFRenderingEngine.renderDocument(body);
+    console.log('[PDF NEW ENGINE] PDF generated');
     const contentDisposition = formatContentDispositionHeader(
       body.filename || `${body.title || 'StudioCore_Document'}.pdf`
     );
 
+    console.log('[PDF NEW ENGINE] response sent');
     return new Response(pdfBuffer as unknown as BodyInit, {
       status: 200,
       headers: {
