@@ -912,7 +912,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PIXEL-PERFECT STANDARD A4 MULTI-PAGE PDF EXPORTER Engine
+  // PIXEL-PERFECT STANDARD A4 SINGLE CONTINUOUS LONG-PAGE PDF EXPORTER Engine
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -927,40 +927,29 @@ function StudioCoreAiryBuilderContent() {
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
-      const pages = document.querySelectorAll('.quotation-page');
-      if (!pages.length) throw new Error('No quotation pages found (.quotation-page)');
+      const container = document.querySelector('#quotation-full-canvas') || document.querySelector('.quotation-container');
+      if (!container) throw new Error('No quotation container found (#quotation-full-canvas)');
 
-      // Standard A4 aspect ratio dimensions in px
+      // Capture entire long container in high DPI
+      const canvas = await html2canvasPro(container as HTMLElement, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const imgWidth = 794; // Fixed standard UI width
+      const imgHeight = (canvas.height * imgWidth) / canvas.width; // Dynamic full height
+
+      // Create a custom single-page PDF with exact dynamic height
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [794, 1123],
-        compress: true
+        format: [imgWidth, imgHeight]
       });
 
-      for (let i = 0; i < pages.length; i++) {
-        const pageEl = pages[i] as HTMLElement;
-
-        // High DPI (scale: 3) for crystal clear HD crisp rendering
-        const canvas = await html2canvasPro(pageEl, {
-          scale: 3, 
-          useCORS: true,
-          logging: false,
-          width: 794,
-          height: 1123,
-          windowWidth: 794,
-          windowHeight: 1123,
-          backgroundColor: '#ffffff'
-        });
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-
-        if (i > 0) {
-          pdf.addPage([794, 1123], 'portrait');
-        }
-
-        pdf.addImage(imgData, 'JPEG', 0, 0, 794, 1123, undefined, 'FAST');
-      }
+      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
 
       const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
       const cleanClientName = clientName
@@ -968,9 +957,9 @@ function StudioCoreAiryBuilderContent() {
         .replace(/\u2014/g, '-')
         .replace(/[^\x20-\x7E]/g, '-');
 
-      pdf.save(`${cleanClientName}-HD-A4.pdf`);
+      pdf.save(`${cleanClientName}-Full.pdf`);
 
-      setPdfToastMessage('A4 PDF Downloaded Successfully!');
+      setPdfToastMessage('Full PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
       console.error('PDF Export Error:', err);
@@ -1766,8 +1755,13 @@ function StudioCoreAiryBuilderContent() {
               id="quotation-document"
               className="w-full flex flex-col items-center justify-start gap-12 py-12 bg-[#f3f4f6] min-h-screen overflow-y-auto"
             >
-              <section 
-                className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
+              <div 
+                id="quotation-full-canvas" 
+                style={{ width: '794px' }} 
+                className="flex flex-col gap-12"
+              >
+                <section 
+                  className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
                 style={{
                   width: '794px',
                   height: '1123px',
@@ -2435,6 +2429,7 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+              </div>
             </div>
           </div>
         </main>
