@@ -10,7 +10,7 @@ import {
   Palette, Type, Layout, ShieldCheck, Film, Video, Camera, BookOpen, 
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
   Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders,
-  ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter
+  ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter, Clock
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -335,6 +335,7 @@ const DEFAULT_AIRY_PROPOSAL = {
         id: 'func-1',
         name: 'Haldi & Sangeet',
         date: '4 MAR 26',
+        dateNotFixed: false,
         startTime: '10:00 AM',
         endTime: '05:00 PM',
         durationSlot: '7 Hours',
@@ -350,6 +351,7 @@ const DEFAULT_AIRY_PROPOSAL = {
         id: 'func-2',
         name: 'Wedding',
         date: '5 MAR 26',
+        dateNotFixed: false,
         startTime: '04:00 PM',
         endTime: '11:00 PM',
         durationSlot: '7 Hours',
@@ -362,7 +364,7 @@ const DEFAULT_AIRY_PROPOSAL = {
         ],
         notes: 'Varmala & Pheras high speed cinema capture.',
       }
-    ]
+    ] as FunctionItem[]
   },
 
   // 5. What's Included
@@ -2851,7 +2853,7 @@ function StudioCoreAiryBuilderContent() {
                             <Calendar className="w-3 h-3" />
                             <span>
                               {[
-                                func.dateNotFixed ? 'DATE NOT FIXED' : func.date,
+                                (func as FunctionItem).dateNotFixed ? 'DATE NOT FIXED' : func.date,
                                 func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
                                 (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
                               ].filter(Boolean).join(' • ')}
