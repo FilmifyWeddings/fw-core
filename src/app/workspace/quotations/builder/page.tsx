@@ -317,7 +317,53 @@ const DEFAULT_AIRY_PROPOSAL = {
     imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
-  // 4. What's Included
+  // 4. Functions Page Module State
+  functionsPage: {
+    kicker: 'EVENT SCHEDULE',
+    heading: 'Functions & Coverage',
+    photo: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
+    photoHeight: 380,
+    photoWidth: 75,
+    photoFocalY: 50,
+    bgOpacity: 40,
+    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
+    items: [
+      {
+        id: 'func-1',
+        name: 'Haldi & Sangeet',
+        date: '4 MAR 26',
+        startTime: '10:00 AM',
+        endTime: '05:00 PM',
+        durationSlot: '7 Hours',
+        location: 'JW MARRIOTT, MUMBAI',
+        requirements: [
+          { name: 'Candid Photography', qty: 2 },
+          { name: 'Cinematography', qty: 2 },
+          { name: 'Drone', qty: 1 },
+        ],
+        notes: 'Includes traditional setup & evening sangeet performances coverage.',
+      },
+      {
+        id: 'func-2',
+        name: 'Wedding',
+        date: '5 MAR 26',
+        startTime: '04:00 PM',
+        endTime: '11:00 PM',
+        durationSlot: '7 Hours',
+        location: 'PALACE GROUNDS, MUMBAI',
+        requirements: [
+          { name: 'Candid Photography', qty: 2 },
+          { name: 'Cinematography', qty: 2 },
+          { name: 'Drone', qty: 1 },
+          { name: 'Traditional Video', qty: 1 },
+        ],
+        notes: 'Varmala & Pheras high speed cinema capture.',
+      }
+    ]
+  },
+
+  // 5. What's Included
   whatsIncluded: {
     kicker: 'YOUR PACKAGE',
     heading: 'INCLUDED',
@@ -882,7 +928,7 @@ function ThreeDCurvedMultiSelect({
           onClick={handleAdd}
           className="px-2.5 py-1 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all flex items-center gap-1"
         >
-          <span>+ Add {title === 'Requirements' ? 'Requirement' : 'Deliverable'}</span>
+          <span>+ Add</span>
         </button>
       </div>
 
@@ -912,6 +958,268 @@ function ThreeDCurvedMultiSelect({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+export interface FunctionItem {
+  id: string;
+  name: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  durationSlot: string;
+  location: string;
+  requirements: { name: string; qty: number }[];
+  notes: string;
+}
+
+function ThreeDCurvedFunctionEditor({
+  func,
+  index,
+  availableFunctionNames,
+  availableDurationSlots,
+  availableRequirements,
+  onUpdate,
+  onDelete,
+  onAddCustomFunctionName,
+  onAddCustomDuration,
+  onAddCustomRequirement,
+}: {
+  func: FunctionItem;
+  index: number;
+  availableFunctionNames: string[];
+  availableDurationSlots: string[];
+  availableRequirements: string[];
+  onUpdate: (updated: FunctionItem) => void;
+  onDelete: () => void;
+  onAddCustomFunctionName: (name: string) => void;
+  onAddCustomDuration: (dur: string) => void;
+  onAddCustomRequirement: (req: string) => void;
+}) {
+  const handleNameChange = (val: string) => {
+    if (val === '__ADD_NEW__') {
+      const customName = prompt('Enter custom function name (e.g. Cocktail, Pool Party):');
+      if (customName && customName.trim()) {
+        const trimmed = customName.trim();
+        onAddCustomFunctionName(trimmed);
+        onUpdate({ ...func, name: trimmed });
+      }
+    } else {
+      onUpdate({ ...func, name: val });
+    }
+  };
+
+  const handleDurationChange = (val: string) => {
+    if (val === '__ADD_NEW__') {
+      const customDur = prompt('Enter custom duration (e.g. 6 Hours, Half Day):');
+      if (customDur && customDur.trim()) {
+        const trimmed = customDur.trim();
+        onAddCustomDuration(trimmed);
+        onUpdate({ ...func, durationSlot: trimmed });
+      }
+    } else {
+      onUpdate({ ...func, durationSlot: val });
+    }
+  };
+
+  const toggleRequirement = (reqName: string) => {
+    const exists = func.requirements.find(r => r.name === reqName);
+    let newReqs: { name: string; qty: number }[];
+    if (exists) {
+      newReqs = func.requirements.filter(r => r.name !== reqName);
+    } else {
+      newReqs = [...func.requirements, { name: reqName, qty: 1 }];
+    }
+    onUpdate({ ...func, requirements: newReqs });
+  };
+
+  const changeRequirementQty = (reqName: string, qty: number) => {
+    const newReqs = func.requirements.map(r => r.name === reqName ? { ...r, qty } : r);
+    onUpdate({ ...func, requirements: newReqs });
+  };
+
+  const handleAddReq = () => {
+    const customReq = prompt('Enter custom requirement item:');
+    if (customReq && customReq.trim()) {
+      const trimmed = customReq.trim();
+      onAddCustomRequirement(trimmed);
+      if (!func.requirements.find(r => r.name === trimmed)) {
+        onUpdate({ ...func, requirements: [...func.requirements, { name: trimmed, qty: 1 }] });
+      }
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3.5 space-y-3 relative transition-all">
+      <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+        <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+          <Calendar className="w-3.5 h-3.5 text-amber-600" />
+          <span>Function #{index + 1} ({func.name})</span>
+        </span>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+          title="Delete Function"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Function Name Dropdown */}
+      <div>
+        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Function Name</label>
+        <select
+          value={func.name}
+          onChange={(e) => handleNameChange(e.target.value)}
+          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+        >
+          <option value="__ADD_NEW__">+ Add Function...</option>
+          {availableFunctionNames.map(name => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Date Picker */}
+      <div>
+        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Date</label>
+        <input
+          type="text"
+          value={func.date}
+          placeholder="e.g. 4 MAR 26"
+          onChange={(e) => onUpdate({ ...func, date: e.target.value })}
+          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
+        />
+      </div>
+
+      {/* Time & Duration Slot Grid */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Start Time</label>
+          <input
+            type="text"
+            value={func.startTime}
+            placeholder="10:00 AM"
+            onChange={(e) => onUpdate({ ...func, startTime: e.target.value })}
+            className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">End Time</label>
+          <input
+            type="text"
+            value={func.endTime}
+            placeholder="05:00 PM"
+            onChange={(e) => onUpdate({ ...func, endTime: e.target.value })}
+            className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
+          />
+        </div>
+      </div>
+
+      {/* Duration Slot Dropdown */}
+      <div>
+        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Duration Slot</label>
+        <select
+          value={func.durationSlot}
+          onChange={(e) => handleDurationChange(e.target.value)}
+          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+        >
+          {availableDurationSlots.map(slot => (
+            <option key={slot} value={slot}>{slot}</option>
+          ))}
+          <option value="__ADD_NEW__">+ Add Hours...</option>
+        </select>
+      </div>
+
+      {/* Location Input */}
+      <div>
+        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Venue / Location</label>
+        <textarea
+          rows={2}
+          value={func.location}
+          placeholder="e.g. JW MARRIOTT, MUMBAI"
+          onChange={(e) => onUpdate({ ...func, location: e.target.value })}
+          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase resize-none"
+        />
+      </div>
+
+      {/* Requirements with Quantity Selector */}
+      <div className="space-y-2 pt-1 border-t border-amber-100">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1">
+            <Camera className="w-3 h-3 text-amber-600" /> Requirements &amp; Crew
+          </label>
+          <button
+            type="button"
+            onClick={handleAddReq}
+            className="px-2 py-0.5 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all"
+          >
+            + Add
+          </button>
+        </div>
+
+        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+          {availableRequirements.map((reqName) => {
+            const reqObj = func.requirements.find(r => r.name === reqName);
+            const isSelected = !!reqObj;
+            return (
+              <div
+                key={reqName}
+                className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold transition-all ${
+                  isSelected
+                    ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                    : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600'
+                }`}
+              >
+                <div 
+                  onClick={() => toggleRequirement(reqName)} 
+                  className="flex items-center gap-2 cursor-pointer flex-1 select-none pr-1"
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                      isSelected
+                        ? 'border-amber-600 bg-amber-600 text-white'
+                        : 'border-zinc-300 bg-white'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                  <span className="leading-tight">{reqName}</span>
+                </div>
+
+                {isSelected && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold text-amber-800">Qty:</span>
+                    <select
+                      value={reqObj?.qty || 1}
+                      onChange={(e) => changeRequirementQty(reqName, Number(e.target.value) || 1)}
+                      className="p-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-bold text-[11px]"
+                    >
+                      {[1,2,3,4,5,6,7,8,9,10].map(num => (
+                        <option key={num} value={num}>{num}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Function Notes */}
+      <div>
+        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Notes / Highlights</label>
+        <textarea
+          rows={2}
+          value={func.notes}
+          placeholder="Custom notes for this function..."
+          onChange={(e) => onUpdate({ ...func, notes: e.target.value })}
+          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs resize-none"
+        />
       </div>
     </div>
   );
@@ -960,6 +1268,31 @@ function StudioCoreAiryBuilderContent() {
     '1 Video Reel',
     'Teaser Video (1-2 Min)',
     'Main Highlight Film (15-20 Min)',
+  ]);
+
+  // Functions Page Module Available Dropdown States
+  const [availableFunctionNames, setAvailableFunctionNames] = useState<string[]>([
+    'Wedding',
+    'Haldi',
+    'Sangeet',
+    'Mehendi',
+    'Reception',
+    'Haldi & Sangeet',
+    'Cocktail',
+    'Engagement',
+  ]);
+
+  const [availableDurationSlots, setAvailableDurationSlots] = useState<string[]>([
+    '2 Hours',
+    '3 Hours',
+    '4 Hours',
+    '5 Hours',
+    '6 Hours',
+    '7 Hours',
+    '8 Hours',
+    '10 Hours',
+    '12 Hours',
+    'Full Day',
   ]);
 
   // Mobile Bottom Sheet Drawer State
@@ -1526,7 +1859,103 @@ function StudioCoreAiryBuilderContent() {
           )}
         </div>
 
-        {/* 4. What's included Card */}
+        {/* 4. Functions & Coverage Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'functions' ? null : 'functions')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <Calendar className="w-3.5 h-3.5 text-amber-700" />
+              <span>4. Functions &amp; Coverage</span>
+            </div>
+            {openCard === 'functions' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'functions' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
+                <input
+                  type="text"
+                  value={data.functionsPage?.heading || 'Functions & Coverage'}
+                  onChange={(e) => setData({ ...data, functionsPage: { ...data.functionsPage, heading: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                />
+              </div>
+
+              <div className="space-y-3">
+                {(data.functionsPage?.items || []).map((funcItem, fIdx) => (
+                  <ThreeDCurvedFunctionEditor
+                    key={funcItem.id || fIdx}
+                    func={funcItem}
+                    index={fIdx}
+                    availableFunctionNames={availableFunctionNames}
+                    availableDurationSlots={availableDurationSlots}
+                    availableRequirements={availableRequirements}
+                    onUpdate={(updatedFunc) => {
+                      const updatedItems = [...(data.functionsPage?.items || [])];
+                      updatedItems[fIdx] = updatedFunc;
+                      setData({ ...data, functionsPage: { ...data.functionsPage, items: updatedItems } });
+                    }}
+                    onDelete={() => {
+                      const filtered = (data.functionsPage?.items || []).filter((_, i) => i !== fIdx);
+                      setData({ ...data, functionsPage: { ...data.functionsPage, items: filtered } });
+                    }}
+                    onAddCustomFunctionName={(newName) => setAvailableFunctionNames(prev => Array.from(new Set([...prev, newName])))}
+                    onAddCustomDuration={(newDur) => setAvailableDurationSlots(prev => Array.from(new Set([...prev, newDur])))}
+                    onAddCustomRequirement={(newReq) => setAvailableRequirements(prev => Array.from(new Set([...prev, newReq])))}
+                  />
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newFunc: FunctionItem = {
+                      id: `func-${Date.now()}`,
+                      name: 'Sangeet',
+                      date: '4 MAR 26',
+                      startTime: '06:00 PM',
+                      endTime: '11:00 PM',
+                      durationSlot: '5 Hours',
+                      location: 'PALACE GROUNDS, MUMBAI',
+                      requirements: [
+                        { name: 'Candid Photography', qty: 2 },
+                        { name: 'Cinematography', qty: 2 }
+                      ],
+                      notes: 'Sangeet performance & stage lighting coverage.'
+                    };
+                    setData({ ...data, functionsPage: { ...data.functionsPage, items: [...(data.functionsPage?.items || []), newFunc] } });
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-all"
+                >
+                  <Plus className="w-4 h-4 text-amber-700 stroke-[3]" />
+                  <span>+ Add Function</span>
+                </button>
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.functionsPage?.photo}
+                frameShape={data.functionsPage?.frameShape}
+                photoHeight={data.functionsPage?.photoHeight}
+                photoWidth={data.functionsPage?.photoWidth}
+                photoFocalY={data.functionsPage?.photoFocalY}
+                bgOpacity={data.functionsPage?.bgOpacity}
+                imagePosition={data.functionsPage?.imagePosition}
+                onOpenAddModal={() => openAddImageModal('functionsPhoto')}
+                onDeletePhoto={() => setData({ ...data, functionsPage: { ...data.functionsPage, photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, functionsPage: { ...data.functionsPage, frameShape: shape } })}
+                onChangePosition={(pos) => setData({ ...data, functionsPage: { ...data.functionsPage, imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, functionsPage: { ...data.functionsPage, photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, functionsPage: { ...data.functionsPage, bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, functionsPage: { ...data.functionsPage, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, functionsPage: { ...data.functionsPage, photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 5. What's included Card */}
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
           <div 
             onClick={() => setOpenCard(openCard === 'included' ? null : 'included')}
@@ -2140,15 +2569,14 @@ function StudioCoreAiryBuilderContent() {
               className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
-                height: '1123px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
+                minHeight: (data.shootDetails.frameShape === 'background' && data.shootDetails.photoHeight > 1123) ? `${data.shootDetails.photoHeight}px` : '1123px',
+                height: (data.shootDetails.frameShape === 'background' && data.shootDetails.photoHeight > 1123) ? `${data.shootDetails.photoHeight}px` : 'auto',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
-                margin: '0 auto', // Center alignment guarantee
+                margin: '0 auto',
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
@@ -2187,7 +2615,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="text-center space-y-2">
+                  <div className="text-center space-y-2 mb-6">
                     <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.shootDetails.heading || 'Pre-Wedding Shoot'}
                     </h2>
@@ -2205,12 +2633,12 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="space-y-3 max-w-lg mx-auto pl-4">
-                    <p className="text-base font-bold tracking-wide flex items-center gap-2" style={{ color: textColor }}>
+                  <div className="space-y-3 max-w-lg mx-auto pl-4 mt-6">
+                    <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2" style={{ color: textColor }}>
                       <Camera className="w-4 h-4" style={{ color: kickerColor }} />
                       <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
                     </p>
-                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
+                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed text-center">
                       {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
                         .split('\n').filter(Boolean).map((item, idx) => (
                           <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
@@ -2218,11 +2646,11 @@ function StudioCoreAiryBuilderContent() {
                     </ul>
                   </div>
 
-                  <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4">
-                    <h3 className="text-2xl tracking-wide font-normal text-left whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4 mb-8">
+                    <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.shootDetails.deliverablesHeading || 'Deliverables'}
                     </h3>
-                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed">
+                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed text-center">
                       {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
                         .split('\n').filter(Boolean).map((item, idx) => (
                           <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
@@ -2241,6 +2669,169 @@ function StudioCoreAiryBuilderContent() {
                     photoFocalY={data.shootDetails.photoFocalY}
                     isBottomFlush={true}
                     altText="Pre-Wedding Photo"
+                  />
+                )}
+              </div>
+            </section>
+
+            {/* Inter-page Gap Spacer */}
+            <div 
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
+            />
+
+            {/* SECTION 4: FUNCTIONS & COVERAGE */}
+            <section 
+              className="quotation-page content-page flex flex-col transition-colors duration-300"
+              style={{
+                width: '794px',
+                minWidth: '794px',
+                maxWidth: '794px',
+                minHeight: (data.functionsPage?.frameShape === 'background' && (data.functionsPage?.photoHeight || 0) > 1123) ? `${data.functionsPage.photoHeight}px` : '1123px',
+                height: (data.functionsPage?.frameShape === 'background' && (data.functionsPage?.photoHeight || 0) > 1123) ? `${data.functionsPage.photoHeight}px` : 'auto',
+                boxSizing: 'border-box',
+                position: 'relative',
+                overflow: 'hidden',
+                margin: '0 auto',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                color: textColor,
+                fontFamily: data.secondaryFont,
+              }}
+            >
+              {data.functionsPage?.photo && data.functionsPage?.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.functionsPage.photo}
+                  frameShape="background"
+                  photoHeight={data.functionsPage.photoHeight}
+                  photoWidth={data.functionsPage.photoWidth}
+                  photoFocalY={data.functionsPage.photoFocalY}
+                  bgOpacity={data.functionsPage.bgOpacity}
+                  pageBgColor={pageBgColor}
+                  altText="Functions Background"
+                />
+              )}
+
+              <div className={`relative z-10 mx-auto flex flex-col h-full w-full ${
+                data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'p-12'
+              } ${!data.functionsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                
+                <div className={`flex flex-col items-center justify-start w-full ${data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.functionsPage.photo}
+                      frameShape={data.functionsPage.frameShape}
+                      photoHeight={data.functionsPage.photoHeight}
+                      photoWidth={data.functionsPage.photoWidth}
+                      photoFocalY={data.functionsPage.photoFocalY}
+                      altText="Functions Banner"
+                    />
+                  )}
+
+                  <div className="text-center space-y-2 mb-6">
+                    <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
+                      {data.functionsPage?.kicker || 'EVENT SCHEDULE'}
+                    </span>
+                    <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {data.functionsPage?.heading || 'Functions & Coverage'}
+                    </h2>
+                  </div>
+
+                  {/* CENTER IMAGE POSITION */}
+                  {data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.functionsPage.photo}
+                      frameShape={data.functionsPage.frameShape}
+                      photoHeight={data.functionsPage.photoHeight}
+                      photoWidth={data.functionsPage.photoWidth}
+                      photoFocalY={data.functionsPage.photoFocalY}
+                      altText="Functions Banner"
+                    />
+                  )}
+
+                  <div className="w-full max-w-xl mx-auto space-y-5 my-auto">
+                    {(data.functionsPage?.items || []).map((func, index) => (
+                      <div 
+                        key={func.id || index} 
+                        className="p-5 rounded-2xl border transition-all space-y-3.5 shadow-xs"
+                        style={{ 
+                          borderColor: borderColor || 'rgba(0,0,0,0.12)',
+                          backgroundColor: boxBgColor || 'rgba(0,0,0,0.03)'
+                        }}
+                      >
+                        {/* Function Name & Timing Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-3" style={{ borderColor: borderColor || 'rgba(0,0,0,0.1)' }}>
+                          <h3 className="text-2xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                            {func.name || `Function ${index + 1}`}
+                          </h3>
+                          <div className="text-[11px] tracking-widest uppercase font-bold px-3 py-1 rounded-full border shadow-2xs inline-flex items-center gap-1.5 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
+                            <Calendar className="w-3 h-3" />
+                            <span>
+                              {[func.date, func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null, func.durationSlot ? `(${func.durationSlot})` : null].filter(Boolean).join(' • ')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Venue Location */}
+                        {func.location && (
+                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90" style={{ color: textColor }}>
+                            <MapPin className="w-3.5 h-3.5 shrink-0 text-amber-600" style={{ color: kickerColor }} />
+                            <span>{func.location}</span>
+                          </div>
+                        )}
+
+                        {/* Requirements & Crew List */}
+                        {func.requirements && func.requirements.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[10px] uppercase font-bold tracking-widest block opacity-75" style={{ color: kickerColor }}>
+                              Crew &amp; Requirements:
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-medium">
+                              {func.requirements.map((req, rIdx) => {
+                                const q = req.qty || 1;
+                                let label = req.name;
+                                if (q > 1) {
+                                  if (req.name.toLowerCase().includes('photography') || req.name.toLowerCase().includes('photographer')) {
+                                    label = req.name.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
+                                  } else if (req.name.toLowerCase().includes('cinematography') || req.name.toLowerCase().includes('cinematographer')) {
+                                    label = req.name.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
+                                  }
+                                }
+                                return (
+                                  <div key={rIdx} className="flex items-center gap-2" style={{ color: textColor }}>
+                                    <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: kickerColor }} />
+                                    <span>{`${q} × ${label}`}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Custom Notes */}
+                        {func.notes && (
+                          <p className="text-xs italic leading-relaxed opacity-85 pt-1 border-t" style={{ color: textColor, borderColor: borderColor || 'rgba(0,0,0,0.08)' }}>
+                            "{func.notes}"
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* BOTTOM FLUSH IMAGE POSITION */}
+                {data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && (data.functionsPage?.imagePosition === 'bottom' || !data.functionsPage?.imagePosition) && (
+                  <SectionImageRenderer
+                    photo={data.functionsPage.photo}
+                    frameShape={data.functionsPage.frameShape}
+                    photoHeight={data.functionsPage.photoHeight}
+                    photoWidth={data.functionsPage.photoWidth}
+                    photoFocalY={data.functionsPage.photoFocalY}
+                    isBottomFlush={true}
+                    altText="Functions Banner"
                   />
                 )}
               </div>
