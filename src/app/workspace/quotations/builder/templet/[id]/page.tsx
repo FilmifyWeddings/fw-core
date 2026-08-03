@@ -912,12 +912,12 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PIXEL-PERFECT STANDARD A4 MULTI-PAGE PDF EXPORTER Engine
+  // PIXEL-PERFECT SINGLE CANVAS CONTINUOUS PDF EXPORTER ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
-    setPdfToastMessage('Generating High-Res A4 PDF...');
+    setPdfToastMessage('Generating High-Res PDF...');
 
     // Lock zoomScale to 1.0 & enable PDF capture CSS
     setZoomScale(1.0);
@@ -927,36 +927,31 @@ function StudioCoreAiryBuilderContent() {
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
-      const pageElements = document.querySelectorAll('.quotation-page');
-      if (!pageElements.length) throw new Error('No quotation pages found (.quotation-page)');
+      const container = document.querySelector('#quotation-document') as HTMLElement;
+      if (!container) throw new Error('Quotation document root not found (#quotation-document)');
 
-      // Standard A4 dimensions in px (794 x 1123)
-      const a4Width = 794;
-      const a4Height = 1123;
+      const widthPx = container.offsetWidth || 794;
+      const totalHeightPx = container.offsetHeight;
+
+      const canvas = await html2canvasPro(container, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: widthPx,
+        height: totalHeightPx,
+        windowWidth: widthPx
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
       const pdf = new jsPDF({
         unit: 'px',
-        format: [a4Width, a4Height],
+        format: [widthPx, totalHeightPx],
         orientation: 'portrait'
       });
 
-      for (let i = 0; i < pageElements.length; i++) {
-        const pageEl = pageElements[i] as HTMLElement;
-
-        const canvas = await html2canvasPro(pageEl, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          width: a4Width,
-          height: a4Height,
-          windowWidth: a4Width
-        });
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        if (i > 0) pdf.addPage([a4Width, a4Height], 'portrait');
-        pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height, undefined, 'FAST');
-      }
+      pdf.addImage(imgData, 'JPEG', 0, 0, widthPx, totalHeightPx, undefined, 'FAST');
 
       const cleanDesignName = (data?.designName || 'Quotation')
         .replace(/\u2013/g, '-')
@@ -965,7 +960,7 @@ function StudioCoreAiryBuilderContent() {
 
       pdf.save(`${cleanDesignName}.pdf`);
 
-      setPdfToastMessage('A4 PDF Downloaded Successfully!');
+      setPdfToastMessage('PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
       console.error('PDF Export Error:', err);
@@ -1761,23 +1756,15 @@ function StudioCoreAiryBuilderContent() {
           >
 
             <div 
-              id="quotation-document" 
-              className="flex flex-col gap-8 items-center"
+              id="quotation-document"
             >
               <section 
-                className={`quotation-page cover-page flex flex-col transition-colors duration-300 select-none ${
+                className={`flex flex-col transition-colors duration-300 select-none ${
                   !data.cover.photoUrl
                     ? 'justify-center items-center text-center p-12'
                     : 'justify-between'
                 }`}
                 style={{
-                  width: '794px',
-                  height: '1123px',
-                  minHeight: '1123px',
-                  maxHeight: '1123px',
-                  boxSizing: 'border-box',
-                  overflow: 'hidden',
-                  position: 'relative',
                   backgroundColor: pageBgColor,
                   color: textColor,
                   fontFamily: data.secondaryFont,
@@ -1882,19 +1869,12 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`flex flex-col transition-colors duration-300 ${
                 !data.aboutUs.bottomBannerPhoto
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
-                width: '794px',
-                height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2002,19 +1982,12 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`flex flex-col transition-colors duration-300 ${
                 !data.shootDetails.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
-                width: '794px',
-                height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2110,19 +2083,12 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`flex flex-col transition-colors duration-300 ${
                 !data.whatsIncluded.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
-                width: '794px',
-                height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2195,19 +2161,12 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`flex flex-col transition-colors duration-300 ${
                 !data.pricePayment.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
-                width: '794px',
-                height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2311,19 +2270,12 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`flex flex-col transition-colors duration-300 ${
                 !data.termsAndThankYou.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
-                width: '794px',
-                height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,

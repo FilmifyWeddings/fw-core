@@ -912,12 +912,12 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PIXEL-PERFECT STANDARD A4 MULTI-PAGE PDF EXPORTER Engine
+  // PIXEL-PERFECT SINGLE CANVAS CONTINUOUS PDF EXPORTER ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
-    setPdfToastMessage('Generating High-Res A4 PDF...');
+    setPdfToastMessage('Generating High-Res PDF...');
 
     // Lock zoomScale to 1.0 & enable PDF capture CSS
     setZoomScale(1.0);
@@ -927,36 +927,31 @@ function StudioCoreAiryBuilderContent() {
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
-      const pageElements = document.querySelectorAll('.quotation-page');
-      if (!pageElements.length) throw new Error('No quotation pages found (.quotation-page)');
+      const container = document.querySelector('#quotation-document') as HTMLElement;
+      if (!container) throw new Error('Quotation document root not found (#quotation-document)');
 
-      // Standard A4 dimensions in px (794 x 1123)
-      const a4Width = 794;
-      const a4Height = 1123;
+      const widthPx = container.offsetWidth || 794;
+      const totalHeightPx = container.offsetHeight;
+
+      const canvas = await html2canvasPro(container, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: widthPx,
+        height: totalHeightPx,
+        windowWidth: widthPx
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
       const pdf = new jsPDF({
         unit: 'px',
-        format: [a4Width, a4Height],
+        format: [widthPx, totalHeightPx],
         orientation: 'portrait'
       });
 
-      for (let i = 0; i < pageElements.length; i++) {
-        const pageEl = pageElements[i] as HTMLElement;
-
-        const canvas = await html2canvasPro(pageEl, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          width: a4Width,
-          height: a4Height,
-          windowWidth: a4Width
-        });
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        if (i > 0) pdf.addPage([a4Width, a4Height], 'portrait');
-        pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height, undefined, 'FAST');
-      }
+      pdf.addImage(imgData, 'JPEG', 0, 0, widthPx, totalHeightPx, undefined, 'FAST');
 
       const cleanDesignName = (data?.designName || 'Quotation')
         .replace(/\u2013/g, '-')
@@ -965,7 +960,7 @@ function StudioCoreAiryBuilderContent() {
 
       pdf.save(`${cleanDesignName}.pdf`);
 
-      setPdfToastMessage('A4 PDF Downloaded Successfully!');
+      setPdfToastMessage('PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
       console.error('PDF Export Error:', err);
@@ -979,8 +974,10 @@ function StudioCoreAiryBuilderContent() {
 
   // Load User Session & Proposal
   useEffect(() => {
+    console.log('=== CONFIRMED_TEMPLET_ID_PAGE_V5 ===');
     console.log('[BUILD_VER: A4_STRICT_V2]');
     console.log('[TEMPLET_1_A4_STRICT_V3_SUCCESS]');
+    console.log('[TEMPLET_DIRECT_ROUTE_V4_SUCCESS]');
     async function initUserAndLoadData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -1759,14 +1756,17 @@ function StudioCoreAiryBuilderContent() {
           >
 
             <div 
-              id="quotation-document" 
-              className="flex flex-col gap-8 items-center"
+              id="quotation-document"
             >
               <section 
-                className={`quotation-page cover-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between text-center transition-colors duration-300 select-none ${!data.cover.photoUrl ? 'justify-center items-center' : ''}`}
-                style={{ 
-                  backgroundColor: pageBgColor, 
-                  color: textColor, 
+                className={`flex flex-col transition-colors duration-300 select-none ${
+                  !data.cover.photoUrl
+                    ? 'justify-center items-center text-center p-12'
+                    : 'justify-between'
+                }`}
+                style={{
+                  backgroundColor: pageBgColor,
+                  color: textColor,
                   fontFamily: data.secondaryFont,
                 }}
               >
@@ -1783,7 +1783,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className="relative z-10 flex flex-col items-center justify-between h-full w-full p-12 py-16 text-center my-auto">
+              <div className={`relative z-10 flex flex-col items-center w-full my-auto ${!data.cover.photoUrl ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'justify-between h-full p-12 py-16'}`}>
                 <div className="w-full flex flex-col items-center justify-center space-y-2">
                   {data.cover.brandLogoUrl ? (
                     <img 
@@ -1869,12 +1869,15 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.aboutUs.bottomBannerPhoto ? 'justify-center items-center text-center' : ''} ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+              className={`flex flex-col transition-colors duration-300 ${
+                !data.aboutUs.bottomBannerPhoto
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
-                minHeight: data.aboutUs.frameShape === 'background' ? `${data.aboutUs.bottomBannerHeight || 500}px` : undefined
               }}
             >
               {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape === 'background' && (
@@ -1979,12 +1982,15 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.shootDetails.photo ? 'justify-center items-center text-center' : ''} ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+              className={`flex flex-col transition-colors duration-300 ${
+                !data.shootDetails.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
-                minHeight: data.shootDetails.frameShape === 'background' ? `${data.shootDetails.photoHeight || 500}px` : undefined
               }}
             >
               {data.shootDetails.photo && data.shootDetails.frameShape === 'background' && (
@@ -2077,12 +2083,15 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.whatsIncluded.photo ? 'justify-center items-center text-center' : ''} ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+              className={`flex flex-col transition-colors duration-300 ${
+                !data.whatsIncluded.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
-                minHeight: data.whatsIncluded.frameShape === 'background' ? `${data.whatsIncluded.photoHeight || 500}px` : undefined
               }}
             >
               {data.whatsIncluded.photo && data.whatsIncluded.frameShape === 'background' && (
@@ -2152,12 +2161,15 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.pricePayment.photo ? 'justify-center items-center text-center' : ''} ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+              className={`flex flex-col transition-colors duration-300 ${
+                !data.pricePayment.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
-                minHeight: data.pricePayment.frameShape === 'background' ? `${data.pricePayment.photoHeight || 500}px` : undefined
               }}
             >
               {data.pricePayment.photo && data.pricePayment.frameShape === 'background' && (
@@ -2258,12 +2270,15 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.termsAndThankYou.photo ? 'justify-center items-center text-center' : ''} ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor, 
+              className={`flex flex-col transition-colors duration-300 ${
+                !data.termsAndThankYou.photo
+                  ? 'justify-center items-center text-center p-12'
+                  : 'justify-between'
+              }`}
+              style={{
+                backgroundColor: pageBgColor,
+                color: textColor,
                 fontFamily: data.secondaryFont,
-                minHeight: data.termsAndThankYou.frameShape === 'background' ? `${data.termsAndThankYou.photoHeight || 500}px` : undefined
               }}
             >
               {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape === 'background' && (
@@ -2447,6 +2462,10 @@ function StudioCoreAiryBuilderContent() {
 }
 
 export default function QuotationBuilderPage() {
+  useEffect(() => {
+    console.log('=== EXACT_TEMPLET_ID_PAGE_V6_ACTIVE ===');
+  }, []);
+
   return (
     <React.Suspense fallback={
       <div className="h-screen w-screen bg-[#EBECEF] text-zinc-900 flex items-center justify-center p-4">
