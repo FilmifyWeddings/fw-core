@@ -24,22 +24,42 @@ export class BrowserInstanceWrapper {
   }
 
   async resolveExecutablePath(): Promise<string> {
+    const fs = await import('fs');
     let executablePath = process.env.CHROMIUM_PATH || '';
+
+    if (executablePath && (!fs.existsSync(executablePath) || !fs.statSync(executablePath).isFile())) {
+      executablePath = '';
+    }
+
+    // On Windows development systems, prioritize locally installed Chrome
+    if (!executablePath && process.platform === 'win32') {
+      for (const p of COMMON_CHROMIUM_BINARY_PATHS) {
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+          executablePath = p;
+          break;
+        }
+      }
+    }
+
     const { chromiumModule } = await loadPuppeteerModules();
 
+    // On Linux/Server environments, use Sparticuz Chromium executablePath extractor
     if (!executablePath && chromiumModule && typeof chromiumModule.executablePath === 'function') {
       try {
-        executablePath = await chromiumModule.executablePath();
+        const extractedPath = await chromiumModule.executablePath();
+        if (extractedPath && fs.existsSync(extractedPath) && fs.statSync(extractedPath).isFile()) {
+          executablePath = extractedPath;
+        }
       } catch (err: any) {
         PDFLogger.warn('Sparticuz executablePath warning', err);
       }
     }
 
+    // Fallback to common Linux system paths (/usr/bin/chromium-browser, etc.)
     if (!executablePath) {
       try {
-        const fs = await import('fs');
         for (const p of COMMON_CHROMIUM_BINARY_PATHS) {
-          if (fs.existsSync(p)) {
+          if (fs.existsSync(p) && fs.statSync(p).isFile()) {
             executablePath = p;
             break;
           }
