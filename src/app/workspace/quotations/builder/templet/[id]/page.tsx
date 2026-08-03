@@ -979,6 +979,7 @@ function StudioCoreAiryBuilderContent() {
 
   // Load User Session & Proposal
   useEffect(() => {
+    console.log('=== CONFIRMED_TEMPLET_ID_PAGE_V5 ===');
     console.log('[BUILD_VER: A4_STRICT_V2]');
     console.log('[TEMPLET_1_A4_STRICT_V3_SUCCESS]');
     console.log('[TEMPLET_DIRECT_ROUTE_V4_SUCCESS]');
@@ -1764,8 +1765,14 @@ function StudioCoreAiryBuilderContent() {
               className="flex flex-col gap-8 items-center"
             >
               <section 
-                className={`quotation-page cover-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between text-center transition-colors duration-300 select-none ${!data.cover.photoUrl ? 'justify-center items-center' : ''}`}
+                className="quotation-page cover-page w-[794px] h-[1123px] transition-colors duration-300 select-none"
                 style={{ 
+                  width: '794px',
+                  height: '1123px',
+                  minHeight: '1123px',
+                  maxHeight: '1123px',
+                  overflow: 'hidden',
+                  position: 'relative',
                   backgroundColor: pageBgColor, 
                   color: textColor, 
                   fontFamily: data.secondaryFont,
@@ -1784,7 +1791,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className="relative z-10 flex flex-col items-center justify-between h-full w-full p-12 py-16 text-center my-auto">
+              <div className={`relative z-10 flex flex-col items-center w-full my-auto ${!data.cover.photoUrl ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'justify-between h-full p-12 py-16'}`}>
                 <div className="w-full flex flex-col items-center justify-center space-y-2">
                   {data.cover.brandLogoUrl ? (
                     <img 
@@ -1870,12 +1877,17 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.aboutUs.bottomBannerPhoto ? 'justify-center items-center text-center' : ''} ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.aboutUs.bottomBannerPhoto ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor, 
                 color: textColor, 
                 fontFamily: data.secondaryFont,
-                minHeight: data.aboutUs.frameShape === 'background' ? `${data.aboutUs.bottomBannerHeight || 500}px` : undefined
               }}
             >
               {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape === 'background' && (
@@ -1980,12 +1992,17 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.shootDetails.photo ? 'justify-center items-center text-center' : ''} ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.shootDetails.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor, 
                 color: textColor, 
                 fontFamily: data.secondaryFont,
-                minHeight: data.shootDetails.frameShape === 'background' ? `${data.shootDetails.photoHeight || 500}px` : undefined
               }}
             >
               {data.shootDetails.photo && data.shootDetails.frameShape === 'background' && (
@@ -2078,12 +2095,17 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.whatsIncluded.photo ? 'justify-center items-center text-center' : ''} ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.whatsIncluded.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor, 
                 color: textColor, 
                 fontFamily: data.secondaryFont,
-                minHeight: data.whatsIncluded.frameShape === 'background' ? `${data.whatsIncluded.photoHeight || 500}px` : undefined
               }}
             >
               {data.whatsIncluded.photo && data.whatsIncluded.frameShape === 'background' && (
@@ -2153,12 +2175,17 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.pricePayment.photo ? 'justify-center items-center text-center' : ''} ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.pricePayment.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor, 
                 color: textColor, 
                 fontFamily: data.secondaryFont,
-                minHeight: data.pricePayment.frameShape === 'background' ? `${data.pricePayment.photoHeight || 500}px` : undefined
               }}
             >
               {data.pricePayment.photo && data.pricePayment.frameShape === 'background' && (
@@ -2259,12 +2286,17 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`quotation-page content-page w-[794px] h-[1123px] min-h-[1123px] max-h-[1123px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${!data.termsAndThankYou.photo ? 'justify-center items-center text-center' : ''} ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+              className={`quotation-page content-page w-[794px] h-[1123px] transition-colors duration-300 ${!data.termsAndThankYou.photo ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'flex flex-col justify-between'} ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor, 
                 color: textColor, 
                 fontFamily: data.secondaryFont,
-                minHeight: data.termsAndThankYou.frameShape === 'background' ? `${data.termsAndThankYou.photoHeight || 500}px` : undefined
               }}
             >
               {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape === 'background' && (
