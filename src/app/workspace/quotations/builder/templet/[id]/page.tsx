@@ -1737,7 +1737,8 @@ function StudioCoreAiryBuilderContent() {
         {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS */}
         <main 
           ref={mainContainerRef}
-          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-20 md:pb-8"
+          className="flex-1 p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-20 md:pb-8 transition-colors duration-300"
+          style={{ backgroundColor: textColor || '#EBECEF' }}
         >
           
           {/* Scaled Continuous Canvas Container Wrapper */}
@@ -1757,7 +1758,7 @@ function StudioCoreAiryBuilderContent() {
               id="quotation-document"
               className="w-full flex flex-col items-center justify-start gap-4 py-6 transition-colors duration-300 min-h-screen overflow-y-auto"
               style={{ 
-                backgroundColor: activeTheme?.background || pageBgColor || '#f3f4f6' 
+                backgroundColor: textColor || '#f3f4f6' 
               }}
             >
               <div 
