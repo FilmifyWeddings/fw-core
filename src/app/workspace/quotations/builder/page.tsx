@@ -922,68 +922,21 @@ function StudioCoreAiryBuilderContent() {
     document.body.classList.add('pdf-capture-active');
 
     try {
-      // 1. Construct self-contained HTML payload for Server-Side Puppeteer
-      const stylesheetLinks = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-        .map(el => {
-          if (el.tagName === 'LINK') {
-            const href = (el as HTMLLinkElement).getAttribute('href');
-            if (href && href.startsWith('/')) {
-              return `<link rel="stylesheet" href="${window.location.origin}${href}">`;
-            }
-          }
-          return el.outerHTML;
-        })
-        .join('\n');
+      const pageElements = document.querySelectorAll('.quotation-page');
+      if (!pageElements.length) throw new Error('No quotation pages found');
 
-      let htmlContent = canvasRef.current.innerHTML || '';
-      // Convert relative images to absolute paths
-      htmlContent = htmlContent.replace(/src="\/images\//g, `src="${window.location.origin}/images/`);
-
-      const fullHtml = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <title>${data.designName || 'Quotation'}</title>
-            ${stylesheetLinks}
-            <style>
-              body {
-                background-color: #F3F4F6 !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-              }
-              .quotation-page {
-                width: 794px !important;
-                min-width: 794px !important;
-                max-width: 794px !important;
-                box-sizing: border-box !important;
-                margin: 0 auto !important;
-                box-shadow: none !important;
-                border: none !important;
-                page-break-after: always !important;
-                break-after: page !important;
-              }
-              .quotation-page img {
-                object-fit: cover !important;
-                max-width: 100% !important;
-              }
-              svg, img {
-                transform-box: fill-box !important;
-              }
-              .no-print, button {
-                display: none !important;
-              }
-            </style>
-          </head>
-          <body>
-            <div style="width: 794px; margin: 0 auto;">
-              ${htmlContent}
-            </div>
-          </body>
-        </html>
-      `;
+      // Build structured page payloads with exact measured DOM dimensions per page
+      const pagesPayload = Array.from(pageElements).map((el, index) => {
+        const htmlElement = el as HTMLElement;
+        const width = htmlElement.offsetWidth || 794;
+        const height = htmlElement.offsetHeight || 1123;
+        return {
+          html: htmlElement.outerHTML,
+          width,
+          height,
+          pageIndex: index + 1
+        };
+      });
 
       const cleanDesignName = (data?.designName || 'StudioCore_Quotation')
         .replace(/\u2013/g, '-')
@@ -991,19 +944,21 @@ function StudioCoreAiryBuilderContent() {
         .replace(/[^\x20-\x7E]/g, '-');
       const exportFilename = `${cleanDesignName}.pdf`;
 
-      const res = await fetch('/api/export-pdf', {
+      // 1. Primary Call: Modular Production-Grade Server PDF Engine (/api/pdf/export)
+      const res = await fetch('/api/pdf/export', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          html: fullHtml,
+          pages: pagesPayload,
+          title: data?.designName || 'StudioCore Quotation',
           filename: exportFilename
         })
       });
 
       if (!res.ok) {
-        throw new Error('Server export returned non-OK status');
+        throw new Error(`PDF Engine API returned status ${res.status}`);
       }
 
       const blob = await res.blob();
