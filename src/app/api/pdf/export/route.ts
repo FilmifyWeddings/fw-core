@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exportPDFDocument, formatContentDispositionHeader, PDFDocumentPayload } from '@/lib/pdf';
+import {
+  formatContentDispositionHeader,
+  PDFDocumentPayload,
+  PDFJobQueue,
+  PDFRenderingEngine,
+} from '@/lib/pdf';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,8 +20,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const pdfBuffer = await exportPDFDocument(body);
-    const contentDisposition = formatContentDispositionHeader(body.filename || `${body.title || 'StudioCore_Document'}.pdf`);
+    // 1. Asynchronous Job Queue Request
+    if (body.async) {
+      const queue = PDFJobQueue.getInstance();
+      const job = queue.createJob(body);
+      return NextResponse.json(
+        {
+          jobId: job.id,
+          status: job.status,
+          statusUrl: `/api/pdf/status?jobId=${job.id}`,
+          downloadUrl: `/api/pdf/download/${job.id}`,
+        },
+        { status: 202 }
+      );
+    }
+
+    // 2. Synchronous Render Request
+    const pdfBuffer = await PDFRenderingEngine.renderDocument(body);
+    const contentDisposition = formatContentDispositionHeader(
+      body.filename || `${body.title || 'StudioCore_Document'}.pdf`
+    );
 
     return new Response(pdfBuffer as unknown as BodyInit, {
       status: 200,
@@ -27,11 +50,10 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    console.error('[PDF Engine API Error]:', err?.stack || err);
     return NextResponse.json(
       {
         error: err?.message || 'PDF Generation Failed',
-        stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined,
+        stack: err?.stack || '',
       },
       { status: 500 }
     );
