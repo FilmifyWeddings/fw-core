@@ -20,6 +20,9 @@ import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/li
 // @ts-ignore
 import html2canvasPro from 'html2canvas-pro';
 import jsPDF from 'jspdf';
+import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
+
+// Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
 // Exact Registered Color Palettes with Inverted Counterparts
 export interface ColorTheme {
@@ -268,6 +271,7 @@ const DEFAULT_AIRY_PROPOSAL = {
   cover: {
     groomName: 'YASH',
     brideName: 'TWINKLE',
+    coupleName: 'YASH & TWINKLE',
     eventType: 'Wedding',
     sideOption: 'Both Sides',
     locationName: 'MUMBAI',
@@ -1183,29 +1187,41 @@ function StudioCoreAiryBuilderContent() {
 
           {openCard === 'cover' && (
             <div className="p-3 space-y-3 bg-white">
-              <div className="space-y-2">
-                <span className="text-[10px] uppercase font-bold text-amber-700 block">Couple Names</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[9px] font-bold text-zinc-400">Groom Name</label>
-                    <input
-                      type="text"
-                      value={data.cover.groomName}
-                      placeholder="e.g. YASH"
-                      onChange={(e) => setData({ ...data, cover: { ...data.cover, groomName: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-bold text-zinc-400">Bride Name</label>
-                    <input
-                      type="text"
-                      value={data.cover.brideName}
-                      placeholder="e.g. TWINKLE"
-                      onChange={(e) => setData({ ...data, cover: { ...data.cover, brideName: e.target.value } })}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase"
-                    />
-                  </div>
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-amber-700">Couple Names (Multi-line supported)</label>
+                <textarea
+                  rows={2}
+                  value={data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
+                  placeholder="e.g. YASH & TWINKLE or YASH&#10;&amp;&#10;TWINKLE"
+                  onChange={(e) => setData({ ...data, cover: { ...data.cover, coupleName: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold uppercase resize-y min-h-[50px]"
+                />
+              </div>
+
+              {/* Side Type & Location 2-Column Grid */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-zinc-400">Side Type</label>
+                  <select
+                    value={data.cover.sideOption || 'Both Sides'}
+                    onChange={(e) => setData({ ...data, cover: { ...data.cover, sideOption: e.target.value } })}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  >
+                    <option value="Both Sides">Both Sides</option>
+                    <option value="Bride Side">Bride Side</option>
+                    <option value="Groom Side">Groom Side</option>
+                    <option value="">None (Hidden)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-zinc-400">Location</label>
+                  <input
+                    type="text"
+                    value={data.cover.locationName || ''}
+                    placeholder="e.g. MUMBAI"
+                    onChange={(e) => setData({ ...data, cover: { ...data.cover, locationName: e.target.value } })}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
+                  />
                 </div>
               </div>
 
@@ -1799,24 +1815,6 @@ function StudioCoreAiryBuilderContent() {
                   ? 'px-0 pt-10 pb-0' 
                   : 'p-12'
               } ${!data.cover.photoUrl ? 'justify-center items-center' : 'justify-between'}`}>
-                <div className={`w-full flex flex-col items-center justify-center space-y-2 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {data.cover.brandLogoUrl ? (
-                    <img 
-                      src={data.cover.brandLogoUrl} 
-                      alt={data.cover.brandName}
-                      crossOrigin="anonymous"
-                      className="bg-transparent object-contain drop-shadow-xs"
-                      style={{ height: `${data.cover.brandLogoSize || 64}px` }}
-                    />
-                  ) : (
-                    <div className="text-center space-y-0.5">
-                      <div className="brand-name-heading text-xl tracking-[0.25em] uppercase font-black whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                        {data.cover.brandName || 'FILMIFY WEDDINGS'}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 <div className={`w-full space-y-6 flex flex-col items-center justify-center my-auto ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-0' : ''}`}>
                   
                   {/* TOP POSITION IMAGE */}
@@ -1832,12 +1830,8 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className={`space-y-1 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                    <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.cover.groomName || 'YASH'}
-                    </h1>
-                    <div className="text-2xl font-serif opacity-75 my-1" style={{ color: kickerColor }}>&amp;</div>
-                    <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.cover.brideName || 'TWINKLE'}
+                    <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-pre-line text-center" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
                     </h1>
                   </div>
 
@@ -1857,9 +1851,38 @@ function StudioCoreAiryBuilderContent() {
                     <h3 className="text-base tracking-[0.2em] uppercase font-bold whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
                     </h3>
-                    <p className="text-xs tracking-[0.18em] uppercase font-medium opacity-90 whitespace-nowrap" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
-                      {`${(data.cover.sideOption || 'BOTH SIDES').toUpperCase()} – ${(data.cover.locationName || 'MUMBAI').toUpperCase()}`}
-                    </p>
+
+                    {/* Brand Name & Logo Shifted Directly Below Event Type */}
+                    <div className="w-full flex flex-col items-center justify-center space-y-1 py-1">
+                      {data.cover.brandLogoUrl ? (
+                        <img 
+                          src={data.cover.brandLogoUrl} 
+                          alt={data.cover.brandName}
+                          crossOrigin="anonymous"
+                          className="bg-transparent object-contain drop-shadow-xs"
+                          style={{ height: `${data.cover.brandLogoSize || 64}px` }}
+                        />
+                      ) : (
+                        <div className="text-center space-y-0.5">
+                          <div className="brand-name-heading text-lg tracking-[0.25em] uppercase font-black whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                            {data.cover.brandName || 'FILMIFY WEDDINGS'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Subtitle Side Type & Location with blank filtering */}
+                    {(() => {
+                      const sideText = (data.cover.sideOption || '').trim().toUpperCase();
+                      const locText = (data.cover.locationName || '').trim().toUpperCase();
+                      const subtitleText = [sideText, locText].filter(Boolean).join(' – ');
+                      if (!subtitleText) return null;
+                      return (
+                        <p className="text-xs tracking-[0.18em] uppercase font-medium opacity-90 whitespace-nowrap" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
+                          {subtitleText}
+                        </p>
+                      );
+                    })()}
                   </div>
 
                   {/* BOTTOM POSITION IMAGE */}
@@ -1874,10 +1897,6 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                </div>
-
-                <div className={`w-full pt-4 text-[10px] tracking-[0.2em] font-mono font-bold uppercase opacity-80 whitespace-nowrap ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12 pb-6' : ''}`} style={{ color: kickerColor }}>
-                  EXCLUSIVELY PREPARED FOR YOU
                 </div>
               </div>
             </section>
@@ -1922,16 +1941,7 @@ function StudioCoreAiryBuilderContent() {
               )}
 
               <div className="absolute top-6 right-10 pointer-events-none opacity-85 z-10">
-                <img 
-                  src="/images/Birds.svg" 
-                  alt="Birds" 
-                  crossOrigin="anonymous"
-                  className="w-[220px] h-auto object-contain block" 
-                  style={{ 
-                    filter: isDark ? 'brightness(0) invert(1)' : 'none',
-                    color: textColor
-                  }} 
-                />
+                <BirdsSVG textColor={textColor} className="w-[220px] h-auto object-contain block" />
               </div>
 
               <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
@@ -1974,21 +1984,12 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="flex flex-col items-center justify-center my-4 select-none">
-                    <img 
-                      src="/images/A%26U.svg" 
-                      alt="Monogram" 
-                      crossOrigin="anonymous"
-                      className="w-[260px] h-auto object-contain block mx-auto" 
-                      style={{ 
-                        filter: isDark ? 'brightness(0) invert(1)' : 'none',
-                        color: textColor
-                      }} 
-                    />
+                    <MonogramSVG textColor={textColor} className="w-[260px] h-auto object-contain block mx-auto" />
                   </div>
 
                   <div className="my-6 px-6 flex items-center justify-center gap-3 max-w-xl mx-auto text-center">
                     <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>“</span>
-                    <p className="text-sm leading-relaxed font-normal opacity-90 tracking-wide" style={{ color: textColor, fontFamily: data.secondaryFont }}>
+                    <p className="text-sm leading-relaxed font-normal opacity-90 tracking-wide whitespace-pre-line" style={{ color: textColor, fontFamily: data.secondaryFont }}>
                       {data.aboutUs.text}
                     </p>
                     <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>”</span>
