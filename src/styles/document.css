@@ -1,34 +1,25 @@
-/* STUDIOCORE SEAMLESS DOCUMENT MODEL CSS (wedgrapher.in structure) */
+/* STUDIOCORE STRICT A4 PAGE SIZING CSS */
 
-#quotation-seamless-container,
-.qt {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 0 !important;
-  margin: 0 auto !important;
-  padding: 0 !important;
-  width: 100% !important;
-  max-width: 820px !important;
-  background-color: #F7F6F3 !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  border: none !important;
+.quotation-page {
+  width: 794px !important;
+  height: 1123px !important;
+  min-height: 1123px !important;
+  max-height: 1123px !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  overflow: hidden !important;
+  background: #FFFFFF;
 }
 
-#quotation-seamless-container section.pg,
-section.pg {
-  margin: 0 !important;
-  padding: 50px 56px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  position: relative !important;
-  box-sizing: border-box !important;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.10) !important;
-  width: 100% !important;
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
+@media print {
+  @page {
+    size: 794px 1123px;
+    margin: 0;
+  }
+  .quotation-page {
+    page-break-after: always;
+    break-after: page;
+  }
 }
 
 img, svg {
