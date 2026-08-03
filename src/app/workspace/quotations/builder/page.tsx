@@ -927,33 +927,48 @@ function StudioCoreAiryBuilderContent() {
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
+      const pages = document.querySelectorAll('.quotation-page');
+      if (!pages.length) throw new Error('No quotation pages found (.quotation-page)');
+
+      // Standard A4 aspect ratio dimensions in px
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [794, 1123]
+        format: [794, 1123],
+        compress: true
       });
 
-      const pageElements = document.querySelectorAll('.quotation-page');
-      for (let i = 0; i < pageElements.length; i++) {
-        const pageEl = pageElements[i] as HTMLElement;
+      for (let i = 0; i < pages.length; i++) {
+        const pageEl = pages[i] as HTMLElement;
+
+        // High DPI (scale: 3) for crystal clear HD crisp rendering
         const canvas = await html2canvasPro(pageEl, {
-          scale: 2,
+          scale: 3, 
           useCORS: true,
+          logging: false,
           width: 794,
           height: 1123,
-          backgroundColor: null
+          windowWidth: 794,
+          windowHeight: 1123,
+          backgroundColor: '#ffffff'
         });
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        if (i > 0) pdf.addPage([794, 1123], 'portrait');
-        pdf.addImage(imgData, 'JPEG', 0, 0, 794, 1123);
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+        if (i > 0) {
+          pdf.addPage([794, 1123], 'portrait');
+        }
+
+        pdf.addImage(imgData, 'JPEG', 0, 0, 794, 1123, undefined, 'FAST');
       }
 
-      const cleanDesignName = (data?.designName || 'Quotation')
+      const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
+      const cleanClientName = clientName
         .replace(/\u2013/g, '-')
         .replace(/\u2014/g, '-')
         .replace(/[^\x20-\x7E]/g, '-');
 
-      pdf.save(`${cleanDesignName}-A4.pdf`);
+      pdf.save(`${cleanClientName}-HD-A4.pdf`);
 
       setPdfToastMessage('A4 PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
@@ -1752,7 +1767,7 @@ function StudioCoreAiryBuilderContent() {
               className="flex flex-col items-center gap-8 py-8 bg-[#E5E7EB] min-h-screen overflow-y-auto"
             >
               <section 
-                className={`quotation-page cover-page flex flex-col transition-colors duration-300 select-none ${
+                className={`quotation-page cover-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 select-none ${
                   !data.cover.photoUrl
                     ? 'justify-center items-center text-center p-12 h-full'
                     : 'justify-between p-12'
@@ -1872,7 +1887,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
                 !data.aboutUs.bottomBannerPhoto
                   ? 'justify-center items-center text-center p-12 h-full'
                   : 'justify-between p-12'
@@ -1995,7 +2010,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
                 !data.shootDetails.photo
                   ? 'justify-center items-center text-center p-12 h-full'
                   : 'justify-between p-12'
@@ -2106,7 +2121,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
                 !data.whatsIncluded.photo
                   ? 'justify-center items-center text-center p-12 h-full'
                   : 'justify-between p-12'
@@ -2194,7 +2209,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
                 !data.pricePayment.photo
                   ? 'justify-center items-center text-center p-12 h-full'
                   : 'justify-between p-12'
@@ -2313,7 +2328,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
                 !data.termsAndThankYou.photo
                   ? 'justify-center items-center text-center p-12 h-full'
                   : 'justify-between p-12'
