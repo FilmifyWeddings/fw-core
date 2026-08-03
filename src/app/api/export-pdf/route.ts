@@ -11,30 +11,42 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch (jsonErr: any) {
-    console.error('[API JSON Parse Error Stack Trace]:', jsonErr?.stack || jsonErr);
-    return NextResponse.json({ error: 'Invalid JSON request body', stack: jsonErr?.stack }, { status: 400 });
+    console.error("PARSE REQUEST BODY FAILED", jsonErr);
+    console.error(jsonErr?.stack);
+    return NextResponse.json({
+      step: "PARSE REQUEST BODY",
+      error: jsonErr?.message || 'Invalid JSON request body',
+      stack: jsonErr?.stack || ''
+    }, { status: 400 });
   }
 
   const { html, url, filename = 'Quotation_Proposal.pdf' } = body;
 
+  // STEP 1: IMPORT CHROMIUM & PUPPETEER
   let chromiumModule: any = null;
   let puppeteerModule: any = null;
-
   try {
     chromiumModule = (await import('@sparticuz/chromium')).default;
     puppeteerModule = await import('puppeteer-core');
   } catch (importErr: any) {
-    console.error('[Puppeteer Import Error Stack Trace]:', importErr?.stack || importErr);
-    return NextResponse.json({ error: 'PDF generation module unavailable on server', details: importErr?.message, stack: importErr?.stack }, { status: 500 });
+    console.error("IMPORT MODULES FAILED", importErr);
+    console.error(importErr?.stack);
+    return NextResponse.json({
+      step: "IMPORT MODULES",
+      error: importErr?.message || 'PDF generation module unavailable on server',
+      stack: importErr?.stack || ''
+    }, { status: 500 });
   }
 
+  // STEP 2: RESOLVE EXECUTABLE PATH
   let executablePath = process.env.CHROMIUM_PATH || '';
-  if (!executablePath && chromiumModule && typeof chromiumModule.executablePath === 'function') {
-    try {
+  try {
+    if (!executablePath && chromiumModule && typeof chromiumModule.executablePath === 'function') {
       executablePath = await chromiumModule.executablePath();
-    } catch (pathErr: any) {
-      console.warn('[Chromium Executable Path Extraction Warning]:', pathErr?.stack || pathErr);
     }
+  } catch (pathErr: any) {
+    console.warn("CHROMIUM EXECUTABLE PATH EXTRACTION WARNING", pathErr);
+    console.warn(pathErr?.stack);
   }
 
   if (!executablePath) {
@@ -56,7 +68,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (fsErr: any) {
-      console.warn('[Chromium Common Paths Search Warning]:', fsErr?.stack || fsErr);
+      console.warn("COMMON PATHS SEARCH WARNING", fsErr);
     }
   }
 
@@ -65,13 +77,17 @@ export async function POST(req: NextRequest) {
   console.log("Using Chromium:", executablePath);
 
   if (!executablePath) {
-    console.error('[PDF API Error]: No valid Chromium executable binary found on server environment.');
-    return NextResponse.json({ 
-      error: 'Chromium binary path not configured on server',
-      hint: 'Please install chromium-browser or google-chrome-stable on the VPS server.'
+    const noPathErr = new Error('No valid Chromium executable binary found on server environment. Please install chromium-browser on VPS.');
+    console.error("RESOLVE EXECUTABLE PATH FAILED", noPathErr);
+    console.error(noPathErr.stack);
+    return NextResponse.json({
+      step: "RESOLVE EXECUTABLE PATH",
+      error: noPathErr.message,
+      stack: noPathErr.stack
     }, { status: 500 });
   }
 
+  // STEP 3: PUPPETEER LAUNCH
   console.log("Launching Chromium...");
   let browser: any = null;
   try {
@@ -83,25 +99,33 @@ export async function POST(req: NextRequest) {
     });
     console.log('[Puppeteer Debug] Browser instance launched successfully.');
   } catch (launchErr: any) {
-    console.error('[Puppeteer Launch Error Stack Trace]:', launchErr?.stack || launchErr);
-    return NextResponse.json({ 
-      error: 'Failed to launch Chromium browser process', 
-      details: launchErr?.message,
-      stack: launchErr?.stack 
+    console.error("PUPPETEER LAUNCH FAILED", launchErr);
+    console.error(launchErr?.stack);
+    return NextResponse.json({
+      step: "PUPPETEER LAUNCH",
+      error: launchErr?.message || 'Failed to launch Chromium browser process',
+      stack: launchErr?.stack || ''
     }, { status: 500 });
   }
 
+  // STEP 4: BROWSER NEW PAGE
   console.log("Creating Page...");
   let page: any = null;
   try {
     page = await browser.newPage();
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
   } catch (pageErr: any) {
-    console.error('[Puppeteer newPage Error Stack Trace]:', pageErr?.stack || pageErr);
+    console.error("BROWSER NEW PAGE FAILED", pageErr);
+    console.error(pageErr?.stack);
     await browser.close();
-    return NextResponse.json({ error: 'Failed to create page', details: pageErr?.message, stack: pageErr?.stack }, { status: 500 });
+    return NextResponse.json({
+      step: "BROWSER NEW PAGE",
+      error: pageErr?.message || 'Failed to create new browser page',
+      stack: pageErr?.stack || ''
+    }, { status: 500 });
   }
 
+  // STEP 5: PAGE SET CONTENT
   console.log("Calling page.setContent...");
   try {
     if (url) {
@@ -112,15 +136,20 @@ export async function POST(req: NextRequest) {
       await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
     } else {
       await browser.close();
-      return NextResponse.json({ error: 'No HTML or URL provided for PDF generation' }, { status: 400 });
+      return NextResponse.json({ step: "PAGE SET CONTENT", error: 'No HTML or URL provided for PDF generation' }, { status: 400 });
     }
   } catch (contentErr: any) {
-    console.error('[Puppeteer setContent Error Stack Trace]:', contentErr?.stack || contentErr);
+    console.error("PAGE SET CONTENT FAILED", contentErr);
+    console.error(contentErr?.stack);
     await browser.close();
-    return NextResponse.json({ error: 'Failed to set page content', details: contentErr?.message, stack: contentErr?.stack }, { status: 500 });
+    return NextResponse.json({
+      step: "PAGE SET CONTENT",
+      error: contentErr?.message || 'Failed to set page content',
+      stack: contentErr?.stack || ''
+    }, { status: 500 });
   }
 
-  // Ensure all images and custom font-faces are fully loaded
+  // STEP 6: PAGE EVALUATE (FONT & IMAGE WAIT)
   try {
     await page.evaluate(async () => {
       if (document.fonts) await document.fonts.ready;
@@ -136,9 +165,11 @@ export async function POST(req: NextRequest) {
       );
     });
   } catch (evalErr: any) {
-    console.warn('[Puppeteer font/image wait warning]:', evalErr?.message);
+    console.warn("PAGE EVALUATE WARNING", evalErr);
+    console.warn(evalErr?.stack);
   }
 
+  // STEP 7: PAGE PDF
   console.log("Calling page.pdf()...");
   let pdfBuffer: any = null;
   try {
@@ -150,9 +181,14 @@ export async function POST(req: NextRequest) {
     });
     console.log('[Puppeteer Debug] PDF buffer generated successfully (size:', pdfBuffer?.length, 'bytes).');
   } catch (pdfErr: any) {
-    console.error('[Puppeteer page.pdf() Error Stack Trace]:', pdfErr?.stack || pdfErr);
+    console.error("PAGE PDF FAILED", pdfErr);
+    console.error(pdfErr?.stack);
     await browser.close();
-    return NextResponse.json({ error: 'Failed to generate PDF buffer', details: pdfErr?.message, stack: pdfErr?.stack }, { status: 500 });
+    return NextResponse.json({
+      step: "PAGE PDF",
+      error: pdfErr?.message || 'Failed to generate PDF buffer',
+      stack: pdfErr?.stack || ''
+    }, { status: 500 });
   }
 
   await browser.close();
