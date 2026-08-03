@@ -793,12 +793,12 @@ function SectionImageRenderer({
 
   if (frameShape === 'full-width') {
     return (
-      <div className={`w-full overflow-hidden ${isBottomFlush ? 'mt-4' : 'my-4'}`}>
+      <div className={`w-full overflow-hidden ${isBottomFlush ? 'mt-auto mb-0' : 'my-0'}`}>
         <img
           src={photo}
           alt={altText}
           crossOrigin="anonymous"
-          className="w-full object-cover block shadow-xs"
+          className="w-full block object-cover shadow-xs"
           style={{ height: `${photoHeight}px`, objectPosition: `50% ${photoFocalY}%` }}
         />
       </div>
@@ -1878,10 +1878,10 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
-            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            {/* Inter-page Gap Spacer */}
             <div 
-              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
-              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
             />
 
             {/* SECTION 2: ABOUT US */}
@@ -1918,75 +1918,89 @@ function StudioCoreAiryBuilderContent() {
               )}
 
               <div className="absolute top-6 right-10 pointer-events-none opacity-85 z-10">
-                <img 
-                  src="/images/Birds.svg" 
-                  alt="Birds" 
-                  crossOrigin="anonymous"
-                  className="w-[220px] h-auto object-contain block" 
-                  style={{ 
-                    filter: isDark ? 'brightness(0) invert(1)' : 'none',
-                    color: textColor
-                  }} 
+                <div
+                  className="w-[220px] h-16 block"
+                  style={{
+                    backgroundColor: textColor,
+                    WebkitMaskImage: `url('/images/Birds.svg')`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    WebkitMaskSize: 'contain',
+                    WebkitMaskPosition: 'center',
+                    maskImage: `url('/images/Birds.svg')`,
+                    maskRepeat: 'no-repeat',
+                    maskSize: 'contain',
+                    maskPosition: 'center',
+                  }}
                 />
               </div>
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.aboutUs.bottomBannerPhoto ? 'justify-center items-center' : 'justify-between'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+                data.aboutUs.frameShape === 'full-width' || (data.aboutUs.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'p-12'
+              } ${!data.aboutUs.bottomBannerPhoto ? 'justify-center items-center' : 'justify-between'}`}>
                 
-                {/* TOP IMAGE POSITION */}
-                {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'top' && (
-                  <SectionImageRenderer
-                    photo={data.aboutUs.bottomBannerPhoto}
-                    frameShape={data.aboutUs.frameShape}
-                    photoHeight={data.aboutUs.bottomBannerHeight}
-                    photoWidth={data.aboutUs.photoWidth}
-                    photoFocalY={data.aboutUs.photoFocalY}
-                    altText="About Us Banner"
-                  />
-                )}
+                <div className={`flex flex-col items-center justify-center w-full ${data.aboutUs.frameShape === 'full-width' || (data.aboutUs.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.aboutUs.bottomBannerPhoto}
+                      frameShape={data.aboutUs.frameShape}
+                      photoHeight={data.aboutUs.bottomBannerHeight}
+                      photoWidth={data.aboutUs.photoWidth}
+                      photoFocalY={data.aboutUs.photoFocalY}
+                      altText="About Us Banner"
+                    />
+                  )}
 
-                <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
-                  {data.aboutUs.kicker || 'INTRODUCTION'}
-                </span>
-                
-                <h2 className="text-3xl tracking-widest uppercase font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                  {data.aboutUs.heading || 'ABOUT US'}
-                </h2>
+                  <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
+                    {data.aboutUs.kicker || 'INTRODUCTION'}
+                  </span>
+                  
+                  <h2 className="text-3xl tracking-widest uppercase font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.aboutUs.heading || 'ABOUT US'}
+                  </h2>
 
-                {/* CENTER IMAGE POSITION */}
-                {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'center' && (
-                  <SectionImageRenderer
-                    photo={data.aboutUs.bottomBannerPhoto}
-                    frameShape={data.aboutUs.frameShape}
-                    photoHeight={data.aboutUs.bottomBannerHeight}
-                    photoWidth={data.aboutUs.photoWidth}
-                    photoFocalY={data.aboutUs.photoFocalY}
-                    altText="About Us Banner"
-                  />
-                )}
+                  {/* CENTER IMAGE POSITION */}
+                  {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.aboutUs.bottomBannerPhoto}
+                      frameShape={data.aboutUs.frameShape}
+                      photoHeight={data.aboutUs.bottomBannerHeight}
+                      photoWidth={data.aboutUs.photoWidth}
+                      photoFocalY={data.aboutUs.photoFocalY}
+                      altText="About Us Banner"
+                    />
+                  )}
 
-                <div className="flex flex-col items-center justify-center my-4 select-none">
-                  <img 
-                    src="/images/A%26U.svg" 
-                    alt="Monogram" 
-                    crossOrigin="anonymous"
-                    className="w-[260px] h-auto object-contain block mx-auto" 
-                    style={{ 
-                      filter: isDark ? 'brightness(0) invert(1)' : 'none',
-                      color: textColor
-                    }} 
-                  />
-                </div>
+                  <div className="flex flex-col items-center justify-center my-4 select-none">
+                    <div
+                      className="w-[260px] h-20 mx-auto select-none"
+                      style={{
+                        backgroundColor: textColor,
+                        WebkitMaskImage: `url('/images/A%26U.svg')`,
+                        WebkitMaskRepeat: 'no-repeat',
+                        WebkitMaskSize: 'contain',
+                        WebkitMaskPosition: 'center',
+                        maskImage: `url('/images/A%26U.svg')`,
+                        maskRepeat: 'no-repeat',
+                        maskSize: 'contain',
+                        maskPosition: 'center',
+                      }}
+                    />
+                  </div>
 
-                <div className="my-6 px-6 flex items-center justify-center gap-3 max-w-xl mx-auto text-center">
-                  <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>“</span>
-                  <p className="text-sm leading-relaxed font-normal opacity-90 tracking-wide" style={{ color: textColor, fontFamily: data.secondaryFont }}>
-                    {data.aboutUs.text}
-                  </p>
-                  <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>”</span>
-                </div>
+                  <div className="my-6 px-6 flex items-center justify-center gap-3 max-w-xl mx-auto text-center">
+                    <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>“</span>
+                    <p className="text-sm leading-relaxed font-normal opacity-90 tracking-wide" style={{ color: textColor, fontFamily: data.secondaryFont }}>
+                      {data.aboutUs.text}
+                    </p>
+                    <span className="text-4xl font-serif leading-none select-none shrink-0" style={{ color: kickerColor }}>”</span>
+                  </div>
 
-                <div className="text-xs tracking-[0.2em] font-bold uppercase pt-2 whitespace-nowrap" style={{ color: kickerColor }}>
-                  {data.aboutUs.signature}
+                  <div className="text-xs tracking-[0.2em] font-bold uppercase pt-2 whitespace-nowrap" style={{ color: kickerColor }}>
+                    {data.aboutUs.signature}
+                  </div>
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
@@ -2004,10 +2018,10 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
-            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            {/* Inter-page Gap Spacer */}
             <div 
-              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
-              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
             />
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
@@ -2118,10 +2132,10 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
-            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            {/* Inter-page Gap Spacer */}
             <div 
-              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
-              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
             />
 
             {/* SECTION 4: WHAT'S INCLUDED */}
@@ -2209,10 +2223,10 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
-            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            {/* Inter-page Gap Spacer */}
             <div 
-              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
-              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
             />
 
             {/* SECTION 5: PRICE & PAYMENT */}
@@ -2331,10 +2345,10 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
-            {/* Dedicated Inverted Color Inter-Page Spacer */}
+            {/* Inter-page Gap Spacer */}
             <div 
-              className="w-[794px] h-4 transition-colors duration-300 mx-auto shrink-0"
-              style={{ backgroundColor: textColor || activeTheme?.primary || '#6e0c14' }}
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
             />
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
