@@ -123,6 +123,7 @@ export default function WorkspaceQuotationsGalleryPage() {
   ];
 
   useEffect(() => {
+    console.log('=== GLOBAL_SITE_SYNC_VERIFIED_799 ===');
     async function loadUserDataSilently() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
