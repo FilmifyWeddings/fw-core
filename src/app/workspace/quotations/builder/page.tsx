@@ -1029,24 +1029,104 @@ function StudioCoreAiryBuilderContent() {
         new Promise(r => setTimeout(r, 500))
       ]);
 
-      const { default: html2canvas } = await import('html2canvas');
+      const { default: html2canvas } = await import('html2canvas-pro');
       const { jsPDF } = await import('jspdf');
 
       const pageElements = document.querySelectorAll('.quotation-page');
       if (!pageElements.length) throw new Error('No quotation pages found');
 
-      // Helper: Robust CSS Color Sanitizer for html2canvas compatibility
-      const sanitizeCssColors = (cssText: string): string => {
-        if (!cssText) return '';
-        return cssText
-          .replace(/oklch\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
-          .replace(/oklab\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
-          .replace(/color-mix\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
-          .replace(/light-dark\s*\([\s\S]*?\)/gi, 'rgb(128, 128, 128)')
-          .replace(/color\([a-zA-Z0-9-]+\s+[\s\S]*?\)/gi, 'rgb(128, 128, 128)');
+      // Exact mathematical OKLCH to RGB conversion (Preserves pixel-perfect original color)
+      const oklchToRgb = (l: number, c: number, h: number, alpha: number = 1): string => {
+        const hRad = (h * Math.PI) / 180;
+        const a = c * Math.cos(hRad);
+        const b = c * Math.sin(hRad);
+
+        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = l - 0.0894841775 * a - 1.291485548 * b;
+
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+
+        const rLinear = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        const gLinear = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        const bLinear = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+        const toGamma = (x: number) => {
+          const val = x >= 0.0031308 ? 1.055 * Math.pow(x, 1 / 2.4) - 0.055 : 12.92 * x;
+          return Math.min(255, Math.max(0, Math.round(val * 255)));
+        };
+
+        const r = toGamma(rLinear);
+        const g = toGamma(gLinear);
+        const bVal = toGamma(bLinear);
+
+        return alpha < 1 ? `rgba(${r}, ${g}, ${bVal}, ${alpha})` : `rgb(${r}, ${g}, ${bVal})`;
       };
 
-      // 2. Pre-fetch and pre-sanitize same-origin stylesheets to prevent oklch/oklab parser crash
+      // Exact mathematical OKLAB to RGB conversion (Preserves pixel-perfect original color)
+      const oklabToRgb = (l: number, a: number, b: number, alpha: number = 1): string => {
+        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = l - 0.0894841775 * a - 1.291485548 * b;
+
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+
+        const rLinear = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        const gLinear = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        const bLinear = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+        const toGamma = (x: number) => {
+          const val = x >= 0.0031308 ? 1.055 * Math.pow(x, 1 / 2.4) - 0.055 : 12.92 * x;
+          return Math.min(255, Math.max(0, Math.round(val * 255)));
+        };
+
+        const r = toGamma(rLinear);
+        const g = toGamma(gLinear);
+        const bVal = toGamma(bLinear);
+
+        return alpha < 1 ? `rgba(${r}, ${g}, ${bVal}, ${alpha})` : `rgb(${r}, ${g}, ${bVal})`;
+      };
+
+      // Convert modern CSS OKLCH/OKLAB colors to exact RGB ONLY during PDF generation
+      const sanitizeCssColors = (cssText: string): string => {
+        if (!cssText) return '';
+        let result = cssText.replace(/oklch\(\s*([\d.%]+)\s+([\d.%]+)\s+([\d.%]+)(?:\s*\/\s*([\d.%]+))?\s*\)/gi, (match, lStr, cStr, hStr, aStr) => {
+          let l = parseFloat(lStr);
+          if (lStr.endsWith('%')) l = l / 100;
+          let c = parseFloat(cStr);
+          if (cStr.endsWith('%')) c = (parseFloat(cStr) / 100) * 0.4;
+          let h = parseFloat(hStr);
+
+          let alpha = 1;
+          if (aStr) {
+            alpha = aStr.endsWith('%') ? parseFloat(aStr) / 100 : parseFloat(aStr);
+          }
+          return oklchToRgb(l, c, h, alpha);
+        });
+
+        result = result.replace(/oklab\(\s*([\d.%]+)\s+([-\d.%]+)\s+([-\d.%]+)(?:\s*\/\s*([\d.%]+))?\s*\)/gi, (match, lStr, aStrVal, bStrVal, alphaStr) => {
+          let l = parseFloat(lStr);
+          if (lStr.endsWith('%')) l = l / 100;
+          let a = parseFloat(aStrVal);
+          if (aStrVal.endsWith('%')) a = (parseFloat(aStrVal) / 100) * 0.4;
+          let b = parseFloat(bStrVal);
+          if (bStrVal.endsWith('%')) b = (parseFloat(bStrVal) / 100) * 0.4;
+
+          let alpha = 1;
+          if (alphaStr) {
+            alpha = alphaStr.endsWith('%') ? parseFloat(alphaStr) / 100 : parseFloat(alphaStr);
+          }
+          return oklabToRgb(l, a, b, alpha);
+        });
+
+        return result;
+      };
+
+      // 2. Pre-fetch and pre-sanitize same-origin stylesheets for fallback rendering
       const fallbackStyles: string[] = [];
       try {
         const links = document.querySelectorAll('link[rel="stylesheet"]');
@@ -1072,34 +1152,26 @@ function StudioCoreAiryBuilderContent() {
       let pdf: InstanceType<typeof jsPDF> | null = null;
 
       const handleOnClone = (clonedDoc: Document, clonedElement: HTMLElement) => {
-        // Remove original link tags and style tags
+        // Inject pre-sanitized styles for fallback
         try {
-          const existingStyles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-          existingStyles.forEach((node) => {
-            node.parentNode?.removeChild(node);
-          });
-        } catch (err) {
-          console.warn('Removing styles warning:', err);
-        }
-
-        // Inject pre-sanitized styles
-        try {
-          const head = clonedDoc.querySelector('head') || clonedDoc.documentElement;
-          const styleTag = clonedDoc.createElement('style');
-          styleTag.textContent = combinedSanitizedCss;
-          head.appendChild(styleTag);
+          if (combinedSanitizedCss) {
+            const head = clonedDoc.querySelector('head') || clonedDoc.documentElement;
+            const styleTag = clonedDoc.createElement('style');
+            styleTag.textContent = combinedSanitizedCss;
+            head.appendChild(styleTag);
+          }
         } catch (err) {
           console.warn('Injecting sanitized styles warning:', err);
         }
 
-        // Sanitize inline element styles in cloned document
+        // Sanitize inline element styles in cloned document to exact RGB
         try {
           const allNodes = clonedDoc.querySelectorAll('*');
           allNodes.forEach((node) => {
             const htmlNode = node as HTMLElement;
             if (htmlNode.style && htmlNode.style.cssText) {
               const rawStyle = htmlNode.style.cssText;
-              if (/oklch|oklab|color-mix|light-dark|color\(/i.test(rawStyle)) {
+              if (/oklch|oklab/i.test(rawStyle)) {
                 htmlNode.style.cssText = sanitizeCssColors(rawStyle);
               }
             }
@@ -1108,7 +1180,7 @@ function StudioCoreAiryBuilderContent() {
           console.warn('Inline style sanitization warning:', nodeErr);
         }
 
-        // Apply custom PDF viewport styles
+        // Apply custom PDF viewport styles (Preserving pixel-perfect layout)
         try {
           const pageRuleTag = clonedDoc.createElement('style');
           pageRuleTag.textContent = `
