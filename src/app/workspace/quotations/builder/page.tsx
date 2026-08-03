@@ -1753,12 +1753,12 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
-              className="w-full flex flex-col items-center justify-start gap-12 py-12 bg-[#f3f4f6] min-h-screen overflow-y-auto"
+              className="w-full flex flex-col items-center justify-start gap-6 py-6 bg-[#f3f4f6] min-h-screen overflow-y-auto"
             >
               <div 
                 id="quotation-full-canvas" 
                 style={{ width: '794px' }} 
-                className="flex flex-col gap-12"
+                className="flex flex-col gap-6"
               >
                 <section 
                   className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
@@ -1773,7 +1773,6 @@ function StudioCoreAiryBuilderContent() {
                   position: 'relative',
                   overflow: 'hidden',
                   margin: '0 auto', // Center alignment guarantee
-                  borderBottom: '2px dashed #cbd5e1', // Page separator line
                   boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                   backgroundColor: pageBgColor || '#FFFFFF',
                   color: textColor,
@@ -1877,6 +1876,12 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+            {/* Between consecutive quotation page blocks */}
+            <div 
+              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
+              style={{ backgroundColor: textColor || '#ffffff' }} 
+            />
+
             {/* SECTION 2: ABOUT US */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -1891,7 +1896,6 @@ function StudioCoreAiryBuilderContent() {
                 position: 'relative',
                 overflow: 'hidden',
                 margin: '0 auto', // Center alignment guarantee
-                borderBottom: '2px dashed #cbd5e1', // Page separator line
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
@@ -1998,6 +2002,12 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+            {/* Between consecutive quotation page blocks */}
+            <div 
+              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
+              style={{ backgroundColor: textColor || '#ffffff' }} 
+            />
+
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2012,7 +2022,6 @@ function StudioCoreAiryBuilderContent() {
                 position: 'relative',
                 overflow: 'hidden',
                 margin: '0 auto', // Center alignment guarantee
-                borderBottom: '2px dashed #cbd5e1', // Page separator line
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
@@ -2107,6 +2116,12 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+            {/* Between consecutive quotation page blocks */}
+            <div 
+              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
+              style={{ backgroundColor: textColor || '#ffffff' }} 
+            />
+
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2121,7 +2136,6 @@ function StudioCoreAiryBuilderContent() {
                 position: 'relative',
                 overflow: 'hidden',
                 margin: '0 auto', // Center alignment guarantee
-                borderBottom: '2px dashed #cbd5e1', // Page separator line
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
@@ -2193,6 +2207,12 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+            {/* Between consecutive quotation page blocks */}
+            <div 
+              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
+              style={{ backgroundColor: textColor || '#ffffff' }} 
+            />
+
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2207,7 +2227,6 @@ function StudioCoreAiryBuilderContent() {
                 position: 'relative',
                 overflow: 'hidden',
                 margin: '0 auto', // Center alignment guarantee
-                borderBottom: '2px dashed #cbd5e1', // Page separator line
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
@@ -2310,6 +2329,12 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </section>
 
+            {/* Between consecutive quotation page blocks */}
+            <div 
+              className="w-full max-w-[794px] my-3 h-[1px] opacity-40 transition-colors duration-300 mx-auto"
+              style={{ backgroundColor: textColor || '#ffffff' }} 
+            />
+
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
@@ -2324,7 +2349,6 @@ function StudioCoreAiryBuilderContent() {
                 position: 'relative',
                 overflow: 'hidden',
                 margin: '0 auto', // Center alignment guarantee
-                borderBottom: '2px dashed #cbd5e1', // Page separator line
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
