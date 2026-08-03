@@ -1759,6 +1759,7 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
+              className="flex flex-col items-center gap-8 py-8 bg-[#E5E7EB] min-h-screen overflow-y-auto"
             >
               <section 
                 className={`quotation-page cover-page flex flex-col transition-colors duration-300 select-none ${
@@ -1769,12 +1770,15 @@ function StudioCoreAiryBuilderContent() {
                 style={{
                   width: '794px',
                   height: '1123px',
+                  minWidth: '794px',
+                  maxWidth: '794px',
                   minHeight: '1123px',
                   maxHeight: '1123px',
                   boxSizing: 'border-box',
-                  overflow: 'hidden',
                   position: 'relative',
-                  backgroundColor: pageBgColor,
+                  overflow: 'hidden',
+                  backgroundColor: pageBgColor || '#FFFFFF',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                   color: textColor,
                   fontFamily: data.secondaryFont,
                 }}
@@ -1792,7 +1796,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 flex flex-col items-center w-full my-auto ${!data.cover.photoUrl ? 'flex flex-col justify-center items-center h-full text-center p-8' : 'justify-between h-full p-12 py-16'}`}>
+              <div className={`relative z-10 flex flex-col items-center w-full my-auto ${!data.cover.photoUrl ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'justify-between h-full p-12 py-16'}`}>
                 <div className="w-full flex flex-col items-center justify-center space-y-2">
                   {data.cover.brandLogoUrl ? (
                     <img 
@@ -1886,12 +1890,15 @@ function StudioCoreAiryBuilderContent() {
               style={{
                 width: '794px',
                 height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
                 boxSizing: 'border-box',
-                overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor,
+                overflow: 'hidden',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -1922,7 +1929,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               </div>
 
-              <div className="space-y-6 my-auto text-center w-full relative z-10 pt-4">
+              <div className={`relative z-10 w-full ${!data.aboutUs.bottomBannerPhoto ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto text-center pt-4'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'top' && (
@@ -2006,12 +2013,15 @@ function StudioCoreAiryBuilderContent() {
               style={{
                 width: '794px',
                 height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
                 boxSizing: 'border-box',
-                overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor,
+                overflow: 'hidden',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2029,7 +2039,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className="relative z-10 space-y-6 my-auto w-full pt-2">
+              <div className={`relative z-10 w-full ${!data.shootDetails.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'top' && (
@@ -2114,12 +2124,15 @@ function StudioCoreAiryBuilderContent() {
               style={{
                 width: '794px',
                 height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
                 boxSizing: 'border-box',
-                overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor,
+                overflow: 'hidden',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2137,7 +2150,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className="relative z-10 space-y-6 my-auto w-full pt-2">
+              <div className={`relative z-10 w-full ${!data.whatsIncluded.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'top' && (
@@ -2199,12 +2212,15 @@ function StudioCoreAiryBuilderContent() {
               style={{
                 width: '794px',
                 height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
                 boxSizing: 'border-box',
-                overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor,
+                overflow: 'hidden',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2222,7 +2238,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className="relative z-10 space-y-6 my-auto w-full pt-2">
+              <div className={`relative z-10 w-full ${!data.pricePayment.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'top' && (
@@ -2315,12 +2331,15 @@ function StudioCoreAiryBuilderContent() {
               style={{
                 width: '794px',
                 height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
                 minHeight: '1123px',
                 maxHeight: '1123px',
                 boxSizing: 'border-box',
-                overflow: 'hidden',
                 position: 'relative',
-                backgroundColor: pageBgColor,
+                overflow: 'hidden',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2338,7 +2357,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className="relative z-10 space-y-6 my-auto w-full pt-2">
+              <div className={`relative z-10 w-full ${!data.termsAndThankYou.photo ? 'h-full flex flex-col justify-center items-center text-center p-12' : 'space-y-6 my-auto pt-2'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && data.termsAndThankYou.imagePosition === 'top' && (
