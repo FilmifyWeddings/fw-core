@@ -1,0 +1,26 @@
+/* STUDIOCORE EDITOR CANVAS CONTAINER STYLES */
+
+.editor-wrapper {
+  min-height: 100vh;
+  background-color: #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.editor-canvas-container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 0 64px 0;
+  display: flex;
+  justify-content: center;
+}
+
+@media print {
+  .no-print,
+  .editor-sidebar,
+  .editor-toolbar {
+    display: none !important;
+  }
+}

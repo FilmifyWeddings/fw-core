@@ -1,8 +1,8 @@
-import { PDFDocumentPayload, PDFPagePayload } from '../types';
-import { HTMLAssembler } from '../renderer/assembler';
+import { PDFDocumentPayload } from '../types';
 import { FontManager } from '../fonts/manager';
 import { AssetPreloader } from '../assets/preloader';
 import { PDF_ENGINE_CONFIG } from '../config';
+import { PDFLogger } from '../utils/logger';
 
 export class PDFStitcher {
   static async renderMultiPageDocument(
@@ -12,34 +12,28 @@ export class PDFStitcher {
     const browser = browserWrapper.browser;
     const pages = payload.pages;
 
-    if (pages.length === 1) {
-      const pageData = pages[0];
-      const html = HTMLAssembler.assemblePageHTML(pageData, payload.title);
-      return await PDFStitcher.renderSinglePageBuffer(browser, html, pageData.width || 794, pageData.height || 1123);
-    }
+    PDFLogger.info(`Beginning single continuous PDF canvas rendering for ${pages.length} section(s)...`);
 
-    // Build unified multi-page document matching per-page distinct scroll dimensions
-    const pageCssRules = pages.map((p, idx) => `
-      @page :nth(${idx + 1}) {
-        size: ${p.width || 794}px ${p.height || 1123}px;
-        margin: 0;
-      }
-    `).join('\n');
+    const combinedPagesHtml = pages
+      .map(
+        (pageData, idx) => `
+      <section id="section-${idx + 1}">
+        ${pageData.html}
+      </section>`
+      )
+      .join('\n');
 
-    const pagesMarkup = pages.map((p) => `
-      <div class="pdf-page-container" style="width: ${p.width || 794}px; height: ${p.height || 1123}px; page-break-after: always; break-after: page; overflow: hidden; margin: 0 auto;">
-        ${p.html}
-      </div>
-    `).join('\n');
-
-    const fullHtml = `<!DOCTYPE html>
+    const fullDocumentHtml = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>${payload.title || 'Document'}</title>
+    <title>${payload.title || 'Quotation Document'}</title>
     <style>
       ${FontManager.getFontEmbedCss()}
-      ${pageCssRules}
+
+      @page {
+        margin: 0;
+      }
 
       * {
         box-sizing: border-box !important;
@@ -50,15 +44,36 @@ export class PDFStitcher {
       html, body {
         margin: 0 !important;
         padding: 0 !important;
-        background-color: #ffffff;
+        background-color: #ffffff !important;
+        width: 794px !important;
+        height: auto !important;
+        min-height: 0 !important;
       }
 
-      .pdf-page-container {
-        box-sizing: border-box !important;
+      #quotation-document {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 794px !important;
+      }
+
+      #quotation-document section {
+        width: 794px !important;
+        min-width: 794px !important;
+        max-width: 794px !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
         margin: 0 !important;
         padding: 0 !important;
         box-shadow: none !important;
         border: none !important;
+        overflow: visible !important;
+        display: block !important;
+        page-break-after: unset !important;
+        break-after: auto !important;
       }
 
       img, svg {
@@ -72,20 +87,21 @@ export class PDFStitcher {
     </style>
   </head>
   <body>
-    ${pagesMarkup}
+    <div id="quotation-document">
+      ${combinedPagesHtml}
+    </div>
   </body>
 </html>`;
 
     const page = await browser.newPage();
     try {
-      const firstPage = pages[0];
       await page.setViewport({
-        width: firstPage.width || 794,
-        height: firstPage.height || 1123,
+        width: 794,
+        height: 1123,
         deviceScaleFactor: PDF_ENGINE_CONFIG.deviceScaleFactor,
       });
 
-      await page.setContent(fullHtml, {
+      await page.setContent(fullDocumentHtml, {
         waitUntil: 'networkidle0',
         timeout: PDF_ENGINE_CONFIG.renderTimeoutMs,
       });
@@ -93,49 +109,34 @@ export class PDFStitcher {
       await FontManager.synchronizeFontReadiness(page);
       await AssetPreloader.preloadAllPageAssets(page);
 
-      const pdfBuffer = await page.pdf({
+      await page.evaluate(async () => {
+        return new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
+      });
+
+      const { totalWidth, totalHeight } = await page.evaluate(() => {
+        const doc = document.querySelector('#quotation-document') || document.body;
+        const rect = doc.getBoundingClientRect();
+        return {
+          totalWidth: Math.ceil(rect.width) || 794,
+          totalHeight: Math.ceil(rect.height) || 1123,
+        };
+      });
+
+      PDFLogger.info(`[Single PDF Canvas Metrics] Measured Total Document Width=${totalWidth}px, Height=${totalHeight}px`);
+
+      const continuousPdfBuffer = await page.pdf({
         printBackground: true,
-        preferCSSPageSize: true,
-        margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' },
-      });
-
-      return pdfBuffer;
-    } finally {
-      await page.close();
-    }
-  }
-
-  private static async renderSinglePageBuffer(
-    browser: any,
-    html: string,
-    widthPx: number,
-    heightPx: number
-  ): Promise<Uint8Array> {
-    const page = await browser.newPage();
-    try {
-      await page.setViewport({
-        width: widthPx,
-        height: heightPx,
-        deviceScaleFactor: PDF_ENGINE_CONFIG.deviceScaleFactor,
-      });
-
-      await page.setContent(html, {
-        waitUntil: 'networkidle0',
-        timeout: PDF_ENGINE_CONFIG.renderTimeoutMs,
-      });
-
-      await FontManager.synchronizeFontReadiness(page);
-      await AssetPreloader.preloadAllPageAssets(page);
-
-      const pdfBuffer = await page.pdf({
-        printBackground: true,
-        width: `${widthPx}px`,
-        height: `${heightPx}px`,
+        width: `${totalWidth}px`,
+        height: `${totalHeight}px`,
         preferCSSPageSize: false,
         margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' },
       });
 
-      return pdfBuffer;
+      return continuousPdfBuffer;
     } finally {
       await page.close();
     }

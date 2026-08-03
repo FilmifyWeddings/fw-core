@@ -922,21 +922,18 @@ function StudioCoreAiryBuilderContent() {
     document.body.classList.add('pdf-capture-active');
 
     try {
-      const pageElements = document.querySelectorAll('.quotation-page');
-      if (!pageElements.length) throw new Error('No quotation pages found');
+      const docElement = document.querySelector('#quotation-document') as HTMLElement;
+      if (!docElement) throw new Error('Quotation document canvas not found');
 
-      // Build structured page payloads with exact measured DOM dimensions per page
-      const pagesPayload = Array.from(pageElements).map((el, index) => {
-        const htmlElement = el as HTMLElement;
-        const width = htmlElement.offsetWidth || 794;
-        const height = htmlElement.offsetHeight || 1123;
-        return {
-          html: htmlElement.outerHTML,
-          width,
-          height,
-          pageIndex: index + 1
-        };
-      });
+      // Build continuous document payload
+      const width = docElement.offsetWidth || 794;
+      const height = docElement.offsetHeight || 1123;
+      const pagesPayload = [{
+        html: docElement.outerHTML,
+        width,
+        height,
+        pageIndex: 1
+      }];
 
       const cleanDesignName = (data?.designName || 'StudioCore_Quotation')
         .replace(/\u2013/g, '-')
@@ -1591,13 +1588,30 @@ function StudioCoreAiryBuilderContent() {
           print-color-adjust: exact !important;
           color-adjust: exact !important;
         }
-        .pdf-capture-active .quotation-page {
+        #quotation-document {
           width: 794px !important;
-          min-width: 794px !important;
-          max-width: 794px !important;
-          box-sizing: border-box !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 0 !important;
+          margin: 0 auto !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
         }
-        .pdf-capture-active .quotation-page img {
+        #quotation-document section {
+          width: 794px !important;
+          height: auto !important;
+          min-height: 0 !important;
+          max-height: none !important;
+          overflow: visible !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          page-break-after: unset !important;
+          break-after: auto !important;
+        }
+        .pdf-capture-active #quotation-document img {
           object-fit: cover !important;
           max-width: 100% !important;
         }
@@ -1617,7 +1631,6 @@ function StudioCoreAiryBuilderContent() {
         }
         @media print {
           @page {
-            size: A4 portrait;
             margin: 0 !important;
           }
           body, html {
@@ -1644,25 +1657,6 @@ function StudioCoreAiryBuilderContent() {
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
-          }
-          .a4-page-section.cover-page, .quotation-page.cover-page {
-            width: 794px !important;
-            height: 1123px !important;
-            margin: 0 auto !important;
-            box-shadow: none !important;
-            border: none !important;
-            page-break-after: always !important;
-            break-after: page !important;
-          }
-          .a4-page-section.content-page, .quotation-page.content-page {
-            width: 794px !important;
-            height: auto !important;
-            min-height: 0 !important;
-            margin: 0 auto !important;
-            box-shadow: none !important;
-            border: none !important;
-            page-break-after: always !important;
-            break-after: page !important;
           }
         }
       `}</style>
@@ -1766,16 +1760,15 @@ function StudioCoreAiryBuilderContent() {
             ref={canvasRef}
           >
 
-            {/* PAGE 1: COVER PAGE */}
-            <div 
-              className="quotation-page a4-page-section cover-page w-[794px] h-[1123px] shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 border border-zinc-300/60 select-none"
-              style={{ 
-                backgroundColor: pageBgColor, 
-                color: textColor, 
-                fontFamily: data.secondaryFont,
-                minHeight: data.cover.frameShape === 'background' ? `${data.cover.photoHeight || 1123}px` : '1123px'
-              }}
-            >
+            <div id="quotation-document" className="w-[794px] bg-white rounded-md shadow-2xl flex flex-col gap-0 overflow-hidden">
+              <section 
+                className="cover-page w-[794px] relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 select-none"
+                style={{ 
+                  backgroundColor: pageBgColor, 
+                  color: textColor, 
+                  fontFamily: data.secondaryFont,
+                }}
+              >
               {data.cover.photoUrl && data.cover.frameShape === 'background' && (
                 <SectionImageRenderer
                   photo={data.cover.photoUrl}
@@ -1871,11 +1864,11 @@ function StudioCoreAiryBuilderContent() {
                   EXCLUSIVELY PREPARED FOR YOU
                 </div>
               </div>
-            </div>
+            </section>
 
-            {/* PAGE 2: ABOUT US */}
-            <div 
-              className={`quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+            {/* SECTION 2: ABOUT US */}
+            <section 
+              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.aboutUs.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -1981,11 +1974,11 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
               </div>
-            </div>
+            </section>
 
-            {/* PAGE 3: PRE-WEDDING SHOOT */}
-            <div 
-              className={`quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+            {/* SECTION 3: PRE-WEDDING SHOOT */}
+            <section 
+              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.shootDetails.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -2079,11 +2072,11 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
               </div>
-            </div>
+            </section>
 
-            {/* PAGE 4: WHAT'S INCLUDED */}
-            <div 
-              className={`quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+            {/* SECTION 4: WHAT'S INCLUDED */}
+            <section 
+              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.whatsIncluded.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -2154,11 +2147,11 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
               </div>
-            </div>
+            </section>
 
-            {/* PAGE 5: PRICE & PAYMENT */}
-            <div 
-              className={`quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+            {/* SECTION 5: PRICE & PAYMENT */}
+            <section 
+              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.pricePayment.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -2260,11 +2253,11 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
               </div>
-            </div>
+            </section>
 
-            {/* PAGE 6: DELIVERY TIMELINE & TERMS */}
-            <div 
-              className={`quotation-page a4-page-section content-page w-[794px] h-auto min-h-0 shrink-0 rounded-sm shadow-2xl relative overflow-hidden flex flex-col justify-between transition-colors duration-300 border border-zinc-300/60 ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
+            {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
+            <section 
+              className={`content-section w-[794px] relative overflow-hidden flex flex-col justify-between transition-colors duration-300 ${data.termsAndThankYou.imagePosition === 'bottom' ? 'px-12 pt-10 pb-0' : 'p-12 py-10'}`}
               style={{ 
                 backgroundColor: pageBgColor, 
                 color: textColor, 
@@ -2368,8 +2361,9 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
               </div>
-            </div>
+            </section>
 
+            </div>
           </div>
         </main>
 

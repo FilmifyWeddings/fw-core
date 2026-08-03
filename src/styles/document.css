@@ -1,0 +1,31 @@
+/* STUDIOCORE CONTINUOUS DOCUMENT MODEL CSS */
+/* Replaces all legacy pagination rules with one continuous document layout */
+
+#quotation-document {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  width: 794px !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+  border-radius: 4px !important;
+}
+
+#quotation-document section {
+  margin: 0 !important;
+  padding: 0 !important;
+  display: block !important;
+  width: 794px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+img, svg {
+  max-width: 100%;
+}
