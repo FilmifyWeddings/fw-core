@@ -17,6 +17,8 @@ import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manag
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
+import html2canvasPro from 'html2canvas-pro';
+import jsPDF from 'jspdf';
 
 // Exact Registered Color Palettes with Inverted Counterparts
 export interface ColorTheme {
@@ -910,7 +912,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // BULLETPROOF FAIL-SAFE DYNAMIC HEIGHT PDF EXPORT ENGINE
+  // BULLETPROOF SINGLE CONTINUOUS LONG PDF EXPORT ENGINE (1-PAGE CONTINUOUS STREAM)
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -922,52 +924,39 @@ function StudioCoreAiryBuilderContent() {
     document.body.classList.add('pdf-capture-active');
 
     try {
-      const docElement = document.querySelector('#quotation-document') as HTMLElement;
-      if (!docElement) throw new Error('Quotation document canvas not found');
+      const container = document.getElementById('quotation-seamless-container') || document.getElementById('quotation-document');
+      if (!container) throw new Error('Quotation seamless container not found');
 
-      // Build continuous document payload
-      const width = docElement.offsetWidth || 794;
-      const height = docElement.offsetHeight || 1123;
-      const pagesPayload = [{
-        html: docElement.outerHTML,
-        width,
-        height,
-        pageIndex: 1
-      }];
+      const widthPx = 794;
+      const totalHeightPx = container.offsetHeight;
+
+      const canvas = await html2canvasPro(container as HTMLElement, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: widthPx,
+        height: totalHeightPx,
+        windowWidth: widthPx
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      // Single continuous page initialization
+      const pdf = new jsPDF({
+        unit: 'px',
+        format: [widthPx, totalHeightPx],
+        orientation: 'portrait'
+      });
+
+      pdf.addImage(imgData, 'JPEG', 0, 0, widthPx, totalHeightPx, undefined, 'FAST');
 
       const cleanDesignName = (data?.designName || 'StudioCore_Quotation')
         .replace(/\u2013/g, '-')
         .replace(/\u2014/g, '-')
         .replace(/[^\x20-\x7E]/g, '-');
-      const exportFilename = `${cleanDesignName}.pdf`;
 
-      // Production Call: Dedicated Server PDF Engine (/api/pdf/export)
-      const res = await fetch('/api/pdf/export', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          pages: pagesPayload,
-          title: data?.designName || 'StudioCore Quotation',
-          filename: exportFilename
-        })
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson?.error || `PDF Engine server error (status ${res.status})`);
-      }
-
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = exportFilename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
+      pdf.save(`${cleanDesignName}.pdf`);
 
       setPdfToastMessage('PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
@@ -1744,13 +1733,13 @@ function StudioCoreAiryBuilderContent() {
         {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS */}
         <main 
           ref={mainContainerRef}
-          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start space-y-8 pb-20 md:pb-8"
+          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-20 md:pb-8"
         >
           
-          {/* Scaled A4 Container Wrapper */}
+          {/* Scaled Continuous Canvas Container Wrapper */}
           <div 
             id="quotation-canvas-container"
-            className="proposal-canvas-container flex flex-col items-center space-y-12 transition-transform duration-200 origin-top"
+            className="proposal-canvas-container flex flex-col items-center gap-0 transition-transform duration-200 origin-top"
             style={{ 
               transform: `scale(${zoomScale})`, 
               transformOrigin: 'top center',
@@ -1760,7 +1749,11 @@ function StudioCoreAiryBuilderContent() {
             ref={canvasRef}
           >
 
-            <div id="quotation-document" className="w-[794px] bg-white rounded-md shadow-2xl flex flex-col gap-0 overflow-hidden">
+            <div 
+              id="quotation-seamless-container" 
+              className="w-[794px] bg-white flex flex-col gap-0 p-0 m-0 overflow-hidden shadow-none border-0 font-sans"
+              style={{ width: '794px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 0, padding: 0 }}
+            >
               <section 
                 className="cover-page w-[794px] relative overflow-hidden flex flex-col items-center justify-between text-center transition-colors duration-300 select-none"
                 style={{ 
