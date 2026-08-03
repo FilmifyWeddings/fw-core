@@ -912,12 +912,12 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PIXEL-PERFECT SINGLE CANVAS CONTINUOUS PDF EXPORTER ENGINE
+  // PIXEL-PERFECT STANDARD A4 MULTI-PAGE PDF EXPORTER Engine
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
-    setPdfToastMessage('Generating High-Res PDF...');
+    setPdfToastMessage('Generating High-Res A4 PDF...');
 
     // Lock zoomScale to 1.0 & enable PDF capture CSS
     setZoomScale(1.0);
@@ -927,31 +927,36 @@ function StudioCoreAiryBuilderContent() {
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
-      const container = document.querySelector('#quotation-document') as HTMLElement;
-      if (!container) throw new Error('Quotation document root not found (#quotation-document)');
+      const pageElements = document.querySelectorAll('.quotation-page');
+      if (!pageElements.length) throw new Error('No quotation pages found (.quotation-page)');
 
-      const widthPx = container.offsetWidth || 794;
-      const totalHeightPx = container.offsetHeight;
-
-      const canvas = await html2canvasPro(container, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        width: widthPx,
-        height: totalHeightPx,
-        windowWidth: widthPx
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      // Standard A4 dimensions in px (794 x 1123)
+      const a4Width = 794;
+      const a4Height = 1123;
 
       const pdf = new jsPDF({
         unit: 'px',
-        format: [widthPx, totalHeightPx],
+        format: [a4Width, a4Height],
         orientation: 'portrait'
       });
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, widthPx, totalHeightPx, undefined, 'FAST');
+      for (let i = 0; i < pageElements.length; i++) {
+        const pageEl = pageElements[i] as HTMLElement;
+
+        const canvas = await html2canvasPro(pageEl, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          width: a4Width,
+          height: a4Height,
+          windowWidth: a4Width
+        });
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        if (i > 0) pdf.addPage([a4Width, a4Height], 'portrait');
+        pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height, undefined, 'FAST');
+      }
 
       const cleanDesignName = (data?.designName || 'Quotation')
         .replace(/\u2013/g, '-')
@@ -960,7 +965,7 @@ function StudioCoreAiryBuilderContent() {
 
       pdf.save(`${cleanDesignName}.pdf`);
 
-      setPdfToastMessage('PDF Downloaded Successfully!');
+      setPdfToastMessage('A4 PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
       console.error('PDF Export Error:', err);
@@ -974,10 +979,7 @@ function StudioCoreAiryBuilderContent() {
 
   // Load User Session & Proposal
   useEffect(() => {
-    console.log('=== CONFIRMED_TEMPLET_ID_PAGE_V5 ===');
-    console.log('[BUILD_VER: A4_STRICT_V2]');
-    console.log('[TEMPLET_1_A4_STRICT_V3_SUCCESS]');
-    console.log('[TEMPLET_DIRECT_ROUTE_V4_SUCCESS]');
+    console.log('=== TEMPLET_A4_STRICT_REVERT_V7 ===');
     async function initUserAndLoadData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -1759,12 +1761,19 @@ function StudioCoreAiryBuilderContent() {
               id="quotation-document"
             >
               <section 
-                className={`flex flex-col transition-colors duration-300 select-none ${
+                className={`quotation-page cover-page flex flex-col transition-colors duration-300 select-none ${
                   !data.cover.photoUrl
                     ? 'justify-center items-center text-center p-12'
                     : 'justify-between'
                 }`}
                 style={{
+                  width: '794px',
+                  height: '1123px',
+                  minHeight: '1123px',
+                  maxHeight: '1123px',
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                  position: 'relative',
                   backgroundColor: pageBgColor,
                   color: textColor,
                   fontFamily: data.secondaryFont,
@@ -1869,12 +1878,19 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.aboutUs.bottomBannerPhoto
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -1982,12 +1998,19 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.shootDetails.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2083,12 +2106,19 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.whatsIncluded.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2161,12 +2191,19 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.pricePayment.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2270,12 +2307,19 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`flex flex-col transition-colors duration-300 ${
+              className={`quotation-page content-page flex flex-col transition-colors duration-300 ${
                 !data.termsAndThankYou.photo
                   ? 'justify-center items-center text-center p-12'
                   : 'justify-between'
               }`}
               style={{
+                width: '794px',
+                height: '1123px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                position: 'relative',
                 backgroundColor: pageBgColor,
                 color: textColor,
                 fontFamily: data.secondaryFont,
@@ -2463,7 +2507,7 @@ function StudioCoreAiryBuilderContent() {
 
 export default function TemplateQuotationBuilderPage() {
   useEffect(() => {
-    console.log('=== EXACT_TEMPLET_ID_PAGE_V6_ACTIVE ===');
+    console.log('=== TEMPLET_A4_STRICT_REVERT_V7 ===');
   }, []);
 
   return (

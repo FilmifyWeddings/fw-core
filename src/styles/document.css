@@ -1,25 +1,27 @@
-/* STUDIOCORE CONTINUOUS DOCUMENT ARCHITECTURE CSS */
+/* STUDIOCORE STRICT A4 PAGE SIZING CSS */
 
-#quotation-document {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 0 !important;
-  margin: 0 auto !important;
-  padding: 0 !important;
+.quotation-page {
   width: 794px !important;
-  background-color: #FFFFFF !important;
+  height: 1123px !important;
+  min-height: 1123px !important;
+  max-height: 1123px !important;
   box-sizing: border-box !important;
+  position: relative !important;
+  overflow: hidden !important;
+  background: #FFFFFF !important;
+  margin: 0 auto 32px auto !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
 }
 
-#quotation-document section {
-  width: 100% !important;
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
-  display: flex !important;
-  flex-direction: column !important;
-  box-sizing: border-box !important;
+@media print {
+  @page {
+    size: 794px 1123px;
+    margin: 0;
+  }
+  .quotation-page {
+    page-break-after: always;
+    break-after: page;
+  }
 }
 
 img, svg {
