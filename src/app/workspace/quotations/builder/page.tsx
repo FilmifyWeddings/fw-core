@@ -882,6 +882,14 @@ function SectionImageRenderer({
   );
 }
 
+function getDynamicPageHeight(sectionData?: { frameShape?: string; photoHeight?: number; bottomBannerHeight?: number }) {
+  const h = sectionData?.photoHeight || sectionData?.bottomBannerHeight || 380;
+  if (sectionData?.frameShape === 'background' && h > 500) {
+    return `${1123 + (h - 500)}px`;
+  }
+  return '1123px';
+}
+
 function ThreeDCurvedMultiSelect({
   title,
   availableOptions,
@@ -967,6 +975,7 @@ export interface FunctionItem {
   id: string;
   name: string;
   date: string;
+  dateNotFixed?: boolean;
   startTime: string;
   endTime: string;
   durationSlot: string;
@@ -998,16 +1007,25 @@ function ThreeDCurvedFunctionEditor({
   onAddCustomDuration: (dur: string) => void;
   onAddCustomRequirement: (req: string) => void;
 }) {
-  const handleNameChange = (val: string) => {
-    if (val === '__ADD_NEW__') {
-      const customName = prompt('Enter custom function name (e.g. Cocktail, Pool Party):');
-      if (customName && customName.trim()) {
-        const trimmed = customName.trim();
-        onAddCustomFunctionName(trimmed);
-        onUpdate({ ...func, name: trimmed });
-      }
+  const selectedEventNames = (func.name || '').split(' + ').map(s => s.trim()).filter(Boolean);
+
+  const toggleEventName = (evtName: string) => {
+    let updated: string[];
+    if (selectedEventNames.includes(evtName)) {
+      updated = selectedEventNames.filter(n => n !== evtName);
     } else {
-      onUpdate({ ...func, name: val });
+      updated = [...selectedEventNames, evtName];
+    }
+    const joined = updated.length > 0 ? updated.join(' + ') : 'Event';
+    onUpdate({ ...func, name: joined });
+  };
+
+  const handleAddCustomEvent = () => {
+    const customName = prompt('Enter custom event name (e.g. Cocktail, Pool Party):');
+    if (customName && customName.trim()) {
+      const trimmed = customName.trim();
+      onAddCustomFunctionName(trimmed);
+      toggleEventName(trimmed);
     }
   };
 
@@ -1056,7 +1074,7 @@ function ThreeDCurvedFunctionEditor({
       <div className="flex items-center justify-between border-b border-amber-100 pb-2">
         <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
           <Calendar className="w-3.5 h-3.5 text-amber-600" />
-          <span>Function #{index + 1} ({func.name})</span>
+          <span>Function #{index + 1} ({func.name || 'Event'})</span>
         </span>
         <button
           type="button"
@@ -1068,64 +1086,117 @@ function ThreeDCurvedFunctionEditor({
         </button>
       </div>
 
-      {/* Function Name Dropdown */}
-      <div>
-        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Function Name</label>
-        <select
-          value={func.name}
-          onChange={(e) => handleNameChange(e.target.value)}
-          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
-        >
-          <option value="__ADD_NEW__">+ Add Function...</option>
-          {availableFunctionNames.map(name => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
+      {/* Multi-Select Event Names Dropdown (Curved 3D UI) */}
+      <div className="space-y-2 pt-1">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-amber-600" /> Event Name(s)
+          </label>
+          <button
+            type="button"
+            onClick={handleAddCustomEvent}
+            className="px-2 py-0.5 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all"
+          >
+            + Add
+          </button>
+        </div>
+
+        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+          {availableFunctionNames.map((evtName) => {
+            const isSelected = selectedEventNames.includes(evtName);
+            return (
+              <div
+                key={evtName}
+                onClick={() => toggleEventName(evtName)}
+                className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                  isSelected
+                    ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                    : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
+                }`}
+              >
+                <span className="leading-tight select-none pr-2">{evtName}</span>
+                <div
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                    isSelected
+                      ? 'border-amber-600 bg-amber-600 text-white'
+                      : 'border-zinc-300 bg-white'
+                  }`}
+                >
+                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Date Picker */}
-      <div>
-        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Date</label>
-        <input
-          type="text"
-          value={func.date}
-          placeholder="e.g. 4 MAR 26"
-          onChange={(e) => onUpdate({ ...func, date: e.target.value })}
-          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
-        />
+      {/* 3D Calendar & Date Not Fixed Toggle */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] uppercase font-bold text-zinc-500">Date</label>
+          <label className="flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!func.dateNotFixed}
+              onChange={(e) => onUpdate({ ...func, dateNotFixed: e.target.checked })}
+              className="w-3.5 h-3.5 rounded-md border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+            />
+            <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wide">Date Not Fixed</span>
+          </label>
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            disabled={!!func.dateNotFixed}
+            value={func.dateNotFixed ? 'DATE NOT FIXED' : func.date}
+            placeholder="e.g. 4 MAR 26"
+            onChange={(e) => onUpdate({ ...func, date: e.target.value })}
+            className={`w-full p-2.5 pr-9 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs transition-all ${
+              func.dateNotFixed ? 'opacity-60 bg-zinc-100' : ''
+            }`}
+          />
+          <Calendar className="w-4 h-4 text-amber-600 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
       </div>
 
-      {/* Time & Duration Slot Grid */}
+      {/* 3D Clock Selectors for Start & End Time */}
       <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Start Time</label>
-          <input
-            type="text"
-            value={func.startTime}
-            placeholder="10:00 AM"
-            onChange={(e) => onUpdate({ ...func, startTime: e.target.value })}
-            className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
-          />
+        <div className="space-y-1">
+          <label className="block text-[10px] uppercase font-bold text-zinc-500">Start Time</label>
+          <div className="relative flex items-center">
+            <Clock className="w-3.5 h-3.5 text-amber-600 absolute left-2.5 pointer-events-none" />
+            <input
+              type="text"
+              value={func.startTime}
+              placeholder="10:00 AM"
+              onChange={(e) => onUpdate({ ...func, startTime: e.target.value })}
+              className="w-full p-2 pl-8 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs"
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">End Time</label>
-          <input
-            type="text"
-            value={func.endTime}
-            placeholder="05:00 PM"
-            onChange={(e) => onUpdate({ ...func, endTime: e.target.value })}
-            className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase"
-          />
+        <div className="space-y-1">
+          <label className="block text-[10px] uppercase font-bold text-zinc-500">End Time</label>
+          <div className="relative flex items-center">
+            <Clock className="w-3.5 h-3.5 text-amber-600 absolute left-2.5 pointer-events-none" />
+            <input
+              type="text"
+              value={func.endTime}
+              placeholder="05:00 PM"
+              onChange={(e) => onUpdate({ ...func, endTime: e.target.value })}
+              className="w-full p-2 pl-8 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Duration Slot Dropdown */}
+      {/* Standardized 3D Duration Dropdown */}
       <div>
         <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Duration Slot</label>
         <select
           value={func.durationSlot}
           onChange={(e) => handleDurationChange(e.target.value)}
-          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+          className="w-full p-2.5 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs shadow-2xs"
         >
           {availableDurationSlots.map(slot => (
             <option key={slot} value={slot}>{slot}</option>
@@ -1142,7 +1213,7 @@ function ThreeDCurvedFunctionEditor({
           value={func.location}
           placeholder="e.g. JW MARRIOTT, MUMBAI"
           onChange={(e) => onUpdate({ ...func, location: e.target.value })}
-          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs uppercase resize-none"
+          className="w-full p-2.5 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase resize-none shadow-2xs"
         />
       </div>
 
@@ -1283,6 +1354,7 @@ function StudioCoreAiryBuilderContent() {
   ]);
 
   const [availableDurationSlots, setAvailableDurationSlots] = useState<string[]>([
+    'None',
     '2 Hours',
     '3 Hours',
     '4 Hours',
@@ -1500,6 +1572,8 @@ function StudioCoreAiryBuilderContent() {
       setData(prev => ({ ...prev, aboutUs: { ...prev.aboutUs, bottomBannerPhoto: url } }));
     } else if (activeTargetField === 'shootPhoto') {
       setData(prev => ({ ...prev, shootDetails: { ...prev.shootDetails, photo: url } }));
+    } else if (activeTargetField === 'functionsPhoto') {
+      setData(prev => ({ ...prev, functionsPage: { ...prev.functionsPage, photo: url } }));
     } else if (activeTargetField === 'includedPhoto') {
       setData(prev => ({ ...prev, whatsIncluded: { ...prev.whatsIncluded, photo: url } }));
     } else if (activeTargetField === 'pricePhoto') {
@@ -2333,11 +2407,10 @@ function StudioCoreAiryBuilderContent() {
                   className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
                 style={{
                   width: '794px',
-                  height: '1123px',
                   minWidth: '794px',
                   maxWidth: '794px',
-                  minHeight: '1123px',
-                  maxHeight: '1123px',
+                  minHeight: getDynamicPageHeight(data.cover),
+                  height: getDynamicPageHeight(data.cover),
                   boxSizing: 'border-box',
                   position: 'relative',
                   overflow: 'hidden',
@@ -2463,11 +2536,10 @@ function StudioCoreAiryBuilderContent() {
               className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
-                height: '1123px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
+                minHeight: getDynamicPageHeight(data.aboutUs),
+                height: getDynamicPageHeight(data.aboutUs),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -2571,8 +2643,8 @@ function StudioCoreAiryBuilderContent() {
                 width: '794px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: (data.shootDetails.frameShape === 'background' && data.shootDetails.photoHeight > 1123) ? `${data.shootDetails.photoHeight}px` : '1123px',
-                height: (data.shootDetails.frameShape === 'background' && data.shootDetails.photoHeight > 1123) ? `${data.shootDetails.photoHeight}px` : 'auto',
+                minHeight: getDynamicPageHeight(data.shootDetails),
+                height: getDynamicPageHeight(data.shootDetails),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -2633,29 +2705,35 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="space-y-3 max-w-lg mx-auto pl-4 mt-6">
-                    <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2" style={{ color: textColor }}>
+                  <div className="space-y-3 max-w-lg mx-auto mt-6 flex flex-col items-center">
+                    <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2 mb-1" style={{ color: textColor }}>
                       <Camera className="w-4 h-4" style={{ color: kickerColor }} />
                       <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
                     </p>
-                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed text-center">
+                    <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
                       {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
                         .split('\n').filter(Boolean).map((item, idx) => (
-                          <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
+                          <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
+                            <span>{item.trim()}</span>
+                          </div>
                         ))}
-                    </ul>
+                    </div>
                   </div>
 
-                  <div className="pt-2 space-y-3 max-w-lg mx-auto pl-4 mb-8">
-                    <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  <div className="pt-2 space-y-3 max-w-lg mx-auto mb-8 flex flex-col items-center">
+                    <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap mb-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.shootDetails.deliverablesHeading || 'Deliverables'}
                     </h3>
-                    <ul className="space-y-2 list-disc list-inside text-sm font-normal opacity-90 leading-relaxed text-center">
+                    <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
                       {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
                         .split('\n').filter(Boolean).map((item, idx) => (
-                          <li key={idx} className="tracking-wide" style={{ color: textColor }}><span className="font-medium ml-1">{item.trim()}</span></li>
+                          <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
+                            <span>{item.trim()}</span>
+                          </div>
                         ))}
-                    </ul>
+                    </div>
                   </div>
                 </div>
 
@@ -2687,8 +2765,8 @@ function StudioCoreAiryBuilderContent() {
                 width: '794px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: (data.functionsPage?.frameShape === 'background' && (data.functionsPage?.photoHeight || 0) > 1123) ? `${data.functionsPage.photoHeight}px` : '1123px',
-                height: (data.functionsPage?.frameShape === 'background' && (data.functionsPage?.photoHeight || 0) > 1123) ? `${data.functionsPage.photoHeight}px` : 'auto',
+                minHeight: getDynamicPageHeight(data.functionsPage),
+                height: getDynamicPageHeight(data.functionsPage),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -2770,7 +2848,11 @@ function StudioCoreAiryBuilderContent() {
                           <div className="text-[11px] tracking-widest uppercase font-bold px-3 py-1 rounded-full border shadow-2xs inline-flex items-center gap-1.5 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
                             <Calendar className="w-3 h-3" />
                             <span>
-                              {[func.date, func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null, func.durationSlot ? `(${func.durationSlot})` : null].filter(Boolean).join(' • ')}
+                              {[
+                                func.dateNotFixed ? 'DATE NOT FIXED' : func.date,
+                                func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
+                                (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
+                              ].filter(Boolean).join(' • ')}
                             </span>
                           </div>
                         </div>
