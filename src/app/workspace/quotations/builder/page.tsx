@@ -792,7 +792,7 @@ function SectionImageRenderer({
 
   if (frameShape === 'full-width') {
     return (
-      <div className={`-mx-12 w-[794px] overflow-hidden ${isBottomFlush ? '-mb-10 mt-4' : 'my-4'}`}>
+      <div className={`w-full overflow-hidden ${isBottomFlush ? 'mt-4' : 'my-4'}`}>
         <img
           src={photo}
           alt={altText}
@@ -810,7 +810,7 @@ function SectionImageRenderer({
     'rounded-2xl';
 
   return (
-    <div className={`w-full flex justify-center ${isBottomFlush ? '-mb-10 mt-4' : 'my-4'}`}>
+    <div className={`w-full flex justify-center ${isBottomFlush ? 'mt-4' : 'my-4'}`}>
       <div
         className={`overflow-hidden shadow-md relative transition-all duration-200 ${shapeClass}`}
         style={{
@@ -1764,14 +1764,10 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
-              className="flex flex-col items-center gap-8 py-8 bg-[#E5E7EB] min-h-screen overflow-y-auto"
+              className="w-full flex flex-col items-center justify-start gap-12 py-12 bg-[#f3f4f6] min-h-screen overflow-y-auto"
             >
               <section 
-                className={`quotation-page cover-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 select-none ${
-                  !data.cover.photoUrl
-                    ? 'justify-center items-center text-center p-12 h-full'
-                    : 'justify-between p-12'
-                }`}
+                className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
                 style={{
                   width: '794px',
                   height: '1123px',
@@ -1782,8 +1778,10 @@ function StudioCoreAiryBuilderContent() {
                   boxSizing: 'border-box',
                   position: 'relative',
                   overflow: 'hidden',
+                  margin: '0 auto', // Center alignment guarantee
+                  borderBottom: '2px dashed #cbd5e1', // Page separator line
+                  boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                   backgroundColor: pageBgColor || '#FFFFFF',
-                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                   color: textColor,
                   fontFamily: data.secondaryFont,
                 }}
@@ -1801,7 +1799,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 flex flex-col items-center w-full ${!data.cover.photoUrl ? 'justify-center items-center text-center' : 'justify-between h-full'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.cover.photoUrl ? 'justify-center items-center' : 'justify-between'}`}>
                 <div className="w-full flex flex-col items-center justify-center space-y-2">
                   {data.cover.brandLogoUrl ? (
                     <img 
@@ -1887,11 +1885,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
-                !data.aboutUs.bottomBannerPhoto
-                  ? 'justify-center items-center text-center p-12 h-full'
-                  : 'justify-between p-12'
-              }`}
+              className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
                 height: '1123px',
@@ -1902,8 +1896,10 @@ function StudioCoreAiryBuilderContent() {
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
+                margin: '0 auto', // Center alignment guarantee
+                borderBottom: '2px dashed #cbd5e1', // Page separator line
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -1934,7 +1930,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               </div>
 
-              <div className={`relative z-10 w-full ${!data.aboutUs.bottomBannerPhoto ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto text-center pt-4'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.aboutUs.bottomBannerPhoto ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'top' && (
@@ -2010,11 +2006,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
-                !data.shootDetails.photo
-                  ? 'justify-center items-center text-center p-12 h-full'
-                  : 'justify-between p-12'
-              }`}
+              className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
                 height: '1123px',
@@ -2025,8 +2017,10 @@ function StudioCoreAiryBuilderContent() {
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
+                margin: '0 auto', // Center alignment guarantee
+                borderBottom: '2px dashed #cbd5e1', // Page separator line
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2044,7 +2038,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.shootDetails.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.shootDetails.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'top' && (
@@ -2121,11 +2115,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: WHAT'S INCLUDED */}
             <section 
-              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
-                !data.whatsIncluded.photo
-                  ? 'justify-center items-center text-center p-12 h-full'
-                  : 'justify-between p-12'
-              }`}
+              className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
                 height: '1123px',
@@ -2136,8 +2126,10 @@ function StudioCoreAiryBuilderContent() {
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
+                margin: '0 auto', // Center alignment guarantee
+                borderBottom: '2px dashed #cbd5e1', // Page separator line
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2155,7 +2147,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.whatsIncluded.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.whatsIncluded.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'top' && (
@@ -2209,11 +2201,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: PRICE & PAYMENT */}
             <section 
-              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
-                !data.pricePayment.photo
-                  ? 'justify-center items-center text-center p-12 h-full'
-                  : 'justify-between p-12'
-              }`}
+              className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
                 height: '1123px',
@@ -2224,8 +2212,10 @@ function StudioCoreAiryBuilderContent() {
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
+                margin: '0 auto', // Center alignment guarantee
+                borderBottom: '2px dashed #cbd5e1', // Page separator line
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2243,7 +2233,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.pricePayment.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.pricePayment.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'top' && (
@@ -2328,11 +2318,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
             <section 
-              className={`quotation-page content-page relative mb-8 border-b-2 border-dashed border-gray-300/60 shadow-lg rounded-sm flex flex-col transition-colors duration-300 ${
-                !data.termsAndThankYou.photo
-                  ? 'justify-center items-center text-center p-12 h-full'
-                  : 'justify-between p-12'
-              }`}
+              className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
                 height: '1123px',
@@ -2343,8 +2329,10 @@ function StudioCoreAiryBuilderContent() {
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
+                margin: '0 auto', // Center alignment guarantee
+                borderBottom: '2px dashed #cbd5e1', // Page separator line
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
@@ -2362,7 +2350,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 w-full ${!data.termsAndThankYou.photo ? 'flex flex-col justify-center items-center text-center' : 'space-y-6 my-auto pt-2'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.termsAndThankYou.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && data.termsAndThankYou.imagePosition === 'top' && (
