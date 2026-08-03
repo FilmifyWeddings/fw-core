@@ -20,7 +20,36 @@ export async function POST(req: NextRequest) {
     }, { status: 400 });
   }
 
-  const { html, url, filename = 'Quotation_Proposal.pdf' } = body;
+  let { html, url, filename = 'Quotation_Proposal.pdf' } = body;
+
+  // Sanitize non-ASCII punctuation in HTML before passing to Puppeteer
+  if (html && typeof html === 'string') {
+    html = html
+      .replace(/\u2013/g, '-')       // EN DASH –
+      .replace(/\u2014/g, '-')       // EM DASH —
+      .replace(/[\u2018\u2019]/g, "'") // SMART SINGLE QUOTES ‘’
+      .replace(/[\u201C\u201D]/g, '"') // SMART DOUBLE QUOTES “”
+      .replace(/\u2026/g, '...')     // ELLIPSIS …
+      .replace(/\u00A0/g, ' ');      // NON-BREAKING SPACE
+  }
+
+  // Diagnostic ByteString non-ASCII Inspector
+  if (filename && typeof filename === 'string') {
+    for (let i = 0; i < filename.length; i++) {
+      if (filename.charCodeAt(i) > 255) {
+        console.warn(`[ByteString Debug] Non-ASCII char '${filename[i]}' (U+${filename.charCodeAt(i).toString(16)}) at index ${i} in filename`);
+        const start = Math.max(0, i - 50);
+        const end = Math.min(filename.length, i + 50);
+        console.warn(`[ByteString Debug] Filename Context around index ${i}:`, filename.substring(start, end));
+      }
+    }
+  }
+
+  // Safe RFC 5987 ASCII Header Filename
+  const safeHeaderFilename = (filename || 'Quotation_Proposal.pdf')
+    .replace(/[^\x20-\x7E]/g, '-')
+    .replace(/"/g, "'");
+  const encodedHeaderFilename = encodeURIComponent(filename || 'Quotation_Proposal.pdf');
 
   // STEP 1: IMPORT CHROMIUM & PUPPETEER
   let chromiumModule: any = null;
@@ -197,7 +226,7 @@ export async function POST(req: NextRequest) {
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `attachment; filename="${safeHeaderFilename}"; filename*=UTF-8''${encodedHeaderFilename}`,
       'Cache-Control': 'no-cache',
     },
   });

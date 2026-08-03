@@ -985,6 +985,12 @@ function StudioCoreAiryBuilderContent() {
         </html>
       `;
 
+      const cleanDesignName = (data?.designName || 'StudioCore_Quotation')
+        .replace(/\u2013/g, '-')
+        .replace(/\u2014/g, '-')
+        .replace(/[^\x20-\x7E]/g, '-');
+      const exportFilename = `${cleanDesignName}.pdf`;
+
       const res = await fetch('/api/export-pdf', {
         method: 'POST',
         headers: {
@@ -992,7 +998,7 @@ function StudioCoreAiryBuilderContent() {
         },
         body: JSON.stringify({
           html: fullHtml,
-          filename: `${data?.designName || 'StudioCore_Quotation'}.pdf`
+          filename: exportFilename
         })
       });
 
@@ -1004,7 +1010,7 @@ function StudioCoreAiryBuilderContent() {
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = `${data?.designName || 'StudioCore_Quotation'}.pdf`;
+      link.download = exportFilename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
