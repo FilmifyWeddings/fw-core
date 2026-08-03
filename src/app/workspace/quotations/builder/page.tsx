@@ -1151,6 +1151,9 @@ function StudioCoreAiryBuilderContent() {
       const combinedSanitizedCss = fallbackStyles.join('\n');
       let pdf: InstanceType<typeof jsPDF> | null = null;
 
+      console.log('[PDF Export Debug] Engine library being used:', html2canvas?.name || 'html2canvas-pro');
+      console.log('[PDF Export Debug] Initiating DOM clone and style sanitization...');
+
       const handleOnClone = (clonedDoc: Document, clonedElement: HTMLElement) => {
         // Inject pre-sanitized styles for fallback
         try {
@@ -1164,20 +1167,54 @@ function StudioCoreAiryBuilderContent() {
           console.warn('Injecting sanitized styles warning:', err);
         }
 
-        // Sanitize inline element styles in cloned document to exact RGB
+        // Comprehensive Computed Style & Inline Style Sanitization to exact RGB
         try {
+          const view = clonedDoc.defaultView || window;
           const allNodes = clonedDoc.querySelectorAll('*');
+
           allNodes.forEach((node) => {
-            const htmlNode = node as HTMLElement;
-            if (htmlNode.style && htmlNode.style.cssText) {
-              const rawStyle = htmlNode.style.cssText;
-              if (/oklch|oklab/i.test(rawStyle)) {
-                htmlNode.style.cssText = sanitizeCssColors(rawStyle);
+            const el = node as HTMLElement;
+            if (!el || !el.style) return;
+
+            // 1. Sanitize explicit inline style cssText
+            if (el.style.cssText && /oklch|oklab|color-mix|light-dark/i.test(el.style.cssText)) {
+              el.style.cssText = sanitizeCssColors(el.style.cssText);
+            }
+
+            // 2. Read computed styles & override properties containing oklch/oklab
+            try {
+              const computed = view.getComputedStyle(el);
+              if (computed) {
+                const colorProps = [
+                  'color', 'background-color', 'border-color', 'border-top-color',
+                  'border-right-color', 'border-bottom-color', 'border-left-color',
+                  'outline-color', 'text-decoration-color', 'box-shadow', 'fill', 'stroke'
+                ];
+
+                colorProps.forEach((prop) => {
+                  const val = computed.getPropertyValue(prop);
+                  if (val && /oklch|oklab|color-mix|light-dark/i.test(val)) {
+                    el.style.setProperty(prop, sanitizeCssColors(val), 'important');
+                  }
+                });
+
+                // 3. Convert or sanitize custom Tailwind CSS variables (--tw-*) containing oklab/oklch
+                for (let k = el.style.length - 1; k >= 0; k--) {
+                  const name = el.style[k];
+                  if (name && name.startsWith('--')) {
+                    const varVal = el.style.getPropertyValue(name);
+                    if (/oklch|oklab|color-mix|light-dark/i.test(varVal)) {
+                      el.style.setProperty(name, sanitizeCssColors(varVal));
+                    }
+                  }
+                }
               }
+            } catch (compErr) {
+              // Ignore computed style access on isolated node elements
             }
           });
         } catch (nodeErr) {
-          console.warn('Inline style sanitization warning:', nodeErr);
+          console.warn('Element style sanitization warning:', nodeErr);
         }
 
         // Apply custom PDF viewport styles (Preserving pixel-perfect layout)
@@ -1216,6 +1253,7 @@ function StudioCoreAiryBuilderContent() {
 
         let canvas: HTMLCanvasElement;
         try {
+          console.log(`[PDF Export Debug] Rendering page ${i + 1} with html2canvas-pro...`);
           canvas = await html2canvas(pageEl, {
             scale: 2,
             useCORS: true,
@@ -1226,8 +1264,8 @@ function StudioCoreAiryBuilderContent() {
             height: heightPx,
             onclone: handleOnClone
           });
-        } catch (canvasErr) {
-          console.warn(`Primary canvas render for page ${i + 1} failed, using secondary sanitized render:`, canvasErr);
+        } catch (canvasErr: any) {
+          console.error(`[PDF Export Exception Stack Trace] Page ${i + 1} Primary Render Error:`, canvasErr?.stack || canvasErr);
           canvas = await html2canvas(pageEl, { 
             scale: 1.5, 
             logging: false,
