@@ -932,7 +932,7 @@ function SectionImageRenderer({
 
   if (frameShape === 'full-width') {
     return (
-      <div className={`w-full overflow-hidden ${isBottomFlush ? 'mt-auto mb-0' : 'my-0'}`}>
+      <div className={`w-full overflow-hidden ${isBottomFlush ? 'mt-6 mb-0' : 'mt-6 mb-4'}`}>
         <img
           src={photo}
           alt={altText}
@@ -3292,10 +3292,10 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
-                  : 'p-12'
+                  ? 'px-0' 
+                  : 'px-12'
               } ${!data.cover.photoUrl ? 'justify-center items-center' : 'justify-between'}`}>
                 <div className={`w-full space-y-6 flex flex-col items-center justify-center my-auto ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-0' : ''}`}>
                   
@@ -3311,7 +3311,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className={`space-y-2 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  <div className={`space-y-3 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                     <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-pre-line text-center" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
                     </h1>
@@ -3332,7 +3332,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className={`space-y-2 pt-1 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  <div className={`space-y-3 pt-1 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
 
                     {/* Brand Name & Logo Shifted Directly Below Event Type */}
                     <div className="w-full flex flex-col items-center justify-center space-y-1 py-1">
@@ -3391,7 +3391,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -3401,7 +3401,7 @@ function StudioCoreAiryBuilderContent() {
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
-                margin: '0 auto', // Center alignment guarantee
+                margin: '0 auto',
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
@@ -3425,10 +3425,10 @@ function StudioCoreAiryBuilderContent() {
                 <BirdsSVG textColor={textColor} className="w-[220px] h-auto object-contain block" />
               </div>
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.aboutUs.frameShape === 'full-width' || (data.aboutUs.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
-                  : 'p-12'
+                  ? 'px-0' 
+                  : 'px-12'
               } ${!data.aboutUs.bottomBannerPhoto ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.aboutUs.frameShape === 'full-width' || (data.aboutUs.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
@@ -3444,7 +3444,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.aboutUs.kicker || 'INTRODUCTION'}
                   </span>
 
@@ -3496,7 +3496,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -3526,10 +3526,10 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.shootDetails.frameShape === 'full-width' || (data.shootDetails.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
-                  : 'p-12'
+                  ? 'px-0' 
+                  : 'px-12'
               } ${!data.shootDetails.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.shootDetails.frameShape === 'full-width' || (data.shootDetails.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
@@ -3545,7 +3545,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="text-center space-y-2 mb-6">
+                  <div className="text-center space-y-3 my-3">
                     <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.shootDetails.heading || 'Pre-Wedding Shoot'}
                     </h2>
@@ -3563,7 +3563,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="space-y-3 max-w-lg mx-auto mt-6 flex flex-col items-center">
+                  <div className="space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
                     <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2 mb-1" style={{ color: textColor }}>
                       <Camera className="w-4 h-4" style={{ color: kickerColor }} />
                       <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
@@ -3579,7 +3579,7 @@ function StudioCoreAiryBuilderContent() {
                     </div>
                   </div>
 
-                  <div className="pt-2 space-y-3 max-w-lg mx-auto mb-8 flex flex-col items-center">
+                  <div className="pt-2 space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
                     <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap mb-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.shootDetails.deliverablesHeading || 'Deliverables'}
                     </h3>
@@ -3618,7 +3618,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: FUNCTIONS & COVERAGE */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -3648,10 +3648,10 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto flex flex-col h-full w-full ${
+              <div className={`relative z-10 mx-auto flex flex-col h-full w-full py-14 ${
                 data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
-                  : 'p-12'
+                  ? 'px-0' 
+                  : 'px-12'
               } ${!data.functionsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-start w-full ${data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
@@ -3667,7 +3667,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="text-center space-y-2 mb-6">
+                  <div className="text-center space-y-3 my-3">
                     <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
                       {data.functionsPage?.kicker || 'EVENT SCHEDULE'}
                     </span>
@@ -3703,9 +3703,9 @@ function StudioCoreAiryBuilderContent() {
                           <h3 className="text-2xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
                             {func.name || `Function ${index + 1}`}
                           </h3>
-                          <div className="text-[11px] tracking-widest uppercase font-bold px-3 py-1 rounded-full border shadow-2xs inline-flex items-center gap-1.5 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
+                          <div className="text-[11px] tracking-widest uppercase font-bold font-sans px-3 py-1 rounded-full border shadow-2xs inline-flex items-center gap-1.5 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
                             <Calendar className="w-3 h-3" />
-                            <span>
+                            <span className="font-sans font-medium tracking-tight">
                               {[
                                 (func as FunctionItem).dateNotFixed ? 'DATE NOT FIXED' : func.date,
                                 func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
@@ -3785,7 +3785,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: DELIVERABLES */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
                 height: getDynamicPageHeight(data.deliverablesPage),
@@ -3815,10 +3815,10 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
-                  : 'p-12'
+                  ? 'px-0' 
+                  : 'px-12'
               } ${!data.deliverablesPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
@@ -3834,7 +3834,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.deliverablesPage?.kicker || 'WHAT WE DELIVER'}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
@@ -3853,7 +3853,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="w-full max-w-xl mx-auto space-y-3 text-left">
+                  <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
                     {(data.deliverablesPage?.selectedItems || []).map((item, idx) => (
                       <div 
                         key={idx}
@@ -3922,9 +3922,9 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
+                  ? 'px-0' 
                   : 'px-12'
               } ${!data.specialValueAdditions?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
@@ -3941,7 +3941,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.specialValueAdditions?.kicker || 'COMPLIMENTARY'}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
@@ -3960,7 +3960,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="w-full max-w-xl mx-auto space-y-3 text-left">
+                  <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
                     {(data.specialValueAdditions?.selectedItems || []).map((item, idx) => (
                       <div 
                         key={idx}
@@ -4040,9 +4040,9 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
+                  ? 'px-0' 
                   : 'px-12'
               } ${!data.pricingPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
@@ -4059,7 +4059,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
@@ -4078,7 +4078,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="w-full max-w-xl mx-auto space-y-4">
+                  <div className="w-full max-w-xl mx-auto space-y-4 my-3">
                     <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
                       <table className="w-full text-left text-xs border-collapse">
                         <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
@@ -4090,40 +4090,40 @@ function StudioCoreAiryBuilderContent() {
                         <tbody className="divide-y font-semibold" style={{ color: textColor, borderColor }}>
                           <tr style={{ borderColor }}>
                             <td className="py-3 px-5">Base Package Price</td>
-                            <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.base.toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.base.toLocaleString('en-IN')}</td>
                           </tr>
                           {pricingCalculated.disc > 0 && (
                             <tr style={{ borderColor, backgroundColor: 'rgba(16, 185, 129, 0.08)' }}>
                               <td className="py-3 px-5 font-bold" style={{ color: textColor }}>Discount (Complimentary)</td>
-                              <td className="py-3 px-5 text-right font-mono font-bold">-₹{pricingCalculated.disc.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-5 text-right font-sans font-bold tracking-tight">-₹{pricingCalculated.disc.toLocaleString('en-IN')}</td>
                             </tr>
                           )}
                           {pricingCalculated.accom > 0 && (
                             <tr style={{ borderColor }}>
                               <td className="py-3 px-5">Accommodation Charges</td>
-                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.accom.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.accom.toLocaleString('en-IN')}</td>
                             </tr>
                           )}
                           {pricingCalculated.travel > 0 && (
                             <tr style={{ borderColor }}>
                               <td className="py-3 px-5">Travel Charges</td>
-                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.travel.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.travel.toLocaleString('en-IN')}</td>
                             </tr>
                           )}
                           {pricingCalculated.addl > 0 && (
                             <tr style={{ borderColor }}>
                               <td className="py-3 px-5">Additional Charges</td>
-                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
                             </tr>
                           )}
                           <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor, borderColor }}>
                             <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
-                            <td className="py-3 px-5 text-right font-mono font-black">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-5 text-right font-sans font-black tracking-tight">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>
                           </tr>
                           {pricingCalculated.gstPct > 0 && (
                             <tr style={{ borderColor }}>
                               <td className="py-3 px-5">GST ({pricingCalculated.gstPct}%)</td>
-                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.gstAmount.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.gstAmount.toLocaleString('en-IN')}</td>
                             </tr>
                           )}
                         </tbody>
@@ -4135,7 +4135,7 @@ function StudioCoreAiryBuilderContent() {
                         <span className="text-[10px] font-extrabold uppercase tracking-widest block" style={{ color: kickerColor }}>FINAL NET INVESTMENT</span>
                         <span className="text-xs font-medium opacity-80" style={{ color: textColor }}>Inclusive of all Taxes &amp; Fees</span>
                       </div>
-                      <div className="text-3xl font-black font-mono tracking-tight" style={{ color: textColor }}>
+                      <div className="text-3xl font-black font-sans tracking-tight" style={{ color: textColor }}>
                         ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
                       </div>
                     </div>
@@ -4201,9 +4201,9 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.paymentTermsPage?.frameShape === 'full-width' || (data.paymentTermsPage?.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
+                  ? 'px-0' 
                   : 'px-12'
               } ${!data.paymentTermsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
@@ -4220,7 +4220,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.paymentTermsPage?.kicker || 'SCHEDULE'}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
@@ -4239,7 +4239,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="w-full max-w-xl mx-auto space-y-4">
+                  <div className="w-full max-w-xl mx-auto space-y-4 my-3">
                     {/* Structured Table matching reference design */}
                     <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
                       <table className="w-full text-left border-collapse">
@@ -4254,9 +4254,9 @@ function StudioCoreAiryBuilderContent() {
                         <tbody className="divide-y text-xs font-semibold" style={{ borderColor, color: textColor }}>
                           {(data.paymentTermsPage?.steps || []).map((step) => (
                             <tr key={step.id} style={{ borderColor }}>
-                              <td className="py-3 px-4 font-mono font-bold uppercase">{step.date}</td>
+                              <td className="py-3 px-4 font-sans font-medium tracking-tight uppercase">{step.date}</td>
                               <td className="py-3 px-4 font-bold">{step.stepName}</td>
-                              <td className="py-3 px-4 text-right font-mono font-bold">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-4 text-right font-sans font-medium tracking-tight">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>
                               <td className="py-3 px-4 text-center">
                                 <span 
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border"
@@ -4280,15 +4280,15 @@ function StudioCoreAiryBuilderContent() {
                     <div className="grid grid-cols-3 gap-3 w-full text-center pt-1">
                       <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
                         <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: kickerColor }}>FIXED AMOUNT</span>
-                        <span className="text-base font-black font-mono">₹{paymentTermsCalculated.fixedAmount.toLocaleString('en-IN')}</span>
+                        <span className="text-base font-black font-sans tracking-tight">₹{paymentTermsCalculated.fixedAmount.toLocaleString('en-IN')}</span>
                       </div>
                       <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.3)', color: textColor }}>
                         <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: kickerColor }}>RECEIVED AMOUNT</span>
-                        <span className="text-base font-black font-mono">₹{paymentTermsCalculated.receivedAmount.toLocaleString('en-IN')}</span>
+                        <span className="text-base font-black font-sans tracking-tight">₹{paymentTermsCalculated.receivedAmount.toLocaleString('en-IN')}</span>
                       </div>
                       <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)', color: textColor }}>
                         <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: kickerColor }}>PENDING AMOUNT</span>
-                        <span className="text-base font-black font-mono">₹{paymentTermsCalculated.pendingAmount.toLocaleString('en-IN')}</span>
+                        <span className="text-base font-black font-sans tracking-tight">₹{paymentTermsCalculated.pendingAmount.toLocaleString('en-IN')}</span>
                       </div>
                     </div>
 
@@ -4353,9 +4353,9 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
                 data.addOnsPage?.frameShape === 'full-width' || (data.addOnsPage?.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
+                  ? 'px-0' 
                   : 'px-12'
               } ${!data.addOnsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
@@ -4372,7 +4372,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.addOnsPage?.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-2" style={{ color: textColor, fontFamily: data.primaryFont }}>
@@ -4396,7 +4396,7 @@ function StudioCoreAiryBuilderContent() {
                     />
                   )}
 
-                  <div className="w-full max-w-xl mx-auto space-y-4">
+                  <div className="w-full max-w-xl mx-auto space-y-4 my-3">
                     <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
                       <table className="w-full text-left border-collapse">
                         <thead className="text-[11px] uppercase tracking-wider font-extrabold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
@@ -4409,7 +4409,7 @@ function StudioCoreAiryBuilderContent() {
                           {(data.addOnsPage?.items || []).filter(item => item.selected).map((item) => (
                             <tr key={item.id} style={{ borderColor }}>
                               <td className="py-3.5 px-5 font-bold">{item.title}</td>
-                              <td className="py-3.5 px-5 text-right font-mono font-bold">₹{Number(item.price || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-3.5 px-5 text-right font-sans font-medium tracking-tight">₹{Number(item.price || 0).toLocaleString('en-IN')}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -4450,11 +4450,10 @@ function StudioCoreAiryBuilderContent() {
               className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
-                height: '1123px',
+                height: getDynamicPageHeight(data.termsAndThankYou),
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
+                minHeight: getDynamicPageHeight(data.termsAndThankYou),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -4478,7 +4477,11 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col py-14 px-12 h-full w-full ${!data.termsAndThankYou.photo ? 'justify-center items-center' : 'justify-between'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col py-14 ${
+                data.termsAndThankYou.frameShape === 'full-width' || (data.termsAndThankYou.imagePosition as string) === 'full' 
+                  ? 'px-0' 
+                  : 'px-12'
+              } h-full w-full ${!data.termsAndThankYou.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && data.termsAndThankYou.imagePosition === 'top' && (
@@ -4492,12 +4495,12 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
 
-                <div className="space-y-3">
-                  <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                <div className={`space-y-4 my-3 w-full ${data.termsAndThankYou.frameShape === 'full-width' || (data.termsAndThankYou.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap mb-2" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.timelineTable.heading}
                   </h2>
 
-                  <div className="rounded-xl overflow-hidden border" style={{ borderColor }}>
+                  <div className="rounded-xl overflow-hidden border max-w-xl mx-auto" style={{ borderColor }}>
                     <table className="w-full text-left text-xs border-collapse">
                       <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
                         <tr>
@@ -4531,20 +4534,20 @@ function StudioCoreAiryBuilderContent() {
                   />
                 )}
 
-                <div className="space-y-5 pt-4 border-t" style={{ borderColor }}>
-                  <div className="space-y-1.5">
+                <div className={`space-y-5 pt-4 border-t w-full my-3 ${data.termsAndThankYou.frameShape === 'full-width' || (data.termsAndThankYou.imagePosition as string) === 'full' ? 'px-12' : ''}`} style={{ borderColor }}>
+                  <div className="space-y-2">
                     <h2 className="text-xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.termsAndThankYou.termsHeading}
                     </h2>
-                    <p className="text-xs leading-relaxed opacity-90">{data.termsAndThankYou.termsText}</p>
+                    <p className="text-xs leading-relaxed opacity-90 max-w-xl mx-auto">{data.termsAndThankYou.termsText}</p>
                   </div>
 
-                  <div className="text-center pt-6 border-t space-y-2" style={{ borderColor }}>
+                  <div className="text-center pt-6 border-t space-y-2 max-w-xl mx-auto" style={{ borderColor }}>
                     <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.termsAndThankYou.thankYouHeading}
                     </h2>
                     <p className="text-xs">{data.termsAndThankYou.thankYouText}</p>
-                    <p className="text-[10px] font-mono font-bold pt-2 opacity-80 whitespace-nowrap" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
+                    <p className="text-[10px] font-sans font-medium tracking-tight pt-2 opacity-80 whitespace-nowrap" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
                   </div>
                 </div>
 
