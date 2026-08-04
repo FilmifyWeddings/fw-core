@@ -10,7 +10,8 @@ import {
   Palette, Type, Layout, ShieldCheck, Film, Video, Camera, BookOpen, 
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
   Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders,
-  ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter, Clock
+  ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter, Clock,
+  Gift, CreditCard, PackageCheck
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -259,6 +260,21 @@ interface PageImageConfig {
   imagePosition?: 'top' | 'center' | 'bottom';
 }
 
+export interface PaymentTermStep {
+  id: string;
+  date: string;
+  stepName: string;
+  amount: number;
+  status: 'Completed' | 'Pending';
+}
+
+export interface AddOnItem {
+  id: string;
+  title: string;
+  price: number;
+  selected: boolean;
+}
+
 // StudioCore Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
@@ -367,11 +383,27 @@ const DEFAULT_AIRY_PROPOSAL = {
     ] as FunctionItem[]
   },
 
-  // 5. What's Included
-  whatsIncluded: {
-    kicker: 'YOUR PACKAGE',
-    heading: 'INCLUDED',
-    deliverablesText: '75-80 retouched high-res images\n1 min teaser\n2-3 reels\n1 main film',
+  // 5. Deliverables Page
+  deliverablesPage: {
+    kicker: 'WHAT WE DELIVER',
+    heading: 'DELIVERABLES',
+    selectedItems: [
+      '1 Teaser Video (1-2 Min)',
+      '1 Main Highlight Film (15-20 Min)',
+      '3 Instagram Reels',
+      'All Raw Photos & Footage in Hard Drive',
+      '75-80 Retouched High-Res Images'
+    ],
+    availableOptions: [
+      '1 Teaser Video (1-2 Min)',
+      '1 Main Highlight Film (15-20 Min)',
+      '3 Instagram Reels',
+      'All Raw Photos & Footage in Hard Drive',
+      '75-80 Retouched High-Res Images',
+      'Pre-Wedding Teaser Video',
+      'Traditional Long Video (2-3 Hours)',
+      'Custom Printed Coffee Table Album'
+    ],
     photo: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
     photoHeight: 360,
     photoWidth: 75,
@@ -381,43 +413,63 @@ const DEFAULT_AIRY_PROPOSAL = {
     imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
-  // 5. Price & Payment
-  pricePayment: {
-    kicker: 'INVESTMENT',
-    heading: 'WEDDING GOLD',
-    packagePrice: 135000,
-    discountPct: 0,
-    gstPct: 18,
-    paymentHeading: 'PAYMENT',
-    paymentTerms: '50% booking • 40% post-shoot • 10% on final delivery',
-    photo: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&q=80',
-    photoHeight: 300,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
+  // 6. Special Value Additions
+  specialValueAdditions: {
+    kicker: 'COMPLIMENTARY',
+    heading: 'SPECIAL VALUE ADDITIONS',
+    selectedItems: [
+      'Complimentary Pre-Wedding Session (1 Day)',
+      'Free Luxury Album Upgrade (40 Pages)',
+      'Drone Coverage Included for Wedding & Sangeet',
+      'Same Day Edit Reel for Instagram'
+    ],
+    availableOptions: [
+      'Complimentary Pre-Wedding Session (1 Day)',
+      'Free Luxury Album Upgrade (40 Pages)',
+      'Drone Coverage Included for Wedding & Sangeet',
+      'Same Day Edit Reel for Instagram',
+      'Free Raw Data Hard Drive (1TB)',
+      'Complimentary LED Wall Feed Live Output'
+    ],
   },
 
-  // 6. Add-ons Table
-  addOnsTable: {
-    heading: 'ADD ONS',
+  // 7. Pricing Details
+  pricingPage: {
+    kicker: 'INVESTMENT & BREAKDOWN',
+    heading: 'PRICING DETAILS',
+    basePrice: 150000,
+    discountAmount: 10000,
+    accommodationCharges: 15000,
+    travelCharges: 10000,
+    additionalCharges: 5000,
+    gstPct: 18,
+  },
+
+  // 8. Payment Terms & Schedule
+  paymentTermsPage: {
+    kicker: 'SCHEDULE',
+    heading: 'PAYMENT TERMS & SCHEDULE',
+    steps: [
+      { id: 'pt-1', date: '10 FEB 26', stepName: 'Token Booking Amount', amount: 25000, status: 'Completed' },
+      { id: 'pt-2', date: '01 MAR 26', stepName: 'Advance Amount (Pre-Event)', amount: 75000, status: 'Pending' },
+      { id: 'pt-3', date: '06 MAR 26', stepName: 'On Wedding Day', amount: 50000, status: 'Pending' },
+      { id: 'pt-4', date: '25 MAR 26', stepName: 'Final Delivery Amount', amount: 20000, status: 'Pending' },
+    ] as PaymentTermStep[],
+  },
+
+  // 9. Add-Ons & Upgrades
+  addOnsPage: {
     kicker: "EMBRACE YOUR DAY — YOU'RE IN CONTROL",
-    rows: [
-      { id: 'a1', service: 'Additional photographer', charge: '₹15,000 per day' },
-      { id: 'a2', service: 'Additional cinematographer', charge: '₹22,000 per day' },
-      { id: 'a3', service: 'Drone pilot', charge: '₹12,000 per day' },
-      { id: 'a4', service: 'Pre-wedding session', charge: '₹20,000 per session' },
-      { id: 'a5', service: 'Album', charge: '₹550 per page' },
-      { id: 'a6', service: 'Instagram reel', charge: '₹2,000 per reel' },
-    ],
-    photo: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
-    photoHeight: 280,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
+    heading: 'ADD-ONS & UPGRADES',
+    subText: 'Select extra services to enhance your wedding story package.',
+    items: [
+      { id: 'add-1', title: 'Additional Candid Photographer', price: 15000, selected: true },
+      { id: 'add-2', title: 'Additional Cinematographer', price: 22000, selected: true },
+      { id: 'add-3', title: 'FPV Drone Pilot (Per Event)', price: 18000, selected: false },
+      { id: 'add-4', title: 'Live Streaming Setup (Per Event)', price: 25000, selected: false },
+      { id: 'add-5', title: 'Extra Album Pages (Per 10 Pages)', price: 5000, selected: true },
+      { id: 'add-6', title: 'Express 7-Day Video Edit Delivery', price: 20000, selected: false },
+    ] as AddOnItem[],
   },
 
   // 7. Delivery Time & Timeline Table
@@ -1490,6 +1542,28 @@ function ThreeDCurvedFunctionEditor({
 );
 }
 
+function calculatePricingTotals(pricing: typeof DEFAULT_AIRY_PROPOSAL.pricingPage) {
+  const base = Number(pricing?.basePrice || 0);
+  const disc = Number(pricing?.discountAmount || 0);
+  const accom = Number(pricing?.accommodationCharges || 0);
+  const travel = Number(pricing?.travelCharges || 0);
+  const addl = Number(pricing?.additionalCharges || 0);
+  const gross = Math.max(0, base - disc + accom + travel + addl);
+  const gstPct = Number(pricing?.gstPct || 0);
+  const gstAmount = Math.round(gross * (gstPct / 100));
+  const netTotal = gross + gstAmount;
+  return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
+}
+
+function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmount: number) {
+  const fixedAmount = totalProjectAmount;
+  const receivedAmount = (steps || [])
+    .filter(s => s.status === 'Completed')
+    .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+  const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
+  return { fixedAmount, receivedAmount, pendingAmount };
+}
+
 function StudioCoreAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1722,11 +1796,9 @@ function StudioCoreAiryBuilderContent() {
       try {
         localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
         
-        const subtotal = data.pricePayment.packagePrice;
-        const discountAmt = (subtotal * data.pricePayment.discountPct) / 100;
-        const discountedSubtotal = subtotal - discountAmt;
-        const gstAmt = (discountedSubtotal * data.pricePayment.gstPct) / 100;
-        const grandTotal = Math.round(discountedSubtotal + gstAmt);
+        const calc = calculatePricingTotals(data.pricingPage);
+        const grandTotal = calc.netTotal;
+        const subtotal = calc.gross;
 
         await supabase.from('quotations').upsert({
           workspace_id: userId,
@@ -1734,7 +1806,7 @@ function StudioCoreAiryBuilderContent() {
           title: data.designName,
           client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
           content_json: data,
-          financials: { total_amount: grandTotal, subtotal, gst_rate: data.pricePayment.gstPct },
+          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
           status: 'draft',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'workspace_id,quotation_number' });
@@ -1768,14 +1840,8 @@ function StudioCoreAiryBuilderContent() {
       setData(prev => ({ ...prev, shootDetails: { ...prev.shootDetails, photo: url } }));
     } else if (activeTargetField === 'functionsPhoto') {
       setData(prev => ({ ...prev, functionsPage: { ...prev.functionsPage, photo: url } }));
-    } else if (activeTargetField === 'includedPhoto') {
-      setData(prev => ({ ...prev, whatsIncluded: { ...prev.whatsIncluded, photo: url } }));
-    } else if (activeTargetField === 'pricePhoto') {
-      setData(prev => ({ ...prev, pricePayment: { ...prev.pricePayment, photo: url } }));
-    } else if (activeTargetField === 'addOnsPhoto') {
-      setData(prev => ({ ...prev, addOnsTable: { ...prev.addOnsTable, photo: url } }));
-    } else if (activeTargetField === 'timelinePhoto') {
-      setData(prev => ({ ...prev, timelineTable: { ...prev.timelineTable, photo: url } }));
+    } else if (activeTargetField === 'deliverablesPhoto') {
+      setData(prev => ({ ...prev, deliverablesPage: { ...prev.deliverablesPage, photo: url } }));
     } else if (activeTargetField === 'termsPhoto') {
       setData(prev => ({ ...prev, termsAndThankYou: { ...prev.termsAndThankYou, photo: url } }));
     }
@@ -1793,11 +1859,9 @@ function StudioCoreAiryBuilderContent() {
   const boxBgColor = activeTheme.boxBgColor;
   const isDark = !!activeTheme.isDark;
 
-  const subtotal = data.pricePayment.packagePrice;
-  const discountAmt = (subtotal * data.pricePayment.discountPct) / 100;
-  const discountedSubtotal = subtotal - discountAmt;
-  const gstAmt = (discountedSubtotal * data.pricePayment.gstPct) / 100;
-  const grandTotal = Math.round(discountedSubtotal + gstAmt);
+  const calc = calculatePricingTotals(data.pricingPage);
+  const grandTotal = calc.netTotal;
+  const subtotal = calc.gross;
 
   const handleManualSave = async () => {
     setSaving(true);
@@ -1810,7 +1874,7 @@ function StudioCoreAiryBuilderContent() {
         title: data.designName,
         client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
         content_json: data,
-        financials: { total_amount: grandTotal, subtotal, gst_rate: data.pricePayment.gstPct },
+        financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
         status: 'draft',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id,quotation_number' });
@@ -2224,99 +2288,301 @@ function StudioCoreAiryBuilderContent() {
           )}
         </div>
 
-        {/* 5. What's included Card */}
+        {/* 5. Deliverables Card */}
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
           <div 
-            onClick={() => setOpenCard(openCard === 'included' ? null : 'included')}
+            onClick={() => setOpenCard(openCard === 'deliverables' ? null : 'deliverables')}
             className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
           >
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-zinc-500" />
-              <span>4. What's included</span>
+              <span>5. Deliverables</span>
             </div>
-            {openCard === 'included' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {openCard === 'deliverables' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </div>
 
-          {openCard === 'included' && (
+          {openCard === 'deliverables' && (
             <div className="p-3 space-y-3 bg-white">
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Deliverables List</label>
-                <textarea
-                  rows={4}
-                  value={data.whatsIncluded.deliverablesText}
-                  onChange={(e) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, deliverablesText: e.target.value } })}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium resize-none"
-                />
-              </div>
+              <ThreeDCurvedMultiSelect
+                title="Deliverables"
+                availableOptions={data.deliverablesPage.availableOptions}
+                selectedText={data.deliverablesPage.selectedItems.join('\n')}
+                onChangeSelectedText={(newText) => {
+                  const arr = newText.split('\n').map(s => s.trim()).filter(Boolean);
+                  setData({ ...data, deliverablesPage: { ...data.deliverablesPage, selectedItems: arr } });
+                }}
+                onAddCustomOption={(newItem) => {
+                  if (!data.deliverablesPage.availableOptions.includes(newItem)) {
+                    setData({
+                      ...data,
+                      deliverablesPage: {
+                        ...data.deliverablesPage,
+                        availableOptions: [...data.deliverablesPage.availableOptions, newItem]
+                      }
+                    });
+                  }
+                }}
+              />
 
               <UnifiedPhotoControls
-                photoUrl={data.whatsIncluded.photo}
-                frameShape={data.whatsIncluded.frameShape}
-                photoHeight={data.whatsIncluded.photoHeight}
-                photoWidth={data.whatsIncluded.photoWidth}
-                photoFocalY={data.whatsIncluded.photoFocalY}
-                bgOpacity={data.whatsIncluded.bgOpacity}
-                imagePosition={data.whatsIncluded.imagePosition}
-                onOpenAddModal={() => openAddImageModal('includedPhoto')}
-                onDeletePhoto={() => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, frameShape: shape } })}
-                onChangePosition={(pos) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, whatsIncluded: { ...data.whatsIncluded, photoWidth: w } })}
+                photoUrl={data.deliverablesPage?.photo}
+                frameShape={data.deliverablesPage?.frameShape}
+                photoHeight={data.deliverablesPage?.photoHeight}
+                photoWidth={data.deliverablesPage?.photoWidth}
+                photoFocalY={data.deliverablesPage?.photoFocalY}
+                bgOpacity={data.deliverablesPage?.bgOpacity}
+                imagePosition={data.deliverablesPage?.imagePosition}
+                onOpenAddModal={() => openAddImageModal('deliverablesPhoto')}
+                onDeletePhoto={() => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, frameShape: shape } })}
+                onChangePosition={(pos) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photoWidth: w } })}
               />
             </div>
           )}
         </div>
 
-        {/* 5. Price & Payment Card */}
+        {/* 6. Special Value Additions Card */}
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
           <div 
-            onClick={() => setOpenCard(openCard === 'price' ? null : 'price')}
+            onClick={() => setOpenCard(openCard === 'specialValue' ? null : 'specialValue')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <Gift className="w-3.5 h-3.5 text-zinc-500" />
+              <span>6. Special Value Additions</span>
+            </div>
+            {openCard === 'specialValue' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'specialValue' && (
+            <div className="p-3 space-y-3 bg-white">
+              <ThreeDCurvedMultiSelect
+                title="Complimentary Value Additions"
+                availableOptions={data.specialValueAdditions.availableOptions}
+                selectedText={data.specialValueAdditions.selectedItems.join('\n')}
+                onChangeSelectedText={(newText) => {
+                  const arr = newText.split('\n').map(s => s.trim()).filter(Boolean);
+                  setData({ ...data, specialValueAdditions: { ...data.specialValueAdditions, selectedItems: arr } });
+                }}
+                onAddCustomOption={(newItem) => {
+                  if (!data.specialValueAdditions.availableOptions.includes(newItem)) {
+                    setData({
+                      ...data,
+                      specialValueAdditions: {
+                        ...data.specialValueAdditions,
+                        availableOptions: [...data.specialValueAdditions.availableOptions, newItem]
+                      }
+                    });
+                  }
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 7. Pricing Details Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'pricing' ? null : 'pricing')}
             className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
           >
             <div className="flex items-center gap-2">
               <DollarSign className="w-3.5 h-3.5 text-zinc-500" />
-              <span>5. Price &amp; payment</span>
+              <span>7. Pricing Details</span>
             </div>
-            {openCard === 'price' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {openCard === 'pricing' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </div>
 
-          {openCard === 'price' && (
+          {openCard === 'pricing' && (
             <div className="p-3 space-y-3 bg-white">
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Package Price (₹)</label>
-                <input
-                  type="number"
-                  value={data.pricePayment.packagePrice}
-                  onChange={(e) => setData({ ...data, pricePayment: { ...data.pricePayment, packagePrice: Number(e.target.value) || 0 } })}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                />
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Base Package Price (₹)</label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 text-xs font-bold text-amber-700">₹</span>
+                  <input
+                    type="number"
+                    value={data.pricingPage.basePrice}
+                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, basePrice: Number(e.target.value) || 0 } })}
+                    className="w-full p-2 pl-7 rounded-xl border border-amber-200/80 bg-zinc-50 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
               </div>
 
-              <UnifiedPhotoControls
-                photoUrl={data.pricePayment.photo}
-                frameShape={data.pricePayment.frameShape}
-                photoHeight={data.pricePayment.photoHeight}
-                photoWidth={data.pricePayment.photoWidth}
-                photoFocalY={data.pricePayment.photoFocalY}
-                bgOpacity={data.pricePayment.bgOpacity}
-                imagePosition={data.pricePayment.imagePosition}
-                onOpenAddModal={() => openAddImageModal('pricePhoto')}
-                onDeletePhoto={() => setData({ ...data, pricePayment: { ...data.pricePayment, photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, pricePayment: { ...data.pricePayment, frameShape: shape } })}
-                onChangePosition={(pos) => setData({ ...data, pricePayment: { ...data.pricePayment, imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, pricePayment: { ...data.pricePayment, photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, pricePayment: { ...data.pricePayment, bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, pricePayment: { ...data.pricePayment, photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, pricePayment: { ...data.pricePayment, photoWidth: w } })}
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="block text-[10px] uppercase font-bold text-zinc-500">Discount Input (₹)</label>
+                  <input
+                    type="number"
+                    value={data.pricingPage.discountAmount}
+                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, discountAmount: Number(e.target.value) || 0 } })}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[10px] uppercase font-bold text-zinc-500">GST (%)</label>
+                  <input
+                    type="number"
+                    value={data.pricingPage.gstPct}
+                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, gstPct: Number(e.target.value) || 0 } })}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-zinc-500">Accommodation</label>
+                  <input
+                    type="number"
+                    value={data.pricingPage.accommodationCharges}
+                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, accommodationCharges: Number(e.target.value) || 0 } })}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-zinc-500">Travel Charges</label>
+                  <input
+                    type="number"
+                    value={data.pricingPage.travelCharges}
+                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, travelCharges: Number(e.target.value) || 0 } })}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-zinc-500">Additional</label>
+                  <input
+                    type="number"
+                    value={data.pricingPage.additionalCharges}
+                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, additionalCharges: Number(e.target.value) || 0 } })}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        {/* 6. Add-ons Table Card */}
+        {/* 8. Payment Terms Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'paymentTerms' ? null : 'paymentTerms')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-3.5 h-3.5 text-zinc-500" />
+              <span>8. Payment Terms &amp; Schedule</span>
+            </div>
+            {openCard === 'paymentTerms' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'paymentTerms' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div className="space-y-2">
+                {data.paymentTermsPage.steps.map((step, idx) => (
+                  <div key={step.id} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-amber-950">Installment #{idx + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = data.paymentTermsPage.steps.filter(s => s.id !== step.id);
+                          setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                        }}
+                        className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[9px] uppercase font-bold text-zinc-500">Date</label>
+                      <ThreeDCurvedDatePicker
+                        value={step.date}
+                        disabled={false}
+                        onChange={(val) => {
+                          const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, date: val } : s);
+                          setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[9px] uppercase font-bold text-zinc-500">Step / Stage Name</label>
+                      <input
+                        type="text"
+                        value={step.stepName}
+                        onChange={(e) => {
+                          const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, stepName: e.target.value } : s);
+                          setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                        }}
+                        className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="block text-[9px] uppercase font-bold text-zinc-500">Amount (₹)</label>
+                        <input
+                          type="number"
+                          value={step.amount}
+                          onChange={(e) => {
+                            const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, amount: Number(e.target.value) || 0 } : s);
+                            setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                          }}
+                          className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[9px] uppercase font-bold text-zinc-500">Status</label>
+                        <ThreeDCurvedSelect
+                          value={step.status}
+                          options={[
+                            { label: 'Completed', value: 'Completed' },
+                            { label: 'Pending', value: 'Pending' },
+                          ]}
+                          onChange={(val) => {
+                            const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, status: val as 'Completed' | 'Pending' } : s);
+                            setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newStep: PaymentTermStep = {
+                      id: `pt_${Date.now()}`,
+                      date: '10 MAR 26',
+                      stepName: 'Stage Payment',
+                      amount: 25000,
+                      status: 'Pending'
+                    };
+                    setData({
+                      ...data,
+                      paymentTermsPage: {
+                        ...data.paymentTermsPage,
+                        steps: [...data.paymentTermsPage.steps, newStep]
+                      }
+                    });
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-950 font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5 text-amber-800 stroke-[3]" />
+                  <span>+ Add Installment Step</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 9. Add-Ons Card */}
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
           <div 
             onClick={() => setOpenCard(openCard === 'addons' ? null : 'addons')}
@@ -2324,30 +2590,100 @@ function StudioCoreAiryBuilderContent() {
           >
             <div className="flex items-center gap-2">
               <Plus className="w-3.5 h-3.5 text-zinc-500" />
-              <span>6. Add-ons table</span>
+              <span>9. Add-Ons &amp; Upgrades</span>
             </div>
             {openCard === 'addons' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </div>
 
           {openCard === 'addons' && (
             <div className="p-3 space-y-3 bg-white">
-              <UnifiedPhotoControls
-                photoUrl={data.addOnsTable.photo}
-                frameShape={data.addOnsTable.frameShape}
-                photoHeight={data.addOnsTable.photoHeight}
-                photoWidth={data.addOnsTable.photoWidth}
-                photoFocalY={data.addOnsTable.photoFocalY}
-                bgOpacity={data.addOnsTable.bgOpacity}
-                imagePosition={data.addOnsTable.imagePosition}
-                onOpenAddModal={() => openAddImageModal('addOnsPhoto')}
-                onDeletePhoto={() => setData({ ...data, addOnsTable: { ...data.addOnsTable, photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, addOnsTable: { ...data.addOnsTable, frameShape: shape } })}
-                onChangePosition={(pos) => setData({ ...data, addOnsTable: { ...data.addOnsTable, imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, addOnsTable: { ...data.addOnsTable, photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, addOnsTable: { ...data.addOnsTable, bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, addOnsTable: { ...data.addOnsTable, photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, addOnsTable: { ...data.addOnsTable, photoWidth: w } })}
-              />
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Sub-Text Header</label>
+                <input
+                  type="text"
+                  value={data.addOnsPage.subText}
+                  onChange={(e) => setData({ ...data, addOnsPage: { ...data.addOnsPage, subText: e.target.value } })}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                />
+              </div>
+
+              <div className="space-y-2">
+                {data.addOnsPage.items.map((item) => (
+                  <div key={item.id} className="p-2.5 rounded-xl border border-amber-200/80 bg-zinc-50/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          onChange={(e) => {
+                            const updated = data.addOnsPage.items.map(i => i.id === item.id ? { ...i, selected: e.target.checked } : i);
+                            setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                          }}
+                          className="w-4 h-4 rounded-md border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                        />
+                        <span className="text-xs font-bold text-zinc-900">Include Add-On</span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = data.addOnsPage.items.filter(i => i.id !== item.id);
+                          setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                        }}
+                        className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={item.title}
+                        onChange={(e) => {
+                          const updated = data.addOnsPage.items.map(i => i.id === item.id ? { ...i, title: e.target.value } : i);
+                          setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                        }}
+                        className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
+                        placeholder="Add-on Title"
+                      />
+                      <input
+                        type="number"
+                        value={item.price}
+                        onChange={(e) => {
+                          const updated = data.addOnsPage.items.map(i => i.id === item.id ? { ...i, price: Number(e.target.value) || 0 } : i);
+                          setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                        }}
+                        className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
+                        placeholder="Price (₹)"
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newItem: AddOnItem = {
+                      id: `add_${Date.now()}`,
+                      title: 'Custom Service Upgrade',
+                      price: 10000,
+                      selected: true
+                    };
+                    setData({
+                      ...data,
+                      addOnsPage: {
+                        ...data.addOnsPage,
+                        items: [...data.addOnsPage.items, newItem]
+                      }
+                    });
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-950 font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5 text-amber-800 stroke-[3]" />
+                  <span>+ Add Custom Add-On</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -2390,6 +2726,13 @@ function StudioCoreAiryBuilderContent() {
 
       </div>
     </div>
+  );
+
+  // Financial Calculations for Pricing & Payment Terms
+  const pricingCalculated = calculatePricingTotals(data.pricingPage);
+  const paymentTermsCalculated = calculatePaymentTermsSummary(
+    data.paymentTermsPage?.steps || [],
+    pricingCalculated.netTotal
   );
 
   return (
@@ -3120,92 +3463,102 @@ function StudioCoreAiryBuilderContent() {
               style={{ backgroundColor: '#f9e4cc' }}
             />
 
-            {/* SECTION 4: WHAT'S INCLUDED */}
+            {/* SECTION 5: DELIVERABLES */}
             <section 
               className="quotation-page content-page flex flex-col transition-colors duration-300"
               style={{
                 width: '794px',
-                height: '1123px',
+                height: getDynamicPageHeight(data.deliverablesPage),
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
+                minHeight: getDynamicPageHeight(data.deliverablesPage),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
-                margin: '0 auto', // Center alignment guarantee
+                margin: '0 auto',
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
-              {data.whatsIncluded.photo && data.whatsIncluded.frameShape === 'background' && (
+              {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape === 'background' && (
                 <SectionImageRenderer
-                  photo={data.whatsIncluded.photo}
+                  photo={data.deliverablesPage.photo}
                   frameShape="background"
-                  photoHeight={data.whatsIncluded.photoHeight}
-                  photoWidth={data.whatsIncluded.photoWidth}
-                  photoFocalY={data.whatsIncluded.photoFocalY}
-                  bgOpacity={data.whatsIncluded.bgOpacity}
+                  photoHeight={data.deliverablesPage.photoHeight}
+                  photoWidth={data.deliverablesPage.photoWidth}
+                  photoFocalY={data.deliverablesPage.photoFocalY}
+                  bgOpacity={data.deliverablesPage.bgOpacity}
                   pageBgColor={pageBgColor}
-                  altText="Included Background"
+                  altText="Deliverables Background"
                 />
               )}
 
               <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
-                data.whatsIncluded.frameShape === 'full-width' || (data.whatsIncluded.imagePosition as string) === 'full' 
+                data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' 
                   ? 'px-0 pt-10 pb-0' 
                   : 'p-12'
-              } ${!data.whatsIncluded.photo ? 'justify-center items-center' : 'justify-between'}`}>
+              } ${!data.deliverablesPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
-                <div className={`flex flex-col items-center justify-center w-full ${data.whatsIncluded.frameShape === 'full-width' || (data.whatsIncluded.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                <div className={`flex flex-col items-center justify-center w-full ${data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                   {/* TOP IMAGE POSITION */}
-                  {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'top' && (
+                  {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'top' && (
                     <SectionImageRenderer
-                      photo={data.whatsIncluded.photo}
-                      frameShape={data.whatsIncluded.frameShape}
-                      photoHeight={data.whatsIncluded.photoHeight}
-                      photoWidth={data.whatsIncluded.photoWidth}
-                      photoFocalY={data.whatsIncluded.photoFocalY}
-                      altText="Package Deliverables"
+                      photo={data.deliverablesPage.photo}
+                      frameShape={data.deliverablesPage.frameShape}
+                      photoHeight={data.deliverablesPage.photoHeight}
+                      photoWidth={data.deliverablesPage.photoWidth}
+                      photoFocalY={data.deliverablesPage.photoFocalY}
+                      altText="Deliverables Photo"
                     />
                   )}
 
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                    {data.whatsIncluded.kicker}
+                    {data.deliverablesPage?.kicker || 'WHAT WE DELIVER'}
                   </span>
-                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.whatsIncluded.heading}
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.deliverablesPage?.heading || 'DELIVERABLES'}
                   </h2>
 
                   {/* CENTER IMAGE POSITION */}
-                  {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && data.whatsIncluded.imagePosition === 'center' && (
+                  {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'center' && (
                     <SectionImageRenderer
-                      photo={data.whatsIncluded.photo}
-                      frameShape={data.whatsIncluded.frameShape}
-                      photoHeight={data.whatsIncluded.photoHeight}
-                      photoWidth={data.whatsIncluded.photoWidth}
-                      photoFocalY={data.whatsIncluded.photoFocalY}
-                      altText="Package Deliverables"
+                      photo={data.deliverablesPage.photo}
+                      frameShape={data.deliverablesPage.frameShape}
+                      photoHeight={data.deliverablesPage.photoHeight}
+                      photoWidth={data.deliverablesPage.photoWidth}
+                      photoFocalY={data.deliverablesPage.photoFocalY}
+                      altText="Deliverables Photo"
                     />
                   )}
 
-                  <div className="p-8 rounded-2xl leading-relaxed whitespace-pre-line text-sm border" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
-                    {data.whatsIncluded.deliverablesText}
+                  <div className="w-full max-w-xl mx-auto space-y-3 text-left">
+                    {(data.deliverablesPage?.selectedItems || []).map((item, idx) => (
+                      <div 
+                        key={idx}
+                        className="p-3.5 rounded-2xl border flex items-center gap-3 shadow-xs"
+                        style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                      >
+                        <div className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="w-4 h-4 text-amber-700" style={{ color: kickerColor }} />
+                        </div>
+                        <span className="text-xs font-bold leading-snug">{item}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.whatsIncluded.photo && data.whatsIncluded.frameShape !== 'background' && (data.whatsIncluded.imagePosition === 'bottom' || !data.whatsIncluded.imagePosition) && (
+                {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && (data.deliverablesPage?.imagePosition === 'bottom' || !data.deliverablesPage?.imagePosition) && (
                   <SectionImageRenderer
-                    photo={data.whatsIncluded.photo}
-                    frameShape={data.whatsIncluded.frameShape}
-                    photoHeight={data.whatsIncluded.photoHeight}
-                    photoWidth={data.whatsIncluded.photoWidth}
-                    photoFocalY={data.whatsIncluded.photoFocalY}
+                    photo={data.deliverablesPage.photo}
+                    frameShape={data.deliverablesPage.frameShape}
+                    photoHeight={data.deliverablesPage.photoHeight}
+                    photoWidth={data.deliverablesPage.photoWidth}
+                    photoFocalY={data.deliverablesPage.photoFocalY}
                     isBottomFlush={true}
-                    altText="Package Deliverables"
+                    altText="Deliverables Photo"
                   />
                 )}
               </div>
@@ -3217,9 +3570,9 @@ function StudioCoreAiryBuilderContent() {
               style={{ backgroundColor: '#f9e4cc' }}
             />
 
-            {/* SECTION 5: PRICE & PAYMENT */}
+            {/* SECTION 6: SPECIAL VALUE ADDITIONS */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300"
+              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
               style={{
                 width: '794px',
                 height: '1123px',
@@ -3230,112 +3583,282 @@ function StudioCoreAiryBuilderContent() {
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
-                margin: '0 auto', // Center alignment guarantee
+                margin: '0 auto',
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
-              {data.pricePayment.photo && data.pricePayment.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.pricePayment.photo}
-                  frameShape="background"
-                  photoHeight={data.pricePayment.photoHeight}
-                  photoWidth={data.pricePayment.photoWidth}
-                  photoFocalY={data.pricePayment.photoFocalY}
-                  bgOpacity={data.pricePayment.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Price Background"
-                />
-              )}
+              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
+                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  {data.specialValueAdditions?.kicker || 'COMPLIMENTARY'}
+                </span>
+                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  {data.specialValueAdditions?.heading || 'SPECIAL VALUE ADDITIONS'}
+                </h2>
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full ${
-                data.pricePayment.frameShape === 'full-width' || (data.pricePayment.imagePosition as string) === 'full' 
-                  ? 'px-0 pt-10 pb-0' 
-                  : 'p-12'
-              } ${!data.pricePayment.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.pricePayment.frameShape === 'full-width' || (data.pricePayment.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.pricePayment.photo}
-                      frameShape={data.pricePayment.frameShape}
-                      photoHeight={data.pricePayment.photoHeight}
-                      photoWidth={data.pricePayment.photoWidth}
-                      photoFocalY={data.pricePayment.photoFocalY}
-                      altText="Payment Photo"
-                    />
-                  )}
-
-                  <div className="space-y-4 border-b pb-6 w-full" style={{ borderColor }}>
-                    <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                      {data.pricePayment.kicker}
-                    </span>
-                    <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.pricePayment.heading}
-                    </h2>
-
-                    <div className="text-4xl font-black whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      ₹{grandTotal.toLocaleString('en-IN')}
+                <div className="w-full space-y-3 text-left pt-2">
+                  {(data.specialValueAdditions?.selectedItems || []).map((item, idx) => (
+                    <div 
+                      key={idx}
+                      className="p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all"
+                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0">
+                          <Gift className="w-4 h-4 text-amber-600" style={{ color: kickerColor }} />
+                        </div>
+                        <span className="text-xs font-bold leading-relaxed">{item}</span>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 shrink-0">
+                        FREE
+                      </span>
                     </div>
+                  ))}
+                </div>
+              </div>
+            </section>
 
-                    <div className="pt-1">
-                      <span className="text-xs font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>{data.pricePayment.paymentHeading}</span>
-                      <p className="text-xs font-medium" style={{ color: textColor }}>{data.pricePayment.paymentTerms}</p>
-                    </div>
-                  </div>
+            {/* Inter-page Gap Spacer */}
+            <div 
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
+            />
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && data.pricePayment.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.pricePayment.photo}
-                      frameShape={data.pricePayment.frameShape}
-                      photoHeight={data.pricePayment.photoHeight}
-                      photoWidth={data.pricePayment.photoWidth}
-                      photoFocalY={data.pricePayment.photoFocalY}
-                      altText="Payment Photo"
-                    />
-                  )}
+            {/* SECTION 7: PRICING DETAILS */}
+            <section 
+              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
+              style={{
+                width: '794px',
+                height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                position: 'relative',
+                overflow: 'hidden',
+                margin: '0 auto',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                color: textColor,
+                fontFamily: data.secondaryFont,
+              }}
+            >
+              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
+                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
+                </span>
+                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  {data.pricingPage?.heading || 'PRICING DETAILS'}
+                </h2>
 
-                  <div className="space-y-3 pt-2 w-full">
-                    <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.addOnsTable.heading}
-                    </h2>
-                    <div className="rounded-xl overflow-hidden border" style={{ borderColor }}>
-                      <table className="w-full text-left text-xs">
-                        <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
-                          <tr>
-                            <th className="py-3 px-4">Services</th>
-                            <th className="py-3 px-4 text-right">Charges</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y font-medium" style={{ color: textColor }}>
-                          {data.addOnsTable.rows.map(row => (
-                            <tr key={row.id}>
-                              <td className="py-3 px-4 font-semibold">{row.service}</td>
-                              <td className="py-3 px-4 text-right font-mono font-bold">{row.charge}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
+                      <tr>
+                        <th className="py-3.5 px-5">Financial Item / Particulars</th>
+                        <th className="py-3.5 px-5 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y font-semibold" style={{ color: textColor, borderColor }}>
+                      <tr>
+                        <td className="py-3 px-5">Base Package Price</td>
+                        <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.base.toLocaleString('en-IN')}</td>
+                      </tr>
+                      {pricingCalculated.disc > 0 && (
+                        <tr className="text-emerald-700 bg-emerald-50/30">
+                          <td className="py-3 px-5">Discount (Complimentary)</td>
+                          <td className="py-3 px-5 text-right font-mono">-₹{pricingCalculated.disc.toLocaleString('en-IN')}</td>
+                        </tr>
+                      )}
+                      {pricingCalculated.accom > 0 && (
+                        <tr>
+                          <td className="py-3 px-5">Accommodation Charges</td>
+                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.accom.toLocaleString('en-IN')}</td>
+                        </tr>
+                      )}
+                      {pricingCalculated.travel > 0 && (
+                        <tr>
+                          <td className="py-3 px-5">Travel Charges</td>
+                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.travel.toLocaleString('en-IN')}</td>
+                        </tr>
+                      )}
+                      {pricingCalculated.addl > 0 && (
+                        <tr>
+                          <td className="py-3 px-5">Additional Charges</td>
+                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
+                        </tr>
+                      )}
+                      <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor }}>
+                        <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
+                        <td className="py-3 px-5 text-right font-mono font-black">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>
+                      </tr>
+                      {pricingCalculated.gstPct > 0 && (
+                        <tr>
+                          <td className="py-3 px-5">GST ({pricingCalculated.gstPct}%)</td>
+                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.gstAmount.toLocaleString('en-IN')}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.pricePayment.photo && data.pricePayment.frameShape !== 'background' && (data.pricePayment.imagePosition === 'bottom' || !data.pricePayment.imagePosition) && (
-                  <SectionImageRenderer
-                    photo={data.pricePayment.photo}
-                    frameShape={data.pricePayment.frameShape}
-                    photoHeight={data.pricePayment.photoHeight}
-                    photoWidth={data.pricePayment.photoWidth}
-                    photoFocalY={data.pricePayment.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Payment Photo"
-                  />
+                <div className="w-full p-5 rounded-2xl border flex items-center justify-between shadow-md" style={{ backgroundColor: boxBgColor, borderColor }}>
+                  <div className="text-left">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest block" style={{ color: kickerColor }}>FINAL NET INVESTMENT</span>
+                    <span className="text-xs font-medium opacity-80" style={{ color: textColor }}>Inclusive of all Taxes &amp; Fees</span>
+                  </div>
+                  <div className="text-3xl font-black font-mono tracking-tight" style={{ color: textColor }}>
+                    ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Inter-page Gap Spacer */}
+            <div 
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
+            />
+
+            {/* SECTION 8: PAYMENT TERMS & SCHEDULE */}
+            <section 
+              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
+              style={{
+                width: '794px',
+                height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                position: 'relative',
+                overflow: 'hidden',
+                margin: '0 auto',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                color: textColor,
+                fontFamily: data.secondaryFont,
+              }}
+            >
+              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
+                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  {data.paymentTermsPage?.kicker || 'SCHEDULE'}
+                </span>
+                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  {data.paymentTermsPage?.heading || 'PAYMENT TERMS & SCHEDULE'}
+                </h2>
+
+                {/* Structured Table matching reference design */}
+                <div className="w-full rounded-2xl overflow-hidden border border-zinc-200 shadow-xs">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-900 text-white text-[11px] uppercase tracking-wider font-extrabold">
+                      <tr>
+                        <th className="py-3.5 px-4 w-[24%]">DATE</th>
+                        <th className="py-3.5 px-4 w-[38%]">STEPS</th>
+                        <th className="py-3.5 px-4 w-[20%] text-right">AMOUNT</th>
+                        <th className="py-3.5 px-4 w-[18%] text-center">STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200/80 text-xs font-semibold text-zinc-800 bg-white">
+                      {(data.paymentTermsPage?.steps || []).map((step) => (
+                        <tr key={step.id} className="hover:bg-zinc-50/50">
+                          <td className="py-3 px-4 font-mono font-bold text-zinc-900 uppercase">{step.date}</td>
+                          <td className="py-3 px-4 font-bold text-zinc-900">{step.stepName}</td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-zinc-900">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border ${
+                              step.status === 'Completed'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {step.status === 'Completed' ? <Check className="w-3 h-3 text-emerald-600 stroke-[3]" /> : <Clock className="w-3 h-3 text-amber-600" />}
+                              <span>{step.status}</span>
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Automatic Summary Cards */}
+                <div className="grid grid-cols-3 gap-3 w-full text-center pt-2">
+                  <div className="p-3.5 rounded-2xl border border-zinc-200 bg-zinc-50/80 shadow-2xs">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 block mb-1">FIXED AMOUNT</span>
+                    <span className="text-base font-black font-mono text-zinc-900">₹{paymentTermsCalculated.fixedAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/60 shadow-2xs">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 block mb-1">RECEIVED AMOUNT</span>
+                    <span className="text-base font-black font-mono text-emerald-800">₹{paymentTermsCalculated.receivedAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="p-3.5 rounded-2xl border border-amber-200 bg-amber-50/60 shadow-2xs">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 block mb-1">PENDING AMOUNT</span>
+                    <span className="text-base font-black font-mono text-amber-900">₹{paymentTermsCalculated.pendingAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Inter-page Gap Spacer */}
+            <div 
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
+            />
+
+            {/* SECTION 9: ADD-ONS & UPGRADES */}
+            <section 
+              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
+              style={{
+                width: '794px',
+                height: '1123px',
+                minWidth: '794px',
+                maxWidth: '794px',
+                minHeight: '1123px',
+                maxHeight: '1123px',
+                boxSizing: 'border-box',
+                position: 'relative',
+                overflow: 'hidden',
+                margin: '0 auto',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                color: textColor,
+                fontFamily: data.secondaryFont,
+              }}
+            >
+              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
+                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                  {data.addOnsPage?.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
+                </span>
+                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                  {data.addOnsPage?.heading || 'ADD-ONS & UPGRADES'}
+                </h2>
+                {data.addOnsPage?.subText && (
+                  <p className="text-xs font-medium opacity-80 -mt-3" style={{ color: textColor }}>
+                    {data.addOnsPage.subText}
+                  </p>
                 )}
+
+                <div className="w-full rounded-2xl overflow-hidden border border-zinc-200 shadow-xs">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-900 text-white text-[11px] uppercase tracking-wider font-extrabold">
+                      <tr>
+                        <th className="py-3.5 px-5">ADD-ON SERVICE / PARTICULAR</th>
+                        <th className="py-3.5 px-5 text-right">PRICE</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200/80 text-xs font-semibold text-zinc-800 bg-white">
+                      {(data.addOnsPage?.items || []).filter(item => item.selected).map((item) => (
+                        <tr key={item.id} className="hover:bg-zinc-50/50">
+                          <td className="py-3.5 px-5 font-bold text-zinc-900">{item.title}</td>
+                          <td className="py-3.5 px-5 text-right font-mono font-bold text-zinc-900">₹{Number(item.price || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </section>
 
@@ -3546,7 +4069,7 @@ function StudioCoreAiryBuilderContent() {
   );
 }
 
-export default function QuotationBuilderPage() {
+export default function TemplateQuotationBuilderPage() {
   useEffect(() => {
     console.log('=== TEMPLET_A4_STRICT_REVERT_V7 ===');
   }, []);
@@ -3564,3 +4087,4 @@ export default function QuotationBuilderPage() {
     </React.Suspense>
   );
 }
+
