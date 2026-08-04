@@ -1542,24 +1542,95 @@ function ThreeDCurvedFunctionEditor({
 );
 }
 
-function calculatePricingTotals(pricing: typeof DEFAULT_AIRY_PROPOSAL.pricingPage) {
-  const base = Number(pricing?.basePrice || 0);
-  const disc = Number(pricing?.discountAmount || 0);
-  const accom = Number(pricing?.accommodationCharges || 0);
-  const travel = Number(pricing?.travelCharges || 0);
-  const addl = Number(pricing?.additionalCharges || 0);
+function normalizeQuotationData(loaded: any) {
+  const d = DEFAULT_AIRY_PROPOSAL;
+  if (!loaded || typeof loaded !== 'object') return d;
+
+  return {
+    ...d,
+    ...loaded,
+    cover: { ...d.cover, ...(loaded.cover || {}) },
+    aboutUs: { ...d.aboutUs, ...(loaded.aboutUs || {}) },
+    shootDetails: { ...d.shootDetails, ...(loaded.shootDetails || {}) },
+    functionsPage: {
+      ...d.functionsPage,
+      ...(loaded.functionsPage || {}),
+      items: Array.isArray(loaded.functionsPage?.items) ? loaded.functionsPage.items : d.functionsPage.items,
+    },
+    deliverablesPage: {
+      ...d.deliverablesPage,
+      ...(loaded.deliverablesPage || {}),
+      selectedItems: Array.isArray(loaded.deliverablesPage?.selectedItems)
+        ? loaded.deliverablesPage.selectedItems
+        : d.deliverablesPage.selectedItems,
+      availableOptions: Array.isArray(loaded.deliverablesPage?.availableOptions)
+        ? loaded.deliverablesPage.availableOptions
+        : d.deliverablesPage.availableOptions,
+    },
+    specialValueAdditions: {
+      ...d.specialValueAdditions,
+      ...(loaded.specialValueAdditions || {}),
+      selectedItems: Array.isArray(loaded.specialValueAdditions?.selectedItems)
+        ? loaded.specialValueAdditions.selectedItems
+        : d.specialValueAdditions.selectedItems,
+      availableOptions: Array.isArray(loaded.specialValueAdditions?.availableOptions)
+        ? loaded.specialValueAdditions.availableOptions
+        : d.specialValueAdditions.availableOptions,
+    },
+    pricingPage: {
+      ...d.pricingPage,
+      ...(loaded.pricingPage || {}),
+      basePrice: typeof loaded.pricingPage?.basePrice === 'number' ? loaded.pricingPage.basePrice : d.pricingPage.basePrice,
+      discountAmount: typeof loaded.pricingPage?.discountAmount === 'number' ? loaded.pricingPage.discountAmount : d.pricingPage.discountAmount,
+      accommodationCharges: typeof loaded.pricingPage?.accommodationCharges === 'number' ? loaded.pricingPage.accommodationCharges : d.pricingPage.accommodationCharges,
+      travelCharges: typeof loaded.pricingPage?.travelCharges === 'number' ? loaded.pricingPage.travelCharges : d.pricingPage.travelCharges,
+      additionalCharges: typeof loaded.pricingPage?.additionalCharges === 'number' ? loaded.pricingPage.additionalCharges : d.pricingPage.additionalCharges,
+      gstPct: typeof loaded.pricingPage?.gstPct === 'number' ? loaded.pricingPage.gstPct : d.pricingPage.gstPct,
+    },
+    paymentTermsPage: {
+      ...d.paymentTermsPage,
+      ...(loaded.paymentTermsPage || {}),
+      steps: Array.isArray(loaded.paymentTermsPage?.steps)
+        ? loaded.paymentTermsPage.steps
+        : d.paymentTermsPage.steps,
+    },
+    addOnsPage: {
+      ...d.addOnsPage,
+      ...(loaded.addOnsPage || {}),
+      items: Array.isArray(loaded.addOnsPage?.items)
+        ? loaded.addOnsPage.items
+        : d.addOnsPage.items,
+    },
+
+    // Backwards Compatibility Aliases
+    deliverables: loaded.deliverables || loaded.deliverablesPage || { items: d.deliverablesPage.selectedItems, availableOptions: d.deliverablesPage.availableOptions, imagePosition: 'bottom' },
+    valueAdditions: loaded.valueAdditions || loaded.specialValueAdditions || { items: d.specialValueAdditions.selectedItems },
+    pricing: loaded.pricing || loaded.pricingPage || { basePrice: d.pricingPage.basePrice, discount: d.pricingPage.discountAmount, accommodation: d.pricingPage.accommodationCharges, travel: d.pricingPage.travelCharges, additional: d.pricingPage.additionalCharges, gstPercent: d.pricingPage.gstPct },
+    paymentTerms: loaded.paymentTerms || loaded.paymentTermsPage || { steps: d.paymentTermsPage.steps, fixedAmount: 0, receivedAmount: 0, pendingAmount: 0 },
+    addOns: loaded.addOns || loaded.addOnsPage || { subText: d.addOnsPage.subText, items: d.addOnsPage.items },
+  };
+}
+
+function calculatePricingTotals(pricing: any) {
+  const p = pricing || DEFAULT_AIRY_PROPOSAL.pricingPage;
+  const base = Number(p?.basePrice ?? p?.base ?? 0);
+  const disc = Number(p?.discountAmount ?? p?.discount ?? 0);
+  const accom = Number(p?.accommodationCharges ?? p?.accommodation ?? 0);
+  const travel = Number(p?.travelCharges ?? p?.travel ?? 0);
+  const addl = Number(p?.additionalCharges ?? p?.additional ?? 0);
   const gross = Math.max(0, base - disc + accom + travel + addl);
-  const gstPct = Number(pricing?.gstPct || 0);
+  const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 18);
   const gstAmount = Math.round(gross * (gstPct / 100));
   const netTotal = gross + gstAmount;
   return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
 }
 
 function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmount: number) {
-  const fixedAmount = totalProjectAmount;
-  const receivedAmount = (steps || [])
-    .filter(s => s.status === 'Completed')
-    .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+  const fixedAmount = Number(totalProjectAmount || 0);
+  const stepList = Array.isArray(steps) ? steps : [];
+  const receivedAmount = stepList
+    .filter(s => s && s.status === 'Completed')
+    .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
   const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
   return { fixedAmount, receivedAmount, pendingAmount };
 }
@@ -1769,12 +1840,12 @@ function StudioCoreAiryBuilderContent() {
           .maybeSingle();
 
         if (qData?.content_json) {
-          setData(qData.content_json);
+          setData(normalizeQuotationData(qData.content_json));
         } else {
           const localSaved = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
           if (localSaved) {
             try {
-              setData(JSON.parse(localSaved));
+              setData(normalizeQuotationData(JSON.parse(localSaved)));
             } catch {}
           }
         }
@@ -2305,19 +2376,22 @@ function StudioCoreAiryBuilderContent() {
             <div className="p-3 space-y-3 bg-white">
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
-                availableOptions={data.deliverablesPage.availableOptions}
-                selectedText={data.deliverablesPage.selectedItems.join('\n')}
+                availableOptions={data.deliverablesPage?.availableOptions || DEFAULT_AIRY_PROPOSAL.deliverablesPage.availableOptions}
+                selectedText={(data.deliverablesPage?.selectedItems || DEFAULT_AIRY_PROPOSAL.deliverablesPage.selectedItems).join('\n')}
                 onChangeSelectedText={(newText) => {
                   const arr = newText.split('\n').map(s => s.trim()).filter(Boolean);
-                  setData({ ...data, deliverablesPage: { ...data.deliverablesPage, selectedItems: arr } });
+                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
+                  setData({ ...data, deliverablesPage: { ...currentObj, selectedItems: arr } });
                 }}
                 onAddCustomOption={(newItem) => {
-                  if (!data.deliverablesPage.availableOptions.includes(newItem)) {
+                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
+                  const opts = currentObj.availableOptions || [];
+                  if (!opts.includes(newItem)) {
                     setData({
                       ...data,
                       deliverablesPage: {
-                        ...data.deliverablesPage,
-                        availableOptions: [...data.deliverablesPage.availableOptions, newItem]
+                        ...currentObj,
+                        availableOptions: [...opts, newItem]
                       }
                     });
                   }
@@ -2333,13 +2407,13 @@ function StudioCoreAiryBuilderContent() {
                 bgOpacity={data.deliverablesPage?.bgOpacity}
                 imagePosition={data.deliverablesPage?.imagePosition}
                 onOpenAddModal={() => openAddImageModal('deliverablesPhoto')}
-                onDeletePhoto={() => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, frameShape: shape } })}
-                onChangePosition={(pos) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, deliverablesPage: { ...data.deliverablesPage, photoWidth: w } })}
+                onDeletePhoto={() => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), frameShape: shape } })}
+                onChangePosition={(pos) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoWidth: w } })}
               />
             </div>
           )}
@@ -2362,19 +2436,22 @@ function StudioCoreAiryBuilderContent() {
             <div className="p-3 space-y-3 bg-white">
               <ThreeDCurvedMultiSelect
                 title="Complimentary Value Additions"
-                availableOptions={data.specialValueAdditions.availableOptions}
-                selectedText={data.specialValueAdditions.selectedItems.join('\n')}
+                availableOptions={data.specialValueAdditions?.availableOptions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.availableOptions}
+                selectedText={(data.specialValueAdditions?.selectedItems || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.selectedItems).join('\n')}
                 onChangeSelectedText={(newText) => {
                   const arr = newText.split('\n').map(s => s.trim()).filter(Boolean);
-                  setData({ ...data, specialValueAdditions: { ...data.specialValueAdditions, selectedItems: arr } });
+                  const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
+                  setData({ ...data, specialValueAdditions: { ...currentObj, selectedItems: arr } });
                 }}
                 onAddCustomOption={(newItem) => {
-                  if (!data.specialValueAdditions.availableOptions.includes(newItem)) {
+                  const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
+                  const opts = currentObj.availableOptions || [];
+                  if (!opts.includes(newItem)) {
                     setData({
                       ...data,
                       specialValueAdditions: {
-                        ...data.specialValueAdditions,
-                        availableOptions: [...data.specialValueAdditions.availableOptions, newItem]
+                        ...currentObj,
+                        availableOptions: [...opts, newItem]
                       }
                     });
                   }
@@ -2405,8 +2482,11 @@ function StudioCoreAiryBuilderContent() {
                   <span className="absolute left-3 text-xs font-bold text-amber-700">₹</span>
                   <input
                     type="number"
-                    value={data.pricingPage.basePrice}
-                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, basePrice: Number(e.target.value) || 0 } })}
+                    value={data.pricingPage?.basePrice ?? 0}
+                    onChange={(e) => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      setData({ ...data, pricingPage: { ...currentObj, basePrice: Number(e.target.value) || 0 } });
+                    }}
                     className="w-full p-2 pl-7 rounded-xl border border-amber-200/80 bg-zinc-50 text-zinc-900 font-bold text-xs"
                   />
                 </div>
@@ -2417,8 +2497,11 @@ function StudioCoreAiryBuilderContent() {
                   <label className="block text-[10px] uppercase font-bold text-zinc-500">Discount Input (₹)</label>
                   <input
                     type="number"
-                    value={data.pricingPage.discountAmount}
-                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, discountAmount: Number(e.target.value) || 0 } })}
+                    value={data.pricingPage?.discountAmount ?? 0}
+                    onChange={(e) => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      setData({ ...data, pricingPage: { ...currentObj, discountAmount: Number(e.target.value) || 0 } });
+                    }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
                 </div>
@@ -2426,8 +2509,11 @@ function StudioCoreAiryBuilderContent() {
                   <label className="block text-[10px] uppercase font-bold text-zinc-500">GST (%)</label>
                   <input
                     type="number"
-                    value={data.pricingPage.gstPct}
-                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, gstPct: Number(e.target.value) || 0 } })}
+                    value={data.pricingPage?.gstPct ?? 18}
+                    onChange={(e) => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      setData({ ...data, pricingPage: { ...currentObj, gstPct: Number(e.target.value) || 0 } });
+                    }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
                 </div>
@@ -2438,8 +2524,11 @@ function StudioCoreAiryBuilderContent() {
                   <label className="block text-[9px] uppercase font-bold text-zinc-500">Accommodation</label>
                   <input
                     type="number"
-                    value={data.pricingPage.accommodationCharges}
-                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, accommodationCharges: Number(e.target.value) || 0 } })}
+                    value={data.pricingPage?.accommodationCharges ?? 0}
+                    onChange={(e) => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      setData({ ...data, pricingPage: { ...currentObj, accommodationCharges: Number(e.target.value) || 0 } });
+                    }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
                 </div>
@@ -2447,8 +2536,11 @@ function StudioCoreAiryBuilderContent() {
                   <label className="block text-[9px] uppercase font-bold text-zinc-500">Travel Charges</label>
                   <input
                     type="number"
-                    value={data.pricingPage.travelCharges}
-                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, travelCharges: Number(e.target.value) || 0 } })}
+                    value={data.pricingPage?.travelCharges ?? 0}
+                    onChange={(e) => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      setData({ ...data, pricingPage: { ...currentObj, travelCharges: Number(e.target.value) || 0 } });
+                    }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
                 </div>
@@ -2456,8 +2548,11 @@ function StudioCoreAiryBuilderContent() {
                   <label className="block text-[9px] uppercase font-bold text-zinc-500">Additional</label>
                   <input
                     type="number"
-                    value={data.pricingPage.additionalCharges}
-                    onChange={(e) => setData({ ...data, pricingPage: { ...data.pricingPage, additionalCharges: Number(e.target.value) || 0 } })}
+                    value={data.pricingPage?.additionalCharges ?? 0}
+                    onChange={(e) => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      setData({ ...data, pricingPage: { ...currentObj, additionalCharges: Number(e.target.value) || 0 } });
+                    }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
                 </div>
@@ -2482,15 +2577,17 @@ function StudioCoreAiryBuilderContent() {
           {openCard === 'paymentTerms' && (
             <div className="p-3 space-y-3 bg-white">
               <div className="space-y-2">
-                {data.paymentTermsPage.steps.map((step, idx) => (
-                  <div key={step.id} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
+                {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps).map((step, idx) => (
+                  <div key={step?.id || idx} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase text-amber-950">Installment #{idx + 1}</span>
                       <button
                         type="button"
                         onClick={() => {
-                          const updated = data.paymentTermsPage.steps.filter(s => s.id !== step.id);
-                          setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                          const steps = data.paymentTermsPage?.steps || [];
+                          const updated = steps.filter(s => s.id !== step.id);
+                          const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                          setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
                         className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200"
                       >
@@ -2501,11 +2598,13 @@ function StudioCoreAiryBuilderContent() {
                     <div className="space-y-1">
                       <label className="block text-[9px] uppercase font-bold text-zinc-500">Date</label>
                       <ThreeDCurvedDatePicker
-                        value={step.date}
+                        value={step?.date || ''}
                         disabled={false}
                         onChange={(val) => {
-                          const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, date: val } : s);
-                          setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                          const steps = data.paymentTermsPage?.steps || [];
+                          const updated = steps.map(s => s.id === step.id ? { ...s, date: val } : s);
+                          const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                          setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
                       />
                     </div>
@@ -2514,10 +2613,12 @@ function StudioCoreAiryBuilderContent() {
                       <label className="block text-[9px] uppercase font-bold text-zinc-500">Step / Stage Name</label>
                       <input
                         type="text"
-                        value={step.stepName}
+                        value={step?.stepName || ''}
                         onChange={(e) => {
-                          const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, stepName: e.target.value } : s);
-                          setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                          const steps = data.paymentTermsPage?.steps || [];
+                          const updated = steps.map(s => s.id === step.id ? { ...s, stepName: e.target.value } : s);
+                          const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                          setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
                         className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
                       />
@@ -2528,10 +2629,12 @@ function StudioCoreAiryBuilderContent() {
                         <label className="block text-[9px] uppercase font-bold text-zinc-500">Amount (₹)</label>
                         <input
                           type="number"
-                          value={step.amount}
+                          value={step?.amount ?? 0}
                           onChange={(e) => {
-                            const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, amount: Number(e.target.value) || 0 } : s);
-                            setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                            const steps = data.paymentTermsPage?.steps || [];
+                            const updated = steps.map(s => s.id === step.id ? { ...s, amount: Number(e.target.value) || 0 } : s);
+                            const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                            setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                           }}
                           className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
                         />
@@ -2539,14 +2642,16 @@ function StudioCoreAiryBuilderContent() {
                       <div className="space-y-1">
                         <label className="block text-[9px] uppercase font-bold text-zinc-500">Status</label>
                         <ThreeDCurvedSelect
-                          value={step.status}
+                          value={step?.status || 'Pending'}
                           options={[
                             { label: 'Completed', value: 'Completed' },
                             { label: 'Pending', value: 'Pending' },
                           ]}
                           onChange={(val) => {
-                            const updated = data.paymentTermsPage.steps.map(s => s.id === step.id ? { ...s, status: val as 'Completed' | 'Pending' } : s);
-                            setData({ ...data, paymentTermsPage: { ...data.paymentTermsPage, steps: updated } });
+                            const steps = data.paymentTermsPage?.steps || [];
+                            const updated = steps.map(s => s.id === step.id ? { ...s, status: val as 'Completed' | 'Pending' } : s);
+                            const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                            setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                           }}
                         />
                       </div>
@@ -2557,6 +2662,7 @@ function StudioCoreAiryBuilderContent() {
                 <button
                   type="button"
                   onClick={() => {
+                    const steps = data.paymentTermsPage?.steps || [];
                     const newStep: PaymentTermStep = {
                       id: `pt_${Date.now()}`,
                       date: '10 MAR 26',
@@ -2564,11 +2670,12 @@ function StudioCoreAiryBuilderContent() {
                       amount: 25000,
                       status: 'Pending'
                     };
+                    const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                     setData({
                       ...data,
                       paymentTermsPage: {
-                        ...data.paymentTermsPage,
-                        steps: [...data.paymentTermsPage.steps, newStep]
+                        ...currentObj,
+                        steps: [...steps, newStep]
                       }
                     });
                   }}
@@ -2601,23 +2708,28 @@ function StudioCoreAiryBuilderContent() {
                 <label className="block text-[10px] uppercase font-bold text-zinc-500">Sub-Text Header</label>
                 <input
                   type="text"
-                  value={data.addOnsPage.subText}
-                  onChange={(e) => setData({ ...data, addOnsPage: { ...data.addOnsPage, subText: e.target.value } })}
+                  value={data.addOnsPage?.subText || ''}
+                  onChange={(e) => {
+                    const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
+                    setData({ ...data, addOnsPage: { ...currentObj, subText: e.target.value } });
+                  }}
                   className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
                 />
               </div>
 
               <div className="space-y-2">
-                {data.addOnsPage.items.map((item) => (
-                  <div key={item.id} className="p-2.5 rounded-xl border border-amber-200/80 bg-zinc-50/80 space-y-2">
+                {(data.addOnsPage?.items || DEFAULT_AIRY_PROPOSAL.addOnsPage.items).map((item, idx) => (
+                  <div key={item?.id || idx} className="p-2.5 rounded-xl border border-amber-200/80 bg-zinc-50/80 space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
                           type="checkbox"
-                          checked={item.selected}
+                          checked={!!item?.selected}
                           onChange={(e) => {
-                            const updated = data.addOnsPage.items.map(i => i.id === item.id ? { ...i, selected: e.target.checked } : i);
-                            setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                            const items = data.addOnsPage?.items || [];
+                            const updated = items.map(i => i.id === item.id ? { ...i, selected: e.target.checked } : i);
+                            const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
+                            setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                           }}
                           className="w-4 h-4 rounded-md border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
                         />
@@ -2627,8 +2739,10 @@ function StudioCoreAiryBuilderContent() {
                       <button
                         type="button"
                         onClick={() => {
-                          const updated = data.addOnsPage.items.filter(i => i.id !== item.id);
-                          setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                          const items = data.addOnsPage?.items || [];
+                          const updated = items.filter(i => i.id !== item.id);
+                          const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
+                          setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                         }}
                         className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200"
                       >
@@ -2639,20 +2753,24 @@ function StudioCoreAiryBuilderContent() {
                     <div className="grid grid-cols-2 gap-2">
                       <input
                         type="text"
-                        value={item.title}
+                        value={item?.title || ''}
                         onChange={(e) => {
-                          const updated = data.addOnsPage.items.map(i => i.id === item.id ? { ...i, title: e.target.value } : i);
-                          setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                          const items = data.addOnsPage?.items || [];
+                          const updated = items.map(i => i.id === item.id ? { ...i, title: e.target.value } : i);
+                          const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
+                          setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                         }}
                         className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
                         placeholder="Add-on Title"
                       />
                       <input
                         type="number"
-                        value={item.price}
+                        value={item?.price ?? 0}
                         onChange={(e) => {
-                          const updated = data.addOnsPage.items.map(i => i.id === item.id ? { ...i, price: Number(e.target.value) || 0 } : i);
-                          setData({ ...data, addOnsPage: { ...data.addOnsPage, items: updated } });
+                          const items = data.addOnsPage?.items || [];
+                          const updated = items.map(i => i.id === item.id ? { ...i, price: Number(e.target.value) || 0 } : i);
+                          const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
+                          setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                         }}
                         className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
                         placeholder="Price (₹)"
@@ -2664,17 +2782,19 @@ function StudioCoreAiryBuilderContent() {
                 <button
                   type="button"
                   onClick={() => {
+                    const items = data.addOnsPage?.items || [];
                     const newItem: AddOnItem = {
                       id: `add_${Date.now()}`,
                       title: 'Custom Service Upgrade',
                       price: 10000,
                       selected: true
                     };
+                    const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
                     setData({
                       ...data,
                       addOnsPage: {
-                        ...data.addOnsPage,
-                        items: [...data.addOnsPage.items, newItem]
+                        ...currentObj,
+                        items: [...items, newItem]
                       }
                     });
                   }}
@@ -4087,4 +4207,3 @@ export default function TemplateQuotationBuilderPage() {
     </React.Suspense>
   );
 }
-
