@@ -431,6 +431,14 @@ const DEFAULT_AIRY_PROPOSAL = {
       'Free Raw Data Hard Drive (1TB)',
       'Complimentary LED Wall Feed Live Output'
     ],
+    note: '',
+    photo: '',
+    photoHeight: 360,
+    photoWidth: 75,
+    photoFocalY: 50,
+    bgOpacity: 40,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
   // 7. Pricing Details
@@ -443,6 +451,14 @@ const DEFAULT_AIRY_PROPOSAL = {
     travelCharges: 10000,
     additionalCharges: 5000,
     gstPct: 18,
+    note: '',
+    photo: '',
+    photoHeight: 360,
+    photoWidth: 75,
+    photoFocalY: 50,
+    bgOpacity: 40,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
   // 8. Payment Terms & Schedule
@@ -455,6 +471,14 @@ const DEFAULT_AIRY_PROPOSAL = {
       { id: 'pt-3', date: '06 MAR 26', stepName: 'On Wedding Day', amount: 50000, status: 'Pending' },
       { id: 'pt-4', date: '25 MAR 26', stepName: 'Final Delivery Amount', amount: 20000, status: 'Pending' },
     ] as PaymentTermStep[],
+    note: '',
+    photo: '',
+    photoHeight: 360,
+    photoWidth: 75,
+    photoFocalY: 50,
+    bgOpacity: 40,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
   // 9. Add-Ons & Upgrades
@@ -470,6 +494,14 @@ const DEFAULT_AIRY_PROPOSAL = {
       { id: 'add-5', title: 'Extra Album Pages (Per 10 Pages)', price: 5000, selected: true },
       { id: 'add-6', title: 'Express 7-Day Video Edit Delivery', price: 20000, selected: false },
     ] as AddOnItem[],
+    note: '',
+    photo: '',
+    photoHeight: 360,
+    photoWidth: 75,
+    photoFocalY: 50,
+    bgOpacity: 40,
+    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
   // 7. Delivery Time & Timeline Table
@@ -1576,6 +1608,14 @@ function normalizeQuotationData(loaded: any) {
       availableOptions: Array.isArray(loaded.specialValueAdditions?.availableOptions)
         ? loaded.specialValueAdditions.availableOptions
         : d.specialValueAdditions.availableOptions,
+      note: loaded.specialValueAdditions?.note ?? d.specialValueAdditions.note ?? '',
+      photo: loaded.specialValueAdditions?.photo ?? d.specialValueAdditions.photo ?? '',
+      photoHeight: loaded.specialValueAdditions?.photoHeight ?? d.specialValueAdditions.photoHeight ?? 360,
+      photoWidth: loaded.specialValueAdditions?.photoWidth ?? d.specialValueAdditions.photoWidth ?? 75,
+      photoFocalY: loaded.specialValueAdditions?.photoFocalY ?? d.specialValueAdditions.photoFocalY ?? 50,
+      bgOpacity: loaded.specialValueAdditions?.bgOpacity ?? d.specialValueAdditions.bgOpacity ?? 40,
+      frameShape: loaded.specialValueAdditions?.frameShape ?? d.specialValueAdditions.frameShape ?? 'rounded',
+      imagePosition: loaded.specialValueAdditions?.imagePosition ?? d.specialValueAdditions.imagePosition ?? 'bottom',
     },
     pricingPage: {
       ...d.pricingPage,
@@ -1586,6 +1626,14 @@ function normalizeQuotationData(loaded: any) {
       travelCharges: typeof loaded.pricingPage?.travelCharges === 'number' ? loaded.pricingPage.travelCharges : d.pricingPage.travelCharges,
       additionalCharges: typeof loaded.pricingPage?.additionalCharges === 'number' ? loaded.pricingPage.additionalCharges : d.pricingPage.additionalCharges,
       gstPct: typeof loaded.pricingPage?.gstPct === 'number' ? loaded.pricingPage.gstPct : d.pricingPage.gstPct,
+      note: loaded.pricingPage?.note ?? d.pricingPage.note ?? '',
+      photo: loaded.pricingPage?.photo ?? d.pricingPage.photo ?? '',
+      photoHeight: loaded.pricingPage?.photoHeight ?? d.pricingPage.photoHeight ?? 360,
+      photoWidth: loaded.pricingPage?.photoWidth ?? d.pricingPage.photoWidth ?? 75,
+      photoFocalY: loaded.pricingPage?.photoFocalY ?? d.pricingPage.photoFocalY ?? 50,
+      bgOpacity: loaded.pricingPage?.bgOpacity ?? d.pricingPage.bgOpacity ?? 40,
+      frameShape: loaded.pricingPage?.frameShape ?? d.pricingPage.frameShape ?? 'rounded',
+      imagePosition: loaded.pricingPage?.imagePosition ?? d.pricingPage.imagePosition ?? 'bottom',
     },
     paymentTermsPage: {
       ...d.paymentTermsPage,
@@ -1593,6 +1641,14 @@ function normalizeQuotationData(loaded: any) {
       steps: Array.isArray(loaded.paymentTermsPage?.steps)
         ? loaded.paymentTermsPage.steps
         : d.paymentTermsPage.steps,
+      note: loaded.paymentTermsPage?.note ?? d.paymentTermsPage.note ?? '',
+      photo: loaded.paymentTermsPage?.photo ?? d.paymentTermsPage.photo ?? '',
+      photoHeight: loaded.paymentTermsPage?.photoHeight ?? d.paymentTermsPage.photoHeight ?? 360,
+      photoWidth: loaded.paymentTermsPage?.photoWidth ?? d.paymentTermsPage.photoWidth ?? 75,
+      photoFocalY: loaded.paymentTermsPage?.photoFocalY ?? d.paymentTermsPage.photoFocalY ?? 50,
+      bgOpacity: loaded.paymentTermsPage?.bgOpacity ?? d.paymentTermsPage.bgOpacity ?? 40,
+      frameShape: loaded.paymentTermsPage?.frameShape ?? d.paymentTermsPage.frameShape ?? 'rounded',
+      imagePosition: loaded.paymentTermsPage?.imagePosition ?? d.paymentTermsPage.imagePosition ?? 'bottom',
     },
     addOnsPage: {
       ...d.addOnsPage,
@@ -1600,6 +1656,14 @@ function normalizeQuotationData(loaded: any) {
       items: Array.isArray(loaded.addOnsPage?.items)
         ? loaded.addOnsPage.items
         : d.addOnsPage.items,
+      note: loaded.addOnsPage?.note ?? d.addOnsPage.note ?? '',
+      photo: loaded.addOnsPage?.photo ?? d.addOnsPage.photo ?? '',
+      photoHeight: loaded.addOnsPage?.photoHeight ?? d.addOnsPage.photoHeight ?? 360,
+      photoWidth: loaded.addOnsPage?.photoWidth ?? d.addOnsPage.photoWidth ?? 75,
+      photoFocalY: loaded.addOnsPage?.photoFocalY ?? d.addOnsPage.photoFocalY ?? 50,
+      bgOpacity: loaded.addOnsPage?.bgOpacity ?? d.addOnsPage.bgOpacity ?? 40,
+      frameShape: loaded.addOnsPage?.frameShape ?? d.addOnsPage.frameShape ?? 'rounded',
+      imagePosition: loaded.addOnsPage?.imagePosition ?? d.addOnsPage.imagePosition ?? 'bottom',
     },
 
     // Backwards Compatibility Aliases
@@ -1913,6 +1977,14 @@ function StudioCoreAiryBuilderContent() {
       setData(prev => ({ ...prev, functionsPage: { ...prev.functionsPage, photo: url } }));
     } else if (activeTargetField === 'deliverablesPhoto') {
       setData(prev => ({ ...prev, deliverablesPage: { ...prev.deliverablesPage, photo: url } }));
+    } else if (activeTargetField === 'specialValuePhoto') {
+      setData(prev => ({ ...prev, specialValueAdditions: { ...(prev.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: url } }));
+    } else if (activeTargetField === 'pricingPhoto') {
+      setData(prev => ({ ...prev, pricingPage: { ...(prev.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: url } }));
+    } else if (activeTargetField === 'paymentTermsPhoto') {
+      setData(prev => ({ ...prev, paymentTermsPage: { ...(prev.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: url } }));
+    } else if (activeTargetField === 'addOnsPhoto') {
+      setData(prev => ({ ...prev, addOnsPage: { ...(prev.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: url } }));
     } else if (activeTargetField === 'termsPhoto') {
       setData(prev => ({ ...prev, termsAndThankYou: { ...prev.termsAndThankYou, photo: url } }));
     }
@@ -2457,6 +2529,38 @@ function StudioCoreAiryBuilderContent() {
                   }
                 }}
               />
+
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Page Note (Optional)</label>
+                <textarea
+                  rows={2}
+                  value={data.specialValueAdditions?.note || ''}
+                  onChange={(e) => {
+                    const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
+                    setData({ ...data, specialValueAdditions: { ...currentObj, note: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                  placeholder="Add optional note at bottom of page..."
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.specialValueAdditions?.photo}
+                frameShape={data.specialValueAdditions?.frameShape}
+                photoHeight={data.specialValueAdditions?.photoHeight}
+                photoWidth={data.specialValueAdditions?.photoWidth}
+                photoFocalY={data.specialValueAdditions?.photoFocalY}
+                bgOpacity={data.specialValueAdditions?.bgOpacity}
+                imagePosition={data.specialValueAdditions?.imagePosition}
+                onOpenAddModal={() => openAddImageModal('specialValuePhoto')}
+                onDeletePhoto={() => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), frameShape: shape } })}
+                onChangePosition={(pos) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoWidth: w } })}
+              />
             </div>
           )}
         </div>
@@ -2557,6 +2661,38 @@ function StudioCoreAiryBuilderContent() {
                   />
                 </div>
               </div>
+
+              <div className="space-y-1 pt-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Page Note (Optional)</label>
+                <textarea
+                  rows={2}
+                  value={data.pricingPage?.note || ''}
+                  onChange={(e) => {
+                    const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                    setData({ ...data, pricingPage: { ...currentObj, note: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                  placeholder="Add optional note at bottom of page..."
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.pricingPage?.photo}
+                frameShape={data.pricingPage?.frameShape}
+                photoHeight={data.pricingPage?.photoHeight}
+                photoWidth={data.pricingPage?.photoWidth}
+                photoFocalY={data.pricingPage?.photoFocalY}
+                bgOpacity={data.pricingPage?.bgOpacity}
+                imagePosition={data.pricingPage?.imagePosition}
+                onOpenAddModal={() => openAddImageModal('pricingPhoto')}
+                onDeletePhoto={() => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), frameShape: shape } })}
+                onChangePosition={(pos) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoWidth: w } })}
+              />
             </div>
           )}
         </div>
@@ -2685,6 +2821,38 @@ function StudioCoreAiryBuilderContent() {
                   <span>+ Add Installment Step</span>
                 </button>
               </div>
+
+              <div className="space-y-1 pt-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Page Note (Optional)</label>
+                <textarea
+                  rows={2}
+                  value={data.paymentTermsPage?.note || ''}
+                  onChange={(e) => {
+                    const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                    setData({ ...data, paymentTermsPage: { ...currentObj, note: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                  placeholder="Add optional note at bottom of page..."
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.paymentTermsPage?.photo}
+                frameShape={data.paymentTermsPage?.frameShape}
+                photoHeight={data.paymentTermsPage?.photoHeight}
+                photoWidth={data.paymentTermsPage?.photoWidth}
+                photoFocalY={data.paymentTermsPage?.photoFocalY}
+                bgOpacity={data.paymentTermsPage?.bgOpacity}
+                imagePosition={data.paymentTermsPage?.imagePosition}
+                onOpenAddModal={() => openAddImageModal('paymentTermsPhoto')}
+                onDeletePhoto={() => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), frameShape: shape } })}
+                onChangePosition={(pos) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoWidth: w } })}
+              />
             </div>
           )}
         </div>
@@ -2804,6 +2972,38 @@ function StudioCoreAiryBuilderContent() {
                   <span>+ Add Custom Add-On</span>
                 </button>
               </div>
+
+              <div className="space-y-1 pt-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Page Note (Optional)</label>
+                <textarea
+                  rows={2}
+                  value={data.addOnsPage?.note || ''}
+                  onChange={(e) => {
+                    const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
+                    setData({ ...data, addOnsPage: { ...currentObj, note: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                  placeholder="Add optional note at bottom of page..."
+                />
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.addOnsPage?.photo}
+                frameShape={data.addOnsPage?.frameShape}
+                photoHeight={data.addOnsPage?.photoHeight}
+                photoWidth={data.addOnsPage?.photoWidth}
+                photoFocalY={data.addOnsPage?.photoFocalY}
+                bgOpacity={data.addOnsPage?.bgOpacity}
+                imagePosition={data.addOnsPage?.imagePosition}
+                onOpenAddModal={() => openAddImageModal('addOnsPhoto')}
+                onDeletePhoto={() => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: '' } })}
+                onChangeShape={(shape) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), frameShape: shape } })}
+                onChangePosition={(pos) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photoWidth: w } })}
+              />
             </div>
           )}
         </div>
@@ -3692,14 +3892,13 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: SPECIAL VALUE ADDITIONS */}
             <section 
-              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
-                height: '1123px',
+                height: getDynamicPageHeight(data.specialValueAdditions),
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
+                minHeight: getDynamicPageHeight(data.specialValueAdditions),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -3710,33 +3909,96 @@ function StudioCoreAiryBuilderContent() {
                 fontFamily: data.secondaryFont,
               }}
             >
-              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
-                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                  {data.specialValueAdditions?.kicker || 'COMPLIMENTARY'}
-                </span>
-                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                  {data.specialValueAdditions?.heading || 'SPECIAL VALUE ADDITIONS'}
-                </h2>
+              {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.specialValueAdditions.photo}
+                  frameShape="background"
+                  photoHeight={data.specialValueAdditions.photoHeight}
+                  photoWidth={data.specialValueAdditions.photoWidth}
+                  photoFocalY={data.specialValueAdditions.photoFocalY}
+                  bgOpacity={data.specialValueAdditions.bgOpacity}
+                  pageBgColor={pageBgColor}
+                  altText="Special Value Additions Background"
+                />
+              )}
 
-                <div className="w-full space-y-3 text-left pt-2">
-                  {(data.specialValueAdditions?.selectedItems || []).map((item, idx) => (
-                    <div 
-                      key={idx}
-                      className="p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all"
-                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0">
-                          <Gift className="w-4 h-4 text-amber-600" style={{ color: kickerColor }} />
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+                data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'px-12'
+              } ${!data.specialValueAdditions?.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                
+                <div className={`flex flex-col items-center justify-center w-full ${data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && data.specialValueAdditions?.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.specialValueAdditions.photo}
+                      frameShape={data.specialValueAdditions.frameShape}
+                      photoHeight={data.specialValueAdditions.photoHeight}
+                      photoWidth={data.specialValueAdditions.photoWidth}
+                      photoFocalY={data.specialValueAdditions.photoFocalY}
+                      altText="Special Value Additions Photo"
+                    />
+                  )}
+
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                    {data.specialValueAdditions?.kicker || 'COMPLIMENTARY'}
+                  </span>
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.specialValueAdditions?.heading || 'SPECIAL VALUE ADDITIONS'}
+                  </h2>
+
+                  {/* CENTER IMAGE POSITION */}
+                  {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && data.specialValueAdditions?.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.specialValueAdditions.photo}
+                      frameShape={data.specialValueAdditions.frameShape}
+                      photoHeight={data.specialValueAdditions.photoHeight}
+                      photoWidth={data.specialValueAdditions.photoWidth}
+                      photoFocalY={data.specialValueAdditions.photoFocalY}
+                      altText="Special Value Additions Photo"
+                    />
+                  )}
+
+                  <div className="w-full max-w-xl mx-auto space-y-3 text-left">
+                    {(data.specialValueAdditions?.selectedItems || []).map((item, idx) => (
+                      <div 
+                        key={idx}
+                        className="p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all"
+                        style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                            <Gift className="w-4 h-4" style={{ color: kickerColor }} />
+                          </div>
+                          <span className="text-xs font-bold leading-relaxed">{item}</span>
                         </div>
-                        <span className="text-xs font-bold leading-relaxed">{item}</span>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)', color: textColor }}>
+                          FREE
+                        </span>
                       </div>
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 shrink-0">
-                        FREE
-                      </span>
-                    </div>
-                  ))}
+                    ))}
+
+                    {data.specialValueAdditions?.note && (
+                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                        "{data.specialValueAdditions.note}"
+                      </p>
+                    )}
+                  </div>
                 </div>
+
+                {/* BOTTOM FLUSH IMAGE POSITION */}
+                {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && (data.specialValueAdditions?.imagePosition === 'bottom' || !data.specialValueAdditions?.imagePosition) && (
+                  <SectionImageRenderer
+                    photo={data.specialValueAdditions.photo}
+                    frameShape={data.specialValueAdditions.frameShape}
+                    photoHeight={data.specialValueAdditions.photoHeight}
+                    photoWidth={data.specialValueAdditions.photoWidth}
+                    photoFocalY={data.specialValueAdditions.photoFocalY}
+                    isBottomFlush={true}
+                    altText="Special Value Additions Photo"
+                  />
+                )}
               </div>
             </section>
 
@@ -3748,14 +4010,13 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 7: PRICING DETAILS */}
             <section 
-              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
-                height: '1123px',
+                height: getDynamicPageHeight(data.pricingPage),
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
+                minHeight: getDynamicPageHeight(data.pricingPage),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -3766,74 +4027,139 @@ function StudioCoreAiryBuilderContent() {
                 fontFamily: data.secondaryFont,
               }}
             >
-              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
-                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                  {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
-                </span>
-                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                  {data.pricingPage?.heading || 'PRICING DETAILS'}
-                </h2>
+              {data.pricingPage?.photo && data.pricingPage?.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.pricingPage.photo}
+                  frameShape="background"
+                  photoHeight={data.pricingPage.photoHeight}
+                  photoWidth={data.pricingPage.photoWidth}
+                  photoFocalY={data.pricingPage.photoFocalY}
+                  bgOpacity={data.pricingPage.bgOpacity}
+                  pageBgColor={pageBgColor}
+                  altText="Pricing Details Background"
+                />
+              )}
 
-                <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
-                      <tr>
-                        <th className="py-3.5 px-5">Financial Item / Particulars</th>
-                        <th className="py-3.5 px-5 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y font-semibold" style={{ color: textColor, borderColor }}>
-                      <tr>
-                        <td className="py-3 px-5">Base Package Price</td>
-                        <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.base.toLocaleString('en-IN')}</td>
-                      </tr>
-                      {pricingCalculated.disc > 0 && (
-                        <tr className="text-emerald-700 bg-emerald-50/30">
-                          <td className="py-3 px-5">Discount (Complimentary)</td>
-                          <td className="py-3 px-5 text-right font-mono">-₹{pricingCalculated.disc.toLocaleString('en-IN')}</td>
-                        </tr>
-                      )}
-                      {pricingCalculated.accom > 0 && (
-                        <tr>
-                          <td className="py-3 px-5">Accommodation Charges</td>
-                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.accom.toLocaleString('en-IN')}</td>
-                        </tr>
-                      )}
-                      {pricingCalculated.travel > 0 && (
-                        <tr>
-                          <td className="py-3 px-5">Travel Charges</td>
-                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.travel.toLocaleString('en-IN')}</td>
-                        </tr>
-                      )}
-                      {pricingCalculated.addl > 0 && (
-                        <tr>
-                          <td className="py-3 px-5">Additional Charges</td>
-                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
-                        </tr>
-                      )}
-                      <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor }}>
-                        <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
-                        <td className="py-3 px-5 text-right font-mono font-black">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>
-                      </tr>
-                      {pricingCalculated.gstPct > 0 && (
-                        <tr>
-                          <td className="py-3 px-5">GST ({pricingCalculated.gstPct}%)</td>
-                          <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.gstAmount.toLocaleString('en-IN')}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+                data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'px-12'
+              } ${!data.pricingPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                
+                <div className={`flex flex-col items-center justify-center w-full ${data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && data.pricingPage?.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.pricingPage.photo}
+                      frameShape={data.pricingPage.frameShape}
+                      photoHeight={data.pricingPage.photoHeight}
+                      photoWidth={data.pricingPage.photoWidth}
+                      photoFocalY={data.pricingPage.photoFocalY}
+                      altText="Pricing Details Photo"
+                    />
+                  )}
+
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                    {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
+                  </span>
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.pricingPage?.heading || 'PRICING DETAILS'}
+                  </h2>
+
+                  {/* CENTER IMAGE POSITION */}
+                  {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && data.pricingPage?.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.pricingPage.photo}
+                      frameShape={data.pricingPage.frameShape}
+                      photoHeight={data.pricingPage.photoHeight}
+                      photoWidth={data.pricingPage.photoWidth}
+                      photoFocalY={data.pricingPage.photoFocalY}
+                      altText="Pricing Details Photo"
+                    />
+                  )}
+
+                  <div className="w-full max-w-xl mx-auto space-y-4">
+                    <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
+                          <tr>
+                            <th className="py-3.5 px-5">Financial Item / Particulars</th>
+                            <th className="py-3.5 px-5 text-right">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y font-semibold" style={{ color: textColor, borderColor }}>
+                          <tr style={{ borderColor }}>
+                            <td className="py-3 px-5">Base Package Price</td>
+                            <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.base.toLocaleString('en-IN')}</td>
+                          </tr>
+                          {pricingCalculated.disc > 0 && (
+                            <tr style={{ borderColor, backgroundColor: 'rgba(16, 185, 129, 0.08)' }}>
+                              <td className="py-3 px-5 font-bold" style={{ color: textColor }}>Discount (Complimentary)</td>
+                              <td className="py-3 px-5 text-right font-mono font-bold">-₹{pricingCalculated.disc.toLocaleString('en-IN')}</td>
+                            </tr>
+                          )}
+                          {pricingCalculated.accom > 0 && (
+                            <tr style={{ borderColor }}>
+                              <td className="py-3 px-5">Accommodation Charges</td>
+                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.accom.toLocaleString('en-IN')}</td>
+                            </tr>
+                          )}
+                          {pricingCalculated.travel > 0 && (
+                            <tr style={{ borderColor }}>
+                              <td className="py-3 px-5">Travel Charges</td>
+                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.travel.toLocaleString('en-IN')}</td>
+                            </tr>
+                          )}
+                          {pricingCalculated.addl > 0 && (
+                            <tr style={{ borderColor }}>
+                              <td className="py-3 px-5">Additional Charges</td>
+                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
+                            </tr>
+                          )}
+                          <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor, borderColor }}>
+                            <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
+                            <td className="py-3 px-5 text-right font-mono font-black">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>
+                          </tr>
+                          {pricingCalculated.gstPct > 0 && (
+                            <tr style={{ borderColor }}>
+                              <td className="py-3 px-5">GST ({pricingCalculated.gstPct}%)</td>
+                              <td className="py-3 px-5 text-right font-mono">₹{pricingCalculated.gstAmount.toLocaleString('en-IN')}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="w-full p-5 rounded-2xl border flex items-center justify-between shadow-md" style={{ backgroundColor: boxBgColor, borderColor }}>
+                      <div className="text-left">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest block" style={{ color: kickerColor }}>FINAL NET INVESTMENT</span>
+                        <span className="text-xs font-medium opacity-80" style={{ color: textColor }}>Inclusive of all Taxes &amp; Fees</span>
+                      </div>
+                      <div className="text-3xl font-black font-mono tracking-tight" style={{ color: textColor }}>
+                        ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
+                      </div>
+                    </div>
+
+                    {data.pricingPage?.note && (
+                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                        "{data.pricingPage.note}"
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                <div className="w-full p-5 rounded-2xl border flex items-center justify-between shadow-md" style={{ backgroundColor: boxBgColor, borderColor }}>
-                  <div className="text-left">
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest block" style={{ color: kickerColor }}>FINAL NET INVESTMENT</span>
-                    <span className="text-xs font-medium opacity-80" style={{ color: textColor }}>Inclusive of all Taxes &amp; Fees</span>
-                  </div>
-                  <div className="text-3xl font-black font-mono tracking-tight" style={{ color: textColor }}>
-                    ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
-                  </div>
-                </div>
+                {/* BOTTOM FLUSH IMAGE POSITION */}
+                {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && (data.pricingPage?.imagePosition === 'bottom' || !data.pricingPage?.imagePosition) && (
+                  <SectionImageRenderer
+                    photo={data.pricingPage.photo}
+                    frameShape={data.pricingPage.frameShape}
+                    photoHeight={data.pricingPage.photoHeight}
+                    photoWidth={data.pricingPage.photoWidth}
+                    photoFocalY={data.pricingPage.photoFocalY}
+                    isBottomFlush={true}
+                    altText="Pricing Details Photo"
+                  />
+                )}
               </div>
             </section>
 
@@ -3845,14 +4171,13 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 8: PAYMENT TERMS & SCHEDULE */}
             <section 
-              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
-                height: '1123px',
+                height: getDynamicPageHeight(data.paymentTermsPage),
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
+                minHeight: getDynamicPageHeight(data.paymentTermsPage),
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -3863,62 +4188,130 @@ function StudioCoreAiryBuilderContent() {
                 fontFamily: data.secondaryFont,
               }}
             >
-              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
-                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                  {data.paymentTermsPage?.kicker || 'SCHEDULE'}
-                </span>
-                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                  {data.paymentTermsPage?.heading || 'PAYMENT TERMS & SCHEDULE'}
-                </h2>
+              {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.paymentTermsPage.photo}
+                  frameShape="background"
+                  photoHeight={data.paymentTermsPage.photoHeight}
+                  photoWidth={data.paymentTermsPage.photoWidth}
+                  photoFocalY={data.paymentTermsPage.photoFocalY}
+                  bgOpacity={data.paymentTermsPage.bgOpacity}
+                  pageBgColor={pageBgColor}
+                  altText="Payment Terms Background"
+                />
+              )}
 
-                {/* Structured Table matching reference design */}
-                <div className="w-full rounded-2xl overflow-hidden border border-zinc-200 shadow-xs">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-900 text-white text-[11px] uppercase tracking-wider font-extrabold">
-                      <tr>
-                        <th className="py-3.5 px-4 w-[24%]">DATE</th>
-                        <th className="py-3.5 px-4 w-[38%]">STEPS</th>
-                        <th className="py-3.5 px-4 w-[20%] text-right">AMOUNT</th>
-                        <th className="py-3.5 px-4 w-[18%] text-center">STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-200/80 text-xs font-semibold text-zinc-800 bg-white">
-                      {(data.paymentTermsPage?.steps || []).map((step) => (
-                        <tr key={step.id} className="hover:bg-zinc-50/50">
-                          <td className="py-3 px-4 font-mono font-bold text-zinc-900 uppercase">{step.date}</td>
-                          <td className="py-3 px-4 font-bold text-zinc-900">{step.stepName}</td>
-                          <td className="py-3 px-4 text-right font-mono font-bold text-zinc-900">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>
-                          <td className="py-3 px-4 text-center">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border ${
-                              step.status === 'Completed'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
-                            }`}>
-                              {step.status === 'Completed' ? <Check className="w-3 h-3 text-emerald-600 stroke-[3]" /> : <Clock className="w-3 h-3 text-amber-600" />}
-                              <span>{step.status}</span>
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+                data.paymentTermsPage?.frameShape === 'full-width' || (data.paymentTermsPage?.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'px-12'
+              } ${!data.paymentTermsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                
+                <div className={`flex flex-col items-center justify-center w-full ${data.paymentTermsPage?.frameShape === 'full-width' || (data.paymentTermsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && data.paymentTermsPage?.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.paymentTermsPage.photo}
+                      frameShape={data.paymentTermsPage.frameShape}
+                      photoHeight={data.paymentTermsPage.photoHeight}
+                      photoWidth={data.paymentTermsPage.photoWidth}
+                      photoFocalY={data.paymentTermsPage.photoFocalY}
+                      altText="Payment Terms Photo"
+                    />
+                  )}
+
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                    {data.paymentTermsPage?.kicker || 'SCHEDULE'}
+                  </span>
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.paymentTermsPage?.heading || 'PAYMENT TERMS & SCHEDULE'}
+                  </h2>
+
+                  {/* CENTER IMAGE POSITION */}
+                  {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && data.paymentTermsPage?.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.paymentTermsPage.photo}
+                      frameShape={data.paymentTermsPage.frameShape}
+                      photoHeight={data.paymentTermsPage.photoHeight}
+                      photoWidth={data.paymentTermsPage.photoWidth}
+                      photoFocalY={data.paymentTermsPage.photoFocalY}
+                      altText="Payment Terms Photo"
+                    />
+                  )}
+
+                  <div className="w-full max-w-xl mx-auto space-y-4">
+                    {/* Structured Table matching reference design */}
+                    <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
+                      <table className="w-full text-left border-collapse">
+                        <thead className="text-[11px] uppercase tracking-wider font-extrabold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
+                          <tr>
+                            <th className="py-3.5 px-4 w-[24%]">DATE</th>
+                            <th className="py-3.5 px-4 w-[38%]">STEPS</th>
+                            <th className="py-3.5 px-4 w-[20%] text-right">AMOUNT</th>
+                            <th className="py-3.5 px-4 w-[18%] text-center">STATUS</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y text-xs font-semibold" style={{ borderColor, color: textColor }}>
+                          {(data.paymentTermsPage?.steps || []).map((step) => (
+                            <tr key={step.id} style={{ borderColor }}>
+                              <td className="py-3 px-4 font-mono font-bold uppercase">{step.date}</td>
+                              <td className="py-3 px-4 font-bold">{step.stepName}</td>
+                              <td className="py-3 px-4 text-right font-mono font-bold">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-4 text-center">
+                                <span 
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border"
+                                  style={{
+                                    backgroundColor: step.status === 'Completed' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                    borderColor: step.status === 'Completed' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)',
+                                    color: textColor
+                                  }}
+                                >
+                                  {step.status === 'Completed' ? <Check className="w-3 h-3 text-emerald-600 stroke-[3]" /> : <Clock className="w-3 h-3 text-amber-600" />}
+                                  <span>{step.status}</span>
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Automatic Summary Cards */}
+                    <div className="grid grid-cols-3 gap-3 w-full text-center pt-1">
+                      <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: kickerColor }}>FIXED AMOUNT</span>
+                        <span className="text-base font-black font-mono">₹{paymentTermsCalculated.fixedAmount.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.3)', color: textColor }}>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: kickerColor }}>RECEIVED AMOUNT</span>
+                        <span className="text-base font-black font-mono">₹{paymentTermsCalculated.receivedAmount.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)', color: textColor }}>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: kickerColor }}>PENDING AMOUNT</span>
+                        <span className="text-base font-black font-mono">₹{paymentTermsCalculated.pendingAmount.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+
+                    {data.paymentTermsPage?.note && (
+                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                        "{data.paymentTermsPage.note}"
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                {/* Automatic Summary Cards */}
-                <div className="grid grid-cols-3 gap-3 w-full text-center pt-2">
-                  <div className="p-3.5 rounded-2xl border border-zinc-200 bg-zinc-50/80 shadow-2xs">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 block mb-1">FIXED AMOUNT</span>
-                    <span className="text-base font-black font-mono text-zinc-900">₹{paymentTermsCalculated.fixedAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/60 shadow-2xs">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 block mb-1">RECEIVED AMOUNT</span>
-                    <span className="text-base font-black font-mono text-emerald-800">₹{paymentTermsCalculated.receivedAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="p-3.5 rounded-2xl border border-amber-200 bg-amber-50/60 shadow-2xs">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 block mb-1">PENDING AMOUNT</span>
-                    <span className="text-base font-black font-mono text-amber-900">₹{paymentTermsCalculated.pendingAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
+                {/* BOTTOM FLUSH IMAGE POSITION */}
+                {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && (data.paymentTermsPage?.imagePosition === 'bottom' || !data.paymentTermsPage?.imagePosition) && (
+                  <SectionImageRenderer
+                    photo={data.paymentTermsPage.photo}
+                    frameShape={data.paymentTermsPage.frameShape}
+                    photoHeight={data.paymentTermsPage.photoHeight}
+                    photoWidth={data.paymentTermsPage.photoWidth}
+                    photoFocalY={data.paymentTermsPage.photoFocalY}
+                    isBottomFlush={true}
+                    altText="Payment Terms Photo"
+                  />
+                )}
               </div>
             </section>
 
@@ -3930,7 +4323,131 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 9: ADD-ONS & UPGRADES */}
             <section 
-              className="quotation-page content-page flex flex-col justify-center items-center text-center p-12 transition-colors duration-300"
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              style={{
+                width: '794px',
+                height: getDynamicPageHeight(data.addOnsPage),
+                minWidth: '794px',
+                maxWidth: '794px',
+                minHeight: getDynamicPageHeight(data.addOnsPage),
+                boxSizing: 'border-box',
+                position: 'relative',
+                overflow: 'hidden',
+                margin: '0 auto',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                color: textColor,
+                fontFamily: data.secondaryFont,
+              }}
+            >
+              {data.addOnsPage?.photo && data.addOnsPage?.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.addOnsPage.photo}
+                  frameShape="background"
+                  photoHeight={data.addOnsPage.photoHeight}
+                  photoWidth={data.addOnsPage.photoWidth}
+                  photoFocalY={data.addOnsPage.photoFocalY}
+                  bgOpacity={data.addOnsPage.bgOpacity}
+                  pageBgColor={pageBgColor}
+                  altText="Add-Ons Background"
+                />
+              )}
+
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 px-12 ${
+                data.addOnsPage?.frameShape === 'full-width' || (data.addOnsPage?.imagePosition as string) === 'full' 
+                  ? 'px-0 pt-10 pb-0' 
+                  : 'px-12'
+              } ${!data.addOnsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                
+                <div className={`flex flex-col items-center justify-center w-full ${data.addOnsPage?.frameShape === 'full-width' || (data.addOnsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && data.addOnsPage?.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.addOnsPage.photo}
+                      frameShape={data.addOnsPage.frameShape}
+                      photoHeight={data.addOnsPage.photoHeight}
+                      photoWidth={data.addOnsPage.photoWidth}
+                      photoFocalY={data.addOnsPage.photoFocalY}
+                      altText="Add-Ons Photo"
+                    />
+                  )}
+
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
+                    {data.addOnsPage?.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
+                  </span>
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-2" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.addOnsPage?.heading || 'ADD-ONS & UPGRADES'}
+                  </h2>
+                  {data.addOnsPage?.subText && (
+                    <p className="text-xs font-medium opacity-80 mb-6" style={{ color: textColor }}>
+                      {data.addOnsPage.subText}
+                    </p>
+                  )}
+
+                  {/* CENTER IMAGE POSITION */}
+                  {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && data.addOnsPage?.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.addOnsPage.photo}
+                      frameShape={data.addOnsPage.frameShape}
+                      photoHeight={data.addOnsPage.photoHeight}
+                      photoWidth={data.addOnsPage.photoWidth}
+                      photoFocalY={data.addOnsPage.photoFocalY}
+                      altText="Add-Ons Photo"
+                    />
+                  )}
+
+                  <div className="w-full max-w-xl mx-auto space-y-4">
+                    <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
+                      <table className="w-full text-left border-collapse">
+                        <thead className="text-[11px] uppercase tracking-wider font-extrabold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
+                          <tr>
+                            <th className="py-3.5 px-5">ADD-ON SERVICE / PARTICULAR</th>
+                            <th className="py-3.5 px-5 text-right">PRICE</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y text-xs font-semibold" style={{ borderColor, color: textColor }}>
+                          {(data.addOnsPage?.items || []).filter(item => item.selected).map((item) => (
+                            <tr key={item.id} style={{ borderColor }}>
+                              <td className="py-3.5 px-5 font-bold">{item.title}</td>
+                              <td className="py-3.5 px-5 text-right font-mono font-bold">₹{Number(item.price || 0).toLocaleString('en-IN')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {data.addOnsPage?.note && (
+                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                        "{data.addOnsPage.note}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* BOTTOM FLUSH IMAGE POSITION */}
+                {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && (data.addOnsPage?.imagePosition === 'bottom' || !data.addOnsPage?.imagePosition) && (
+                  <SectionImageRenderer
+                    photo={data.addOnsPage.photo}
+                    frameShape={data.addOnsPage.frameShape}
+                    photoHeight={data.addOnsPage.photoHeight}
+                    photoWidth={data.addOnsPage.photoWidth}
+                    photoFocalY={data.addOnsPage.photoFocalY}
+                    isBottomFlush={true}
+                    altText="Add-Ons Photo"
+                  />
+                )}
+              </div>
+            </section>
+
+            {/* Inter-page Gap Spacer */}
+            <div 
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
+            />
+
+            {/* SECTION 10: DELIVERY TIMELINE & TERMS */}
+            <section 
+              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
               style={{
                 width: '794px',
                 height: '1123px',
@@ -3942,66 +4459,6 @@ function StudioCoreAiryBuilderContent() {
                 position: 'relative',
                 overflow: 'hidden',
                 margin: '0 auto',
-                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-                backgroundColor: pageBgColor || '#FFFFFF',
-                color: textColor,
-                fontFamily: data.secondaryFont,
-              }}
-            >
-              <div className="flex flex-col items-center justify-center w-full max-w-xl mx-auto space-y-6">
-                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap" style={{ color: kickerColor }}>
-                  {data.addOnsPage?.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
-                </span>
-                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                  {data.addOnsPage?.heading || 'ADD-ONS & UPGRADES'}
-                </h2>
-                {data.addOnsPage?.subText && (
-                  <p className="text-xs font-medium opacity-80 -mt-3" style={{ color: textColor }}>
-                    {data.addOnsPage.subText}
-                  </p>
-                )}
-
-                <div className="w-full rounded-2xl overflow-hidden border border-zinc-200 shadow-xs">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-900 text-white text-[11px] uppercase tracking-wider font-extrabold">
-                      <tr>
-                        <th className="py-3.5 px-5">ADD-ON SERVICE / PARTICULAR</th>
-                        <th className="py-3.5 px-5 text-right">PRICE</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-200/80 text-xs font-semibold text-zinc-800 bg-white">
-                      {(data.addOnsPage?.items || []).filter(item => item.selected).map((item) => (
-                        <tr key={item.id} className="hover:bg-zinc-50/50">
-                          <td className="py-3.5 px-5 font-bold text-zinc-900">{item.title}</td>
-                          <td className="py-3.5 px-5 text-right font-mono font-bold text-zinc-900">₹{Number(item.price || 0).toLocaleString('en-IN')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
-
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 6: DELIVERY TIMELINE & TERMS */}
-            <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300"
-              style={{
-                width: '794px',
-                height: '1123px',
-                minWidth: '794px',
-                maxWidth: '794px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                margin: '0 auto', // Center alignment guarantee
                 boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
                 backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
@@ -4021,7 +4478,7 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col p-12 h-full w-full ${!data.termsAndThankYou.photo ? 'justify-center items-center' : 'justify-between'}`}>
+              <div className={`relative z-10 mx-auto text-center flex flex-col py-14 px-12 h-full w-full ${!data.termsAndThankYou.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 {/* TOP IMAGE POSITION */}
                 {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && data.termsAndThankYou.imagePosition === 'top' && (
@@ -4041,20 +4498,20 @@ function StudioCoreAiryBuilderContent() {
                   </h2>
 
                   <div className="rounded-xl overflow-hidden border" style={{ borderColor }}>
-                    <table className="w-full text-left text-xs">
-                      <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}>
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
                         <tr>
                           <th className="py-3 px-4">Result</th>
                           <th className="py-3 px-4">Timeline</th>
                           <th className="py-3 px-4">Revisions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y font-medium" style={{ color: textColor }}>
-                        {data.timelineTable.rows.map(row => (
-                          <tr key={row.id}>
-                            <td className="py-3 px-4 font-semibold">{row.result}</td>
+                      <tbody className="divide-y font-semibold" style={{ borderColor, color: textColor }}>
+                        {data.timelineTable.rows.map((row) => (
+                          <tr key={row.id} style={{ borderColor }}>
+                            <td className="py-3 px-4 font-bold">{row.result}</td>
                             <td className="py-3 px-4">{row.timeline}</td>
-                            <td className="py-3 px-4 font-mono opacity-80">{row.revisions}</td>
+                            <td className="py-3 px-4">{row.revisions}</td>
                           </tr>
                         ))}
                       </tbody>
