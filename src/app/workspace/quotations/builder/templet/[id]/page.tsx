@@ -887,11 +887,216 @@ function SectionImageRenderer({
 }
 
 function getDynamicPageHeight(sectionData?: { frameShape?: string; photoHeight?: number; bottomBannerHeight?: number }) {
-  const h = sectionData?.photoHeight || sectionData?.bottomBannerHeight || 380;
-  if (sectionData?.frameShape === 'background' && h > 500) {
-    return `${1123 + (h - 500)}px`;
+  const h = sectionData?.photoHeight || sectionData?.bottomBannerHeight;
+  if (sectionData?.frameShape === 'background' && h) {
+    return `${h}px`;
   }
   return '1123px';
+}
+
+function ThreeDCurvedSelect({
+  label,
+  value,
+  options,
+  onChange,
+  onAddCustom,
+}: {
+  label?: string;
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (val: string) => void;
+  onAddCustom?: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(o => o.value === value) || { label: value || 'Select...', value };
+
+  return (
+    <div className="space-y-1 relative" ref={containerRef}>
+      {label && <label className="block text-[10px] uppercase font-bold text-zinc-500">{label}</label>}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full p-2.5 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs shadow-2xs flex items-center justify-between transition-all hover:border-amber-300 cursor-pointer"
+      >
+        <span className="truncate pr-2">{selectedOption.label}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-amber-600 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-2xl border border-amber-200 bg-white/95 backdrop-blur-md shadow-xl p-1.5 space-y-1 max-h-56 overflow-y-auto">
+          {options.map((opt) => (
+            <div
+              key={opt.value}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+              className={`flex items-center justify-between p-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+                value === opt.value
+                  ? 'bg-amber-50 text-amber-950 font-bold border border-amber-300'
+                  : 'text-zinc-700 hover:bg-zinc-100/80'
+              }`}
+            >
+              <span>{opt.label}</span>
+              {value === opt.value && <Check className="w-3.5 h-3.5 text-amber-600 stroke-[3]" />}
+            </div>
+          ))}
+          {onAddCustom && (
+            <div
+              onClick={() => {
+                setIsOpen(false);
+                onAddCustom();
+              }}
+              className="flex items-center gap-1.5 p-2 rounded-xl text-xs font-extrabold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-dashed border-amber-300 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 text-amber-600" />
+              <span>+ Add Custom...</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThreeDCurvedDatePicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (val: string) => void;
+}) {
+  const hiddenDateInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    if (!rawVal) return;
+    const dateObj = new Date(rawVal + 'T00:00:00');
+    if (!isNaN(dateObj.getTime())) {
+      const day = dateObj.getDate();
+      const monthStr = dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+      const yearShort = dateObj.getFullYear().toString().slice(-2);
+      const formatted = `${day} ${monthStr} ${yearShort}`;
+      onChange(formatted);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        disabled={disabled}
+        value={disabled ? 'DATE NOT FIXED' : value}
+        placeholder="e.g. 4 MAR 26"
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full p-2.5 pr-10 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs transition-all ${
+          disabled ? 'opacity-60 bg-zinc-100 cursor-not-allowed' : ''
+        }`}
+      />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          if (hiddenDateInputRef.current) {
+            if ('showPicker' in hiddenDateInputRef.current && typeof (hiddenDateInputRef.current as any).showPicker === 'function') {
+              (hiddenDateInputRef.current as any).showPicker();
+            } else {
+              hiddenDateInputRef.current.click();
+            }
+          }
+        }}
+        className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-amber-600 hover:bg-amber-100 transition-colors ${
+          disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+        }`}
+        title="Open 3D Calendar Date Picker"
+      >
+        <Calendar className="w-4 h-4 text-amber-600" />
+      </button>
+
+      <input
+        ref={hiddenDateInputRef}
+        type="date"
+        className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none"
+        onChange={handleDateInputChange}
+      />
+    </div>
+  );
+}
+
+function ThreeDCurvedTimePicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const hiddenTimeRef = useRef<HTMLInputElement>(null);
+
+  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawTime = e.target.value;
+    if (!rawTime) return;
+    const [hStr, mStr] = rawTime.split(':');
+    let hours = parseInt(hStr, 10);
+    const minutes = mStr || '00';
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const h12 = hours % 12 === 0 ? 12 : hours % 12;
+    const formatted = `${h12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+    onChange(formatted);
+  };
+
+  return (
+    <div className="space-y-1">
+      <label className="block text-[10px] uppercase font-bold text-zinc-500">{label}</label>
+      <div className="relative flex items-center">
+        <button
+          type="button"
+          onClick={() => {
+            if (hiddenTimeRef.current) {
+              if ('showPicker' in hiddenTimeRef.current && typeof (hiddenTimeRef.current as any).showPicker === 'function') {
+                (hiddenTimeRef.current as any).showPicker();
+              } else {
+                hiddenTimeRef.current.click();
+              }
+            }
+          }}
+          className="absolute left-2.5 p-1 rounded-md text-amber-600 hover:bg-amber-100 transition-colors cursor-pointer z-10"
+          title="Open 24-Hour Clock Picker"
+        >
+          <Clock className="w-3.5 h-3.5 text-amber-600" />
+        </button>
+        <input
+          type="text"
+          value={value}
+          placeholder="10:00 AM"
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full p-2 pl-9 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs"
+        />
+        <input
+          ref={hiddenTimeRef}
+          type="time"
+          step="900"
+          className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none"
+          onChange={handleTimeChange}
+        />
+      </div>
+    </div>
+  );
 }
 
 function ThreeDCurvedMultiSelect({
@@ -1074,21 +1279,28 @@ function ThreeDCurvedFunctionEditor({
   };
 
   return (
-    <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3.5 space-y-3 relative transition-all">
-      <div className="flex items-center justify-between border-b border-amber-100 pb-2">
-        <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
-          <Calendar className="w-3.5 h-3.5 text-amber-600" />
-          <span>Function #{index + 1} ({func.name || 'Event'})</span>
-        </span>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-600 text-white font-black text-xs shadow-xs">
+            {index + 1}
+          </span>
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 drop-shadow-2xs">
+            Function #{index + 1} ({func.name || 'Event'})
+          </h4>
+        </div>
         <button
           type="button"
           onClick={onDelete}
-          className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0"
+          className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer text-[10px] font-bold flex items-center gap-1 transition-all"
           title="Delete Function"
         >
           <Trash2 className="w-3.5 h-3.5" />
+          <span>Delete</span>
         </button>
       </div>
+
+      <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3.5 space-y-3 relative transition-all">
 
       {/* Multi-Select Event Names Dropdown (Curved 3D UI) */}
       <div className="space-y-2 pt-1">
@@ -1149,65 +1361,42 @@ function ThreeDCurvedFunctionEditor({
           </label>
         </div>
 
-        <div className="relative">
-          <input
-            type="text"
-            disabled={!!func.dateNotFixed}
-            value={func.dateNotFixed ? 'DATE NOT FIXED' : func.date}
-            placeholder="e.g. 4 MAR 26"
-            onChange={(e) => onUpdate({ ...func, date: e.target.value })}
-            className={`w-full p-2.5 pr-9 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs transition-all ${
-              func.dateNotFixed ? 'opacity-60 bg-zinc-100' : ''
-            }`}
-          />
-          <Calendar className="w-4 h-4 text-amber-600 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-        </div>
+        <ThreeDCurvedDatePicker
+          value={func.date}
+          disabled={!!func.dateNotFixed}
+          onChange={(val) => onUpdate({ ...func, date: val })}
+        />
       </div>
 
       {/* 3D Clock Selectors for Start & End Time */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <label className="block text-[10px] uppercase font-bold text-zinc-500">Start Time</label>
-          <div className="relative flex items-center">
-            <Clock className="w-3.5 h-3.5 text-amber-600 absolute left-2.5 pointer-events-none" />
-            <input
-              type="text"
-              value={func.startTime}
-              placeholder="10:00 AM"
-              onChange={(e) => onUpdate({ ...func, startTime: e.target.value })}
-              className="w-full p-2 pl-8 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="block text-[10px] uppercase font-bold text-zinc-500">End Time</label>
-          <div className="relative flex items-center">
-            <Clock className="w-3.5 h-3.5 text-amber-600 absolute left-2.5 pointer-events-none" />
-            <input
-              type="text"
-              value={func.endTime}
-              placeholder="05:00 PM"
-              onChange={(e) => onUpdate({ ...func, endTime: e.target.value })}
-              className="w-full p-2 pl-8 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs"
-            />
-          </div>
-        </div>
+        <ThreeDCurvedTimePicker
+          label="Start Time"
+          value={func.startTime}
+          onChange={(val) => onUpdate({ ...func, startTime: val })}
+        />
+        <ThreeDCurvedTimePicker
+          label="End Time"
+          value={func.endTime}
+          onChange={(val) => onUpdate({ ...func, endTime: val })}
+        />
       </div>
 
       {/* Standardized 3D Duration Dropdown */}
-      <div>
-        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Duration Slot</label>
-        <select
-          value={func.durationSlot}
-          onChange={(e) => handleDurationChange(e.target.value)}
-          className="w-full p-2.5 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs shadow-2xs"
-        >
-          {availableDurationSlots.map(slot => (
-            <option key={slot} value={slot}>{slot}</option>
-          ))}
-          <option value="__ADD_NEW__">+ Add Hours...</option>
-        </select>
-      </div>
+      <ThreeDCurvedSelect
+        label="Duration Slot"
+        value={func.durationSlot}
+        options={availableDurationSlots.map(slot => ({ label: slot, value: slot }))}
+        onChange={(val) => handleDurationChange(val)}
+        onAddCustom={() => {
+          const customDur = prompt('Enter custom duration (e.g. 6 Hours, Half Day):');
+          if (customDur && customDur.trim()) {
+            const trimmed = customDur.trim();
+            onAddCustomDuration(trimmed);
+            onUpdate({ ...func, durationSlot: trimmed });
+          }
+        }}
+      />
 
       {/* Location Input */}
       <div>
@@ -1297,7 +1486,8 @@ function ThreeDCurvedFunctionEditor({
         />
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 function StudioCoreAiryBuilderContent() {
@@ -1712,35 +1902,36 @@ function StudioCoreAiryBuilderContent() {
               </div>
 
               {/* Event Type Dropdown with Custom Event Option */}
-              <div className="space-y-1">
-                <label className="block text-[10px] uppercase font-bold text-zinc-400">Event Type</label>
-                <select
-                  value={data.cover.eventType}
-                  onChange={(e) => handleEventTypeChange(e.target.value)}
-                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold"
-                >
-                  {customEventTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                  <option value="__ADD_NEW__">+ Add Custom Event Type...</option>
-                </select>
-              </div>
+              <ThreeDCurvedSelect
+                label="Event Type"
+                value={data.cover.eventType}
+                options={customEventTypes.map(type => ({ label: type, value: type }))}
+                onChange={(val) => handleEventTypeChange(val)}
+                onAddCustom={() => {
+                  const custom = prompt('Enter custom event type (e.g. Destination Wedding, Reception):');
+                  if (custom && custom.trim()) {
+                    const trimmed = custom.trim();
+                    if (!customEventTypes.includes(trimmed)) {
+                      setCustomEventTypes(prev => [...prev, trimmed]);
+                    }
+                    handleEventTypeChange(trimmed);
+                  }
+                }}
+              />
 
               {/* Side Type & Location 2-Column Grid */}
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] uppercase font-bold text-zinc-400">Side Type</label>
-                  <select
-                    value={data.cover.sideOption || 'Both Sides'}
-                    onChange={(e) => setData({ ...data, cover: { ...data.cover, sideOption: e.target.value } })}
-                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
-                  >
-                    <option value="Both Sides">Both Sides</option>
-                    <option value="Bride Side">Bride Side</option>
-                    <option value="Groom Side">Groom Side</option>
-                    <option value="">None (Hidden)</option>
-                  </select>
-                </div>
+                <ThreeDCurvedSelect
+                  label="Side Type"
+                  value={data.cover.sideOption || 'Both Sides'}
+                  options={[
+                    { label: 'Both Sides', value: 'Both Sides' },
+                    { label: 'Bride Side', value: 'Bride Side' },
+                    { label: 'Groom Side', value: 'Groom Side' },
+                    { label: 'None (Hidden)', value: '' },
+                  ]}
+                  onChange={(val) => setData({ ...data, cover: { ...data.cover, sideOption: val } })}
+                />
                 <div>
                   <label className="block text-[10px] uppercase font-bold text-zinc-400">Location</label>
                   <input
@@ -2005,9 +2196,9 @@ function StudioCoreAiryBuilderContent() {
                     };
                     setData({ ...data, functionsPage: { ...data.functionsPage, items: [...(data.functionsPage?.items || []), newFunc] } });
                   }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-all"
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg border border-amber-300 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
                 >
-                  <Plus className="w-4 h-4 text-amber-700 stroke-[3]" />
+                  <Plus className="w-4 h-4 text-slate-950 stroke-[3]" />
                   <span>+ Add Function</span>
                 </button>
               </div>
