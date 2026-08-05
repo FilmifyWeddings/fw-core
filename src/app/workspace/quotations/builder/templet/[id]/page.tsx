@@ -11,7 +11,7 @@ import {
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
   Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders,
   ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter, Clock,
-  Gift, CreditCard, PackageCheck, Heart, Phone, Mail, Globe, GripVertical, CopyPlus, PlusCircle
+  Gift, CreditCard, PackageCheck, Heart, Phone, Mail, Globe, GripVertical, CopyPlus, PlusCircle, Tag
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -1926,6 +1926,35 @@ function StudioCoreAiryBuilderContent() {
     std => !pageSequence.some(p => p.type === std.type)
   );
 
+  const getPageIcon = (type: string) => {
+    switch (type) {
+      case 'cover':
+        return <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />;
+      case 'aboutUs':
+        return <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />;
+      case 'shootDetails':
+        return <Camera className="w-3.5 h-3.5 text-rose-500 shrink-0" />;
+      case 'functionsPage':
+        return <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />;
+      case 'deliverablesPage':
+        return <PackageCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />;
+      case 'specialValueAdditions':
+        return <Gift className="w-3.5 h-3.5 text-pink-500 shrink-0" />;
+      case 'pricingPage':
+        return <Tag className="w-3.5 h-3.5 text-amber-700 shrink-0" />;
+      case 'paymentTermsPage':
+        return <CreditCard className="w-3.5 h-3.5 text-indigo-600 shrink-0" />;
+      case 'addOnsPage':
+        return <PlusCircle className="w-3.5 h-3.5 text-teal-600 shrink-0" />;
+      case 'termsPage':
+        return <ShieldCheck className="w-3.5 h-3.5 text-zinc-600 shrink-0" />;
+      case 'thankYouPage':
+        return <Heart className="w-3.5 h-3.5 text-rose-600 shrink-0" />;
+      default:
+        return <FileText className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
+    }
+  };
+
 
 
   // Custom Event Types State
@@ -2365,9 +2394,12 @@ function StudioCoreAiryBuilderContent() {
                     </button>
                   </div>
 
-                  <span className="text-xs truncate font-semibold ml-1">
-                    {pIdx + 1}. {pageItem.label}
-                  </span>
+                  <div className="flex items-center gap-1.5 min-w-0 ml-1">
+                    {getPageIcon(pageItem.type)}
+                    <span className="text-xs truncate font-bold text-zinc-800">
+                      {pIdx + 1}. {pageItem.label}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -5281,6 +5313,95 @@ function StudioCoreAiryBuilderContent() {
         onSelectImage={handleSelectImageFromGallery} 
         userId={userId} 
       />
+
+      {/* ── SMART + ADD PAGE MODAL ── */}
+      <AnimatePresence>
+        {isAddPageModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-zinc-200"
+            >
+              <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200/80 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-amber-600" />
+                  <h3 className="font-extrabold text-sm text-amber-950 uppercase tracking-wider">Add Page</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddPageModalOpen(false)}
+                  className="p-1 rounded-full hover:bg-amber-100 text-zinc-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+                {/* Custom Page Option (Always Visible) */}
+                <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-950 font-extrabold text-xs uppercase tracking-wide">
+                    <PlusCircle className="w-4 h-4 text-amber-600" />
+                    <span>Custom Flexible Page</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 leading-normal">
+                    Add a flexible blank custom page with Heading, Subtitle, Text block, and Photo Layout controls.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addCustomBlankPage}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>+ Create Blank Custom Page</span>
+                  </button>
+                </div>
+
+                {/* Dynamic Restoration List */}
+                <div className="space-y-3">
+                  <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-500 flex items-center justify-between border-b pb-1.5 border-zinc-100">
+                    <span>Restore Deleted Standard Pages</span>
+                    <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      {deletedStandardPages.length} Available
+                    </span>
+                  </h4>
+
+                  {deletedStandardPages.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 text-center text-xs font-semibold text-zinc-500 space-y-1">
+                      <Check className="w-5 h-5 text-emerald-600 mx-auto" />
+                      <p className="text-zinc-700 font-bold">All standard pages are active</p>
+                      <p className="text-[10px] text-zinc-400 font-medium">Deleting any of the 11 built-in standard template pages will add them here so you can restore them anytime with their original layout.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {deletedStandardPages.map(stdDef => (
+                        <div
+                          key={stdDef.type}
+                          className="p-3 rounded-2xl border border-zinc-200 bg-white hover:bg-zinc-50 flex items-center justify-between transition-all"
+                        >
+                          <div className="flex items-center gap-2">
+                            {getPageIcon(stdDef.type)}
+                            <span className="text-xs font-bold text-zinc-800">{stdDef.label}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => restoreStandardPage(stdDef.type)}
+                            className="px-3 py-1 rounded-xl bg-zinc-900 hover:bg-black text-white font-extrabold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
+                            <span>+ Restore</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
