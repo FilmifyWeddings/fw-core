@@ -899,7 +899,7 @@ function UnifiedPhotoControls({
             </div>
             <input
               type="range"
-              min={frameShape === 'background' ? 800 : 100}
+              min={frameShape === 'background' ? 1123 : 100}
               max={frameShape === 'background' ? 2500 : 800}
               step={10}
               value={photoHeight || (frameShape === 'background' ? 1123 : 380)}
@@ -1037,7 +1037,8 @@ function getDynamicPageHeight(sectionData?: {
     sectionData?.imagePosition === 'full';
     
   if (isBackground) {
-    const h = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight || 1123;
+    const rawH = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight || 1123;
+    const h = Math.max(1123, Number(rawH) || 1123);
     return `${h}px`;
   }
   return '1123px';
@@ -2554,7 +2555,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, cover: { ...data.cover, photoUrl: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.cover.photoHeight || 450;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 450 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 450 : currentH);
                   setData({ ...data, cover: { ...data.cover, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, cover: { ...data.cover, imagePosition: pos } })}
@@ -2593,7 +2594,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerPhoto: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.aboutUs.bottomBannerHeight || 380;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: shape, bottomBannerHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, aboutUs: { ...data.aboutUs, imagePosition: pos } })}
@@ -2661,7 +2662,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, shootDetails: { ...data.shootDetails, photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.shootDetails.photoHeight || 380;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, shootDetails: { ...data.shootDetails, imagePosition: pos } })}
@@ -2749,7 +2750,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, functionsPage: { ...data.functionsPage, photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.functionsPage?.photoHeight || 380;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, functionsPage: { ...data.functionsPage, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, functionsPage: { ...data.functionsPage, imagePosition: pos } })}
@@ -2801,7 +2802,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.deliverablesPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), imagePosition: pos } })}
@@ -2867,7 +2868,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.specialValueAdditions?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), imagePosition: pos } })}
@@ -2991,7 +2992,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.pricingPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), imagePosition: pos } })}
@@ -3143,7 +3144,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.paymentTermsPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), imagePosition: pos } })}
@@ -3274,7 +3275,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.addOnsPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), imagePosition: pos } })}
@@ -3330,7 +3331,7 @@ function StudioCoreAiryBuilderContent() {
                 onChangeShape={(shape) => {
                   const currentObj = data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage;
                   const currentH = currentObj.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, termsPage: { ...currentObj, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), imagePosition: pos } })}
@@ -3487,7 +3488,7 @@ function StudioCoreAiryBuilderContent() {
                 onChangeShape={(shape) => {
                   const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
                   const currentH = currentObj.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, thankYouPage: { ...currentObj, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), imagePosition: pos } })}
@@ -3576,7 +3577,7 @@ function StudioCoreAiryBuilderContent() {
                       }}
                       onChangeShape={(shape) => {
                         const currentH = customObj.photoHeight || 380;
-                        const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                        const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                         const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, frameShape: shape, photoHeight: newH } };
                         setData({ ...data, customPages: updatedCustoms });
                       }}
