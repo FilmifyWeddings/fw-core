@@ -987,8 +987,8 @@ function getDynamicPageHeight(sectionData?: {
     sectionData?.imagePosition === 'background' || 
     sectionData?.imagePosition === 'full';
     
-  const h = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight;
-  if (isBackground && h) {
+  if (isBackground) {
+    const h = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight || 1123;
     return `${h}px`;
   }
   return '1123px';
