@@ -381,139 +381,169 @@ export default function WorkspaceQuotationsGalleryPage() {
       {/* Designs Header & Desktop Button */}
       <div className="flex items-center justify-between pt-2">
         <h2 className="text-lg sm:text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-          Your Designs <span className="text-slate-400 font-normal text-sm sm:text-base">(10)</span>
+          Your Designs
         </h2>
-
-        <button 
-          type="button"
-          onClick={() => router.push('/workspace/quotations/builder/templet/1')}
-          className="hidden sm:flex px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white font-bold text-xs shadow-md hover:shadow-lg transition-all items-center gap-1.5 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          New Design
-        </button>
       </div>
 
       {/* Responsive Designs Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 sm:gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
         
-        {activeDesigns.map((design) => (
+        {/* CARD 1: Royale (Active & Unlocked) */}
+        <motion.div 
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ y: -4 }}
+          className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
+        >
+          <div>
+            <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
+              <img 
+                src="https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80" 
+                alt="Royale Template"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+              <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm">
+                Active
+              </span>
+            </div>
+
+            <div className="p-3.5 space-y-1">
+              <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                Royale
+              </h4>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">
+                Wedding - 11 pages
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3.5 pt-0 space-y-2">
+            <div className="grid grid-cols-2 gap-1.5">
+              <button 
+                type="button"
+                onClick={() => router.push('/workspace/quotations/builder/templet/1')}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+              >
+                Preview
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  const newUuid = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+                  router.push(`/workspace/quotations/builder/templet/${newUuid}`);
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+              >
+                Duplicate
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              <button 
+                type="button"
+                onClick={() => router.push('/workspace/clients')}
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-[10px] font-bold text-center transition-colors cursor-pointer"
+              >
+                Use for Lead
+              </button>
+
+              <Link
+                href="/workspace/quotations/builder/templet/1"
+                className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center block shadow-sm hover:brightness-105 transition-all"
+              >
+                Edit
+              </Link>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* CARDS 2-5: Coming Soon Templates with Glassmorphism Overlay */}
+        {[
+          {
+            id: 'cinematic',
+            title: 'Cinematic',
+            subtitle: 'Wedding & Film - 12 pages',
+            image: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=800&q=80'
+          },
+          {
+            id: 'heritage',
+            title: 'Heritage',
+            subtitle: 'Royal & Classic - 10 pages',
+            image: 'https://images.unsplash.com/photo-1546412414-8035e1776c9a?auto=format&fit=crop&w=800&q=80'
+          },
+          {
+            id: 'heirloom',
+            title: 'Heirloom',
+            subtitle: 'Vintage & Fine Art - 14 pages',
+            image: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=800&q=80'
+          },
+          {
+            id: 'vows',
+            title: 'Vows',
+            subtitle: 'Modern & Minimalist - 8 pages',
+            image: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=800&q=80'
+          }
+        ].map(tmpl => (
           <motion.div 
-            key={design.id}
+            key={tmpl.id}
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -4 }}
-            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
+            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm flex flex-col justify-between relative select-none"
           >
+            {/* Soft Glassmorphism Backdrop Blur Overlay */}
+            <div className="absolute inset-0 z-20 backdrop-blur-[3px] bg-slate-900/40 dark:bg-black/60 flex flex-col items-center justify-center p-4 text-center pointer-events-auto">
+              <span className="px-3 py-1 rounded-full bg-amber-500 text-zinc-950 font-black text-[10px] uppercase tracking-wider shadow-lg border border-amber-300/40">
+                Coming Soon
+              </span>
+              <p className="text-[10px] text-zinc-200 font-semibold mt-2">
+                Template Locked
+              </p>
+            </div>
+
             <div>
-              <div className="relative h-36 sm:h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
+              <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
                 <img 
-                  src={design.coverImage} 
-                  alt={design.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  src={tmpl.image} 
+                  alt={tmpl.title}
+                  className="w-full h-full object-cover grayscale opacity-50"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
-                <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider">
-                  {design.badge}
-                </span>
               </div>
 
-              <div className="p-3 space-y-1">
-                <h4 className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                  {design.title}
+              <div className="p-3.5 space-y-1">
+                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                  {tmpl.title}
                 </h4>
-                <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">
-                  {design.subtitle}
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">
+                  {tmpl.subtitle}
                 </p>
               </div>
             </div>
 
-            <div className="p-3 pt-0 space-y-2">
-              <div className="grid grid-cols-3 gap-1">
-                <button 
-                  type="button"
-                  onClick={() => router.push(design.editUrl)}
-                  className="px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center"
-                >
+            <div className="p-3.5 pt-0 space-y-2 pointer-events-none opacity-40">
+              <div className="grid grid-cols-2 gap-1.5">
+                <button disabled type="button" className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-400 text-[10px] font-bold text-center">
                   Preview
                 </button>
-                <button 
-                  type="button"
-                  onClick={() => alert('Downloading PDF preview...')}
-                  className="px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center"
-                >
-                  PDF
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => alert('Duplicated quotation design!')}
-                  className="px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center"
-                >
+                <button disabled type="button" className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-400 text-[10px] font-bold text-center">
                   Duplicate
                 </button>
               </div>
 
               <div className="grid grid-cols-2 gap-1.5">
-                <button 
-                  type="button"
-                  onClick={() => router.push('/leads')}
-                  className="px-2 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 text-[10px] font-bold text-center"
-                >
-                  Use Lead
+                <button disabled type="button" className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-400 text-[10px] font-bold text-center">
+                  Use for Lead
                 </button>
 
-                <Link
-                  href={design.editUrl}
-                  className="px-2 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center block shadow-sm"
-                >
+                <button disabled type="button" className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-slate-300 dark:bg-zinc-800 text-slate-500 text-[11px] font-extrabold text-center">
                   Edit
-                </Link>
+                </button>
               </div>
             </div>
           </motion.div>
         ))}
 
-        {lockedDesigns.map(locked => (
-          <motion.div 
-            key={locked.id}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 p-4 flex flex-col justify-between items-center text-center space-y-4 shadow-xs transition-all min-h-[220px] relative overflow-hidden"
-          >
-            <div className="space-y-1 w-full pt-1">
-              <h4 className="text-xs font-bold text-slate-800 dark:text-zinc-200 leading-tight">
-                {locked.title}
-              </h4>
-              <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-medium">
-                {locked.subtitle}
-              </p>
-            </div>
-
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <Lock className="w-5 h-5" />
-            </div>
-
-            <button 
-              type="button"
-              onClick={() => router.push('/pricing')}
-              className="w-full py-2 px-3 rounded-xl bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-black text-xs cursor-pointer shadow-sm"
-            >
-              Unlock - {locked.price}
-            </button>
-          </motion.div>
-        ))}
-
       </div>
-
-      {/* Floating Action Button for Mobile (< 640px) */}
-      <button
-        type="button"
-        onClick={() => router.push('/workspace/quotations/builder/templet/1')}
-        className="fixed bottom-5 right-5 z-40 sm:hidden w-14 h-14 rounded-full bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white shadow-2xl flex items-center justify-center cursor-pointer active:scale-95 border-2 border-white"
-        title="Create New Quotation"
-      >
-        <Plus className="w-7 h-7 stroke-[3]" />
-      </button>
 
       {/* Saved Quotations List Drawer Modal */}
       <AnimatePresence>

@@ -4018,6 +4018,11 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                 </div>
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -4119,6 +4124,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="About Us Banner"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -4237,6 +4247,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Pre-Wedding Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -4400,6 +4415,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Functions Banner"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -4503,6 +4523,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Deliverables Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -4617,6 +4642,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Special Value Additions Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -4774,6 +4804,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Pricing Details Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -4922,6 +4957,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Payment Terms Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -5042,6 +5082,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Add-Ons Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -5141,6 +5186,11 @@ function StudioCoreAiryBuilderContent() {
                     altText="Terms & Conditions Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -5270,6 +5320,11 @@ function StudioCoreAiryBuilderContent() {
                   </div>
                 </div>
 
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
                       )}
@@ -5382,8 +5437,13 @@ function StudioCoreAiryBuilderContent() {
                                   />
                                 )}
                               </div>
-                            </div>
-                          </section>
+              
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
+              </div>
+            </section>
                         );
                       })()}
 
