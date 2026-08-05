@@ -2076,7 +2076,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // REFACTORED PAGE-BY-PAGE A4 HIGH-RES MOBILE & DESKTOP PDF ENGINE
+  // CONTINUOUS LONG-PAGE SINGLE SEAMLESS CANVAS PDF EXPORT ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
@@ -2120,18 +2120,19 @@ function StudioCoreAiryBuilderContent() {
       offscreenHost.style.backgroundColor = '#ffffff';
       offscreenHost.style.transform = 'none';
 
-      // Clone container to guarantee desktop A4 layout regardless of mobile screen width
+      // Clone container to guarantee exact web-view CSS dimensions (794px fixed)
       const clone = (container as HTMLElement).cloneNode(true) as HTMLElement;
       clone.style.width = '794px';
       clone.style.minWidth = '794px';
       clone.style.maxWidth = '794px';
       clone.style.transform = 'none';
       clone.style.margin = '0 auto';
+      clone.style.padding = '0';
 
       offscreenHost.appendChild(clone);
       document.body.appendChild(offscreenHost);
 
-      // 3. Preload all <img> tags inside clone to eliminate mobile 3KB blank PDF bug
+      // 3. Preload all <img> tags inside clone to prevent blank canvas issues
       const images = Array.from(clone.querySelectorAll('img'));
       await Promise.all(
         images.map(img => {
@@ -2147,49 +2148,31 @@ function StudioCoreAiryBuilderContent() {
       // Brief delay for DOM to settle
       await new Promise(r => setTimeout(r, 200));
 
-      // 4. Lock every cloned section to strict A4 dimensions (794px x 1123px)
-      const pageSections = Array.from(clone.querySelectorAll('section'));
-      if (pageSections.length === 0) throw new Error('No page sections found in canvas');
+      setPdfToastMessage('Rasterizing Continuous Long-Page Canvas...');
 
-      pageSections.forEach((sec: any) => {
-        sec.style.width = '794px';
-        sec.style.minWidth = '794px';
-        sec.style.maxWidth = '794px';
-        sec.style.boxSizing = 'border-box';
-        sec.style.overflow = 'hidden';
-        sec.style.margin = '0 auto';
-        sec.style.transform = 'none';
-        sec.style.pageBreakAfter = 'always';
-        sec.style.pageBreakInside = 'avoid';
+      // 4. Capture entire long container as 1 Continuous Seamless High-Res Canvas
+      const canvas = await html2canvasPro(clone, {
+        scale: 2.5,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 794,
+        windowHeight: clone.scrollHeight
       });
 
-      // 5. Generate Multi-Page A4 PDF Page-by-Page
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const imgWidth = 794;
+      const imgHeight = Math.round((canvas.height * imgWidth) / canvas.width);
+
+      // 5. Create 1 Continuous Long Page PDF with exact dynamic height
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [794, 1123]
+        format: [imgWidth, imgHeight]
       });
 
-      for (let i = 0; i < pageSections.length; i++) {
-        setPdfToastMessage(`Rasterizing Page ${i + 1} of ${pageSections.length}...`);
-        const secNode = pageSections[i] as HTMLElement;
-
-        const secCanvas = await html2canvasPro(secNode, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          windowWidth: 794,
-          windowHeight: secNode.scrollHeight || 1123
-        });
-
-        const imgData = secCanvas.toDataURL('image/jpeg', 0.95);
-        if (i > 0) {
-          pdf.addPage([794, 1123], 'portrait');
-        }
-        pdf.addImage(imgData, 'JPEG', 0, 0, 794, 1123, undefined, 'FAST');
-      }
+      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
 
       const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
       const cleanClientName = clientName
@@ -2197,9 +2180,9 @@ function StudioCoreAiryBuilderContent() {
         .replace(/—/g, '-')
         .replace(/[^ -~]/g, '-');
 
-      pdf.save(`${cleanClientName}-A4.pdf`);
+      pdf.save(`${cleanClientName}-Full.pdf`);
 
-      setPdfToastMessage('High-Res A4 PDF Downloaded Successfully!');
+      setPdfToastMessage('Continuous Long-Page PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
       console.error('PDF Export Error:', err);
