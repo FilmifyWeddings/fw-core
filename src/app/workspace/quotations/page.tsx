@@ -423,96 +423,193 @@ export default function WorkspaceQuotationsGalleryPage() {
       {/* Responsive Designs Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
         
-        {/* CARD 1: Royale (Active & Unlocked - Dynamically bound to User DB Quotation UUID) */}
-        <motion.div 
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileHover={{ y: -4 }}
-          className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
-        >
-          <div>
-            <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-              <img 
-                src={activeCoverPhoto} 
-                alt="Royale Template"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
-              <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm">
-                Active
-              </span>
+        {/* DYNAMIC USER QUOTATION CARDS (1:1 Thumbnail Sync, Dynamic Custom Title, Instant Duplication) */}
+        {quotations.length > 0 ? (
+          quotations.map((quote, idx) => {
+            const quoteId = quote.quotation_number || quote.id;
+            const customTitle = quote.title || (quote as any).content_json?.designName || 'Wedding - Design 1';
+            const coverPhoto = (quote as any).content_json?.cover?.photoUrl || activeCoverPhoto;
+            const clientName = quote.client_name || activeCoupleName;
+
+            return (
+              <motion.div 
+                key={quoteId || idx}
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={{ y: -4 }}
+                className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
+              >
+                <div>
+                  {/* 1:1 Cover Page Thumbnail Sync */}
+                  <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
+                    <img 
+                      src={coverPhoto} 
+                      alt={customTitle}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                    <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm">
+                      {idx === 0 ? 'Active' : 'Saved'}
+                    </span>
+                  </div>
+
+                  {/* Dynamic Custom Title & Base Preset Subtitle */}
+                  <div className="p-3.5 space-y-1">
+                    <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate" title={customTitle}>
+                      {customTitle}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium truncate">
+                      Royale • Wedding ({clientName})
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 pt-0 space-y-2">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button 
+                      type="button"
+                      onClick={() => router.push(`/workspace/quotations/builder/templet/${quoteId}`)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                    >
+                      Preview
+                    </button>
+                    
+                    {/* Instant Duplication with Real-time State Insert */}
+                    <button 
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          const res = await fetch('/api/templates/duplicate', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${session?.access_token || ''}`
+                            },
+                            body: JSON.stringify({ sourceTemplateId: quoteId })
+                          });
+                          const json = await res.json();
+                          if (json.quotation) {
+                            // Instant UI State Insert without browser refresh
+                            setQuotations(prev => [json.quotation, ...prev]);
+                          } else if (json.newTemplateId) {
+                            router.push(`/workspace/quotations/builder/templet/${json.newTemplateId}`);
+                          }
+                        } catch (err) {
+                          console.error('Duplication error:', err);
+                        }
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                    >
+                      Duplicate
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button 
+                      type="button"
+                      onClick={() => router.push('/workspace/clients')}
+                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                    >
+                      Use for Lead
+                    </button>
+
+                    <Link
+                      href={`/workspace/quotations/builder/templet/${quoteId}`}
+                      className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center block shadow-sm hover:brightness-105 transition-all"
+                    >
+                      Edit
+                    </Link>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })
+        ) : (
+          /* Default Active Royale Card Fallback */
+          <motion.div 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
+          >
+            <div>
+              <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
+                <img 
+                  src={activeCoverPhoto} 
+                  alt="Royale Template"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm">
+                  Active
+                </span>
+              </div>
+
+              <div className="p-3.5 space-y-1">
+                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                  Wedding - Design 1
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">
+                  Royale • Wedding ({activeCoupleName})
+                </p>
+              </div>
             </div>
 
-            <div className="p-3.5 space-y-1">
-              <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                Royale
-              </h4>
-              <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">
-                Wedding - 11 pages ({activeCoupleName})
-              </p>
+            <div className="p-3.5 pt-0 space-y-2">
+              <div className="grid grid-cols-2 gap-1.5">
+                <button 
+                  type="button"
+                  onClick={() => router.push(`/workspace/quotations/builder/templet/${activeQuotationId}`)}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                >
+                  Preview
+                </button>
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const res = await fetch('/api/templates/duplicate', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${session?.access_token || ''}`
+                        },
+                        body: JSON.stringify({ sourceTemplateId: activeQuotationId })
+                      });
+                      const json = await res.json();
+                      if (json.quotation) {
+                        setQuotations(prev => [json.quotation, ...prev]);
+                      }
+                    } catch {}
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                >
+                  Duplicate
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                <button 
+                  type="button"
+                  onClick={() => router.push('/workspace/clients')}
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                >
+                  Use for Lead
+                </button>
+
+                <Link
+                  href={`/workspace/quotations/builder/templet/${activeQuotationId}`}
+                  className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center block shadow-sm hover:brightness-105 transition-all"
+                >
+                  Edit
+                </Link>
+              </div>
             </div>
-          </div>
+          </motion.div>
+        )}
 
-          <div className="p-3.5 pt-0 space-y-2">
-            <div className="grid grid-cols-2 gap-1.5">
-              <button 
-                type="button"
-                onClick={() => router.push(`/workspace/quotations/builder/templet/${activeQuotationId}`)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
-              >
-                Preview
-              </button>
-              <button 
-                type="button"
-                onClick={async () => {
-                  try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    const res = await fetch('/api/templates/duplicate', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${session?.access_token || ''}`
-                      },
-                      body: JSON.stringify({ sourceTemplateId: activeQuotationId })
-                    });
-                    const json = await res.json();
-                    if (json.newTemplateId) {
-                      router.push(`/workspace/quotations/builder/templet/${json.newTemplateId}`);
-                    } else {
-                      const newUuid = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-                      router.push(`/workspace/quotations/builder/templet/${newUuid}`);
-                    }
-                  } catch {
-                    const newUuid = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-                    router.push(`/workspace/quotations/builder/templet/${newUuid}`);
-                  }
-                }}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
-              >
-                Duplicate
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5">
-              <button 
-                type="button"
-                onClick={() => router.push('/workspace/clients')}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-[10px] font-bold text-center transition-colors cursor-pointer"
-              >
-                Use for Lead
-              </button>
-
-              <Link
-                href={`/workspace/quotations/builder/templet/${activeQuotationId}`}
-                className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center block shadow-sm hover:brightness-105 transition-all"
-              >
-                Edit
-              </Link>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* CARDS 2-5: Coming Soon Templates (Only Image Blurred; Title & Buttons Fully Visible & Disabled) */}
+        {/* CARDS 2-5: Coming Soon Templates */}
         {[
           {
             id: 'cinematic',
@@ -546,7 +643,6 @@ export default function WorkspaceQuotationsGalleryPage() {
             className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm flex flex-col justify-between relative select-none"
           >
             <div>
-              {/* Image Container with Backdrop Blur & Centered Badge ONLY */}
               <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
                 <img 
                   src={tmpl.image} 
@@ -560,7 +656,6 @@ export default function WorkspaceQuotationsGalleryPage() {
                 </div>
               </div>
 
-              {/* Crisp, Unblurred Title & Subtitle */}
               <div className="p-3.5 space-y-1">
                 <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
                   {tmpl.title}
@@ -571,7 +666,6 @@ export default function WorkspaceQuotationsGalleryPage() {
               </div>
             </div>
 
-            {/* Crisp, Unblurred Action Buttons (Disabled with cursor-not-allowed) */}
             <div className="p-3.5 pt-0 space-y-2">
               <div className="grid grid-cols-2 gap-1.5">
                 <button 

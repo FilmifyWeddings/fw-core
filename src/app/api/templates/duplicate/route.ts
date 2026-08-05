@@ -8,7 +8,28 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 });
 
-// POST /api/templates/duplicate - Duplicate template into a new independent cloud document
+function getUniqueDesignName(requestedName: string, existingNames: string[]): string {
+  const cleanName = requestedName.trim();
+  if (!existingNames.includes(cleanName)) {
+    return cleanName;
+  }
+
+  // Extract base name without trailing copy/numeric suffix
+  const baseName = cleanName
+    .replace(/\s*\(Copy\s*\d*\)$/i, '')
+    .replace(/\s*\(\d+\)$/, '')
+    .trim();
+
+  let counter = 1;
+  let candidate = `${baseName} (Copy ${counter})`;
+  while (existingNames.includes(candidate)) {
+    counter++;
+    candidate = `${baseName} (Copy ${counter})`;
+  }
+  return candidate;
+}
+
+// POST /api/templates/duplicate - Instant Template Duplication with Unique Name Auto-Increment
 export async function POST(req: NextRequest) {
   try {
     const { sourceTemplateId } = await req.json();
@@ -23,32 +44,56 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. Fetch source template document
+    // 1. Fetch all existing template titles for this user to enforce unique name validation
+    const { data: userTemplates } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('title')
+      .eq('user_id', userId);
+
+    const existingTitles = (userTemplates || []).map(t => t.title).filter(Boolean);
+
+    // 2. Fetch source template document
+    let sourceJson: any = null;
     const { data: sourceDoc } = await supabaseAdmin
       .from('quotation_documents')
       .select('content_json')
       .eq('template_id', sourceTemplateId)
       .maybeSingle();
 
-    const sourceJson = sourceDoc?.content_json || {};
+    if (sourceDoc?.content_json) {
+      sourceJson = sourceDoc.content_json;
+    } else {
+      // Fallback query to legacy quotations table
+      const { data: legacy } = await supabaseAdmin
+        .from('quotations')
+        .select('content_json, title')
+        .or(`id.eq.${sourceTemplateId},quotation_number.eq.${sourceTemplateId}`)
+        .maybeSingle();
+      sourceJson = legacy?.content_json || {};
+    }
+
+    const baseTitle = sourceJson?.designName || 'Wedding - Design 1';
+    const uniqueTitle = getUniqueDesignName(`${baseTitle} (Copy 1)`, existingTitles);
+
     const newTemplateId = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
     const now = new Date().toISOString();
 
     const duplicatedJson = {
       ...sourceJson,
-      designName: (sourceJson.designName || 'Wedding - Design 1') + ' (Copy)'
+      designName: uniqueTitle
     };
 
-    // 2. Create new template
-    await supabaseAdmin.from('quotation_templates').insert({
+    // 3. Insert new template record
+    const { data: newTemplate } = await supabaseAdmin.from('quotation_templates').insert({
       id: newTemplateId,
       user_id: userId,
-      title: duplicatedJson.designName,
+      title: uniqueTitle,
+      category: sourceJson?.eventGroup || 'Wedding',
       created_at: now,
       updated_at: now
-    });
+    }).select().single();
 
-    // 3. Create new document
+    // 4. Insert new document record
     const { data: newDoc } = await supabaseAdmin.from('quotation_documents').insert({
       template_id: newTemplateId,
       user_id: userId,
@@ -58,10 +103,43 @@ export async function POST(req: NextRequest) {
       updated_at: now
     }).select().single();
 
+    // 5. Insert initial version history record
+    if (newDoc?.id) {
+      await supabaseAdmin.from('quotation_versions').insert({
+        document_id: newDoc.id,
+        template_id: newTemplateId,
+        user_id: userId,
+        version: 1,
+        content_json: duplicatedJson,
+        created_at: now
+      });
+    }
+
+    // Also sync to legacy quotations table for full backwards compatibility
+    await supabaseAdmin.from('quotations').insert({
+      workspace_id: userId,
+      quotation_number: newTemplateId,
+      title: uniqueTitle,
+      client_name: `${duplicatedJson?.cover?.groomName || 'Rahul'} & ${duplicatedJson?.cover?.brideName || 'Neha'}`,
+      content_json: duplicatedJson,
+      status: 'draft',
+      updated_at: now
+    });
+
+    const quotationObject = {
+      id: newTemplateId,
+      quotation_number: newTemplateId,
+      title: uniqueTitle,
+      client_name: `${duplicatedJson?.cover?.groomName || 'Rahul'} & ${duplicatedJson?.cover?.brideName || 'Neha'}`,
+      content_json: duplicatedJson,
+      updated_at: now
+    };
+
     return NextResponse.json({
       success: true,
       message: 'Template duplicated successfully.',
       newTemplateId,
+      quotation: quotationObject,
       document: newDoc
     });
   } catch (err: any) {
