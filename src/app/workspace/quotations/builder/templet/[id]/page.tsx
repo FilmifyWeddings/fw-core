@@ -2235,6 +2235,21 @@ function StudioCoreAiryBuilderContent() {
       setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photo: url } }));
     } else if (activeTargetField === 'thankYouLogo') {
       setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), brandLogoUrl: url } }));
+    } else if (activeTargetField.startsWith('customPhoto_')) {
+      const cKey = activeTargetField.replace('customPhoto_', '');
+      setData(prev => {
+        const customObj = (prev.customPages || {})[cKey] || {};
+        return {
+          ...prev,
+          customPages: {
+            ...(prev.customPages || {}),
+            [cKey]: {
+              ...customObj,
+              photo: url
+            }
+          }
+        };
+      });
     }
 
     setMediaModalOpen(false);
@@ -5131,14 +5146,15 @@ function StudioCoreAiryBuilderContent() {
                     )}
                   </div>
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && (data.thankYouPage?.imagePosition === 'center' || !data.thankYouPage?.imagePosition) && (
+                  {/* CENTER OR BOTTOM IMAGE POSITION */}
+                  {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && (data.thankYouPage?.imagePosition === 'center' || data.thankYouPage?.imagePosition === 'bottom' || !data.thankYouPage?.imagePosition) && (
                     <SectionImageRenderer
                       photo={data.thankYouPage?.photo}
                       frameShape={data.thankYouPage?.frameShape}
                       photoHeight={data.thankYouPage?.photoHeight}
                       photoWidth={data.thankYouPage?.photoWidth}
                       photoFocalY={data.thankYouPage?.photoFocalY}
+                      isBottomFlush={data.thankYouPage?.imagePosition === 'bottom'}
                       altText="Thank You Photo"
                     />
                   )}
