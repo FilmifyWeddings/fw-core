@@ -16,6 +16,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
+import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 // @ts-ignore
@@ -1779,6 +1780,7 @@ function StudioCoreAiryBuilderContent() {
   const [saving, setSaving] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Auto-saved to cloud');
   const isInitialLoadedRef = useRef<boolean>(false);
+  const currentVersionRef = useRef<number>(1);
   const [openCard, setOpenCard] = useState<string | null>('cover');
   // ── DYNAMIC PAGE SEQUENCE & CUSTOM PAGE CONTROLS ──
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
@@ -2151,43 +2153,40 @@ function StudioCoreAiryBuilderContent() {
 
         setUserId(currentUserId);
 
-        // Fetch via API with User Isolation Lock
+        // 1. Fetch via SaaS Template API with User Isolation Lock
         const routeId = params?.id ? String(params.id) : 'FW-2026-001';
-        const res = await fetch(`/api/quotations/${routeId}`, {
+        const res = await fetch(`/api/templates/${routeId}`, {
           headers: {
             'Authorization': `Bearer ${userAccessToken || ''}`
           }
         });
 
         if (res.status === 403) {
-          alert('Access Denied: You do not have permission to view or edit this quotation.');
+          alert('Access Denied: You do not have permission to view or edit this quotation template.');
           router.push('/workspace/quotations');
           return;
         }
 
         const json = await res.json();
-        if (json.quotation?.content_json) {
-          const loadedData = normalizeQuotationData(json.quotation.content_json);
+        if (json.document?.content_json) {
+          const loadedData = normalizeQuotationData(json.document.content_json);
           if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
             loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
           }
+          currentVersionRef.current = json.document.version || 1;
+          cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
           setData(loadedData);
         } else {
-          // Initialize fresh proposal preset with Studio Name
-          const freshData = { ...DEFAULT_AIRY_PROPOSAL };
-          if (userStudioName) {
-            freshData.cover = { ...freshData.cover, brandName: userStudioName };
-          }
-          
-          const localSaved = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
-          if (localSaved) {
-            try {
-              const parsedLocal = JSON.parse(localSaved);
-              setData(normalizeQuotationData(parsedLocal));
-            } catch {
-              setData(freshData);
-            }
+          // Try local IndexedDB cache before initializing fresh preset
+          const cachedLocal = await getCachedDocumentLocal(routeId);
+          if (cachedLocal) {
+            currentVersionRef.current = cachedLocal.version || 1;
+            setData(normalizeQuotationData(cachedLocal.documentJson));
           } else {
+            const freshData = { ...DEFAULT_AIRY_PROPOSAL };
+            if (userStudioName) {
+              freshData.cover = { ...freshData.cover, brandName: userStudioName };
+            }
             setData(freshData);
           }
         }
@@ -2203,7 +2202,65 @@ function StudioCoreAiryBuilderContent() {
     initUserAndLoadData();
   }, [params]);
 
-  // Real-Time Instant Debounced Auto-Save (500ms sync)
+  // ── SUPABASE REALTIME WEBSOCKET SUBSCRIPTION FOR INSTANT MULTI-DEVICE SYNC ──
+  useEffect(() => {
+    const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+    
+    // Subscribe to realtime updates on quotation_documents table
+    const channel = supabase
+      .channel(`document:${routeId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'quotation_documents',
+        filter: `template_id=eq.${routeId}`
+      }, (payload: any) => {
+        if (payload.new && payload.new.version > currentVersionRef.current) {
+          console.log('[Supabase Realtime] Incoming remote update v' + payload.new.version);
+          currentVersionRef.current = payload.new.version;
+          if (payload.new.content_json) {
+            const remoteData = normalizeQuotationData(payload.new.content_json);
+            setData(remoteData);
+            cacheDocumentLocal(routeId, remoteData, payload.new.version);
+            setAutoSaveStatus('Auto-saved to cloud');
+          }
+        }
+      })
+      .subscribe();
+
+    // Listen to online reconnect events to flush IndexedDB outbox queue
+    const handleOnline = () => {
+      flushOfflineOutbox(async (item: any) => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`/api/templates/${item.templateId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token || ''}`
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              version: currentVersionRef.current,
+              content_json: item.payload
+            })
+          });
+          return res.ok;
+        } catch {
+          return false;
+        }
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [params, userId]);
+
+    // Real-Time Instant Debounced Auto-Save (500ms sync)
   useEffect(() => {
     if (!userId || !isInitialLoadedRef.current) return;
 
@@ -2222,29 +2279,43 @@ function StudioCoreAiryBuilderContent() {
         const userAccessToken = session?.access_token;
         const routeId = params?.id ? String(params.id) : 'FW-2026-001';
 
-        const saveRes = await fetch(`/api/quotations/${routeId}`, {
-          method: 'PUT',
+        const saveRes = await fetch(`/api/templates/${routeId}`, {
+          method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${userAccessToken || ''}`
           },
           body: JSON.stringify({
-            workspace_id: userId,
-            title: data.designName || 'Wedding - Design 1',
-            client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
-            content_json: data,
-            financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-            status: 'draft'
+            user_id: userId,
+            version: currentVersionRef.current,
+            content_json: data
           })
         });
 
         if (saveRes.status === 403) {
-          console.warn('[Auto-Save Forbidden]: User does not own this quotation.');
+          console.warn('[Auto-Save Forbidden]: User does not own this template.');
           setAutoSaveStatus('Access Denied');
           setHasUnsavedChanges(false);
           return;
         }
 
+        if (saveRes.status === 409) {
+          console.warn('[Optimistic Lock Conflict]: Outdated version rejected by server.');
+          const conflictData = await saveRes.json();
+          if (conflictData.serverVersion) {
+            currentVersionRef.current = conflictData.serverVersion;
+          }
+          setAutoSaveStatus('Version updated');
+          setHasUnsavedChanges(false);
+          return;
+        }
+
+        const resJson = await saveRes.json();
+        if (resJson.version) {
+          currentVersionRef.current = resJson.version;
+        }
+
+        cacheDocumentLocal(routeId, data, currentVersionRef.current);
         setHasUnsavedChanges(false);
         setAutoSaveStatus('Auto-saved to cloud');
       } catch (err) {

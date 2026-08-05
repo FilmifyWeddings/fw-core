@@ -465,20 +465,27 @@ export default function WorkspaceQuotationsGalleryPage() {
               <button 
                 type="button"
                 onClick={async () => {
-                  const newUuid = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-                  if (userId) {
-                    try {
-                      await supabase.from('quotations').insert({
-                        workspace_id: userId,
-                        quotation_number: newUuid,
-                        title: 'Wedding - Design 1 (Copy)',
-                        client_name: activeCoupleName,
-                        status: 'draft',
-                        updated_at: new Date().toISOString()
-                      });
-                    } catch {}
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const res = await fetch('/api/templates/duplicate', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token || ''}`
+                      },
+                      body: JSON.stringify({ sourceTemplateId: activeQuotationId })
+                    });
+                    const json = await res.json();
+                    if (json.newTemplateId) {
+                      router.push(`/workspace/quotations/builder/templet/${json.newTemplateId}`);
+                    } else {
+                      const newUuid = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+                      router.push(`/workspace/quotations/builder/templet/${newUuid}`);
+                    }
+                  } catch {
+                    const newUuid = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+                    router.push(`/workspace/quotations/builder/templet/${newUuid}`);
                   }
-                  router.push(`/workspace/quotations/builder/templet/${newUuid}`);
                 }}
                 className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
               >
