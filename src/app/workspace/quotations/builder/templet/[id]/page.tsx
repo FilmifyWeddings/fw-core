@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Sparkles, Save, Upload, Trash2, Plus, Check, Edit3, 
@@ -321,9 +321,9 @@ export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIO
 
 // StudioCore Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
-  eventGroup: 'Pre-Wedding',
-  look: 'Cherry Red & Cream',
+  designName: 'Wedding - Design 1',
+  eventGroup: 'Wedding',
+  look: 'Cyprus & Sand Dune',
   primaryFont: "'Cormorant Garamond', serif",
   secondaryFont: "'Plus Jakarta Sans', sans-serif",
   pageSequence: DEFAULT_PAGE_SEQUENCE,
@@ -331,9 +331,9 @@ const DEFAULT_AIRY_PROPOSAL = {
 
   // 1. Cover Page State
   cover: {
-    groomName: 'YASH',
-    brideName: 'TWINKLE',
-    coupleName: 'YASH & TWINKLE',
+    groomName: 'Rahul',
+    brideName: 'Neha',
+    coupleName: 'Rahul & Neha',
     eventType: 'Wedding',
     sideOption: 'Both Sides',
     locationName: 'MUMBAI',
@@ -1768,6 +1768,7 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
 function StudioCoreAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const params = useParams();
 
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -2132,40 +2133,71 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // Load User Session & Proposal
+  // Load User Session, User Isolation Check & Proposal
   useEffect(() => {
-    console.log('=== TEMPLET_A4_STRICT_REVERT_V7 ===');
     async function initUserAndLoadData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const currentUserId = session?.user?.id || 'demo_user';
+        const currentUserId = session?.user?.id;
+        const userAccessToken = session?.access_token;
+        const userStudioName = session?.user?.user_metadata?.studioName || session?.user?.user_metadata?.studio_name || (session?.user as any)?.studioName;
+
+        if (!currentUserId) {
+          console.warn('[User Access Lock] No authenticated session found, redirecting to /workspace/quotations');
+          router.push('/workspace/quotations');
+          return;
+        }
+
         setUserId(currentUserId);
 
-        const { data: qData } = await supabase
-          .from('quotations')
-          .select('content_json, title')
-          .eq('workspace_id', currentUserId)
-          .eq('quotation_number', 'FW-2026-001')
-          .maybeSingle();
+        // Fetch via API with User Isolation Lock
+        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+        const res = await fetch(`/api/quotations/${routeId}`, {
+          headers: {
+            'Authorization': `Bearer ${userAccessToken || ''}`
+          }
+        });
 
-        if (qData?.content_json) {
-          setData(normalizeQuotationData(qData.content_json));
+        if (res.status === 403) {
+          alert('Access Denied: You do not have permission to view or edit this quotation.');
+          router.push('/workspace/quotations');
+          return;
+        }
+
+        const json = await res.json();
+        if (json.quotation?.content_json) {
+          const loadedData = normalizeQuotationData(json.quotation.content_json);
+          if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
+            loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
+          }
+          setData(loadedData);
         } else {
+          // Initialize fresh proposal preset with Studio Name
+          const freshData = { ...DEFAULT_AIRY_PROPOSAL };
+          if (userStudioName) {
+            freshData.cover = { ...freshData.cover, brandName: userStudioName };
+          }
+          
           const localSaved = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
           if (localSaved) {
             try {
-              setData(normalizeQuotationData(JSON.parse(localSaved)));
-            } catch {}
+              const parsedLocal = JSON.parse(localSaved);
+              setData(normalizeQuotationData(parsedLocal));
+            } catch {
+              setData(freshData);
+            }
+          } else {
+            setData(freshData);
           }
         }
       } catch (err) {
-        console.warn('Initialization error:', err);
+        console.warn('[Quotation Initialization Error]:', err);
       }
     }
     initUserAndLoadData();
-  }, []);
+  }, [params]);
 
-  // Real-Time Auto Save
+  // Real-Time Debounced Auto-Save (2-3 seconds sync)
   useEffect(() => {
     if (!userId) return;
 
@@ -2180,16 +2212,32 @@ function StudioCoreAiryBuilderContent() {
         const grandTotal = calc.netTotal;
         const subtotal = calc.gross;
 
-        await supabase.from('quotations').upsert({
-          workspace_id: userId,
-          quotation_number: 'FW-2026-001',
-          title: data.designName,
-          client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
-          content_json: data,
-          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-          status: 'draft',
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id,quotation_number' });
+        const { data: { session } } = await supabase.auth.getSession();
+        const userAccessToken = session?.access_token;
+        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+
+        const saveRes = await fetch(`/api/quotations/${routeId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userAccessToken || ''}`
+          },
+          body: JSON.stringify({
+            workspace_id: userId,
+            title: data.designName || 'Wedding - Design 1',
+            client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
+            content_json: data,
+            financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
+            status: 'draft'
+          })
+        });
+
+        if (saveRes.status === 403) {
+          console.warn('[Auto-Save Forbidden]: User does not own this quotation.');
+          setAutoSaveStatus('Access Denied');
+          setHasUnsavedChanges(false);
+          return;
+        }
 
         setHasUnsavedChanges(false);
         setAutoSaveStatus('Auto-saved');
@@ -2197,10 +2245,10 @@ function StudioCoreAiryBuilderContent() {
         setAutoSaveStatus('Saved locally');
         setHasUnsavedChanges(false);
       }
-    }, 1000);
+    }, 2500);
 
     return () => clearTimeout(timer);
-  }, [data, userId]);
+  }, [data, userId, params]);
 
   const openAddImageModal = (target: string) => {
     setActiveTargetField(target);
@@ -2272,25 +2320,42 @@ function StudioCoreAiryBuilderContent() {
 
   const handleManualSave = async () => {
     setSaving(true);
+    setAutoSaveStatus('Saving...');
     try {
       localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
 
-      await supabase.from('quotations').upsert({
-        workspace_id: userId || 'demo_user',
-        quotation_number: 'FW-2026-001',
-        title: data.designName,
-        client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
-        content_json: data,
-        financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-        status: 'draft',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id,quotation_number' });
+      const { data: { session } } = await supabase.auth.getSession();
+      const userAccessToken = session?.access_token;
+      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+
+      const saveRes = await fetch(`/api/quotations/${routeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userAccessToken || ''}`
+        },
+        body: JSON.stringify({
+          workspace_id: userId || 'demo_user',
+          title: data.designName || 'Wedding - Design 1',
+          client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
+          content_json: data,
+          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
+          status: 'draft'
+        })
+      });
+
+      if (saveRes.status === 403) {
+        alert('Access Denied: You do not have permission to modify this quotation.');
+        setAutoSaveStatus('Access Denied');
+        return;
+      }
 
       setHasUnsavedChanges(false);
       setAutoSaveStatus('Saved');
       alert('Quotation proposal saved to your workspace!');
     } catch {
       alert('Saved locally!');
+      setAutoSaveStatus('Saved locally');
     } finally {
       setSaving(false);
     }
