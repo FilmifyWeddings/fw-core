@@ -143,6 +143,7 @@ export default function WorkspaceQuotationsGalleryPage() {
           } catch {}
         }
 
+        // 1. SINGLE RECORD FETCH: Query existing quotation for logged-in user
         const { data: qData } = await supabase
           .from('quotations')
           .select('id, title, client_name, quotation_number, financials, status, updated_at, content_json')
@@ -150,6 +151,7 @@ export default function WorkspaceQuotationsGalleryPage() {
           .order('updated_at', { ascending: false });
 
         if (qData && qData.length > 0) {
+          // REUSE EXISTING QUOTATION: Always bind existing UUID to Royale template card
           setQuotations(qData as SavedQuotation[]);
           const primary = qData[0];
           const primaryId = primary.quotation_number || primary.id;
@@ -163,13 +165,14 @@ export default function WorkspaceQuotationsGalleryPage() {
             setActiveCoverPhoto(primary.content_json.cover.photoUrl);
           }
         } else if (currentUserId && currentUserId !== 'demo_user') {
-          // Auto-create initial user DB quotation linked to user ID
-          const defaultUuid = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+          // DETERMINISTIC USER SINGLE ID: Prevents PC vs Mobile UUID mismatch
+          const userPrimaryId = `FW-${currentUserId.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10).toUpperCase()}`;
+          
           const { data: newRow } = await supabase
             .from('quotations')
             .upsert({
               workspace_id: currentUserId,
-              quotation_number: defaultUuid,
+              quotation_number: userPrimaryId,
               title: 'Wedding - Design 1',
               client_name: 'Rahul & Neha',
               status: 'draft',
@@ -178,7 +181,7 @@ export default function WorkspaceQuotationsGalleryPage() {
             .select('id, quotation_number')
             .maybeSingle();
 
-          const createdId = newRow?.quotation_number || newRow?.id || defaultUuid;
+          const createdId = newRow?.quotation_number || newRow?.id || userPrimaryId;
           setActiveQuotationId(createdId);
         }
 

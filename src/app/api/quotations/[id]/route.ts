@@ -35,12 +35,33 @@ export async function GET(
       return NextResponse.json({ error: 'Quotation ID is required' }, { status: 400 });
     }
 
-    // Query quotation from Supabase
-    const { data: quotation, error } = await supabaseAdmin
-      .from('quotations')
-      .select('*')
-      .or(`id.eq.${id},quotation_number.eq.${id}`)
-      .maybeSingle();
+    // Query quotation from Supabase: Match by ID/quotation_number or fallback to user's latest quotation
+    let quotation: any = null;
+    let error: any = null;
+
+    if (id === '1' && userId) {
+      // If default route '1' is called, fetch user's single active DB quotation
+      const { data: userQuotes } = await supabaseAdmin
+        .from('quotations')
+        .select('*')
+        .eq('workspace_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+      
+      if (userQuotes && userQuotes.length > 0) {
+        quotation = userQuotes[0];
+      }
+    }
+
+    if (!quotation) {
+      const { data: matchQuote, error: qErr } = await supabaseAdmin
+        .from('quotations')
+        .select('*')
+        .or(`id.eq.${id},quotation_number.eq.${id}`)
+        .maybeSingle();
+      quotation = matchQuote;
+      error = qErr;
+    }
 
     if (error) {
       console.warn('[API GET /api/quotations/[id]] DB error:', error.message);
