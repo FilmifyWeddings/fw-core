@@ -11,7 +11,7 @@ import {
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
   Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders,
   ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter, Clock,
-  Gift, CreditCard, PackageCheck
+  Gift, CreditCard, PackageCheck, Heart, Phone, Mail, Globe
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -504,37 +504,40 @@ const DEFAULT_AIRY_PROPOSAL = {
     imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
-  // 7. Delivery Time & Timeline Table
-  timelineTable: {
-    heading: 'Timeframe for delivery',
-    rows: [
-      { id: 't1', result: 'Quick edits (20 photos)', timeline: 'On the shoot day', revisions: 'No' },
-      { id: 't2', result: 'Edited photos', timeline: 'Twenty-five days', revisions: 'No' },
-      { id: 't3', result: 'Teaser / reels', timeline: 'A couple of months', revisions: 'No' },
-      { id: 't4', result: 'Full film', timeline: 'Around two months', revisions: 'One cycle within a month' },
-    ],
+  // 10. Terms & Conditions Page State
+  termsPage: {
+    kicker: 'POLICIES & RULES',
+    heading: 'TERMS & CONDITIONS',
+    text: `1. Advance payment is non-refundable upon booking confirmation.
+2. Travel and accommodation charges outside the base city shall be borne by the client or billed at actuals.
+3. Raw footage and unedited photos will be delivered as per agreed timelines.
+4. One cycle of revision is included for final video edits within 30 days of delivery.
+5. All copyright of photographs and films remains with the studio unless explicitly transferred.`,
     photo: '',
-    photoHeight: 280,
+    photoHeight: 360,
     photoWidth: 75,
     photoFocalY: 50,
     bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   },
 
-  // 8. Terms & Thank You
-  termsAndThankYou: {
-    termsHeading: 'TERMS',
-    termsText: 'Dates are blocked only after the booking advance. Travel and stay outside the city are billed at actuals. Raw files are not shared.',
-    thankYouHeading: 'THANK YOU',
-    thankYouText: 'We would love to tell your story.',
-    studioContact: 'FW Studio • +91 9876543210 • studio@studiocore.com',
+  // 11. Thank You Page State
+  thankYouPage: {
+    heading: 'THANK YOU',
+    subHeading: 'LOOKING FORWARD TO CREATING MAGIC',
+    message: 'We would be honored to capture your celebration and create memories for a lifetime.',
+    brandLogoUrl: '',
+    brandName: 'FILMIFY WEDDINGS',
+    contactNumber: '+91 98765 43210',
+    email: 'contact@filmifyweddings.com',
+    website: 'www.filmifyweddings.com',
     photo: '',
-    photoHeight: 280,
+    photoHeight: 360,
     photoWidth: 75,
     photoFocalY: 50,
     bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
+    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
   }
 };
@@ -2002,7 +2005,11 @@ function StudioCoreAiryBuilderContent() {
     } else if (activeTargetField === 'addOnsPhoto') {
       setData(prev => ({ ...prev, addOnsPage: { ...(prev.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: url } }));
     } else if (activeTargetField === 'termsPhoto') {
-      setData(prev => ({ ...prev, termsAndThankYou: { ...prev.termsAndThankYou, photo: url } }));
+      setData(prev => ({ ...prev, termsPage: { ...(prev.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photo: url } }));
+    } else if (activeTargetField === 'thankYouPhoto') {
+      setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photo: url } }));
+    } else if (activeTargetField === 'thankYouLogo') {
+      setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), brandLogoUrl: url } }));
     }
 
     setMediaModalOpen(false);
@@ -3048,7 +3055,7 @@ function StudioCoreAiryBuilderContent() {
           )}
         </div>
 
-        {/* 7. Timeline & Terms Card */}
+        {/* 10. Terms & Conditions Card */}
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
           <div 
             onClick={() => setOpenCard(openCard === 'terms' ? null : 'terms')}
@@ -3056,33 +3063,230 @@ function StudioCoreAiryBuilderContent() {
           >
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-3.5 h-3.5 text-zinc-500" />
-              <span>7. Timeline &amp; Terms</span>
+              <span>10. Terms &amp; Conditions</span>
             </div>
             {openCard === 'terms' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </div>
 
           {openCard === 'terms' && (
             <div className="p-3 space-y-3 bg-white">
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Heading</label>
+                <input
+                  type="text"
+                  value={data.termsPage?.heading || 'TERMS & CONDITIONS'}
+                  onChange={(e) => {
+                    const currentObj = data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage;
+                    setData({ ...data, termsPage: { ...currentObj, heading: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Terms &amp; Conditions Text (Multi-line supported)</label>
+                <textarea
+                  rows={6}
+                  value={data.termsPage?.text || ''}
+                  onChange={(e) => {
+                    const currentObj = data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage;
+                    setData({ ...data, termsPage: { ...currentObj, text: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs leading-relaxed"
+                  placeholder="Enter or paste your terms & conditions here..."
+                />
+              </div>
+
               <UnifiedPhotoControls
-                photoUrl={data.termsAndThankYou.photo}
-                frameShape={data.termsAndThankYou.frameShape}
-                photoHeight={data.termsAndThankYou.photoHeight}
-                photoWidth={data.termsAndThankYou.photoWidth}
-                photoFocalY={data.termsAndThankYou.photoFocalY}
-                bgOpacity={data.termsAndThankYou.bgOpacity}
-                imagePosition={data.termsAndThankYou.imagePosition}
+                photoUrl={data.termsPage?.photo}
+                frameShape={data.termsPage?.frameShape || 'arch'}
+                photoHeight={data.termsPage?.photoHeight || 360}
+                photoWidth={data.termsPage?.photoWidth || 75}
+                photoFocalY={data.termsPage?.photoFocalY || 50}
+                bgOpacity={data.termsPage?.bgOpacity || 40}
+                imagePosition={data.termsPage?.imagePosition || 'bottom'}
                 onOpenAddModal={() => openAddImageModal('termsPhoto')}
-                onDeletePhoto={() => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photo: '' } })}
+                onDeletePhoto={() => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photo: '' } })}
                 onChangeShape={(shape) => {
-                  const currentH = data.termsAndThankYou.photoHeight || 280;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 280 : currentH);
-                  setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, frameShape: shape, photoHeight: newH } });
+                  const currentObj = data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage;
+                  const currentH = currentObj.photoHeight || 360;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  setData({ ...data, termsPage: { ...currentObj, frameShape: shape, photoHeight: newH } });
                 }}
-                onChangePosition={(pos) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photoWidth: w } })}
+                onChangePosition={(pos) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photoWidth: w } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 11. Thank You Page Card */}
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
+          <div 
+            onClick={() => setOpenCard(openCard === 'thankYou' ? null : 'thankYou')}
+            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
+          >
+            <div className="flex items-center gap-2">
+              <Heart className="w-3.5 h-3.5 text-zinc-500" />
+              <span>11. Thank You Page</span>
+            </div>
+            {openCard === 'thankYou' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+
+          {openCard === 'thankYou' && (
+            <div className="p-3 space-y-3 bg-white">
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Title / Heading</label>
+                <input
+                  type="text"
+                  value={data.thankYouPage?.heading || 'THANK YOU'}
+                  onChange={(e) => {
+                    const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                    setData({ ...data, thankYouPage: { ...currentObj, heading: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Subtitle / Tagline</label>
+                <input
+                  type="text"
+                  value={data.thankYouPage?.subHeading || 'LOOKING FORWARD TO CREATING MAGIC'}
+                  onChange={(e) => {
+                    const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                    setData({ ...data, thankYouPage: { ...currentObj, subHeading: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-bold text-zinc-500">Closing Message</label>
+                <textarea
+                  rows={2}
+                  value={data.thankYouPage?.message || ''}
+                  onChange={(e) => {
+                    const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                    setData({ ...data, thankYouPage: { ...currentObj, message: e.target.value } });
+                  }}
+                  className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                />
+              </div>
+
+              {/* Brand Footer Info Inputs */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100">
+                <span className="text-[10px] uppercase font-bold text-amber-700 block">Footer Branding &amp; Contact Info</span>
+                
+                <div className="flex items-center gap-2">
+                  {data.thankYouPage?.brandLogoUrl && (
+                    <div className="w-9 h-9 rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 shrink-0 shadow-2xs">
+                      <img src={data.thankYouPage.brandLogoUrl} alt="Logo" crossOrigin="anonymous" className="w-full h-full object-contain bg-transparent" />
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => openAddImageModal('thankYouLogo')}
+                    className="flex-1 py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[10px] font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-2xs"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-amber-700 stroke-[2.5]" />
+                    <span>{data.thankYouPage?.brandLogoUrl ? 'Change Footer Logo' : 'Upload Footer Logo'}</span>
+                  </button>
+
+                  {data.thankYouPage?.brandLogoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                        setData({ ...data, thankYouPage: { ...currentObj, brandLogoUrl: '' } });
+                      }}
+                      className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 cursor-pointer shrink-0 transition-all"
+                      title="Remove Logo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-zinc-500">Brand Name</label>
+                  <input
+                    type="text"
+                    value={data.thankYouPage?.brandName || ''}
+                    onChange={(e) => {
+                      const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                      setData({ ...data, thankYouPage: { ...currentObj, brandName: e.target.value } });
+                    }}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="block text-[9px] uppercase font-bold text-zinc-500">Contact Number</label>
+                    <input
+                      type="text"
+                      value={data.thankYouPage?.contactNumber || ''}
+                      onChange={(e) => {
+                        const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                        setData({ ...data, thankYouPage: { ...currentObj, contactNumber: e.target.value } });
+                      }}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[9px] uppercase font-bold text-zinc-500">Email ID</label>
+                    <input
+                      type="text"
+                      value={data.thankYouPage?.email || ''}
+                      onChange={(e) => {
+                        const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                        setData({ ...data, thankYouPage: { ...currentObj, email: e.target.value } });
+                      }}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-zinc-500">Website URL</label>
+                  <input
+                    type="text"
+                    value={data.thankYouPage?.website || ''}
+                    onChange={(e) => {
+                      const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                      setData({ ...data, thankYouPage: { ...currentObj, website: e.target.value } });
+                    }}
+                    className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                  />
+                </div>
+              </div>
+
+              <UnifiedPhotoControls
+                photoUrl={data.thankYouPage?.photo}
+                frameShape={data.thankYouPage?.frameShape || 'arch'}
+                photoHeight={data.thankYouPage?.photoHeight || 360}
+                photoWidth={data.thankYouPage?.photoWidth || 75}
+                photoFocalY={data.thankYouPage?.photoFocalY || 50}
+                bgOpacity={data.thankYouPage?.bgOpacity || 40}
+                imagePosition={data.thankYouPage?.imagePosition || 'bottom'}
+                onOpenAddModal={() => openAddImageModal('thankYouPhoto')}
+                onDeletePhoto={() => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photo: '' } })}
+                onChangeShape={(shape) => {
+                  const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                  const currentH = currentObj.photoHeight || 360;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  setData({ ...data, thankYouPage: { ...currentObj, frameShape: shape, photoHeight: newH } });
+                }}
+                onChangePosition={(pos) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), imagePosition: pos } })}
+                onChangeFocalY={(focalY) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photoFocalY: focalY } })}
+                onChangeBgOpacity={(op) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), bgOpacity: op } })}
+                onChangeHeight={(h) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photoHeight: h } })}
+                onChangeWidth={(w) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photoWidth: w } })}
               />
             </div>
           )}
@@ -4498,15 +4702,15 @@ function StudioCoreAiryBuilderContent() {
               style={{ backgroundColor: '#f9e4cc' }}
             />
 
-            {/* SECTION 10: DELIVERY TIMELINE & TERMS */}
+            {/* SECTION 10: TERMS & CONDITIONS */}
             <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                height: getDynamicPageHeight(data.termsAndThankYou),
-                minHeight: getDynamicPageHeight(data.termsAndThankYou),
+                height: getDynamicPageHeight(data.termsPage),
+                minHeight: getDynamicPageHeight(data.termsPage),
                 maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
@@ -4518,105 +4722,214 @@ function StudioCoreAiryBuilderContent() {
                 fontFamily: data.secondaryFont,
               }}
             >
-              {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape === 'background' && (
+              {data.termsPage?.photo && data.termsPage?.frameShape === 'background' && (
                 <SectionImageRenderer
-                  photo={data.termsAndThankYou.photo}
+                  photo={data.termsPage.photo}
                   frameShape="background"
-                  photoHeight={data.termsAndThankYou.photoHeight}
-                  photoWidth={data.termsAndThankYou.photoWidth}
-                  photoFocalY={data.termsAndThankYou.photoFocalY}
-                  bgOpacity={data.termsAndThankYou.bgOpacity}
+                  photoHeight={data.termsPage.photoHeight}
+                  photoWidth={data.termsPage.photoWidth}
+                  photoFocalY={data.termsPage.photoFocalY}
+                  bgOpacity={data.termsPage.bgOpacity}
                   pageBgColor={pageBgColor}
-                  altText="Terms Background"
+                  altText="Terms & Conditions Background"
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col py-14 ${
-                data.termsAndThankYou.frameShape === 'full-width' || (data.termsAndThankYou.imagePosition as string) === 'full' 
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
+                data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' 
                   ? 'px-0' 
                   : 'px-12'
-              } h-full w-full ${!data.termsAndThankYou.photo ? 'justify-center items-center' : 'justify-between'}`}>
+              } ${!data.termsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
-                {/* TOP IMAGE POSITION */}
-                {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && data.termsAndThankYou.imagePosition === 'top' && (
-                  <SectionImageRenderer
-                    photo={data.termsAndThankYou.photo}
-                    frameShape={data.termsAndThankYou.frameShape}
-                    photoHeight={data.termsAndThankYou.photoHeight}
-                    photoWidth={data.termsAndThankYou.photoWidth}
-                    photoFocalY={data.termsAndThankYou.photoFocalY}
-                    altText="Terms Photo"
-                  />
-                )}
+                <div className={`flex flex-col items-center justify-center w-full ${data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.termsPage.photo}
+                      frameShape={data.termsPage.frameShape}
+                      photoHeight={data.termsPage.photoHeight}
+                      photoWidth={data.termsPage.photoWidth}
+                      photoFocalY={data.termsPage.photoFocalY}
+                      altText="Terms & Conditions Photo"
+                    />
+                  )}
 
-                <div className={`space-y-4 my-3 w-full ${data.termsAndThankYou.frameShape === 'full-width' || (data.termsAndThankYou.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap mb-2" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.timelineTable.heading}
+                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
+                    {data.termsPage?.kicker || 'POLICIES & RULES'}
+                  </span>
+                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                    {data.termsPage?.heading || 'TERMS & CONDITIONS'}
                   </h2>
 
-                  <div className="rounded-xl overflow-hidden border max-w-xl mx-auto" style={{ borderColor }}>
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
-                        <tr>
-                          <th className="py-3 px-4">Result</th>
-                          <th className="py-3 px-4">Timeline</th>
-                          <th className="py-3 px-4">Revisions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y font-semibold" style={{ borderColor, color: textColor }}>
-                        {data.timelineTable.rows.map((row) => (
-                          <tr key={row.id} style={{ borderColor }}>
-                            <td className="py-3 px-4 font-bold">{row.result}</td>
-                            <td className="py-3 px-4">{row.timeline}</td>
-                            <td className="py-3 px-4">{row.revisions}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                  {/* CENTER IMAGE POSITION */}
+                  {data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'center' && (
+                    <SectionImageRenderer
+                      photo={data.termsPage.photo}
+                      frameShape={data.termsPage.frameShape}
+                      photoHeight={data.termsPage.photoHeight}
+                      photoWidth={data.termsPage.photoWidth}
+                      photoFocalY={data.termsPage.photoFocalY}
+                      altText="Terms & Conditions Photo"
+                    />
+                  )}
 
-                {/* CENTER IMAGE POSITION */}
-                {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && data.termsAndThankYou.imagePosition === 'center' && (
-                  <SectionImageRenderer
-                    photo={data.termsAndThankYou.photo}
-                    frameShape={data.termsAndThankYou.frameShape}
-                    photoHeight={data.termsAndThankYou.photoHeight}
-                    photoWidth={data.termsAndThankYou.photoWidth}
-                    photoFocalY={data.termsAndThankYou.photoFocalY}
-                    altText="Terms Photo"
-                  />
-                )}
-
-                <div className={`space-y-5 pt-4 border-t w-full my-3 ${data.termsAndThankYou.frameShape === 'full-width' || (data.termsAndThankYou.imagePosition as string) === 'full' ? 'px-12' : ''}`} style={{ borderColor }}>
-                  <div className="space-y-2">
-                    <h2 className="text-xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.termsAndThankYou.termsHeading}
-                    </h2>
-                    <p className="text-xs leading-relaxed opacity-90 max-w-xl mx-auto">{data.termsAndThankYou.termsText}</p>
-                  </div>
-
-                  <div className="text-center pt-6 border-t space-y-2 max-w-xl mx-auto" style={{ borderColor }}>
-                    <h2 className="text-2xl uppercase tracking-widest font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.termsAndThankYou.thankYouHeading}
-                    </h2>
-                    <p className="text-xs">{data.termsAndThankYou.thankYouText}</p>
-                    <p className="text-[10px] font-sans font-medium tracking-tight pt-2 opacity-80 whitespace-nowrap" style={{ color: kickerColor }}>{data.termsAndThankYou.studioContact}</p>
+                  <div className="w-full max-w-xl mx-auto space-y-4 my-3 text-left">
+                    <div 
+                      className="p-6 rounded-2xl border shadow-xs leading-relaxed space-y-3"
+                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                    >
+                      <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
+                        {data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.termsAndThankYou.photo && data.termsAndThankYou.frameShape !== 'background' && (data.termsAndThankYou.imagePosition === 'bottom' || !data.termsAndThankYou.imagePosition) && (
+                {data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && (data.termsPage?.imagePosition === 'bottom' || !data.termsPage?.imagePosition) && (
                   <SectionImageRenderer
-                    photo={data.termsAndThankYou.photo}
-                    frameShape={data.termsAndThankYou.frameShape}
-                    photoHeight={data.termsAndThankYou.photoHeight}
-                    photoWidth={data.termsAndThankYou.photoWidth}
-                    photoFocalY={data.termsAndThankYou.photoFocalY}
+                    photo={data.termsPage.photo}
+                    frameShape={data.termsPage.frameShape}
+                    photoHeight={data.termsPage.photoHeight}
+                    photoWidth={data.termsPage.photoWidth}
+                    photoFocalY={data.termsPage.photoFocalY}
                     isBottomFlush={true}
-                    altText="Terms Photo"
+                    altText="Terms & Conditions Photo"
                   />
                 )}
+              </div>
+            </section>
+
+            {/* Inter-page Gap Spacer */}
+            <div 
+              className="w-[794px] h-4 mx-auto shrink-0"
+              style={{ backgroundColor: '#f9e4cc' }}
+            />
+
+            {/* SECTION 11: THANK YOU PAGE */}
+            <section 
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
+              style={{
+                width: '794px',
+                minWidth: '794px',
+                maxWidth: '794px',
+                height: getDynamicPageHeight(data.thankYouPage),
+                minHeight: getDynamicPageHeight(data.thankYouPage),
+                maxHeight: 'none',
+                boxSizing: 'border-box',
+                position: 'relative',
+                overflow: 'hidden',
+                margin: '0 auto',
+                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                backgroundColor: pageBgColor || '#FFFFFF',
+                color: textColor,
+                fontFamily: data.secondaryFont,
+              }}
+            >
+              {data.thankYouPage?.photo && data.thankYouPage?.frameShape === 'background' && (
+                <SectionImageRenderer
+                  photo={data.thankYouPage.photo}
+                  frameShape="background"
+                  photoHeight={data.thankYouPage.photoHeight}
+                  photoWidth={data.thankYouPage.photoWidth}
+                  photoFocalY={data.thankYouPage.photoFocalY}
+                  bgOpacity={data.thankYouPage.bgOpacity}
+                  pageBgColor={pageBgColor}
+                  altText="Thank You Background"
+                />
+              )}
+
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
+                data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' 
+                  ? 'px-0' 
+                  : 'px-12'
+              } justify-between`}>
+                
+                <div className={`flex flex-col items-center justify-center w-full my-auto ${data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  {/* TOP IMAGE POSITION */}
+                  {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && data.thankYouPage?.imagePosition === 'top' && (
+                    <SectionImageRenderer
+                      photo={data.thankYouPage.photo}
+                      frameShape={data.thankYouPage.frameShape}
+                      photoHeight={data.thankYouPage.photoHeight}
+                      photoWidth={data.thankYouPage.photoWidth}
+                      photoFocalY={data.thankYouPage.photoFocalY}
+                      altText="Thank You Photo"
+                    />
+                  )}
+
+                  <div className="space-y-4 max-w-xl mx-auto my-auto">
+                    <h1 className="text-5xl uppercase tracking-[0.2em] font-black leading-tight" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                      {data.thankYouPage?.heading || 'THANK YOU'}
+                    </h1>
+                    <h3 className="text-xs uppercase tracking-[0.25em] font-bold" style={{ color: kickerColor }}>
+                      {data.thankYouPage?.subHeading || 'LOOKING FORWARD TO CREATING MAGIC'}
+                    </h3>
+
+                    {data.thankYouPage?.message && (
+                      <p className="text-sm leading-relaxed opacity-90 pt-3 max-w-md mx-auto" style={{ color: textColor }}>
+                        "{data.thankYouPage.message}"
+                      </p>
+                    )}
+                  </div>
+
+                  {/* CENTER IMAGE POSITION */}
+                  {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && (data.thankYouPage?.imagePosition === 'center' || !data.thankYouPage?.imagePosition) && (
+                    <SectionImageRenderer
+                      photo={data.thankYouPage?.photo}
+                      frameShape={data.thankYouPage?.frameShape}
+                      photoHeight={data.thankYouPage?.photoHeight}
+                      photoWidth={data.thankYouPage?.photoWidth}
+                      photoFocalY={data.thankYouPage?.photoFocalY}
+                      altText="Thank You Photo"
+                    />
+                  )}
+                </div>
+
+                {/* BOTTOM FLUSH BRANDING FOOTER */}
+                <div className={`w-full pt-6 border-t ${data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`} style={{ borderColor }}>
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold">
+                    
+                    {/* Brand Logo & Name */}
+                    <div className="flex items-center gap-3">
+                      {(data.thankYouPage?.brandLogoUrl || data.cover?.brandLogoUrl) ? (
+                        <img 
+                          src={data.thankYouPage?.brandLogoUrl || data.cover?.brandLogoUrl} 
+                          alt="Brand Logo" 
+                          crossOrigin="anonymous"
+                          className="h-10 w-auto object-contain bg-transparent"
+                        />
+                      ) : null}
+                      <span className="font-extrabold uppercase tracking-widest text-sm" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                        {data.thankYouPage?.brandName || data.cover?.brandName || 'FILMIFY WEDDINGS'}
+                      </span>
+                    </div>
+
+                    {/* Contact details list */}
+                    <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
+                      {data.thankYouPage?.contactNumber && (
+                        <div className="flex items-center gap-1.5" style={{ color: textColor }}>
+                          <Phone className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
+                          <span className="font-sans font-medium">{data.thankYouPage.contactNumber}</span>
+                        </div>
+                      )}
+                      {data.thankYouPage?.email && (
+                        <div className="flex items-center gap-1.5" style={{ color: textColor }}>
+                          <Mail className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
+                          <span className="font-sans font-medium">{data.thankYouPage.email}</span>
+                        </div>
+                      )}
+                      {data.thankYouPage?.website && (
+                        <div className="flex items-center gap-1.5" style={{ color: textColor }}>
+                          <Globe className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
+                          <span className="font-sans font-medium">{data.thankYouPage.website}</span>
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                </div>
+
               </div>
             </section>
 
