@@ -2076,12 +2076,12 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PIXEL-PERFECT DEVICE-INDEPENDENT A4 OFF-SCREEN PDF RENDER ENGINE
+  // REFACTORED PAGE-BY-PAGE A4 HIGH-RES MOBILE & DESKTOP PDF ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
-    setPdfToastMessage('Preparing High-Res A4 PDF...');
+    setPdfToastMessage('Loading fonts & images...');
 
     setZoomScale(1.0);
     document.body.classList.add('pdf-capture-active');
@@ -2089,7 +2089,7 @@ function StudioCoreAiryBuilderContent() {
     let offscreenHost: HTMLDivElement | null = null;
 
     try {
-      // 1. Preload Web Fonts (Cormorant Garamond, Plus Jakarta Sans) to prevent mobile fallback fonts
+      // 1. Preload Web Fonts (Cormorant Garamond, Plus Jakarta Sans)
       try {
         await ensureFontsReady();
         if (typeof document !== 'undefined' && document.fonts) {
@@ -2106,10 +2106,10 @@ function StudioCoreAiryBuilderContent() {
       const container = document.querySelector('#quotation-full-canvas') || document.querySelector('.quotation-container');
       if (!container) throw new Error('No quotation container found (#quotation-full-canvas)');
 
-      // 2. Off-screen Fixed Viewport Host (A4 Lock at 794px width, independent of mobile screen width)
+      // 2. Off-screen Fixed Viewport Host (A4 Lock at 794px width)
       offscreenHost = document.createElement('div');
       offscreenHost.id = 'pdf-offscreen-render-host';
-      offscreenHost.style.position = 'fixed';
+      offscreenHost.style.position = 'absolute';
       offscreenHost.style.left = '-9999px';
       offscreenHost.style.top = '0';
       offscreenHost.style.width = '794px';
@@ -2120,7 +2120,7 @@ function StudioCoreAiryBuilderContent() {
       offscreenHost.style.backgroundColor = '#ffffff';
       offscreenHost.style.transform = 'none';
 
-      // Clone container to ensure desktop A4 layout regardless of mobile screen width or window.innerWidth
+      // Clone container to guarantee desktop A4 layout regardless of mobile screen width
       const clone = (container as HTMLElement).cloneNode(true) as HTMLElement;
       clone.style.width = '794px';
       clone.style.minWidth = '794px';
@@ -2131,32 +2131,65 @@ function StudioCoreAiryBuilderContent() {
       offscreenHost.appendChild(clone);
       document.body.appendChild(offscreenHost);
 
-      // Brief delay for DOM & fonts to settle in cloned container
-      await new Promise(r => setTimeout(r, 250));
+      // 3. Preload all <img> tags inside clone to eliminate mobile 3KB blank PDF bug
+      const images = Array.from(clone.querySelectorAll('img'));
+      await Promise.all(
+        images.map(img => {
+          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+          return new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve;
+            setTimeout(resolve, 1500); // Safety timeout
+          });
+        })
+      );
 
-      setPdfToastMessage('Rasterizing A4 Canvas...');
+      // Brief delay for DOM to settle
+      await new Promise(r => setTimeout(r, 200));
 
-      // 3. Rasterize off-screen cloned container with locked 794px viewport
-      const canvas = await html2canvasPro(clone, {
-        scale: 3,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 794,
-        windowHeight: clone.scrollHeight
+      // 4. Lock every cloned section to strict A4 dimensions (794px x 1123px)
+      const pageSections = Array.from(clone.querySelectorAll('section'));
+      if (pageSections.length === 0) throw new Error('No page sections found in canvas');
+
+      pageSections.forEach((sec: any) => {
+        sec.style.width = '794px';
+        sec.style.minWidth = '794px';
+        sec.style.maxWidth = '794px';
+        sec.style.boxSizing = 'border-box';
+        sec.style.overflow = 'hidden';
+        sec.style.margin = '0 auto';
+        sec.style.transform = 'none';
+        sec.style.pageBreakAfter = 'always';
+        sec.style.pageBreakInside = 'avoid';
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
-      const imgWidth = 794;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
+      // 5. Generate Multi-Page A4 PDF Page-by-Page
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [imgWidth, imgHeight]
+        format: [794, 1123]
       });
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
+      for (let i = 0; i < pageSections.length; i++) {
+        setPdfToastMessage(`Rasterizing Page ${i + 1} of ${pageSections.length}...`);
+        const secNode = pageSections[i] as HTMLElement;
+
+        const secCanvas = await html2canvasPro(secNode, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: 794,
+          windowHeight: secNode.scrollHeight || 1123
+        });
+
+        const imgData = secCanvas.toDataURL('image/jpeg', 0.95);
+        if (i > 0) {
+          pdf.addPage([794, 1123], 'portrait');
+        }
+        pdf.addImage(imgData, 'JPEG', 0, 0, 794, 1123, undefined, 'FAST');
+      }
 
       const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
       const cleanClientName = clientName
@@ -2164,9 +2197,9 @@ function StudioCoreAiryBuilderContent() {
         .replace(/—/g, '-')
         .replace(/[^ -~]/g, '-');
 
-      pdf.save(`${cleanClientName}-Full.pdf`);
+      pdf.save(`${cleanClientName}-A4.pdf`);
 
-      setPdfToastMessage('Full PDF Downloaded Successfully!');
+      setPdfToastMessage('High-Res A4 PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
       console.error('PDF Export Error:', err);
@@ -3903,6 +3936,7 @@ function StudioCoreAiryBuilderContent() {
             margin: 0 auto !important;
             width: 210mm !important;
             height: 297mm !important;
+            box-sizing: border-box !important;
             page-break-after: always !important;
             page-break-inside: avoid !important;
             break-after: page !important;
