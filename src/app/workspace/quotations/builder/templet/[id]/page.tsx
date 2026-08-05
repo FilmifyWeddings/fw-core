@@ -846,11 +846,14 @@ function UnifiedPhotoControls({
                 <Maximize2 className="w-3.5 h-3.5 text-amber-600" /> 
                 {frameShape === 'background' ? 'Background Page Height' : 'Photo Height'}
               </span>
-              <span className="font-mono text-amber-900">{photoHeight}px</span>
+              <span className="font-mono text-amber-900">{photoHeight || (frameShape === 'background' ? 1123 : 380)}px</span>
             </div>
             <input
-              type="range" min={frameShape === 'background' ? '500' : '100'} max={frameShape === 'background' ? '2500' : '800'}
-              value={photoHeight}
+              type="range"
+              min={frameShape === 'background' ? 800 : 100}
+              max={frameShape === 'background' ? 2500 : 800}
+              step={10}
+              value={photoHeight || (frameShape === 'background' ? 1123 : 380)}
               onChange={(e) => onChangeHeight(Number(e.target.value))}
               className="w-full accent-amber-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"
             />
@@ -3303,7 +3306,7 @@ function StudioCoreAiryBuilderContent() {
                 className="flex flex-col gap-0"
               >
                 <section 
-                  className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+                  className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
                   style={{
                     width: '794px',
                     minWidth: '794px',
@@ -3433,7 +3436,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -3539,7 +3542,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -3662,7 +3665,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: FUNCTIONS & COVERAGE */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -3830,7 +3833,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: DELIVERABLES */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -3938,7 +3941,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: SPECIAL VALUE ADDITIONS */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -4057,7 +4060,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 7: PRICING DETAILS */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -4219,7 +4222,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 8: PAYMENT TERMS & SCHEDULE */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -4372,7 +4375,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 9: ADD-ONS & UPGRADES */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
@@ -4497,7 +4500,7 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 10: DELIVERY TIMELINE & TERMS */}
             <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
