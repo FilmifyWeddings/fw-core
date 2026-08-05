@@ -1777,7 +1777,8 @@ function StudioCoreAiryBuilderContent() {
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Saved');
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Auto-saved to cloud');
+  const isInitialLoadedRef = useRef<boolean>(false);
   const [openCard, setOpenCard] = useState<string | null>('cover');
   // ── DYNAMIC PAGE SEQUENCE & CUSTOM PAGE CONTROLS ──
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
@@ -2192,14 +2193,19 @@ function StudioCoreAiryBuilderContent() {
         }
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
+      } finally {
+        setTimeout(() => {
+          isInitialLoadedRef.current = true;
+          setAutoSaveStatus('Auto-saved to cloud');
+        }, 100);
       }
     }
     initUserAndLoadData();
   }, [params]);
 
-  // Real-Time Debounced Auto-Save (2-3 seconds sync)
+  // Real-Time Instant Debounced Auto-Save (500ms sync)
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !isInitialLoadedRef.current) return;
 
     setAutoSaveStatus('Saving...');
     setHasUnsavedChanges(true);
@@ -2240,12 +2246,12 @@ function StudioCoreAiryBuilderContent() {
         }
 
         setHasUnsavedChanges(false);
-        setAutoSaveStatus('Auto-saved');
+        setAutoSaveStatus('Auto-saved to cloud');
       } catch (err) {
-        setAutoSaveStatus('Saved locally');
+        setAutoSaveStatus('Auto-saved locally');
         setHasUnsavedChanges(false);
       }
-    }, 2500);
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [data, userId, params]);
