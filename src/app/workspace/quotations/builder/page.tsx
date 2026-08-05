@@ -849,7 +849,7 @@ function UnifiedPhotoControls({
               <span className="font-mono text-amber-900">{photoHeight}px</span>
             </div>
             <input
-              type="range" min={frameShape === 'background' ? '400' : '100'} max={frameShape === 'background' ? '1400' : '800'}
+              type="range" min={frameShape === 'background' ? '500' : '100'} max={frameShape === 'background' ? '2500' : '800'}
               value={photoHeight}
               onChange={(e) => onChangeHeight(Number(e.target.value))}
               className="w-full accent-amber-600 bg-slate-200 rounded-lg cursor-pointer h-1.5"

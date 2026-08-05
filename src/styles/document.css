@@ -2,11 +2,8 @@
 
 .quotation-page {
   width: 794px !important;
-  height: 1123px !important;
   min-width: 794px !important;
   max-width: 794px !important;
-  min-height: 1123px !important;
-  max-height: 1123px !important;
   box-sizing: border-box !important;
   position: relative !important;
   overflow: hidden !important;
@@ -14,7 +11,7 @@
 
 @media print {
   @page {
-    size: 794px 1123px;
+    size: 794px auto;
     margin: 0;
   }
   .quotation-page {
