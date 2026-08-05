@@ -2076,18 +2076,29 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PIXEL-PERFECT STANDARD A4 SINGLE CONTINUOUS LONG-PAGE PDF EXPORTER Engine
+  // PIXEL-PERFECT DEVICE-INDEPENDENT A4 OFF-SCREEN PDF RENDER ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
-    setPdfToastMessage('Generating High-Res A4 PDF...');
+    setPdfToastMessage('Preparing High-Res A4 PDF...');
 
-    // Lock zoomScale to 1.0 & enable PDF capture CSS
     setZoomScale(1.0);
     document.body.classList.add('pdf-capture-active');
 
+    let offscreenHost: HTMLDivElement | null = null;
+
     try {
+      // 1. Preload Web Fonts (Cormorant Garamond, Plus Jakarta Sans) to prevent mobile fallback fonts
+      try {
+        await ensureFontsReady();
+        if (typeof document !== 'undefined' && document.fonts) {
+          await document.fonts.ready;
+        }
+      } catch (fontErr) {
+        console.warn('Font loading notice:', fontErr);
+      }
+
       // @ts-ignore
       const html2canvasPro = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
@@ -2095,19 +2106,50 @@ function StudioCoreAiryBuilderContent() {
       const container = document.querySelector('#quotation-full-canvas') || document.querySelector('.quotation-container');
       if (!container) throw new Error('No quotation container found (#quotation-full-canvas)');
 
-      // Capture entire long container in high DPI
-      const canvas = await html2canvasPro(container as HTMLElement, {
+      // 2. Off-screen Fixed Viewport Host (A4 Lock at 794px width, independent of mobile screen width)
+      offscreenHost = document.createElement('div');
+      offscreenHost.id = 'pdf-offscreen-render-host';
+      offscreenHost.style.position = 'fixed';
+      offscreenHost.style.left = '-9999px';
+      offscreenHost.style.top = '0';
+      offscreenHost.style.width = '794px';
+      offscreenHost.style.minWidth = '794px';
+      offscreenHost.style.maxWidth = '794px';
+      offscreenHost.style.zIndex = '-99999';
+      offscreenHost.style.overflow = 'visible';
+      offscreenHost.style.backgroundColor = '#ffffff';
+      offscreenHost.style.transform = 'none';
+
+      // Clone container to ensure desktop A4 layout regardless of mobile screen width or window.innerWidth
+      const clone = (container as HTMLElement).cloneNode(true) as HTMLElement;
+      clone.style.width = '794px';
+      clone.style.minWidth = '794px';
+      clone.style.maxWidth = '794px';
+      clone.style.transform = 'none';
+      clone.style.margin = '0 auto';
+
+      offscreenHost.appendChild(clone);
+      document.body.appendChild(offscreenHost);
+
+      // Brief delay for DOM & fonts to settle in cloned container
+      await new Promise(r => setTimeout(r, 250));
+
+      setPdfToastMessage('Rasterizing A4 Canvas...');
+
+      // 3. Rasterize off-screen cloned container with locked 794px viewport
+      const canvas = await html2canvasPro(clone, {
         scale: 3,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        windowWidth: 794,
+        windowHeight: clone.scrollHeight
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
-      const imgWidth = 794; // Fixed standard UI width
-      const imgHeight = (canvas.height * imgWidth) / canvas.width; // Dynamic full height
+      const imgWidth = 794;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      // Create a custom single-page PDF with exact dynamic height
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
@@ -2118,9 +2160,9 @@ function StudioCoreAiryBuilderContent() {
 
       const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
       const cleanClientName = clientName
-        .replace(/\u2013/g, '-')
-        .replace(/\u2014/g, '-')
-        .replace(/[^\x20-\x7E]/g, '-');
+        .replace(/–/g, '-')
+        .replace(/—/g, '-')
+        .replace(/[^ -~]/g, '-');
 
       pdf.save(`${cleanClientName}-Full.pdf`);
 
@@ -2130,6 +2172,9 @@ function StudioCoreAiryBuilderContent() {
       console.error('PDF Export Error:', err);
       alert(`PDF Export Failed: ${err?.message || err}`);
     } finally {
+      if (offscreenHost && document.body.contains(offscreenHost)) {
+        document.body.removeChild(offscreenHost);
+      }
       setIsExportingPDF(false);
       document.body.classList.remove('pdf-capture-active');
       setZoomScale(previousScale);
@@ -3831,6 +3876,7 @@ function StudioCoreAiryBuilderContent() {
         }
         @media print {
           @page {
+            size: A4 portrait;
             margin: 0 !important;
           }
           body, html {
@@ -3852,10 +3898,21 @@ function StudioCoreAiryBuilderContent() {
             background: transparent !important;
             overflow: visible !important;
           }
+          .quotation-page, .quotation-canvas-page {
+            box-shadow: none !important;
+            margin: 0 auto !important;
+            width: 210mm !important;
+            height: 297mm !important;
+            page-break-after: always !important;
+            page-break-inside: avoid !important;
+            break-after: page !important;
+            break-inside: avoid !important;
+            overflow: hidden !important;
+          }
           .proposal-canvas-container {
             transform: none !important;
-            width: 100% !important;
-            margin: 0 !important;
+            width: 794px !important;
+            margin: 0 auto !important;
             padding: 0 !important;
           }
         }
