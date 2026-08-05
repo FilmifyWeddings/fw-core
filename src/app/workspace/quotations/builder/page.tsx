@@ -908,15 +908,15 @@ function SectionImageRenderer({
   if (frameShape === 'background') {
     return (
       <div 
-        className="absolute top-0 left-0 right-0 z-0 overflow-hidden w-full pointer-events-none select-none transition-all duration-200"
-        style={{ height: photoHeight ? `${photoHeight}px` : '100%' }}
+        className="absolute inset-0 z-0 overflow-hidden w-full h-full pointer-events-none select-none transition-all duration-200"
+        style={{ height: '100%', width: '100%' }}
       >
         <img
           src={photo}
           alt={altText}
           crossOrigin="anonymous"
           className="w-full h-full object-cover block"
-          style={{ objectPosition: `50% ${photoFocalY}%` }}
+          style={{ objectPosition: `50% ${photoFocalY}%`, height: '100%', width: '100%' }}
         />
         {/* Background Opacity Blends cleanly with pageBgColor */}
         <div 
@@ -970,9 +970,22 @@ function SectionImageRenderer({
   );
 }
 
-function getDynamicPageHeight(sectionData?: { frameShape?: string; photoHeight?: number; bottomBannerHeight?: number }) {
-  const h = sectionData?.photoHeight || sectionData?.bottomBannerHeight;
-  if (sectionData?.frameShape === 'background' && h) {
+function getDynamicPageHeight(sectionData?: { 
+  frameShape?: string; 
+  imageLayout?: string; 
+  imagePosition?: string; 
+  photoHeight?: number; 
+  bottomBannerHeight?: number;
+  backgroundPageHeight?: number;
+}) {
+  const isBackground = 
+    sectionData?.frameShape === 'background' || 
+    sectionData?.imageLayout === 'background' || 
+    sectionData?.imagePosition === 'background' || 
+    sectionData?.imagePosition === 'full';
+    
+  const h = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight;
+  if (isBackground && h) {
     return `${h}px`;
   }
   return '1123px';
@@ -2201,7 +2214,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.cover.imagePosition}
                 onOpenAddModal={() => openAddImageModal('coverPhoto')}
                 onDeletePhoto={() => setData({ ...data, cover: { ...data.cover, photoUrl: '' } })}
-                onChangeShape={(shape) => setData({ ...data, cover: { ...data.cover, frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.cover.photoHeight || 450;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 450 : currentH);
+                  setData({ ...data, cover: { ...data.cover, frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, cover: { ...data.cover, imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, cover: { ...data.cover, photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, cover: { ...data.cover, bgOpacity: op } })}
@@ -2248,7 +2265,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.aboutUs.imagePosition}
                 onOpenAddModal={() => openAddImageModal('aboutUsBanner')}
                 onDeletePhoto={() => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerPhoto: '' } })}
-                onChangeShape={(shape) => setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.aboutUs.bottomBannerHeight || 380;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: shape, bottomBannerHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, aboutUs: { ...data.aboutUs, imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, aboutUs: { ...data.aboutUs, photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, aboutUs: { ...data.aboutUs, bgOpacity: op } })}
@@ -2324,7 +2345,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.shootDetails.imagePosition}
                 onOpenAddModal={() => openAddImageModal('shootPhoto')}
                 onDeletePhoto={() => setData({ ...data, shootDetails: { ...data.shootDetails, photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.shootDetails.photoHeight || 380;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, shootDetails: { ...data.shootDetails, imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, shootDetails: { ...data.shootDetails, photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, shootDetails: { ...data.shootDetails, bgOpacity: op } })}
@@ -2420,7 +2445,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.functionsPage?.imagePosition}
                 onOpenAddModal={() => openAddImageModal('functionsPhoto')}
                 onDeletePhoto={() => setData({ ...data, functionsPage: { ...data.functionsPage, photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, functionsPage: { ...data.functionsPage, frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.functionsPage?.photoHeight || 380;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  setData({ ...data, functionsPage: { ...data.functionsPage, frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, functionsPage: { ...data.functionsPage, imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, functionsPage: { ...data.functionsPage, photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, functionsPage: { ...data.functionsPage, bgOpacity: op } })}
@@ -2480,7 +2509,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.deliverablesPage?.imagePosition}
                 onOpenAddModal={() => openAddImageModal('deliverablesPhoto')}
                 onDeletePhoto={() => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.deliverablesPage?.photoHeight || 360;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), bgOpacity: op } })}
@@ -2554,7 +2587,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.specialValueAdditions?.imagePosition}
                 onOpenAddModal={() => openAddImageModal('specialValuePhoto')}
                 onDeletePhoto={() => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.specialValueAdditions?.photoHeight || 360;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), bgOpacity: op } })}
@@ -2686,7 +2723,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.pricingPage?.imagePosition}
                 onOpenAddModal={() => openAddImageModal('pricingPhoto')}
                 onDeletePhoto={() => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.pricingPage?.photoHeight || 360;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), bgOpacity: op } })}
@@ -2846,7 +2887,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.paymentTermsPage?.imagePosition}
                 onOpenAddModal={() => openAddImageModal('paymentTermsPhoto')}
                 onDeletePhoto={() => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.paymentTermsPage?.photoHeight || 360;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), bgOpacity: op } })}
@@ -2901,7 +2946,7 @@ function StudioCoreAiryBuilderContent() {
                           }}
                           className="w-4 h-4 rounded-md border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
                         />
-                        <span className="text-xs font-bold text-zinc-900">Include Add-On</span>
+                        <span className="text-xs font-extrabold text-zinc-900">{item.title}</span>
                       </label>
 
                       <button
@@ -2918,19 +2963,8 @@ function StudioCoreAiryBuilderContent() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={item?.title || ''}
-                        onChange={(e) => {
-                          const items = data.addOnsPage?.items || [];
-                          const updated = items.map(i => i.id === item.id ? { ...i, title: e.target.value } : i);
-                          const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
-                          setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
-                        }}
-                        className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
-                        placeholder="Add-on Title"
-                      />
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 text-xs font-bold text-amber-700">₹</span>
                       <input
                         type="number"
                         value={item?.price ?? 0}
@@ -2940,8 +2974,7 @@ function StudioCoreAiryBuilderContent() {
                           const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
                           setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                         }}
-                        className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
-                        placeholder="Price (₹)"
+                        className="w-full p-2 pl-7 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
                       />
                     </div>
                   </div>
@@ -2997,7 +3030,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.addOnsPage?.imagePosition}
                 onOpenAddModal={() => openAddImageModal('addOnsPhoto')}
                 onDeletePhoto={() => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.addOnsPage?.photoHeight || 360;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), bgOpacity: op } })}
@@ -3033,7 +3070,11 @@ function StudioCoreAiryBuilderContent() {
                 imagePosition={data.termsAndThankYou.imagePosition}
                 onOpenAddModal={() => openAddImageModal('termsPhoto')}
                 onDeletePhoto={() => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photo: '' } })}
-                onChangeShape={(shape) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, frameShape: shape } })}
+                onChangeShape={(shape) => {
+                  const currentH = data.termsAndThankYou.photoHeight || 280;
+                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 280 : currentH);
+                  setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, frameShape: shape, photoHeight: newH } });
+                }}
                 onChangePosition={(pos) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, imagePosition: pos } })}
                 onChangeFocalY={(focalY) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, photoFocalY: focalY } })}
                 onChangeBgOpacity={(op) => setData({ ...data, termsAndThankYou: { ...data.termsAndThankYou, bgOpacity: op } })}
