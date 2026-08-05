@@ -3303,23 +3303,24 @@ function StudioCoreAiryBuilderContent() {
                 className="flex flex-col gap-0"
               >
                 <section 
-                  className="quotation-page cover-page flex flex-col transition-colors duration-300 select-none"
-                style={{
-                  width: '794px',
-                  minWidth: '794px',
-                  maxWidth: '794px',
-                  minHeight: getDynamicPageHeight(data.cover),
-                  height: getDynamicPageHeight(data.cover),
-                  boxSizing: 'border-box',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  margin: '0 auto', // Center alignment guarantee
-                  boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-                  backgroundColor: pageBgColor || '#FFFFFF',
-                  color: textColor,
-                  fontFamily: data.secondaryFont,
-                }}
-              >
+                  className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
+                  style={{
+                    width: '794px',
+                    minWidth: '794px',
+                    maxWidth: '794px',
+                    height: getDynamicPageHeight(data.cover),
+                    minHeight: getDynamicPageHeight(data.cover),
+                    maxHeight: 'none',
+                    boxSizing: 'border-box',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    margin: '0 auto',
+                    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                    backgroundColor: pageBgColor || '#FFFFFF',
+                    color: textColor,
+                    fontFamily: data.secondaryFont,
+                  }}
+                >
               {data.cover.photoUrl && data.cover.frameShape === 'background' && (
                 <SectionImageRenderer
                   photo={data.cover.photoUrl}
@@ -3432,13 +3433,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 2: ABOUT US */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: getDynamicPageHeight(data.aboutUs),
                 height: getDynamicPageHeight(data.aboutUs),
+                minHeight: getDynamicPageHeight(data.aboutUs),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -3537,13 +3539,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 3: PRE-WEDDING SHOOT */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: getDynamicPageHeight(data.shootDetails),
                 height: getDynamicPageHeight(data.shootDetails),
+                minHeight: getDynamicPageHeight(data.shootDetails),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -3659,13 +3662,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 4: FUNCTIONS & COVERAGE */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
                 minWidth: '794px',
                 maxWidth: '794px',
-                minHeight: getDynamicPageHeight(data.functionsPage),
                 height: getDynamicPageHeight(data.functionsPage),
+                minHeight: getDynamicPageHeight(data.functionsPage),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -3826,13 +3830,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 5: DELIVERABLES */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
-                height: getDynamicPageHeight(data.deliverablesPage),
                 minWidth: '794px',
                 maxWidth: '794px',
+                height: getDynamicPageHeight(data.deliverablesPage),
                 minHeight: getDynamicPageHeight(data.deliverablesPage),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -3933,13 +3938,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 6: SPECIAL VALUE ADDITIONS */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
-                height: getDynamicPageHeight(data.specialValueAdditions),
                 minWidth: '794px',
                 maxWidth: '794px',
+                height: getDynamicPageHeight(data.specialValueAdditions),
                 minHeight: getDynamicPageHeight(data.specialValueAdditions),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -4051,13 +4057,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 7: PRICING DETAILS */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
-                height: getDynamicPageHeight(data.pricingPage),
                 minWidth: '794px',
                 maxWidth: '794px',
+                height: getDynamicPageHeight(data.pricingPage),
                 minHeight: getDynamicPageHeight(data.pricingPage),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -4212,13 +4219,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 8: PAYMENT TERMS & SCHEDULE */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
-                height: getDynamicPageHeight(data.paymentTermsPage),
                 minWidth: '794px',
                 maxWidth: '794px',
+                height: getDynamicPageHeight(data.paymentTermsPage),
                 minHeight: getDynamicPageHeight(data.paymentTermsPage),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -4364,13 +4372,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 9: ADD-ONS & UPGRADES */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
-                height: getDynamicPageHeight(data.addOnsPage),
                 minWidth: '794px',
                 maxWidth: '794px',
+                height: getDynamicPageHeight(data.addOnsPage),
                 minHeight: getDynamicPageHeight(data.addOnsPage),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
@@ -4488,13 +4497,14 @@ function StudioCoreAiryBuilderContent() {
 
             {/* SECTION 10: DELIVERY TIMELINE & TERMS */}
             <section 
-              className="quotation-page content-page flex flex-col transition-colors duration-300 select-none"
+              className="quotation-page relative w-[794px] overflow-hidden transition-all duration-150 mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
-                height: getDynamicPageHeight(data.termsAndThankYou),
                 minWidth: '794px',
                 maxWidth: '794px',
+                height: getDynamicPageHeight(data.termsAndThankYou),
                 minHeight: getDynamicPageHeight(data.termsAndThankYou),
+                maxHeight: 'none',
                 boxSizing: 'border-box',
                 position: 'relative',
                 overflow: 'hidden',
