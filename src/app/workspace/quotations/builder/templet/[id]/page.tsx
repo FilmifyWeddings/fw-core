@@ -2361,19 +2361,19 @@ function StudioCoreAiryBuilderContent() {
             >
               {/* Card Header with Controls */}
               <div 
-                className="p-2.5 bg-zinc-100/90 flex items-center justify-between font-bold text-zinc-800 select-none cursor-pointer"
+                className="p-2.5 bg-zinc-100/90 flex flex-row items-center justify-between gap-2 font-bold text-zinc-800 select-none cursor-pointer"
                 onClick={() => setOpenCard(isOpen ? null : pageItem.id)}
               >
-                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
                   <div 
-                    className="p-1 cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700" 
+                    className="p-1 cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700 shrink-0" 
                     title="Drag to reorder"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <GripVertical className="w-3.5 h-3.5" />
                   </div>
 
-                  <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
                       disabled={isFirst}
@@ -2394,9 +2394,9 @@ function StudioCoreAiryBuilderContent() {
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1.5 min-w-0 ml-1">
+                  <div className="flex items-center gap-1.5 min-w-0 ml-1 flex-1 text-left">
                     {getPageIcon(pageItem.type)}
-                    <span className="text-xs truncate font-bold text-zinc-800">
+                    <span className="text-xs truncate font-bold text-zinc-800 text-left">
                       {pIdx + 1}. {pageItem.label}
                     </span>
                   </div>
@@ -3779,7 +3779,7 @@ function StudioCoreAiryBuilderContent() {
       <div className="flex-1 flex overflow-hidden relative">
         
         {/* DESKTOP SIDEBAR PANEL (>= 768px) */}
-        <aside className="w-[320px] bg-white border-r border-zinc-200 p-4 overflow-y-auto shrink-0 text-xs shadow-sm no-print hidden md:block">
+        <aside className="w-[420px] bg-white border-r border-zinc-200 p-4 overflow-y-auto shrink-0 text-xs shadow-sm no-print hidden md:block">
           {renderSidebarControls()}
         </aside>
 
@@ -3811,7 +3811,13 @@ function StudioCoreAiryBuilderContent() {
                 style={{ width: '794px' }} 
                 className="flex flex-col gap-0"
               >
-                <section 
+                {pageSequence.map((pageItem, pIdx) => {
+                  const isLast = pIdx === pageSequence.length - 1;
+
+                  return (
+                    <React.Fragment key={pageItem.id}>
+                      {pageItem.type === 'cover' && (
+                        <section 
                   className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
                   style={{
                     width: '794px',
@@ -3933,15 +3939,10 @@ function StudioCoreAiryBuilderContent() {
                 </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 2: ABOUT US */}
-            <section 
+                      {pageItem.type === 'aboutUs' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4039,15 +4040,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 3: PRE-WEDDING SHOOT */}
-            <section 
+                      {pageItem.type === 'shootDetails' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4162,15 +4158,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 4: FUNCTIONS & COVERAGE */}
-            <section 
+                      {pageItem.type === 'functionsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4330,15 +4321,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 5: DELIVERABLES */}
-            <section 
+                      {pageItem.type === 'deliverablesPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4438,15 +4424,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 6: SPECIAL VALUE ADDITIONS */}
-            <section 
+                      {pageItem.type === 'specialValueAdditions' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4557,15 +4538,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 7: PRICING DETAILS */}
-            <section 
+                      {pageItem.type === 'pricingPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4719,15 +4695,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 8: PAYMENT TERMS & SCHEDULE */}
-            <section 
+                      {pageItem.type === 'paymentTermsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4872,15 +4843,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 9: ADD-ONS & UPGRADES */}
-            <section 
+                      {pageItem.type === 'addOnsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4997,15 +4963,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 10: TERMS & CONDITIONS */}
-            <section 
+                      {pageItem.type === 'termsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -5101,15 +5062,10 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 11: THANK YOU PAGE */}
-            <section 
+                      {pageItem.type === 'thankYouPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -5234,7 +5190,130 @@ function StudioCoreAiryBuilderContent() {
 
               </div>
             </section>
+                      )}
 
+                      {pageItem.type === 'custom' && (() => {
+                        const cKey = pageItem.customId || pageItem.id;
+                        const customObj = (data.customPages || {})[cKey] || {};
+                        return (
+                          <section 
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
+                            style={{
+                              width: '794px',
+                              minWidth: '794px',
+                              maxWidth: '794px',
+                              height: getDynamicPageHeight(customObj),
+                              minHeight: getDynamicPageHeight(customObj),
+                              maxHeight: 'none',
+                              boxSizing: 'border-box',
+                              position: 'relative',
+                              overflow: 'hidden',
+                              margin: '0 auto',
+                              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                              backgroundColor: pageBgColor || '#FFFFFF',
+                              color: textColor,
+                              fontFamily: data.secondaryFont,
+                            }}
+                          >
+                            {customObj.photo && customObj.frameShape === 'background' && (
+                              <SectionImageRenderer
+                                photo={customObj.photo}
+                                frameShape="background"
+                                photoHeight={customObj.photoHeight || 1123}
+                                photoWidth={customObj.photoWidth || 100}
+                                photoFocalY={customObj.photoFocalY || 50}
+                                bgOpacity={customObj.bgOpacity || 40}
+                                pageBgColor={pageBgColor}
+                                altText={customObj.heading || "Custom Page Background"}
+                              />
+                            )}
+
+                            <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
+                              customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' 
+                                ? 'px-0' 
+                                : 'px-12'
+                            } ${!customObj.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                              <div className={`w-full space-y-6 flex flex-col items-center justify-center my-auto ${
+                                customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' ? 'px-0' : ''
+                              }`}>
+                                
+                                {/* TOP POSITION IMAGE */}
+                                {customObj.photo && customObj.frameShape !== 'background' && customObj.imagePosition === 'top' && (
+                                  <SectionImageRenderer
+                                    photo={customObj.photo}
+                                    frameShape={customObj.frameShape || 'rounded'}
+                                    photoHeight={customObj.photoHeight || 380}
+                                    photoWidth={customObj.photoWidth || 75}
+                                    photoFocalY={customObj.photoFocalY || 50}
+                                    altText="Custom Photo"
+                                  />
+                                )}
+
+                                <div className={`space-y-3 ${customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' ? 'px-12' : ''}`}>
+                                  {customObj.kicker && (
+                                    <p className="text-xs tracking-[0.25em] uppercase font-bold" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
+                                      {customObj.kicker}
+                                    </p>
+                                  )}
+                                  
+                                  <h2 className="text-3xl tracking-[0.2em] uppercase font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                    {customObj.heading || 'CUSTOM PAGE'}
+                                  </h2>
+
+                                  {customObj.subtitle && (
+                                    <p className="text-sm tracking-[0.15em] uppercase font-semibold opacity-90" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
+                                      {customObj.subtitle}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* CENTER POSITION IMAGE */}
+                                {customObj.photo && customObj.frameShape !== 'background' && customObj.imagePosition === 'center' && (
+                                  <SectionImageRenderer
+                                    photo={customObj.photo}
+                                    frameShape={customObj.frameShape || 'rounded'}
+                                    photoHeight={customObj.photoHeight || 380}
+                                    photoWidth={customObj.photoWidth || 75}
+                                    photoFocalY={customObj.photoFocalY || 50}
+                                    altText="Custom Photo"
+                                  />
+                                )}
+
+                                {customObj.text && (
+                                  <div className={`pt-2 max-w-xl mx-auto ${customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' ? 'px-12' : ''}`}>
+                                    <p className="text-xs leading-relaxed font-normal whitespace-pre-line text-zinc-700" style={{ fontFamily: data.secondaryFont }}>
+                                      {customObj.text}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* BOTTOM POSITION IMAGE */}
+                                {customObj.photo && customObj.frameShape !== 'background' && (customObj.imagePosition === 'bottom' || !customObj.imagePosition) && (
+                                  <SectionImageRenderer
+                                    photo={customObj.photo}
+                                    frameShape={customObj.frameShape || 'rounded'}
+                                    photoHeight={customObj.photoHeight || 380}
+                                    photoWidth={customObj.photoWidth || 75}
+                                    photoFocalY={customObj.photoFocalY || 50}
+                                    isBottomFlush={true}
+                                    altText="Custom Photo"
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          </section>
+                        );
+                      })()}
+
+                      {!isLast && (
+                        <div 
+                          className="w-[794px] h-4 mx-auto shrink-0"
+                          style={{ backgroundColor: '#f9e4cc' }}
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           </div>
