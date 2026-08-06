@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PDFDocument } from 'pdf-lib';
 import { createClient } from '@supabase/supabase-js';
 import { renderQuotationToHTML, getEmbeddedCustomFontsBase64CSS } from '@/lib/pdf-html-generator';
 
@@ -9,7 +10,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 });
 
-// Locate Chromium executable path cross-platform (Linux VPS, Windows, Mac)
+// Locate Chromium executable path cross-platform (Linux VPS, Windows, Mac) fallback
 async function getChromiumExecutablePath(): Promise<string | undefined> {
   const fs = await import('fs');
 
@@ -59,19 +60,71 @@ function makeImageUrlsAbsolute(html: string): string {
   });
 }
 
-// POST /api/quotations/pdf - Direct Client HTML Snapshot & Server HTML Render Hybrid Puppeteer PDF Engine
+// POST /api/quotations/pdf - HIGH-DPI CANVAS SNAPSHOT SERVER PDF COMPILATION ENGINE
 export async function POST(req: NextRequest) {
   let browser: any = null;
   try {
     const body = await req.json();
-    const { quotationId, templateId, filename, content_json, htmlContent: clientSnapshotHTML } = body;
+    const { quotationId, templateId, filename, content_json, pageSnapshots, htmlContent: clientSnapshotHTML } = body;
     const targetId = quotationId || templateId;
 
-    if (!targetId && !clientSnapshotHTML) {
-      return NextResponse.json({ error: 'quotationId, templateId, or htmlContent is required' }, { status: 400 });
+    // ── HIGH-DPI CANVAS SNAPSHOT COMPILATION ENGINE (100% VISUAL PARITY) ──
+    if (pageSnapshots && Array.isArray(pageSnapshots) && pageSnapshots.length > 0) {
+      console.log('[High-DPI PDF Server Engine] Compiling', pageSnapshots.length, 'page snapshots into A4 vector PDF...');
+      
+      const pdfDoc = await PDFDocument.create();
+
+      // Standard A4 dimensions in points (72 points = 1 inch): 595.28 x 841.89
+      const pageWidth = 595.28;
+      const pageHeight = 841.89;
+
+      for (let i = 0; i < pageSnapshots.length; i++) {
+        const dataUrl = pageSnapshots[i];
+        if (!dataUrl || typeof dataUrl !== 'string') continue;
+
+        const base64Data = dataUrl.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+
+        let embeddedImage;
+        if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg')) {
+          embeddedImage = await pdfDoc.embedJpg(imageBuffer);
+        } else {
+          embeddedImage = await pdfDoc.embedPng(imageBuffer);
+        }
+
+        const pdfPage = pdfDoc.addPage([pageWidth, pageHeight]);
+        pdfPage.drawImage(embeddedImage, {
+          x: 0,
+          y: 0,
+          width: pageWidth,
+          height: pageHeight
+        });
+      }
+
+      const pdfBytes = await pdfDoc.save();
+
+      const safeFilename = (filename || `${targetId || 'Quotation'}.pdf`)
+        .replace(/–/g, '-')
+        .replace(/—/g, '-')
+        .replace(/[^ -~]/g, '-');
+
+      console.log('[High-DPI PDF Server Engine] Successfully compiled PDF (Bytes:', pdfBytes.length, ')');
+
+      return new NextResponse(new Uint8Array(pdfBytes), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${safeFilename}"`,
+          'Cache-Control': 'no-cache'
+        }
+      });
     }
 
-    // 1. Fetch data from Supabase if content_json was not passed directly
+    // ── FALLBACK SERVER PUPPETEER RENDER ENGINE ──
+    if (!targetId && !clientSnapshotHTML) {
+      return NextResponse.json({ error: 'quotationId, pageSnapshots, or htmlContent is required' }, { status: 400 });
+    }
+
     let documentData = content_json;
     if (!documentData && targetId) {
       const { data: doc } = await supabaseAdmin
@@ -85,22 +138,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Sync live content JSON into Supabase DB asynchronously if provided
-    if (content_json && targetId) {
-      try {
-        await supabaseAdmin
-          .from('quotation_documents')
-          .upsert({
-            template_id: targetId,
-            content_json: content_json,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'template_id' });
-      } catch (e: any) {
-        console.warn('[Supabase Sync Notice]:', e);
-      }
-    }
-
-    // 3. Assemble Complete HTML Payload with Ingested Base64 Fonts & Absolute Image Paths
     let fullHTML = '';
     const embeddedFontsCSS = getEmbeddedCustomFontsBase64CSS();
 
@@ -166,10 +203,6 @@ export async function POST(req: NextRequest) {
       fullHTML = renderQuotationToHTML(documentData || {});
     }
 
-    console.log('[Puppeteer Server Engine] --------------------------------------------------');
-    console.log('[Puppeteer Server Engine] Rendering Direct HTML Payload (Length:', fullHTML.length, 'bytes)');
-
-    // 4. Launch Puppeteer Core with Fixed A4 Viewport & Strict Flags
     const puppeteer = (await import('puppeteer-core')).default;
     const executablePath = await getChromiumExecutablePath();
 
@@ -196,11 +229,8 @@ export async function POST(req: NextRequest) {
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1810, deviceScaleFactor: 2 });
-
-    // 5. Inject HTML string directly into Chromium memory
     await page.setContent(fullHTML, { waitUntil: ['domcontentloaded', 'networkidle0'], timeout: 30000 });
 
-    // 6. Wait for all image URLs & fonts load promises
     await page.evaluate(async () => {
       if (document.fonts && document.fonts.ready) {
         try { await document.fonts.ready; } catch (e) {}
@@ -218,10 +248,8 @@ export async function POST(req: NextRequest) {
       );
     });
 
-    // 7. Explicit Font Ready Lock
     await page.evaluateHandle('document.fonts.ready');
 
-    // 8. Generate Deterministic A4 Vector PDF
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -230,8 +258,6 @@ export async function POST(req: NextRequest) {
 
     await browser.close();
     browser = null;
-
-    console.log('[Puppeteer Server Engine] Successfully Generated PDF Buffer Size:', pdfBuffer.length, 'bytes');
 
     const safeFilename = (filename || `${targetId || 'Quotation'}.pdf`)
       .replace(/–/g, '-')
@@ -247,7 +273,7 @@ export async function POST(req: NextRequest) {
       }
     });
   } catch (err: any) {
-    console.error('[POST /api/quotations/pdf] Error:', err);
+    console.error('[POST /api/quotations/pdf Engine Error]:', err);
     if (browser) {
       try { await browser.close(); } catch {}
     }

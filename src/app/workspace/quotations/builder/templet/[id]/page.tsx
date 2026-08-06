@@ -20,6 +20,7 @@ import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flush
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
+import { toPng } from 'html-to-image';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
@@ -2074,12 +2075,36 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PURE SERVER-SIDE PUPPETEER PDF ENGINE WITH CLIENT SNAPSHOT INGESTION
+  // HIGH-DPI CANVAS SNAPSHOT SERVER ENGINE FOR 100% VISUAL PARITY
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
     try {
       const container = document.getElementById('quotation-canvas-container');
-      const clientCanvasHTML = container ? container.innerHTML : '';
+      if (!container) throw new Error('Canvas container not found');
+
+      if (document.fonts && document.fonts.ready) {
+        try { await document.fonts.ready; } catch (e) {}
+      }
+
+      const pageEls = Array.from(container.querySelectorAll('.quotation-canvas-page')) as HTMLElement[];
+      const targets = pageEls.length > 0 ? pageEls : [container];
+
+      const pageSnapshots: string[] = [];
+
+      for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+        const dataUrl = await toPng(target, {
+          pixelRatio: 2,
+          quality: 0.95,
+          cacheBust: true,
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          }
+        });
+        pageSnapshots.push(dataUrl);
+      }
+
       const routeId = params?.id ? String(params.id) : '';
 
       const res = await fetch('/api/quotations/pdf', {
@@ -2087,13 +2112,13 @@ function StudioCoreAiryBuilderContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quotationId: routeId,
-          htmlContent: clientCanvasHTML,
+          pageSnapshots,
           content_json: data
         })
       });
 
       if (!res.ok) {
-        throw new Error(`PDF generation endpoint returned status ${res.status}`);
+        throw new Error(`PDF generation API returned status ${res.status}`);
       }
 
       const blob = await res.blob();
@@ -2106,7 +2131,7 @@ function StudioCoreAiryBuilderContent() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('[Export PDF Error]:', err);
+      console.error('[High-DPI Canvas Snapshot Export Error]:', err);
       const routeId = params?.id ? String(params.id) : '';
       if (routeId) {
         window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
