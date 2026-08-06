@@ -17,6 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
+import { generateDeviceIndependentPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 // @ts-ignore
@@ -2076,121 +2077,31 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // CONTINUOUS LONG-PAGE SINGLE SEAMLESS CANVAS PDF EXPORT ENGINE
+  // ENTERPRISE DEVICE-INDEPENDENT PDF EXPORT ENGINE
   const handleDownloadPDFCanvas = async () => {
     if (!canvasRef.current) return;
     const previousScale = zoomScale;
     setIsExportingPDF(true);
-    setPdfToastMessage('Loading fonts & images...');
+    setPdfToastMessage('Preparing Enterprise PDF...');
 
     setZoomScale(1.0);
     document.body.classList.add('pdf-capture-active');
 
-    let offscreenHost: HTMLDivElement | null = null;
-
     try {
-      // 1. Preload Web Fonts (Cormorant Garamond, Plus Jakarta Sans)
-      try {
-        await ensureFontsReady();
-        if (typeof document !== 'undefined' && document.fonts) {
-          await document.fonts.ready;
-        }
-      } catch (fontErr) {
-        console.warn('Font loading notice:', fontErr);
-      }
-
-      // @ts-ignore
-      const html2canvasPro = (await import('html2canvas-pro')).default;
-      const { jsPDF } = await import('jspdf');
-
-      const container = document.querySelector('#quotation-full-canvas') || document.querySelector('.quotation-container');
-      if (!container) throw new Error('No quotation container found (#quotation-full-canvas)');
-
-      // 2. Off-screen Fixed Viewport Host (A4 Lock at 794px width)
-      offscreenHost = document.createElement('div');
-      offscreenHost.id = 'pdf-offscreen-render-host';
-      offscreenHost.style.position = 'absolute';
-      offscreenHost.style.left = '-9999px';
-      offscreenHost.style.top = '0';
-      offscreenHost.style.width = '794px';
-      offscreenHost.style.minWidth = '794px';
-      offscreenHost.style.maxWidth = '794px';
-      offscreenHost.style.zIndex = '-99999';
-      offscreenHost.style.overflow = 'visible';
-      offscreenHost.style.backgroundColor = '#ffffff';
-      offscreenHost.style.transform = 'none';
-
-      // Clone container to guarantee exact web-view CSS dimensions (794px fixed)
-      const clone = (container as HTMLElement).cloneNode(true) as HTMLElement;
-      clone.style.width = '794px';
-      clone.style.minWidth = '794px';
-      clone.style.maxWidth = '794px';
-      clone.style.transform = 'none';
-      clone.style.margin = '0 auto';
-      clone.style.padding = '0';
-
-      offscreenHost.appendChild(clone);
-      document.body.appendChild(offscreenHost);
-
-      // 3. Preload all <img> tags inside clone to prevent blank canvas issues
-      const images = Array.from(clone.querySelectorAll('img'));
-      await Promise.all(
-        images.map(img => {
-          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-          return new Promise(resolve => {
-            img.onload = resolve;
-            img.onerror = resolve;
-            setTimeout(resolve, 1500); // Safety timeout
-          });
-        })
-      );
-
-      // Brief delay for DOM to settle
-      await new Promise(r => setTimeout(r, 200));
-
-      setPdfToastMessage('Rasterizing Continuous Long-Page Canvas...');
-
-      // 4. Capture entire long container as 1 Continuous Seamless High-Res Canvas
-      const canvas = await html2canvasPro(clone, {
-        scale: 2.5,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 794,
-        windowHeight: clone.scrollHeight
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
-      const imgWidth = 794;
-      const imgHeight = Math.round((canvas.height * imgWidth) / canvas.width);
-
-      // 5. Create 1 Continuous Long Page PDF with exact dynamic height
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'px',
-        format: [imgWidth, imgHeight]
-      });
-
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
-
       const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
-      const cleanClientName = clientName
-        .replace(/–/g, '-')
-        .replace(/—/g, '-')
-        .replace(/[^ -~]/g, '-');
+      
+      await generateDeviceIndependentPdf({
+        containerSelector: '#quotation-full-canvas',
+        filename: `${clientName}-Full.pdf`,
+        scale: 2.5,
+        onProgress: (msg) => setPdfToastMessage(msg)
+      });
 
-      pdf.save(`${cleanClientName}-Full.pdf`);
-
-      setPdfToastMessage('Continuous Long-Page PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
       console.error('PDF Export Error:', err);
       alert(`PDF Export Failed: ${err?.message || err}`);
     } finally {
-      if (offscreenHost && document.body.contains(offscreenHost)) {
-        document.body.removeChild(offscreenHost);
-      }
       setIsExportingPDF(false);
       document.body.classList.remove('pdf-capture-active');
       setZoomScale(previousScale);
