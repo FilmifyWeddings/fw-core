@@ -2,8 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { renderQuotationToHTML } from '@/lib/pdf-html-generator';
 
 export default function QuotationViewPage() {
   const params = useParams();
@@ -15,29 +13,24 @@ export default function QuotationViewPage() {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    async function loadQuotation() {
+    async function loadQuotationHTML() {
       if (!id) return;
       try {
-        const { data: doc } = await supabase
-          .from('quotation_documents')
-          .select('content_json')
-          .eq('template_id', id)
-          .maybeSingle();
-
-        if (doc?.content_json) {
-          setHtmlContent(renderQuotationToHTML(doc.content_json));
+        const res = await fetch(`/api/quotations/${id}/render-html`);
+        if (res.ok) {
+          const html = await res.text();
+          setHtmlContent(html);
         } else {
-          setHtmlContent(renderQuotationToHTML({ templateId: id }));
+          console.warn('[QuotationViewPage] Server returned non-200 for render-html');
         }
       } catch (err) {
-        console.error('Error fetching quotation for view:', err);
-        setHtmlContent(renderQuotationToHTML({ templateId: id }));
+        console.error('[QuotationViewPage] Fetch Error:', err);
       } finally {
         setLoading(false);
       }
     }
 
-    loadQuotation();
+    loadQuotationHTML();
   }, [id]);
 
   useEffect(() => {

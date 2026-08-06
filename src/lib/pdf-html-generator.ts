@@ -1,6 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-
 // Color Themes Registry
 const COLOR_THEMES: Record<string, any> = {
   'cherry-red-cream': { primary: '#750505', background: '#FBFCEB', text: '#750505', kicker: '#750505', borderColor: 'rgba(117, 5, 5, 0.2)', boxBgColor: 'rgba(117, 5, 5, 0.06)' },
@@ -38,13 +35,20 @@ const DEFAULT_PAGE_SEQUENCE = [
   { id: 'thankYouPage', type: 'thankYouPage', label: 'Thank You Page' }
 ];
 
-// Helper to embed custom font files from disk as Base64 Data URIs
+// Helper to embed custom font files from disk as Base64 Data URIs safely in Node.js env
 function getEmbeddedCustomFontsBase64CSS(): string {
   let css = '';
+  if (typeof window !== 'undefined') {
+    return css;
+  }
   try {
+    const nodeReq = eval('require');
+    const fs = nodeReq('fs');
+    const path = nodeReq('path');
     const customFontsDir = path.join(process.cwd(), 'public', 'custom-fonts');
     if (fs.existsSync(customFontsDir)) {
       const files = fs.readdirSync(customFontsDir);
+
       for (const file of files) {
         const ext = path.extname(file).toLowerCase();
         let mime = 'font/ttf';
