@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Sparkles, Save, Upload, Trash2, Plus, Check, Edit3, 
@@ -11,16 +11,15 @@ import {
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
   Download, Printer, RefreshCw, X, Layers, ExternalLink, ChevronUp, ChevronDown, Move, Image as ImageIcon, Sliders,
   ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter, Clock,
-  Gift, CreditCard, PackageCheck, Heart, Phone, Mail, Globe
+  Gift, CreditCard, PackageCheck, Heart, Phone, Mail, Globe, GripVertical, CopyPlus, PlusCircle, Tag
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
+import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
+import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
-// @ts-ignore
-import html2canvasPro from 'html2canvas-pro';
-import jsPDF from 'jspdf';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
@@ -275,19 +274,65 @@ export interface AddOnItem {
   selected: boolean;
 }
 
+export interface PageSequenceItem {
+  id: string;
+  type: string;
+  label: string;
+  isStandard?: boolean;
+  customId?: string;
+}
+
+export interface CustomPageItem {
+  id: string;
+  heading: string;
+  kicker?: string;
+  subtitle?: string;
+  text?: string;
+  photo?: string;
+  photoHeight?: number;
+  photoWidth?: number;
+  photoFocalY?: number;
+  bgOpacity?: number;
+  frameShape?: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
+  imagePosition?: 'top' | 'center' | 'bottom' | 'full';
+}
+
+export const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
+  { type: 'cover', label: 'Cover Page' },
+  { type: 'aboutUs', label: 'About Us' },
+  { type: 'shootDetails', label: 'Pre-Wedding Shoot' },
+  { type: 'functionsPage', label: 'Functions & Coverage' },
+  { type: 'deliverablesPage', label: 'Deliverables' },
+  { type: 'specialValueAdditions', label: 'Special Value Additions' },
+  { type: 'pricingPage', label: 'Pricing Details' },
+  { type: 'paymentTermsPage', label: 'Payment Terms & Schedule' },
+  { type: 'addOnsPage', label: 'Add-Ons & Upgrades' },
+  { type: 'termsPage', label: 'Terms & Conditions' },
+  { type: 'thankYouPage', label: 'Thank You Page' },
+];
+
+export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(std => ({
+  id: std.type,
+  type: std.type,
+  label: std.label,
+  isStandard: true,
+}));
+
 // StudioCore Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Pre-Wedding – Airy White (Pre-Wedding)',
-  eventGroup: 'Pre-Wedding',
-  look: 'Cherry Red & Cream',
+  designName: 'Wedding - Design 1',
+  eventGroup: 'Wedding',
+  look: 'Cyprus & Sand Dune',
   primaryFont: "'Cormorant Garamond', serif",
   secondaryFont: "'Plus Jakarta Sans', sans-serif",
+  pageSequence: DEFAULT_PAGE_SEQUENCE,
+  customPages: {} as Record<string, CustomPageItem>,
 
   // 1. Cover Page State
   cover: {
-    groomName: 'YASH',
-    brideName: 'TWINKLE',
-    coupleName: 'YASH & TWINKLE',
+    groomName: 'Rahul',
+    brideName: 'Neha',
+    coupleName: 'Rahul & Neha',
     eventType: 'Wedding',
     sideOption: 'Both Sides',
     locationName: 'MUMBAI',
@@ -853,7 +898,7 @@ function UnifiedPhotoControls({
             </div>
             <input
               type="range"
-              min={frameShape === 'background' ? 800 : 100}
+              min={frameShape === 'background' ? 1123 : 100}
               max={frameShape === 'background' ? 2500 : 800}
               step={10}
               value={photoHeight || (frameShape === 'background' ? 1123 : 380)}
@@ -991,7 +1036,8 @@ function getDynamicPageHeight(sectionData?: {
     sectionData?.imagePosition === 'full';
     
   if (isBackground) {
-    const h = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight || 1123;
+    const rawH = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight || 1123;
+    const h = Math.max(1123, Number(rawH) || 1123);
     return `${h}px`;
   }
   return '1123px';
@@ -1721,6 +1767,7 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
 function StudioCoreAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const params = useParams();
 
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1729,8 +1776,189 @@ function StudioCoreAiryBuilderContent() {
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Saved');
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Auto-saved to cloud');
+  const isInitialLoadedRef = useRef<boolean>(false);
+  const currentVersionRef = useRef<number>(1);
   const [openCard, setOpenCard] = useState<string | null>('cover');
+  // ── DYNAMIC PAGE SEQUENCE & CUSTOM PAGE CONTROLS ──
+  const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
+  const [draggedPageIndex, setDraggedPageIndex] = useState<number | null>(null);
+
+  const pageSequence: PageSequenceItem[] = data.pageSequence || DEFAULT_PAGE_SEQUENCE;
+
+  const updatePageSequence = (newSeq: PageSequenceItem[]) => {
+    setData(prev => ({ ...prev, pageSequence: newSeq }));
+    setHasUnsavedChanges(true);
+  };
+
+  const movePageUp = (index: number) => {
+    if (index <= 0) return;
+    const newSeq = [...pageSequence];
+    const temp = newSeq[index];
+    newSeq[index] = newSeq[index - 1];
+    newSeq[index - 1] = temp;
+    updatePageSequence(newSeq);
+  };
+
+  const movePageDown = (index: number) => {
+    if (index >= pageSequence.length - 1) return;
+    const newSeq = [...pageSequence];
+    const temp = newSeq[index];
+    newSeq[index] = newSeq[index + 1];
+    newSeq[index + 1] = temp;
+    updatePageSequence(newSeq);
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedPageIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDropPage = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedPageIndex === null || draggedPageIndex === targetIndex) return;
+    const newSeq = [...pageSequence];
+    const [draggedItem] = newSeq.splice(draggedPageIndex, 1);
+    newSeq.splice(targetIndex, 0, draggedItem);
+    setDraggedPageIndex(null);
+    updatePageSequence(newSeq);
+  };
+
+  const duplicatePage = (index: number) => {
+    const target = pageSequence[index];
+    const newId = `${target.type}_copy_${Date.now()}`;
+    const newLabel = `${target.label} (Copy)`;
+
+    let newCustomId = target.customId;
+    let newCustomPages = { ...(data.customPages || {}) };
+
+    if (target.type === 'custom') {
+      newCustomId = `custom_${Date.now()}`;
+      const sourceData = (target.customId ? newCustomPages[target.customId] : {}) as CustomPageItem;
+      newCustomPages[newCustomId] = {
+        ...sourceData,
+        id: newCustomId,
+        heading: `${sourceData?.heading || 'Custom Page'} (Copy)`,
+      };
+    }
+
+    const newItem: PageSequenceItem = {
+      id: newId,
+      type: target.type,
+      label: newLabel,
+      isStandard: false,
+      customId: newCustomId,
+    };
+
+    const newSeq = [...pageSequence];
+    newSeq.splice(index + 1, 0, newItem);
+    setData(prev => ({
+      ...prev,
+      pageSequence: newSeq,
+      customPages: newCustomPages,
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const deletePage = (index: number) => {
+    const newSeq = [...pageSequence];
+    newSeq.splice(index, 1);
+    updatePageSequence(newSeq);
+  };
+
+  const addCustomBlankPage = () => {
+    const cId = `custom_${Date.now()}`;
+    const newItem: PageSequenceItem = {
+      id: cId,
+      type: 'custom',
+      label: 'Custom Page',
+      isStandard: false,
+      customId: cId,
+    };
+
+    const newSeq = [...pageSequence, newItem];
+    const newCustoms = {
+      ...(data.customPages || {}),
+      [cId]: {
+        id: cId,
+        heading: 'NEW CUSTOM PAGE',
+        subtitle: 'Add optional subtitle or description',
+        text: 'Enter your custom block description or special terms here...',
+        frameShape: 'rounded' as const,
+        photoHeight: 380,
+        photoWidth: 75,
+        photoFocalY: 50,
+        bgOpacity: 40,
+        imagePosition: 'bottom' as const,
+      },
+    };
+
+    setData(prev => ({
+      ...prev,
+      pageSequence: newSeq,
+      customPages: newCustoms,
+    }));
+    setHasUnsavedChanges(true);
+    setOpenCard(cId);
+    setAddPageModalOpen(false);
+  };
+
+  const restoreStandardPage = (stdType: string) => {
+    const stdDef = STANDARD_PAGE_DEFINITIONS.find(s => s.type === stdType);
+    if (!stdDef) return;
+
+    const newItem: PageSequenceItem = {
+      id: stdDef.type,
+      type: stdDef.type,
+      label: stdDef.label,
+      isStandard: true,
+    };
+
+    const newSeq = [...pageSequence, newItem];
+    updatePageSequence(newSeq);
+    setOpenCard(stdDef.type);
+    setAddPageModalOpen(false);
+  };
+
+  const deletedStandardPages = STANDARD_PAGE_DEFINITIONS.filter(
+    std => !pageSequence.some(p => p.type === std.type)
+  );
+
+  const getPageIcon = (type: string) => {
+    switch (type) {
+      case 'cover':
+        return <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />;
+      case 'aboutUs':
+        return <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />;
+      case 'shootDetails':
+        return <Camera className="w-3.5 h-3.5 text-rose-500 shrink-0" />;
+      case 'functionsPage':
+        return <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />;
+      case 'deliverablesPage':
+        return <PackageCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />;
+      case 'specialValueAdditions':
+        return <Gift className="w-3.5 h-3.5 text-pink-500 shrink-0" />;
+      case 'pricingPage':
+        return <Tag className="w-3.5 h-3.5 text-amber-700 shrink-0" />;
+      case 'paymentTermsPage':
+        return <CreditCard className="w-3.5 h-3.5 text-indigo-600 shrink-0" />;
+      case 'addOnsPage':
+        return <PlusCircle className="w-3.5 h-3.5 text-teal-600 shrink-0" />;
+      case 'termsPage':
+        return <ShieldCheck className="w-3.5 h-3.5 text-zinc-600 shrink-0" />;
+      case 'thankYouPage':
+        return <Heart className="w-3.5 h-3.5 text-rose-600 shrink-0" />;
+      default:
+        return <FileText className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
+    }
+  };
+
+
 
   // Custom Event Types State
   const [customEventTypes, setCustomEventTypes] = useState<string[]>(() => {
@@ -1846,102 +2074,160 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // PIXEL-PERFECT STANDARD A4 SINGLE CONTINUOUS LONG-PAGE PDF EXPORTER Engine
+  // SINGLE SOURCE OF TRUTH SERVER-SIDE HEADLESS CHROMIUM PDF ENGINE
   const handleDownloadPDFCanvas = async () => {
-    if (!canvasRef.current) return;
-    const previousScale = zoomScale;
     setIsExportingPDF(true);
-    setPdfToastMessage('Generating High-Res A4 PDF...');
-
-    // Lock zoomScale to 1.0 & enable PDF capture CSS
-    setZoomScale(1.0);
-    document.body.classList.add('pdf-capture-active');
+    setPdfToastMessage('Server Headless Chromium Generating PDF...');
 
     try {
-      // @ts-ignore
-      const html2canvasPro = (await import('html2canvas-pro')).default;
-      const { jsPDF } = await import('jspdf');
-
-      const container = document.querySelector('#quotation-full-canvas') || document.querySelector('.quotation-container');
-      if (!container) throw new Error('No quotation container found (#quotation-full-canvas)');
-
-      // Capture entire long container in high DPI
-      const canvas = await html2canvasPro(container as HTMLElement, {
-        scale: 3,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
-      const imgWidth = 794; // Fixed standard UI width
-      const imgHeight = (canvas.height * imgWidth) / canvas.width; // Dynamic full height
-
-      // Create a custom single-page PDF with exact dynamic height
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'px',
-        format: [imgWidth, imgHeight]
-      });
-
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
-
       const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
-      const cleanClientName = clientName
-        .replace(/\u2013/g, '-')
-        .replace(/\u2014/g, '-')
-        .replace(/[^\x20-\x7E]/g, '-');
+      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+      const { data: { session } } = await supabase.auth.getSession();
 
-      pdf.save(`${cleanClientName}-Full.pdf`);
+      await downloadServerChromiumPdf({
+        templateId: routeId,
+        filename: `${clientName}-Full.pdf`,
+        content_json: data,
+        userAccessToken: session?.access_token || '',
+        onProgress: (msg) => setPdfToastMessage(msg)
+      });
 
-      setPdfToastMessage('Full PDF Downloaded Successfully!');
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
-      console.error('PDF Export Error:', err);
+      console.error('Server PDF Error:', err);
       alert(`PDF Export Failed: ${err?.message || err}`);
     } finally {
       setIsExportingPDF(false);
-      document.body.classList.remove('pdf-capture-active');
-      setZoomScale(previousScale);
     }
   };
 
-  // Load User Session & Proposal
+  // Load User Session, User Isolation Check & Proposal
   useEffect(() => {
-    console.log('=== TEMPLET_A4_STRICT_REVERT_V7 ===');
     async function initUserAndLoadData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const currentUserId = session?.user?.id || 'demo_user';
+        const currentUserId = session?.user?.id;
+        const userAccessToken = session?.access_token;
+        const userStudioName = session?.user?.user_metadata?.studioName || session?.user?.user_metadata?.studio_name || (session?.user as any)?.studioName;
+
+        if (!currentUserId) {
+          console.warn('[User Access Lock] No authenticated session found, redirecting to /workspace/quotations');
+          router.push('/workspace/quotations');
+          return;
+        }
+
         setUserId(currentUserId);
 
-        const { data: qData } = await supabase
-          .from('quotations')
-          .select('content_json, title')
-          .eq('workspace_id', currentUserId)
-          .eq('quotation_number', 'FW-2026-001')
-          .maybeSingle();
+        // 1. Fetch via SaaS Template API with User Isolation Lock
+        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+        const res = await fetch(`/api/templates/${routeId}`, {
+          headers: {
+            'Authorization': `Bearer ${userAccessToken || ''}`
+          }
+        });
 
-        if (qData?.content_json) {
-          setData(normalizeQuotationData(qData.content_json));
+        if (res.status === 403) {
+          alert('Access Denied: You do not have permission to view or edit this quotation template.');
+          router.push('/workspace/quotations');
+          return;
+        }
+
+        const json = await res.json();
+        if (json.document?.content_json) {
+          const loadedData = normalizeQuotationData(json.document.content_json);
+          if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
+            loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
+          }
+          currentVersionRef.current = json.document.version || 1;
+          cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
+          setData(loadedData);
         } else {
-          const localSaved = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
-          if (localSaved) {
-            try {
-              setData(normalizeQuotationData(JSON.parse(localSaved)));
-            } catch {}
+          // Try local IndexedDB cache before initializing fresh preset
+          const cachedLocal = await getCachedDocumentLocal(routeId);
+          if (cachedLocal) {
+            currentVersionRef.current = cachedLocal.version || 1;
+            setData(normalizeQuotationData(cachedLocal.documentJson));
+          } else {
+            const freshData = { ...DEFAULT_AIRY_PROPOSAL };
+            if (userStudioName) {
+              freshData.cover = { ...freshData.cover, brandName: userStudioName };
+            }
+            setData(freshData);
           }
         }
       } catch (err) {
-        console.warn('Initialization error:', err);
+        console.warn('[Quotation Initialization Error]:', err);
+      } finally {
+        setTimeout(() => {
+          isInitialLoadedRef.current = true;
+          setAutoSaveStatus('Auto-saved to cloud');
+        }, 100);
       }
     }
     initUserAndLoadData();
-  }, []);
+  }, [params]);
 
-  // Real-Time Auto Save
+  // ── SUPABASE REALTIME WEBSOCKET SUBSCRIPTION FOR INSTANT MULTI-DEVICE SYNC ──
   useEffect(() => {
-    if (!userId) return;
+    const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+    
+    // Subscribe to realtime updates on quotation_documents table
+    const channel = supabase
+      .channel(`document:${routeId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'quotation_documents',
+        filter: `template_id=eq.${routeId}`
+      }, (payload: any) => {
+        if (payload.new && payload.new.version > currentVersionRef.current) {
+          console.log('[Supabase Realtime] Incoming remote update v' + payload.new.version);
+          currentVersionRef.current = payload.new.version;
+          if (payload.new.content_json) {
+            const remoteData = normalizeQuotationData(payload.new.content_json);
+            setData(remoteData);
+            cacheDocumentLocal(routeId, remoteData, payload.new.version);
+            setAutoSaveStatus('Auto-saved to cloud');
+          }
+        }
+      })
+      .subscribe();
+
+    // Listen to online reconnect events to flush IndexedDB outbox queue
+    const handleOnline = () => {
+      flushOfflineOutbox(async (item: any) => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`/api/templates/${item.templateId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token || ''}`
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              version: currentVersionRef.current,
+              content_json: item.payload
+            })
+          });
+          return res.ok;
+        } catch {
+          return false;
+        }
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [params, userId]);
+
+    // Real-Time Instant Debounced Auto-Save (500ms sync)
+  useEffect(() => {
+    if (!userId || !isInitialLoadedRef.current) return;
 
     setAutoSaveStatus('Saving...');
     setHasUnsavedChanges(true);
@@ -1954,27 +2240,57 @@ function StudioCoreAiryBuilderContent() {
         const grandTotal = calc.netTotal;
         const subtotal = calc.gross;
 
-        await supabase.from('quotations').upsert({
-          workspace_id: userId,
-          quotation_number: 'FW-2026-001',
-          title: data.designName,
-          client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
-          content_json: data,
-          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-          status: 'draft',
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id,quotation_number' });
+        const { data: { session } } = await supabase.auth.getSession();
+        const userAccessToken = session?.access_token;
+        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
 
+        const saveRes = await fetch(`/api/templates/${routeId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userAccessToken || ''}`
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            version: currentVersionRef.current,
+            content_json: data
+          })
+        });
+
+        if (saveRes.status === 403) {
+          console.warn('[Auto-Save Forbidden]: User does not own this template.');
+          setAutoSaveStatus('Access Denied');
+          setHasUnsavedChanges(false);
+          return;
+        }
+
+        if (saveRes.status === 409) {
+          console.warn('[Optimistic Lock Conflict]: Outdated version rejected by server.');
+          const conflictData = await saveRes.json();
+          if (conflictData.serverVersion) {
+            currentVersionRef.current = conflictData.serverVersion;
+          }
+          setAutoSaveStatus('Version updated');
+          setHasUnsavedChanges(false);
+          return;
+        }
+
+        const resJson = await saveRes.json();
+        if (resJson.version) {
+          currentVersionRef.current = resJson.version;
+        }
+
+        cacheDocumentLocal(routeId, data, currentVersionRef.current);
         setHasUnsavedChanges(false);
-        setAutoSaveStatus('Auto-saved');
+        setAutoSaveStatus('Auto-saved to cloud');
       } catch (err) {
-        setAutoSaveStatus('Saved locally');
+        setAutoSaveStatus('Auto-saved locally');
         setHasUnsavedChanges(false);
       }
-    }, 1000);
+    }, 500);
 
     return () => clearTimeout(timer);
-  }, [data, userId]);
+  }, [data, userId, params]);
 
   const openAddImageModal = (target: string) => {
     setActiveTargetField(target);
@@ -2010,6 +2326,21 @@ function StudioCoreAiryBuilderContent() {
       setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photo: url } }));
     } else if (activeTargetField === 'thankYouLogo') {
       setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), brandLogoUrl: url } }));
+    } else if (activeTargetField.startsWith('customPhoto_')) {
+      const cKey = activeTargetField.replace('customPhoto_', '');
+      setData(prev => {
+        const customObj = (prev.customPages || {})[cKey] || {};
+        return {
+          ...prev,
+          customPages: {
+            ...(prev.customPages || {}),
+            [cKey]: {
+              ...customObj,
+              photo: url
+            }
+          }
+        };
+      });
     }
 
     setMediaModalOpen(false);
@@ -2031,25 +2362,42 @@ function StudioCoreAiryBuilderContent() {
 
   const handleManualSave = async () => {
     setSaving(true);
+    setAutoSaveStatus('Saving...');
     try {
       localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
 
-      await supabase.from('quotations').upsert({
-        workspace_id: userId || 'demo_user',
-        quotation_number: 'FW-2026-001',
-        title: data.designName,
-        client_name: `${data.cover.groomName} & ${data.cover.brideName}`,
-        content_json: data,
-        financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-        status: 'draft',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id,quotation_number' });
+      const { data: { session } } = await supabase.auth.getSession();
+      const userAccessToken = session?.access_token;
+      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+
+      const saveRes = await fetch(`/api/quotations/${routeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userAccessToken || ''}`
+        },
+        body: JSON.stringify({
+          workspace_id: userId || 'demo_user',
+          title: data.designName || 'Wedding - Design 1',
+          client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
+          content_json: data,
+          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
+          status: 'draft'
+        })
+      });
+
+      if (saveRes.status === 403) {
+        alert('Access Denied: You do not have permission to modify this quotation.');
+        setAutoSaveStatus('Access Denied');
+        return;
+      }
 
       setHasUnsavedChanges(false);
       setAutoSaveStatus('Saved');
       alert('Quotation proposal saved to your workspace!');
     } catch {
       alert('Saved locally!');
+      setAutoSaveStatus('Saved locally');
     } finally {
       setSaving(false);
     }
@@ -2102,24 +2450,112 @@ function StudioCoreAiryBuilderContent() {
         </div>
       </div>
 
-      {/* Accordion Cards */}
-      <div className="space-y-2.5 pt-2 border-t border-zinc-100">
-        
-        {/* 1. COVER PAGE CARD */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'cover' ? null : 'cover')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <FileText className="w-3.5 h-3.5 text-zinc-500" />
-              <span>1. Cover Page</span>
-            </div>
-            {openCard === 'cover' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
+      {/* Dynamic Page Sequence Header & + Add Page Action Button */}
+      <div className="flex items-center justify-between pt-2 border-t border-zinc-100 pb-1">
+        <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-zinc-700">
+          <Layers className="w-3.5 h-3.5 text-amber-600" />
+          <span>Page Sequence ({pageSequence.length})</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAddPageModalOpen(true)}
+          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+        >
+          <Plus className="w-3 h-3 stroke-[3]" />
+          <span>Add Page</span>
+        </button>
+      </div>
 
-          {openCard === 'cover' && (
-            <div className="p-3 space-y-3 bg-white">
+      {/* Dynamic Accordion Cards List */}
+      <div className="space-y-2.5">
+        {pageSequence.map((pageItem, pIdx) => {
+          const isFirst = pIdx === 0;
+          const isLast = pIdx === pageSequence.length - 1;
+          const isOpen = openCard === pageItem.id;
+
+          return (
+            <div 
+              key={pageItem.id} 
+              draggable
+              onDragStart={(e) => handleDragStart(e, pIdx)}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDropPage(e, pIdx)}
+              className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden shadow-2xs transition-all"
+            >
+              {/* Card Header with Controls */}
+              <div 
+                className="p-2.5 bg-zinc-100/90 flex flex-row items-center justify-between gap-2 font-bold text-zinc-800 select-none cursor-pointer"
+                onClick={() => setOpenCard(isOpen ? null : pageItem.id)}
+              >
+                <div className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+                  <div 
+                    className="p-1 cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700 shrink-0" 
+                    title="Drag to reorder"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <GripVertical className="w-3.5 h-3.5" />
+                  </div>
+
+                  <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      disabled={isFirst}
+                      onClick={() => movePageUp(pIdx)}
+                      className="p-0.5 text-zinc-400 hover:text-zinc-800 disabled:opacity-30 cursor-pointer"
+                      title="Move up"
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLast}
+                      onClick={() => movePageDown(pIdx)}
+                      className="p-0.5 text-zinc-400 hover:text-zinc-800 disabled:opacity-30 cursor-pointer"
+                      title="Move down"
+                    >
+                      <ArrowDown className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 min-w-0 ml-1 flex-1 text-left">
+                    {getPageIcon(pageItem.type)}
+                    <span className="text-xs truncate font-bold text-zinc-800 text-left">
+                      {pIdx + 1}. {pageItem.label}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => duplicatePage(pIdx)}
+                    className="p-1 rounded-md text-zinc-400 hover:text-zinc-800 hover:bg-zinc-200 transition-colors"
+                    title="Duplicate Page"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => deletePage(pIdx)}
+                    className="p-1 rounded-md text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    title="Delete Page"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div onClick={() => setOpenCard(isOpen ? null : pageItem.id)} className="p-1 text-zinc-500">
+                    {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Content Body for each Page Type */}
+              {isOpen && (
+                <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'cover' && (
+                    <div className="space-y-3">
+                      
               <div className="space-y-1">
                 <label className="block text-[10px] uppercase font-bold text-amber-700">Couple Names (Multi-line supported)</label>
                 <textarea
@@ -2226,7 +2662,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, cover: { ...data.cover, photoUrl: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.cover.photoHeight || 450;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 450 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 450 : currentH);
                   setData({ ...data, cover: { ...data.cover, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, cover: { ...data.cover, imagePosition: pos } })}
@@ -2236,25 +2672,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeWidth={(w) => setData({ ...data, cover: { ...data.cover, photoWidth: w } })}
               />
 
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 2. About us Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'about' ? null : 'about')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
-              <span>2. About us</span>
-            </div>
-            {openCard === 'about' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'about' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'aboutUs' && (
+                    <div className="space-y-3">
+                      
               <div>
                 <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Text</label>
                 <textarea
@@ -2277,7 +2701,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerPhoto: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.aboutUs.bottomBannerHeight || 380;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, aboutUs: { ...data.aboutUs, frameShape: shape, bottomBannerHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, aboutUs: { ...data.aboutUs, imagePosition: pos } })}
@@ -2286,25 +2710,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, aboutUs: { ...data.aboutUs, bottomBannerHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, aboutUs: { ...data.aboutUs, photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 3. Pre-Wedding Shoot Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'shoot' ? null : 'shoot')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <Camera className="w-3.5 h-3.5 text-amber-700" />
-              <span>3. Pre-Wedding</span>
-            </div>
-            {openCard === 'shoot' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'shoot' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'shootDetails' && (
+                    <div className="space-y-3">
+                      
               <div>
                 <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
                 <input
@@ -2357,7 +2769,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, shootDetails: { ...data.shootDetails, photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.shootDetails.photoHeight || 380;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, shootDetails: { ...data.shootDetails, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, shootDetails: { ...data.shootDetails, imagePosition: pos } })}
@@ -2366,25 +2778,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, shootDetails: { ...data.shootDetails, photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, shootDetails: { ...data.shootDetails, photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 4. Functions & Coverage Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'functions' ? null : 'functions')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <Calendar className="w-3.5 h-3.5 text-amber-700" />
-              <span>4. Functions &amp; Coverage</span>
-            </div>
-            {openCard === 'functions' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'functions' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'functionsPage' && (
+                    <div className="space-y-3">
+                      
               <div>
                 <label className="block text-[10px] uppercase font-bold text-zinc-400 mb-1">Heading</label>
                 <input
@@ -2457,7 +2857,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, functionsPage: { ...data.functionsPage, photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.functionsPage?.photoHeight || 380;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, functionsPage: { ...data.functionsPage, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, functionsPage: { ...data.functionsPage, imagePosition: pos } })}
@@ -2466,25 +2866,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, functionsPage: { ...data.functionsPage, photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, functionsPage: { ...data.functionsPage, photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 5. Deliverables Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'deliverables' ? null : 'deliverables')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-zinc-500" />
-              <span>5. Deliverables</span>
-            </div>
-            {openCard === 'deliverables' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'deliverables' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'deliverablesPage' && (
+                    <div className="space-y-3">
+                      
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
                 availableOptions={data.deliverablesPage?.availableOptions || DEFAULT_AIRY_PROPOSAL.deliverablesPage.availableOptions}
@@ -2521,7 +2909,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.deliverablesPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), imagePosition: pos } })}
@@ -2530,25 +2918,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 6. Special Value Additions Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'specialValue' ? null : 'specialValue')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <Gift className="w-3.5 h-3.5 text-zinc-500" />
-              <span>6. Special Value Additions</span>
-            </div>
-            {openCard === 'specialValue' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'specialValue' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'specialValueAdditions' && (
+                    <div className="space-y-3">
+                      
               <ThreeDCurvedMultiSelect
                 title="Complimentary Value Additions"
                 availableOptions={data.specialValueAdditions?.availableOptions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.availableOptions}
@@ -2599,7 +2975,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.specialValueAdditions?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), imagePosition: pos } })}
@@ -2608,25 +2984,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 7. Pricing Details Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'pricing' ? null : 'pricing')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-3.5 h-3.5 text-zinc-500" />
-              <span>7. Pricing Details</span>
-            </div>
-            {openCard === 'pricing' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'pricing' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'pricingPage' && (
+                    <div className="space-y-3">
+                      
               <div className="space-y-1">
                 <label className="block text-[10px] uppercase font-bold text-zinc-500">Base Package Price (₹)</label>
                 <div className="relative flex items-center">
@@ -2735,7 +3099,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.pricingPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), imagePosition: pos } })}
@@ -2744,25 +3108,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 8. Payment Terms Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'paymentTerms' ? null : 'paymentTerms')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-3.5 h-3.5 text-zinc-500" />
-              <span>8. Payment Terms &amp; Schedule</span>
-            </div>
-            {openCard === 'paymentTerms' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'paymentTerms' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'paymentTermsPage' && (
+                    <div className="space-y-3">
+                      
               <div className="space-y-2">
                 {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps).map((step, idx) => (
                   <div key={step?.id || idx} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
@@ -2899,7 +3251,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.paymentTermsPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 380 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
                   setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), imagePosition: pos } })}
@@ -2908,25 +3260,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 9. Add-Ons Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'addons' ? null : 'addons')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <Plus className="w-3.5 h-3.5 text-zinc-500" />
-              <span>9. Add-Ons &amp; Upgrades</span>
-            </div>
-            {openCard === 'addons' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'addons' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'addOnsPage' && (
+                    <div className="space-y-3">
+                      
               <div className="space-y-1">
                 <label className="block text-[10px] uppercase font-bold text-zinc-500">Sub-Text Header</label>
                 <input
@@ -3042,7 +3382,7 @@ function StudioCoreAiryBuilderContent() {
                 onDeletePhoto={() => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: '' } })}
                 onChangeShape={(shape) => {
                   const currentH = data.addOnsPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), imagePosition: pos } })}
@@ -3051,25 +3391,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, addOnsPage: { ...(data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 10. Terms & Conditions Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'terms' ? null : 'terms')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-3.5 h-3.5 text-zinc-500" />
-              <span>10. Terms &amp; Conditions</span>
-            </div>
-            {openCard === 'terms' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'terms' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'termsPage' && (
+                    <div className="space-y-3">
+                      
               <div className="space-y-1">
                 <label className="block text-[10px] uppercase font-bold text-zinc-500">Heading</label>
                 <input
@@ -3110,7 +3438,7 @@ function StudioCoreAiryBuilderContent() {
                 onChangeShape={(shape) => {
                   const currentObj = data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage;
                   const currentH = currentObj.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, termsPage: { ...currentObj, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), imagePosition: pos } })}
@@ -3119,25 +3447,13 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, termsPage: { ...(data.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
-        {/* 11. Thank You Page Card */}
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 overflow-hidden">
-          <div 
-            onClick={() => setOpenCard(openCard === 'thankYou' ? null : 'thankYou')}
-            className="p-2.5 bg-zinc-100/80 flex items-center justify-between cursor-pointer font-bold text-zinc-800"
-          >
-            <div className="flex items-center gap-2">
-              <Heart className="w-3.5 h-3.5 text-zinc-500" />
-              <span>11. Thank You Page</span>
-            </div>
-            {openCard === 'thankYou' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </div>
-
-          {openCard === 'thankYou' && (
-            <div className="p-3 space-y-3 bg-white">
+                  {pageItem.type === 'thankYouPage' && (
+                    <div className="space-y-3">
+                      
               <div className="space-y-1">
                 <label className="block text-[10px] uppercase font-bold text-zinc-500">Title / Heading</label>
                 <input
@@ -3279,7 +3595,7 @@ function StudioCoreAiryBuilderContent() {
                 onChangeShape={(shape) => {
                   const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
                   const currentH = currentObj.photoHeight || 360;
-                  const newH = shape === 'background' ? (currentH < 600 ? 1123 : currentH) : (currentH > 800 ? 360 : currentH);
+                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
                   setData({ ...data, thankYouPage: { ...currentObj, frameShape: shape, photoHeight: newH } });
                 }}
                 onChangePosition={(pos) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), imagePosition: pos } })}
@@ -3288,10 +3604,119 @@ function StudioCoreAiryBuilderContent() {
                 onChangeHeight={(h) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photoHeight: h } })}
                 onChangeWidth={(w) => setData({ ...data, thankYouPage: { ...(data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photoWidth: w } })}
               />
-            </div>
-          )}
-        </div>
+            
+                    </div>
+                  )}
 
+                  {pageItem.type === 'custom' && (() => {
+                    const cKey = pageItem.customId || pageItem.id;
+                    const customObj = (data.customPages || {})[cKey] || {};
+                    return (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-amber-700">Page Heading</label>
+                      <input
+                        type="text"
+                        value={customObj.heading || ''}
+                        onChange={(e) => {
+                          const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, heading: e.target.value } };
+                          setData({ ...data, customPages: updatedCustoms });
+                        }}
+                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                        placeholder="Enter Page Title..."
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-zinc-400">Kicker / Top Tagline</label>
+                      <input
+                        type="text"
+                        value={customObj.kicker || ''}
+                        onChange={(e) => {
+                          const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, kicker: e.target.value } };
+                          setData({ ...data, customPages: updatedCustoms });
+                        }}
+                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-semibold text-xs"
+                        placeholder="e.g. SPECIAL HIGHLIGHT"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-zinc-400">Subtitle</label>
+                      <input
+                        type="text"
+                        value={customObj.subtitle || ''}
+                        onChange={(e) => {
+                          const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, subtitle: e.target.value } };
+                          setData({ ...data, customPages: updatedCustoms });
+                        }}
+                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                        placeholder="e.g. Cinematic Film & Details"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-zinc-500">Text Content / Description</label>
+                      <textarea
+                        rows={4}
+                        value={customObj.text || ''}
+                        onChange={(e) => {
+                          const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, text: e.target.value } };
+                          setData({ ...data, customPages: updatedCustoms });
+                        }}
+                        className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs leading-relaxed"
+                        placeholder="Enter detailed custom text block..."
+                      />
+                    </div>
+
+                    <UnifiedPhotoControls
+                      photoUrl={customObj.photo}
+                      frameShape={customObj.frameShape || 'rounded'}
+                      photoHeight={customObj.photoHeight || 380}
+                      photoWidth={customObj.photoWidth || 75}
+                      photoFocalY={customObj.photoFocalY || 50}
+                      bgOpacity={customObj.bgOpacity || 40}
+                      imagePosition={(customObj.imagePosition === 'full' ? 'bottom' : customObj.imagePosition) || 'bottom'}
+                      onOpenAddModal={() => openAddImageModal(`customPhoto_${cKey}`)}
+                      onDeletePhoto={() => {
+                        const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, photo: '' } };
+                        setData({ ...data, customPages: updatedCustoms });
+                      }}
+                      onChangeShape={(shape) => {
+                        const currentH = customObj.photoHeight || 380;
+                        const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
+                        const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, frameShape: shape, photoHeight: newH } };
+                        setData({ ...data, customPages: updatedCustoms });
+                      }}
+                      onChangePosition={(pos) => {
+                        const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, imagePosition: pos } };
+                        setData({ ...data, customPages: updatedCustoms });
+                      }}
+                      onChangeFocalY={(focalY) => {
+                        const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, photoFocalY: focalY } };
+                        setData({ ...data, customPages: updatedCustoms });
+                      }}
+                      onChangeBgOpacity={(op) => {
+                        const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, bgOpacity: op } };
+                        setData({ ...data, customPages: updatedCustoms });
+                      }}
+                      onChangeHeight={(h) => {
+                        const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, photoHeight: h } };
+                        setData({ ...data, customPages: updatedCustoms });
+                      }}
+                      onChangeWidth={(w) => {
+                        const updatedCustoms = { ...(data.customPages || {}), [cKey]: { ...customObj, photoWidth: w } };
+                        setData({ ...data, customPages: updatedCustoms });
+                      }}
+                    />
+                  </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -3371,6 +3796,7 @@ function StudioCoreAiryBuilderContent() {
         }
         @media print {
           @page {
+            size: A4 portrait;
             margin: 0 !important;
           }
           body, html {
@@ -3392,10 +3818,22 @@ function StudioCoreAiryBuilderContent() {
             background: transparent !important;
             overflow: visible !important;
           }
+          .quotation-page, .quotation-canvas-page {
+            box-shadow: none !important;
+            margin: 0 auto !important;
+            width: 210mm !important;
+            height: 297mm !important;
+            box-sizing: border-box !important;
+            page-break-after: always !important;
+            page-break-inside: avoid !important;
+            break-after: page !important;
+            break-inside: avoid !important;
+            overflow: hidden !important;
+          }
           .proposal-canvas-container {
             transform: none !important;
-            width: 100% !important;
-            margin: 0 !important;
+            width: 794px !important;
+            margin: 0 auto !important;
             padding: 0 !important;
           }
         }
@@ -3477,7 +3915,7 @@ function StudioCoreAiryBuilderContent() {
       <div className="flex-1 flex overflow-hidden relative">
         
         {/* DESKTOP SIDEBAR PANEL (>= 768px) */}
-        <aside className="w-[320px] bg-white border-r border-zinc-200 p-4 overflow-y-auto shrink-0 text-xs shadow-sm no-print hidden md:block">
+        <aside className="w-[420px] bg-white border-r border-zinc-200 p-4 overflow-y-auto shrink-0 text-xs shadow-sm no-print hidden md:block">
           {renderSidebarControls()}
         </aside>
 
@@ -3509,7 +3947,13 @@ function StudioCoreAiryBuilderContent() {
                 style={{ width: '794px' }} 
                 className="flex flex-col gap-0"
               >
-                <section 
+                {pageSequence.map((pageItem, pIdx) => {
+                  const isLast = pIdx === pageSequence.length - 1;
+
+                  return (
+                    <React.Fragment key={pageItem.id}>
+                      {pageItem.type === 'cover' && (
+                        <section 
                   className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
                   style={{
                     width: '794px',
@@ -3629,17 +4073,17 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                 </div>
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 2: ABOUT US */}
-            <section 
+                      {pageItem.type === 'aboutUs' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -3735,17 +4179,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="About Us Banner"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 3: PRE-WEDDING SHOOT */}
-            <section 
+                      {pageItem.type === 'shootDetails' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -3858,17 +4302,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Pre-Wedding Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 4: FUNCTIONS & COVERAGE */}
-            <section 
+                      {pageItem.type === 'functionsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4026,17 +4470,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Functions Banner"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 5: DELIVERABLES */}
-            <section 
+                      {pageItem.type === 'deliverablesPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4134,17 +4578,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Deliverables Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 6: SPECIAL VALUE ADDITIONS */}
-            <section 
+                      {pageItem.type === 'specialValueAdditions' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4253,17 +4697,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Special Value Additions Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 7: PRICING DETAILS */}
-            <section 
+                      {pageItem.type === 'pricingPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4415,17 +4859,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Pricing Details Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 8: PAYMENT TERMS & SCHEDULE */}
-            <section 
+                      {pageItem.type === 'paymentTermsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4568,17 +5012,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Payment Terms Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 9: ADD-ONS & UPGRADES */}
-            <section 
+                      {pageItem.type === 'addOnsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4693,17 +5137,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Add-Ons Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 10: TERMS & CONDITIONS */}
-            <section 
+                      {pageItem.type === 'termsPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4797,17 +5241,17 @@ function StudioCoreAiryBuilderContent() {
                     altText="Terms & Conditions Photo"
                   />
                 )}
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
-            {/* Inter-page Gap Spacer */}
-            <div 
-              className="w-[794px] h-4 mx-auto shrink-0"
-              style={{ backgroundColor: '#f9e4cc' }}
-            />
-
-            {/* SECTION 11: THANK YOU PAGE */}
-            <section 
+                      {pageItem.type === 'thankYouPage' && (
+                        <section 
               className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
               style={{
                 width: '794px',
@@ -4873,14 +5317,15 @@ function StudioCoreAiryBuilderContent() {
                     )}
                   </div>
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && (data.thankYouPage?.imagePosition === 'center' || !data.thankYouPage?.imagePosition) && (
+                  {/* CENTER OR BOTTOM IMAGE POSITION */}
+                  {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && (data.thankYouPage?.imagePosition === 'center' || data.thankYouPage?.imagePosition === 'bottom' || !data.thankYouPage?.imagePosition) && (
                     <SectionImageRenderer
                       photo={data.thankYouPage?.photo}
                       frameShape={data.thankYouPage?.frameShape}
                       photoHeight={data.thankYouPage?.photoHeight}
                       photoWidth={data.thankYouPage?.photoWidth}
                       photoFocalY={data.thankYouPage?.photoFocalY}
+                      isBottomFlush={data.thankYouPage?.imagePosition === 'bottom'}
                       altText="Thank You Photo"
                     />
                   )}
@@ -4930,9 +5375,142 @@ function StudioCoreAiryBuilderContent() {
                   </div>
                 </div>
 
+
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
               </div>
             </section>
+                      )}
 
+                      {pageItem.type === 'custom' && (() => {
+                        const cKey = pageItem.customId || pageItem.id;
+                        const customObj = (data.customPages || {})[cKey] || {};
+                        return (
+                          <section 
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
+                            style={{
+                              width: '794px',
+                              minWidth: '794px',
+                              maxWidth: '794px',
+                              height: getDynamicPageHeight(customObj),
+                              minHeight: getDynamicPageHeight(customObj),
+                              maxHeight: 'none',
+                              boxSizing: 'border-box',
+                              position: 'relative',
+                              overflow: 'hidden',
+                              margin: '0 auto',
+                              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                              backgroundColor: pageBgColor || '#FFFFFF',
+                              color: textColor,
+                              fontFamily: data.secondaryFont,
+                            }}
+                          >
+                            {customObj.photo && customObj.frameShape === 'background' && (
+                              <SectionImageRenderer
+                                photo={customObj.photo}
+                                frameShape="background"
+                                photoHeight={customObj.photoHeight || 1123}
+                                photoWidth={customObj.photoWidth || 100}
+                                photoFocalY={customObj.photoFocalY || 50}
+                                bgOpacity={customObj.bgOpacity || 40}
+                                pageBgColor={pageBgColor}
+                                altText={customObj.heading || "Custom Page Background"}
+                              />
+                            )}
+
+                            <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
+                              customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' 
+                                ? 'px-0' 
+                                : 'px-12'
+                            } ${!customObj.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                              <div className={`w-full space-y-6 flex flex-col items-center justify-center my-auto ${
+                                customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' ? 'px-0' : ''
+                              }`}>
+                                
+                                {/* TOP POSITION IMAGE */}
+                                {customObj.photo && customObj.frameShape !== 'background' && customObj.imagePosition === 'top' && (
+                                  <SectionImageRenderer
+                                    photo={customObj.photo}
+                                    frameShape={customObj.frameShape || 'rounded'}
+                                    photoHeight={customObj.photoHeight || 380}
+                                    photoWidth={customObj.photoWidth || 75}
+                                    photoFocalY={customObj.photoFocalY || 50}
+                                    altText="Custom Photo"
+                                  />
+                                )}
+
+                                <div className={`space-y-3 ${customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' ? 'px-12' : ''}`}>
+                                  {customObj.kicker && (
+                                    <p className="text-xs tracking-[0.25em] uppercase font-bold" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
+                                      {customObj.kicker}
+                                    </p>
+                                  )}
+                                  
+                                  <h2 className="text-3xl tracking-[0.2em] uppercase font-black" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                    {customObj.heading || 'CUSTOM PAGE'}
+                                  </h2>
+
+                                  {customObj.subtitle && (
+                                    <p className="text-sm tracking-[0.15em] uppercase font-semibold opacity-90" style={{ color: kickerColor, fontFamily: data.secondaryFont }}>
+                                      {customObj.subtitle}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* CENTER POSITION IMAGE */}
+                                {customObj.photo && customObj.frameShape !== 'background' && customObj.imagePosition === 'center' && (
+                                  <SectionImageRenderer
+                                    photo={customObj.photo}
+                                    frameShape={customObj.frameShape || 'rounded'}
+                                    photoHeight={customObj.photoHeight || 380}
+                                    photoWidth={customObj.photoWidth || 75}
+                                    photoFocalY={customObj.photoFocalY || 50}
+                                    altText="Custom Photo"
+                                  />
+                                )}
+
+                                {customObj.text && (
+                                  <div className={`pt-2 max-w-xl mx-auto ${customObj.frameShape === 'full-width' || customObj.imagePosition === 'full' ? 'px-12' : ''}`}>
+                                    <p className="text-xs leading-relaxed font-normal whitespace-pre-line text-zinc-700" style={{ fontFamily: data.secondaryFont }}>
+                                      {customObj.text}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* BOTTOM POSITION IMAGE */}
+                                {customObj.photo && customObj.frameShape !== 'background' && (customObj.imagePosition === 'bottom' || !customObj.imagePosition) && (
+                                  <SectionImageRenderer
+                                    photo={customObj.photo}
+                                    frameShape={customObj.frameShape || 'rounded'}
+                                    photoHeight={customObj.photoHeight || 380}
+                                    photoWidth={customObj.photoWidth || 75}
+                                    photoFocalY={customObj.photoFocalY || 50}
+                                    isBottomFlush={true}
+                                    altText="Custom Photo"
+                                  />
+                                )}
+                              </div>
+              
+                {/* CANVAS FOOTER WATERMARK */}
+                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                  Created by StudioCore.in
+                </div>
+              </div>
+            </section>
+                        );
+                      })()}
+
+                      {!isLast && (
+                        <div 
+                          className="w-[794px] h-4 mx-auto shrink-0"
+                          style={{ backgroundColor: '#f9e4cc' }}
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -5011,6 +5589,95 @@ function StudioCoreAiryBuilderContent() {
         onSelectImage={handleSelectImageFromGallery} 
         userId={userId} 
       />
+
+      {/* ── SMART + ADD PAGE MODAL ── */}
+      <AnimatePresence>
+        {isAddPageModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-zinc-200"
+            >
+              <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200/80 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-amber-600" />
+                  <h3 className="font-extrabold text-sm text-amber-950 uppercase tracking-wider">Add Page</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddPageModalOpen(false)}
+                  className="p-1 rounded-full hover:bg-amber-100 text-zinc-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+                {/* Custom Page Option (Always Visible) */}
+                <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-950 font-extrabold text-xs uppercase tracking-wide">
+                    <PlusCircle className="w-4 h-4 text-amber-600" />
+                    <span>Custom Flexible Page</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 leading-normal">
+                    Add a flexible blank custom page with Heading, Subtitle, Text block, and Photo Layout controls.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addCustomBlankPage}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>+ Create Blank Custom Page</span>
+                  </button>
+                </div>
+
+                {/* Dynamic Restoration List */}
+                <div className="space-y-3">
+                  <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-500 flex items-center justify-between border-b pb-1.5 border-zinc-100">
+                    <span>Restore Deleted Standard Pages</span>
+                    <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      {deletedStandardPages.length} Available
+                    </span>
+                  </h4>
+
+                  {deletedStandardPages.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 text-center text-xs font-semibold text-zinc-500 space-y-1">
+                      <Check className="w-5 h-5 text-emerald-600 mx-auto" />
+                      <p className="text-zinc-700 font-bold">All standard pages are active</p>
+                      <p className="text-[10px] text-zinc-400 font-medium">Deleting any of the 11 built-in standard template pages will add them here so you can restore them anytime with their original layout.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {deletedStandardPages.map(stdDef => (
+                        <div
+                          key={stdDef.type}
+                          className="p-3 rounded-2xl border border-zinc-200 bg-white hover:bg-zinc-50 flex items-center justify-between transition-all"
+                        >
+                          <div className="flex items-center gap-2">
+                            {getPageIcon(stdDef.type)}
+                            <span className="text-xs font-bold text-zinc-800">{stdDef.label}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => restoreStandardPage(stdDef.type)}
+                            className="px-3 py-1 rounded-xl bg-zinc-900 hover:bg-black text-white font-extrabold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
+                            <span>+ Restore</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
