@@ -20,7 +20,7 @@ import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flush
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
-import { toPng } from 'html-to-image';
+import html2canvas from 'html2canvas-pro';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
@@ -2086,6 +2086,18 @@ function StudioCoreAiryBuilderContent() {
         try { await document.fonts.ready; } catch (e) {}
       }
 
+      // Pre-load all <img> tags inside container to ensure no empty images
+      const images = Array.from(container.querySelectorAll('img'));
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(true);
+          });
+        })
+      );
+
       const pageEls = Array.from(container.querySelectorAll('.quotation-canvas-page')) as HTMLElement[];
       const targets = pageEls.length > 0 ? pageEls : [container];
 
@@ -2093,16 +2105,14 @@ function StudioCoreAiryBuilderContent() {
 
       for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
-        const dataUrl = await toPng(target, {
-          pixelRatio: 2,
-          quality: 0.95,
-          cacheBust: true,
-          style: {
-            transform: 'scale(1)',
-            transformOrigin: 'top left'
-          }
+        const canvas = await html2canvas(target, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: '#ffffff'
         });
-        pageSnapshots.push(dataUrl);
+        pageSnapshots.push(canvas.toDataURL('image/png', 0.95));
       }
 
       const routeId = params?.id ? String(params.id) : '';
