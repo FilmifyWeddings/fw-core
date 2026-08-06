@@ -2075,18 +2075,26 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // CANVA-STYLE HIGH-DPI CANVAS SNAPSHOT PDF ENGINE
+  // CANVA-STYLE HIGH-DPI CANVAS SNAPSHOT PDF ENGINE (ZERO OVERLAP, 100% VISUAL PARITY)
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
-    try {
-      const container = document.getElementById('quotation-canvas-container');
-      if (!container) throw new Error('Canvas container not found');
+    const container = document.getElementById('quotation-canvas-container');
+    if (!container) {
+      setIsExportingPDF(false);
+      return;
+    }
 
+    const savedTransform = container.style.transform;
+
+    try {
       if (document.fonts && document.fonts.ready) {
         try { await document.fonts.ready; } catch (e) {}
       }
 
-      // Pre-load all <img> tags inside container to ensure no empty images
+      // 1. Temporarily reset container zoom transform during snapshot capture
+      container.style.transform = 'none';
+
+      // 2. Pre-load all <img> elements inside container
       const images = Array.from(container.querySelectorAll('img'));
       await Promise.all(
         images.map((img) => {
@@ -2098,20 +2106,28 @@ function StudioCoreAiryBuilderContent() {
         })
       );
 
-      const pageEls = Array.from(container.querySelectorAll('.quotation-canvas-page')) as HTMLElement[];
-      const targets = pageEls.length > 0 ? pageEls : [container];
+      // 3. Find ALL page elements (support both .quotation-page and .quotation-canvas-page)
+      let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
 
+      if (pageEls.length === 0) {
+        pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
+      }
+
+      const targets = pageEls.length > 0 ? pageEls : [container];
       const pageImages: string[] = [];
 
+      // 4. Capture isolated high-resolution snapshot for EACH page independently
       for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
+
         const dataUrl = await toPng(target, {
-          quality: 0.95,
+          quality: 0.98,
           pixelRatio: 3,
           cacheBust: true,
           style: {
-            transform: 'scale(1)',
-            transformOrigin: 'top left'
+            transform: 'none',
+            margin: '0',
+            boxShadow: 'none'
           }
         });
         pageImages.push(dataUrl);
@@ -2150,6 +2166,9 @@ function StudioCoreAiryBuilderContent() {
         window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
       }
     } finally {
+      if (container) {
+        container.style.transform = savedTransform;
+      }
       setIsExportingPDF(false);
     }
   };
