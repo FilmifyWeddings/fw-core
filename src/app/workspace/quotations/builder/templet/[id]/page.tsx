@@ -3823,29 +3823,33 @@ function StudioCoreAiryBuilderContent() {
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
           color-adjust: exact !important;
-        }
-        #quotation-document {
-          width: 794px !important;
-          display: flex !important;
-          flex-direction: column !important;
-          gap: 0 !important;
-          margin: 0 auto !important;
-          padding: 0 !important;
-          box-shadow: none !important;
-          border: none !important;
-        }
-        #quotation-document section {
-          width: 794px !important;
-          height: auto !important;
-          min-height: 0 !important;
-          max-height: none !important;
-          overflow: visible !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          box-shadow: none !important;
-          border: none !important;
-          page-break-after: unset !important;
-          break-after: auto !important;
+
+          #quotation-document {
+            width: 794px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 0 !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          #quotation-document section {
+            width: 794px !important;
+            height: 1123px !important;
+            min-height: 1123px !important;
+            max-height: 1123px !important;
+            overflow: hidden !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            page-break-after: always !important;
+            break-after: page !important;
+          }
+          .canva-page-label {
+            display: none !important;
+          }
         }
         .pdf-capture-active #quotation-document img {
           object-fit: cover !important;
@@ -4013,12 +4017,12 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
-              className="w-full overflow-x-auto min-w-0 flex flex-col items-center justify-start py-4 md:py-8 bg-[#f3f4f6] min-h-screen"
+              className="w-full overflow-x-auto min-w-0 flex flex-col items-center justify-start py-8 bg-[#e5e7eb] min-h-screen"
             >
               <div 
                 id="quotation-full-canvas" 
                 style={{ width: '794px', minWidth: '794px', maxWidth: '794px' }} 
-                className="flex flex-col gap-0 shrink-0 mx-auto"
+                className="flex flex-col gap-8 shrink-0 mx-auto py-6"
               >
                 {pageSequence.map((pageItem, pIdx) => {
                   const isLastPage = pIdx === pageSequence.length - 1;
