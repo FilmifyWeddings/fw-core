@@ -107,6 +107,43 @@ export default function QuotationViewPage() {
     }
 
     // Trigger auto-print when requested after fonts and images are settled
+    
+    // Inject single-page long height print styles
+    let singlePageStyleTag = document.getElementById('embedded-single-page-print-styles');
+    if (!singlePageStyleTag) {
+      singlePageStyleTag = document.createElement('style');
+      singlePageStyleTag.id = 'embedded-single-page-print-styles';
+      singlePageStyleTag.innerHTML = `
+        @page {
+          size: 794px auto !important;
+          margin: 0 !important;
+        }
+        @media print {
+          html, body {
+            width: 794px !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            overflow: visible !important;
+          }
+          #quotation-canvas-container, .pdf-container {
+            width: 794px !important;
+            height: auto !important;
+            margin: 0 auto !important;
+            overflow: visible !important;
+          }
+          .pdf-page, .quotation-canvas-page {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+        }
+      `;
+      document.head.appendChild(singlePageStyleTag);
+    }
+
     if (isPrint) {
       const triggerPrint = async () => {
         if (document.fonts && document.fonts.ready) {
