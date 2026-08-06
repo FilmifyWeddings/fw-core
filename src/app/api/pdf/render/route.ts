@@ -12,7 +12,6 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 async function getChromiumExecutablePath(): Promise<string | undefined> {
   const fs = await import('fs');
 
-  // Linux VPS paths
   const linuxPaths = [
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
@@ -28,7 +27,6 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
     }
   }
 
-  // Windows local development paths
   const winPaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -42,7 +40,6 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
     }
   }
 
-  // Fallback to @sparticuz/chromium (for AWS Lambda / Vercel serverless environments)
   try {
     const chromium = (await import('@sparticuz/chromium')).default;
     const path = await chromium.executablePath();
@@ -80,14 +77,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Construct dedicated unauthenticated PDF Preview URL (/pdf-preview/[id])
+    // 2. Determine target PDF Preview URL (Internal Loopback vs Host URL)
     const host = req.headers.get('host') || 'localhost:3000';
     const protocol = req.headers.get('x-forwarded-proto') || 'http';
-    const requestedUrl = `${protocol}://${host}/pdf-preview/${templateId}`;
+    const port = process.env.PORT || '3000';
+    
+    const localUrl = `http://127.0.0.1:${port}/pdf-preview/${templateId}`;
+    const publicUrl = `${protocol}://${host}/pdf-preview/${templateId}`;
 
     console.log('[Puppeteer Engine] --------------------------------------------------');
-    console.log('[Puppeteer Engine] Requested URL:', requestedUrl);
-    console.log('[Puppeteer Engine] Rendering Server-Side A4 Vector Document');
+    console.log('[Puppeteer Engine] Attempting Local Loopback URL:', localUrl);
 
     // 3. Launch Puppeteer Core with Headless Chromium
     const puppeteer = (await import('puppeteer-core')).default;
@@ -116,13 +115,14 @@ export async function POST(req: NextRequest) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1810, deviceScaleFactor: 2 });
 
-    // 4. Navigate exclusively to /pdf-preview/[id]
-    const navigationResponse = await page.goto(requestedUrl, { waitUntil: 'networkidle0', timeout: 35000 });
-    const httpStatus = navigationResponse?.status() || 200;
-    const finalUrl = page.url();
+    // 4. Navigate to PDF Preview Route
+    let navigationResponse = await page.goto(localUrl, { waitUntil: 'networkidle0', timeout: 15000 }).catch(async () => {
+      console.warn('[Puppeteer Engine] Local loopback navigation timeout, trying public URL:', publicUrl);
+      return await page.goto(publicUrl, { waitUntil: 'networkidle0', timeout: 25000 });
+    });
 
-    console.log('[Puppeteer Engine] Final URL after redirects:', finalUrl);
-    console.log('[Puppeteer Engine] HTTP Status Code:', httpStatus);
+    const finalUrl = page.url();
+    console.log('[Puppeteer Engine] Final URL after navigation:', finalUrl);
 
     if (finalUrl.includes('/login') || finalUrl.includes('/auth') || finalUrl.includes('/workspace')) {
       console.error('[Puppeteer Engine CRITICAL ERROR] Redirected away to:', finalUrl);
