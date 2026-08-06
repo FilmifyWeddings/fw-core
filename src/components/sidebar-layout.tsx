@@ -194,7 +194,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const bypassRoutes = [
     '/', '/login', '/home', '/admin/sushant', '/admin/dashboard', '/team-manager', '/leads',
     '/features', '/integrations', '/pricing', '/about', '/contact', '/blog', '/book-demo',
-    '/free-trial', '/documentation', '/changelog', '/careers', '/customers', '/terms', '/privacy-policy'
+    '/free-trial', '/documentation', '/changelog', '/careers', '/customers', '/terms', '/privacy-policy',
+    '/pdf-preview'
   ];
 
   // Bypass sidebar for launchpad, team-manager, landing pages, and special routes
@@ -204,6 +205,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/leads') ||
     pathname.startsWith('/workspace/quotations/builder') ||
     pathname.startsWith('/p/quotation') ||
+    pathname.startsWith('/pdf-preview') ||
     pathname.startsWith('/features') ||
     pathname.startsWith('/integrations') ||
     pathname.startsWith('/pricing') ||

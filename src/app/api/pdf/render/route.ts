@@ -90,6 +90,11 @@ export async function POST(req: NextRequest) {
       throw new Error(`Puppeteer redirected away from /pdf-preview to ${finalUrl}`);
     }
 
+    // Wait for canvas element to load
+    await page.waitForSelector('#quotation-full-canvas', { timeout: 15000 }).catch((e: any) => {
+      console.warn('[Puppeteer Engine] #quotation-full-canvas selector wait notice:', e?.message);
+    });
+
     // Wait for document fonts to finish loading
     await page.evaluate(async () => {
       if (document.fonts) {
