@@ -945,6 +945,14 @@ Approx. 50 High Resolution Edited Images
     }
   });
 
+  // Dynamically replace page-break-after:always on the very last section to prevent blank trailing PDF page
+  const lastSecIdx = pagesHTML.lastIndexOf('page-break-after:always');
+  if (lastSecIdx !== -1) {
+    pagesHTML = pagesHTML.substring(0, lastSecIdx) +
+      'page-break-after:avoid;break-after:avoid;' +
+      pagesHTML.substring(lastSecIdx + 'page-break-after:always'.length);
+  }
+
   return `
     <!DOCTYPE html>
     <html lang="en">

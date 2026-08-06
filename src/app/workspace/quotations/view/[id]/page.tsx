@@ -105,6 +105,14 @@ export default function QuotationViewPage() {
       document.head.appendChild(fontStyleTag);
     }
 
+    // 4. Force last section page-break-after to avoid to prevent trailing blank page
+    const sectionEls = container.querySelectorAll('section, .pdf-page, .quotation-canvas-page');
+    if (sectionEls.length > 0) {
+      const lastEl = sectionEls[sectionEls.length - 1] as HTMLElement;
+      lastEl.style.setProperty('page-break-after', 'avoid', 'important');
+      lastEl.style.setProperty('break-after', 'avoid', 'important');
+    }
+
     if (isPrint) {
       const triggerPrint = async () => {
         if (document.fonts && document.fonts.ready) {
