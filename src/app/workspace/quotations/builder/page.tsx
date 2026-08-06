@@ -5632,18 +5632,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
-                        );
-                      })()}
-
-                      {!isLast && (
-                        <div 
-                          className="w-[794px] h-4 mx-auto shrink-0"
-                          style={{ backgroundColor: '#f9e4cc' }}
-                        />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
+          );
+        })()}
+      </React.Fragment>
+    );
+  })}
               </div>
             </div>
           </div>
