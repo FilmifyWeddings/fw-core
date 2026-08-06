@@ -206,7 +206,7 @@ export async function exportClientCanvasToPDF(
 }
 
 /**
- * Primary export method. Always exports exact continuous single long-page PDF.
+ * Primary export method using Canva-style Headless Server Engine with fallback to IFrame Sandbox.
  */
 export async function downloadServerChromiumPdf(options: ServerPdfExportOptions): Promise<void> {
   const { templateId, filename, content_json, userAccessToken, onProgress } = options;
@@ -219,6 +219,73 @@ export async function downloadServerChromiumPdf(options: ServerPdfExportOptions)
 
   const finalFilename = cleanFilename.toLowerCase().endsWith('.pdf') ? cleanFilename : `${cleanFilename}.pdf`;
 
-  // Direct high-fidelity continuous single long-page canvas export using Canva-grade IFrame Sandbox
-  await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
+  try {
+    onProgress?.('Generating Canva-style PDF via Server Engine...');
+
+    const res = await fetch('/api/quotations/export-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(userAccessToken ? { Authorization: `Bearer ${userAccessToken}` } : {})
+      },
+      body: JSON.stringify({
+        templateId,
+        filename: finalFilename,
+        content_json
+      })
+    });
+
+    if (!res.ok) {
+      // Retry secondary route /api/pdf/render if export-pdf route is unavailable
+      const secondaryRes = await fetch('/api/pdf/render', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(userAccessToken ? { Authorization: `Bearer ${userAccessToken}` } : {})
+        },
+        body: JSON.stringify({
+          templateId,
+          filename: finalFilename,
+          content_json
+        })
+      });
+
+      if (!secondaryRes.ok) {
+        throw new Error(`Server rendering returned status ${res.status}`);
+      }
+
+      const blob = await secondaryRes.blob();
+      if (blob.size < 1000) throw new Error('Invalid PDF buffer returned');
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = finalFilename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      onProgress?.('PDF Downloaded Successfully!');
+      return;
+    }
+
+    onProgress?.('Downloading binary PDF...');
+    const blob = await res.blob();
+    if (blob.size < 1000) throw new Error('Invalid PDF buffer returned');
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = finalFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    onProgress?.('PDF Downloaded Successfully!');
+  } catch (err: any) {
+    console.warn('[Canva PDF Engine] Server notice, switching to IFrame Sandbox Canvas Export:', err?.message);
+    onProgress?.('Generating PDF via IFrame Sandbox Engine...');
+    await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
+  }
 }

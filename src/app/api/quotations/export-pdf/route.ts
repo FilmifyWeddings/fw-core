@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 });
 
-// Utility to locate Chromium executable path cross-platform (Local Dev vs Serverless)
+// Locate Chromium executable path cross-platform
 async function getChromiumExecutablePath(): Promise<string | undefined> {
   try {
     const chromium = (await import('@sparticuz/chromium')).default;
@@ -18,7 +18,6 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
     console.warn('[Puppeteer API] @sparticuz/chromium executable path notice:', e);
   }
 
-  // Fallback paths for Windows / Mac local development environments
   const fs = await import('fs');
   const winPaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -37,7 +36,7 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
   return undefined;
 }
 
-// POST /api/pdf/render - Dedicated Server-Side Headless Chromium PDF Export Route
+// POST /api/quotations/export-pdf - Canva-style Dedicated Server-Side PDF Engine Endpoint
 export async function POST(req: NextRequest) {
   let browser: any = null;
   try {
@@ -63,16 +62,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. Construct dedicated unauthenticated PDF Preview URL (/pdf-preview/[id])
+    // 2. Construct dedicated unauthenticated PDF Preview URL (/pdf-preview/[id])
     const host = req.headers.get('host') || 'localhost:3000';
     const protocol = req.headers.get('x-forwarded-proto') || 'http';
     const requestedUrl = `${protocol}://${host}/pdf-preview/${templateId}`;
 
-    console.log('[Puppeteer Engine] --------------------------------------------------');
-    console.log('[Puppeteer Engine] Requested URL:', requestedUrl);
-    console.log('[Puppeteer Engine] Auth State: Unauthenticated Dedicated PDF Preview Route');
+    console.log('[Canva PDF Engine] --------------------------------------------------');
+    console.log('[Canva PDF Engine] Requested URL:', requestedUrl);
+    console.log('[Canva PDF Engine] Rendering Fixed Viewport A4 Document');
 
-    // 2. Launch Puppeteer Core with Headless Chromium
+    // 3. Launch Puppeteer Core with Headless Chromium
     const puppeteer = (await import('puppeteer-core')).default;
     const chromium = (await import('@sparticuz/chromium')).default;
     const executablePath = await getChromiumExecutablePath();
@@ -90,34 +89,32 @@ export async function POST(req: NextRequest) {
 
     const page = await browser.newPage();
 
-    // 3. Navigate exclusively to /pdf-preview/[id]
+    // 4. Navigate exclusively to /pdf-preview/[id]
     const navigationResponse = await page.goto(requestedUrl, { waitUntil: 'networkidle0', timeout: 35000 });
     const httpStatus = navigationResponse?.status() || 200;
     const finalUrl = page.url();
 
-    console.log('[Puppeteer Engine] Final URL after redirects:', finalUrl);
-    console.log('[Puppeteer Engine] HTTP Status Code:', httpStatus);
-    console.log('[Puppeteer Engine] --------------------------------------------------');
+    console.log('[Canva PDF Engine] Final URL after redirects:', finalUrl);
+    console.log('[Canva PDF Engine] HTTP Status Code:', httpStatus);
 
-    // Security & Route Integrity Assertion
     if (finalUrl.includes('/login') || finalUrl.includes('/auth') || finalUrl.includes('/workspace')) {
-      console.error('[Puppeteer Engine CRITICAL ERROR] Redirected to invalid route:', finalUrl);
+      console.error('[Canva PDF Engine ERROR] Redirected to invalid route:', finalUrl);
       throw new Error(`Puppeteer redirected away from /pdf-preview to ${finalUrl}`);
     }
 
-    // Wait for canvas element to load
+    // Wait for canvas element to hydrate
     await page.waitForSelector('#quotation-full-canvas', { timeout: 15000 }).catch((e: any) => {
-      console.warn('[Puppeteer Engine] #quotation-full-canvas selector wait notice:', e?.message);
+      console.warn('[Canva PDF Engine] Canvas selector wait notice:', e?.message);
     });
 
-    // Wait for document fonts to finish loading
+    // Wait for document web fonts to finish loading
     await page.evaluate(async () => {
       if (document.fonts) {
         await document.fonts.ready;
       }
     });
 
-    // 4. Generate Deterministic A4 PDF Vector/Raster Buffer
+    // 5. Generate Deterministic Canva-style A4 Vector PDF
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -142,7 +139,7 @@ export async function POST(req: NextRequest) {
       }
     });
   } catch (err: any) {
-    console.error('[POST /api/pdf/render] Error:', err);
+    console.error('[POST /api/quotations/export-pdf] Error:', err);
     if (browser) {
       try { await browser.close(); } catch {}
     }
