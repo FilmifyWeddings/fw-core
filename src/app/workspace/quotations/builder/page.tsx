@@ -3940,12 +3940,12 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
-              className="w-full flex flex-col items-center justify-start py-8 bg-[#f3f4f6] min-h-screen overflow-y-auto"
+              className="w-full overflow-x-auto min-w-0 flex flex-col items-center justify-start py-4 md:py-8 bg-[#f3f4f6] min-h-screen"
             >
               <div 
                 id="quotation-full-canvas" 
-                style={{ width: '794px' }} 
-                className="flex flex-col gap-0"
+                style={{ width: '794px', minWidth: '794px', maxWidth: '794px' }} 
+                className="flex flex-col gap-0 shrink-0 mx-auto"
               >
                 {pageSequence.map((pageItem, pIdx) => {
                   const isLast = pIdx === pageSequence.length - 1;

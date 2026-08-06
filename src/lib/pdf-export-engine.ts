@@ -10,64 +10,55 @@ export interface ServerPdfExportOptions {
 }
 
 /**
- * Renders exact screen DOM elements (.quotation-page inside #quotation-full-canvas)
- * directly into a high-definition multi-page A4 PDF document.
+ * Exports the quotation canvas (#quotation-full-canvas) as a SINGLE CONTINUOUS LONG PAGE PDF
+ * with 100% exact fidelity to font sizes, image dimensions, element positions, and layout.
  */
 export async function exportClientCanvasToPDF(
   elementId: string = 'quotation-full-canvas',
   filename: string = 'Quotation.pdf',
   onProgress?: (message: string) => void
 ): Promise<void> {
-  onProgress?.('Preparing canvas elements...');
+  onProgress?.('Preparing design canvas for export...');
   
   const element = document.getElementById(elementId);
   if (!element) {
     throw new Error('Quotation canvas element not found on page.');
   }
 
-  // Find all quotation page sections
-  const pageSections = Array.from(element.querySelectorAll<HTMLElement>('.quotation-page'));
-  if (pageSections.length === 0) {
-    // Fallback: render entire canvas container if no .quotation-page sections found
-    pageSections.push(element);
-  }
+  onProgress?.('Capturing high-resolution continuous document...');
 
-  onProgress?.(`Found ${pageSections.length} page(s) to export...`);
+  // Capture the complete canvas at 2x scale for crisp fonts and images
+  const canvas = await html2canvasPro(element, {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+    windowWidth: 794,
+  });
 
+  const canvasWidthPx = canvas.width;
+  const canvasHeightPx = canvas.height;
+
+  // Standard width 210mm (A4 width, matching 794px)
+  const pdfWidthMm = 210;
+  // Calculate exact continuous document height in mm
+  const pdfHeightMm = (canvasHeightPx / canvasWidthPx) * pdfWidthMm;
+
+  onProgress?.('Generating single continuous long-page PDF...');
+
+  // Create single continuous PDF page matching exact canvas height
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
-    format: 'a4',
+    format: [pdfWidthMm, pdfHeightMm],
     compress: true
   });
 
-  const pdfWidth = 210; // A4 width in mm
-  const pdfHeight = 297; // A4 height in mm
+  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidthMm, pdfHeightMm, undefined, 'FAST');
 
-  for (let i = 0; i < pageSections.length; i++) {
-    onProgress?.(`Rendering Page ${i + 1} of ${pageSections.length}...`);
-    const pageEl = pageSections[i];
-
-    // Capture each page section at 2x scale for high resolution text and images
-    const canvas = await html2canvasPro(pageEl, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      windowWidth: 794,
-    });
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-
-    if (i > 0) {
-      pdf.addPage('a4', 'portrait');
-    }
-
-    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-  }
-
-  onProgress?.('Saving PDF file...');
+  onProgress?.('Saving continuous PDF file...');
   const cleanFilename = (filename || 'Quotation.pdf')
     .replace(/–/g, '-')
     .replace(/—/g, '-')
@@ -80,8 +71,7 @@ export async function exportClientCanvasToPDF(
 }
 
 /**
- * Downloads high-definition PDF. Attempts server rendering first, falling back seamlessly
- * to direct client-side canvas rendering to guarantee 100% fidelity.
+ * Primary export method. Always exports exact continuous single long-page PDF.
  */
 export async function downloadServerChromiumPdf(options: ServerPdfExportOptions): Promise<void> {
   const { templateId, filename, content_json, userAccessToken, onProgress } = options;
@@ -94,46 +84,6 @@ export async function downloadServerChromiumPdf(options: ServerPdfExportOptions)
 
   const finalFilename = cleanFilename.toLowerCase().endsWith('.pdf') ? cleanFilename : `${cleanFilename}.pdf`;
 
-  try {
-    onProgress?.('Rendering PDF on Server-Side Engine...');
-
-    const res = await fetch('/api/pdf/render', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(userAccessToken ? { Authorization: `Bearer ${userAccessToken}` } : {})
-      },
-      body: JSON.stringify({
-        templateId,
-        filename: finalFilename,
-        content_json
-      })
-    });
-
-    if (!res.ok) {
-      throw new Error(`Server endpoint returned status ${res.status}`);
-    }
-
-    onProgress?.('Downloading binary PDF...');
-    const blob = await res.blob();
-
-    if (blob.size < 1000) {
-      throw new Error('Server returned an empty or invalid PDF buffer');
-    }
-
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = finalFilename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-
-    onProgress?.('PDF Downloaded Successfully!');
-  } catch (err: any) {
-    console.warn('[PDF Export Engine] Server rendering notice, switching to direct canvas export:', err?.message);
-    onProgress?.('Generating PDF directly from active design canvas...');
-    await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
-  }
+  // Direct high-fidelity continuous single long-page canvas export
+  await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
 }
