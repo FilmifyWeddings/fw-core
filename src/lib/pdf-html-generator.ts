@@ -973,10 +973,13 @@ Approx. 50 High Resolution Edited Images
             font-family: ${secondaryFont} !important;
             width: 794px !important;
           }
-          .pdf-container {
-            width: 794px !important;
-            margin: 0 auto !important;
-            background: #ffffff !important;
+          .canvas-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px !important;
+            padding: 32px 0;
+            background-color: #2b2b2b;
           }
           .pdf-page, .quotation-canvas-page {
             width: 794px !important;
@@ -985,19 +988,32 @@ Approx. 50 High Resolution Edited Images
             height: 1123px !important;
             min-height: 1123px !important;
             max-height: 1123px !important;
+            aspect-ratio: 1 / 1.414 !important;
             padding: 48px !important;
             position: relative !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
+            border: none !important;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
             background-color: ${theme.background} !important;
             page-break-after: always !important;
             break-after: page !important;
             page-break-inside: avoid !important;
           }
+          @media print {
+            .canvas-wrapper {
+              gap: 0 !important;
+              padding: 0 !important;
+              background-color: transparent !important;
+            }
+            .pdf-page, .quotation-canvas-page {
+              box-shadow: none !important;
+            }
+          }
         </style>
       </head>
       <body>
-        <div id="quotation-canvas-container" class="pdf-container">
+        <div id="quotation-canvas-container" class="pdf-container canvas-wrapper">
           ${pagesHTML}
         </div>
       </body>

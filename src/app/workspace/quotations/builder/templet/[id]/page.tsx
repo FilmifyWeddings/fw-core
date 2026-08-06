@@ -3819,26 +3819,42 @@ function StudioCoreAiryBuilderContent() {
 
       {/* ── PRINT & STRICT PRINT-COLOR ADJUST CSS ── */}
       <style jsx global>{`
+        .canvas-wrapper {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 24px !important;
+          padding: 32px 0;
+          background-color: #2b2b2b;
+        }
+        .quotation-canvas-page, .quotation-page {
+          width: 794px !important;
+          height: 1123px !important;
+          min-height: 1123px !important;
+          max-height: 1123px !important;
+          aspect-ratio: 1 / 1.414 !important;
+          box-sizing: border-box !important;
+          overflow: hidden !important;
+          border: none !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+        }
         @media print, .pdf-capture-active {
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
           color-adjust: exact !important;
 
-          #quotation-document {
-            width: 794px !important;
-            display: flex !important;
-            flex-direction: column !important;
+          .canvas-wrapper, #quotation-full-canvas, #quotation-document {
             gap: 0 !important;
-            margin: 0 auto !important;
             padding: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
+            margin: 0 auto !important;
+            background-color: transparent !important;
           }
-          #quotation-document section {
+          .quotation-canvas-page, .quotation-page, #quotation-document section {
             width: 794px !important;
             height: 1123px !important;
             min-height: 1123px !important;
             max-height: 1123px !important;
+            aspect-ratio: 1 / 1.414 !important;
             overflow: hidden !important;
             margin: 0 auto !important;
             padding: 0 !important;
@@ -3846,6 +3862,7 @@ function StudioCoreAiryBuilderContent() {
             border: none !important;
             page-break-after: always !important;
             break-after: page !important;
+            page-break-inside: avoid !important;
           }
           .canva-page-label {
             display: none !important;
@@ -4017,12 +4034,12 @@ function StudioCoreAiryBuilderContent() {
 
             <div 
               id="quotation-document"
-              className="w-full overflow-x-auto min-w-0 flex flex-col items-center justify-start py-10 bg-[#2f3136] min-h-screen"
+              className="w-full overflow-x-auto min-w-0 flex flex-col items-center justify-start py-8 bg-[#2b2b2b] min-h-screen"
             >
               <div 
                 id="quotation-full-canvas" 
                 style={{ width: '794px', minWidth: '794px', maxWidth: '794px' }} 
-                className="flex flex-col gap-10 shrink-0 mx-auto py-6"
+                className="canvas-wrapper flex flex-col shrink-0 mx-auto bg-[#2b2b2b]"
               >
                 {pageSequence.map((pageItem, pIdx) => {
                   const isLastPage = pIdx === pageSequence.length - 1;

@@ -36,7 +36,6 @@ export default function QuotationViewPage() {
   useEffect(() => {
     if (loading || !htmlContent) return;
 
-    // Execute DOM Computed CSS Inlining & Style Freeze before print execution
     const container = document.getElementById('quotation-canvas-container');
     if (!container) return;
 
@@ -82,7 +81,7 @@ export default function QuotationViewPage() {
       el.style.setProperty('print-color-adjust', 'exact', 'important');
     });
 
-    // 3. Inject explicit @font-face rules into document head for custom fonts if missing
+    // 3. Inject font definitions if missing
     let fontStyleTag = document.getElementById('embedded-print-fonts');
     if (!fontStyleTag) {
       fontStyleTag = document.createElement('style');
@@ -106,89 +105,12 @@ export default function QuotationViewPage() {
       document.head.appendChild(fontStyleTag);
     }
 
-    // Trigger auto-print when requested after fonts and images are settled
-    
-    // Inject single-page long height print styles dynamically based on total scroll height
-    const canvasContainer = document.getElementById('quotation-canvas-container');
-    const totalHeight = canvasContainer 
-      ? Math.max(canvasContainer.scrollHeight, canvasContainer.offsetHeight, Math.ceil(canvasContainer.getBoundingClientRect().height))
-      : 14000;
-
-    let singlePageStyleTag = document.getElementById('embedded-single-page-print-styles');
-    if (singlePageStyleTag) {
-      singlePageStyleTag.remove();
-    }
-    singlePageStyleTag = document.createElement('style');
-    singlePageStyleTag.id = 'embedded-single-page-print-styles';
-    singlePageStyleTag.innerHTML = `
-      @page {
-        size: 794px ${totalHeight}px !important;
-        margin: 0 !important;
-      }
-      @media print {
-        html, body {
-          width: 794px !important;
-          height: ${totalHeight}px !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          background: #ffffff !important;
-          overflow: visible !important;
-        }
-        #quotation-canvas-container, .pdf-container {
-          width: 794px !important;
-          height: ${totalHeight}px !important;
-          margin: 0 auto !important;
-          overflow: visible !important;
-        }
-        .pdf-page, .quotation-canvas-page {
-          page-break-after: avoid !important;
-          break-after: avoid !important;
-          page-break-inside: avoid !important;
-          break-inside: avoid !important;
-        }
-      }
-    `;
-    document.head.appendChild(singlePageStyleTag);
-
     if (isPrint) {
       const triggerPrint = async () => {
         if (document.fonts && document.fonts.ready) {
           try { await document.fonts.ready; } catch (e) {}
         }
         setTimeout(() => {
-          // Re-calculate height after fonts are loaded to ensure 100% accuracy
-          const updatedContainer = document.getElementById('quotation-canvas-container');
-          if (updatedContainer && singlePageStyleTag) {
-            const updatedHeight = Math.max(updatedContainer.scrollHeight, updatedContainer.offsetHeight, Math.ceil(updatedContainer.getBoundingClientRect().height));
-            singlePageStyleTag.innerHTML = `
-              @page {
-                size: 794px ${updatedHeight}px !important;
-                margin: 0 !important;
-              }
-              @media print {
-                html, body {
-                  width: 794px !important;
-                  height: ${updatedHeight}px !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  background: #ffffff !important;
-                  overflow: visible !important;
-                }
-                #quotation-canvas-container, .pdf-container {
-                  width: 794px !important;
-                  height: ${updatedHeight}px !important;
-                  margin: 0 auto !important;
-                  overflow: visible !important;
-                }
-                .pdf-page, .quotation-canvas-page {
-                  page-break-after: avoid !important;
-                  break-after: avoid !important;
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
-                }
-              }
-            `;
-          }
           window.print();
         }, 500);
       };
@@ -198,20 +120,105 @@ export default function QuotationViewPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-zinc-600 font-sans text-xs">
+      <div className="min-h-screen flex items-center justify-center bg-[#2b2b2b] text-zinc-300 font-sans text-xs">
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 border-2 border-zinc-400 border-t-zinc-800 rounded-full animate-spin"></div>
-          <span>Loading Quotation View...</span>
+          <div className="w-4 h-4 border-2 border-zinc-400 border-t-white rounded-full animate-spin"></div>
+          <span>Loading Clean A4 Document View...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div 
-      id="quotation-canvas-container"
-      className="w-full min-h-screen bg-white"
-      dangerouslySetInnerHTML={{ __html: htmlContent }} 
-    />
+    <div className="quotation-view-root min-h-screen w-full bg-[#2b2b2b] flex flex-col items-center justify-start py-8">
+      {/* Global CSS to override platform sidebar navigation and enforce clean Canva A4 viewer layout */}
+      <style jsx global>{`
+        /* Hide platform sidebar navigation on view route */
+        aside, nav, .sidebar-container, header, .no-print {
+          display: none !important;
+        }
+        main {
+          padding-left: 0 !important;
+          margin-left: 0 !important;
+          width: 100% !important;
+          background-color: #2b2b2b !important;
+        }
+        body, html {
+          background-color: #2b2b2b !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        /* 1. Strict A4 Page Dimensions & Borders */
+        .pdf-page, .quotation-canvas-page {
+          width: 794px !important;
+          height: 1123px !important;
+          min-height: 1123px !important;
+          max-height: 1123px !important;
+          aspect-ratio: 1 / 1.414 !important;
+          box-sizing: border-box !important;
+          overflow: hidden !important;
+          border: none !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+          margin: 0 auto !important;
+        }
+
+        /* 2. Canva-Style Gap Between Pages */
+        .canvas-wrapper, #quotation-canvas-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 24px !important;
+          padding: 32px 0;
+          background-color: #2b2b2b;
+          width: 100%;
+        }
+
+        /* Standard A4 Print Rules */
+        @media print {
+          @page {
+            size: 210mm 297mm !important;
+            margin: 0 !important;
+          }
+          html, body {
+            width: 210mm !important;
+            height: 297mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+          }
+          aside, nav, header, footer, .sidebar-container, .no-print {
+            display: none !important;
+          }
+          .canvas-wrapper, #quotation-canvas-container {
+            gap: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background-color: transparent !important;
+          }
+          .pdf-page, .quotation-canvas-page, section {
+            width: 794px !important;
+            height: 1123px !important;
+            min-height: 1123px !important;
+            max-height: 1123px !important;
+            aspect-ratio: 1 / 1.414 !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+            border: none !important;
+            margin: 0 auto !important;
+            box-shadow: none !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+          }
+        }
+      `}</style>
+
+      <div 
+        id="quotation-canvas-container"
+        className="canvas-wrapper w-full min-h-screen bg-[#2b2b2b]"
+        dangerouslySetInnerHTML={{ __html: htmlContent }} 
+      />
+    </div>
   );
 }
