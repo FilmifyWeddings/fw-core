@@ -977,9 +977,9 @@ Approx. 50 High Resolution Edited Images
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 24px !important;
+            gap: 32px !important;
             padding: 32px 0;
-            background-color: #2b2b2b;
+            background-color: #e5e7eb;
           }
           .pdf-page, .quotation-canvas-page {
             width: 794px !important;
@@ -988,13 +988,12 @@ Approx. 50 High Resolution Edited Images
             height: 1123px !important;
             min-height: 1123px !important;
             max-height: 1123px !important;
-            aspect-ratio: 1 / 1.414 !important;
             padding: 48px !important;
             position: relative !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
             border: none !important;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1) !important;
             background-color: ${theme.background} !important;
             page-break-after: always !important;
             break-after: page !important;

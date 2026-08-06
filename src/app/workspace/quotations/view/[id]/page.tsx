@@ -120,9 +120,9 @@ export default function QuotationViewPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#2b2b2b] text-zinc-300 font-sans text-xs">
+      <div className="min-h-screen flex items-center justify-center bg-[#e5e7eb] text-zinc-600 font-sans text-xs">
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 border-2 border-zinc-400 border-t-white rounded-full animate-spin"></div>
+          <div className="w-4 h-4 border-2 border-zinc-400 border-t-zinc-800 rounded-full animate-spin"></div>
           <span>Loading Clean A4 Document View...</span>
         </div>
       </div>
@@ -130,7 +130,7 @@ export default function QuotationViewPage() {
   }
 
   return (
-    <div className="quotation-view-root min-h-screen w-full bg-[#2b2b2b] flex flex-col items-center justify-start py-8">
+    <div className="quotation-view-root min-h-screen w-full bg-[#e5e7eb] flex flex-col items-center justify-start py-8">
       {/* Global CSS to override platform sidebar navigation and enforce clean Canva A4 viewer layout */}
       <style jsx global>{`
         /* Hide platform sidebar navigation on view route */
@@ -141,10 +141,10 @@ export default function QuotationViewPage() {
           padding-left: 0 !important;
           margin-left: 0 !important;
           width: 100% !important;
-          background-color: #2b2b2b !important;
+          background-color: #e5e7eb !important;
         }
         body, html {
-          background-color: #2b2b2b !important;
+          background-color: #e5e7eb !important;
           margin: 0 !important;
           padding: 0 !important;
         }
@@ -155,11 +155,10 @@ export default function QuotationViewPage() {
           height: 1123px !important;
           min-height: 1123px !important;
           max-height: 1123px !important;
-          aspect-ratio: 1 / 1.414 !important;
           box-sizing: border-box !important;
           overflow: hidden !important;
           border: none !important;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1) !important;
           margin: 0 auto !important;
         }
 
@@ -168,9 +167,9 @@ export default function QuotationViewPage() {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 24px !important;
+          gap: 32px !important;
           padding: 32px 0;
-          background-color: #2b2b2b;
+          background-color: #e5e7eb;
           width: 100%;
         }
 
