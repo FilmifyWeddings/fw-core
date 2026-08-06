@@ -2074,30 +2074,11 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // SINGLE SOURCE OF TRUTH SERVER-SIDE HEADLESS CHROMIUM PDF ENGINE
-  const handleDownloadPDFCanvas = async () => {
-    setIsExportingPDF(true);
-    setPdfToastMessage('Server Headless Chromium Generating PDF...');
-
-    try {
-      const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
-      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
-      const { data: { session } } = await supabase.auth.getSession();
-
-      await downloadServerChromiumPdf({
-        templateId: routeId,
-        filename: `${clientName}-Full.pdf`,
-        content_json: data,
-        userAccessToken: session?.access_token || '',
-        onProgress: (msg) => setPdfToastMessage(msg)
-      });
-
-      setTimeout(() => setPdfToastMessage(null), 3000);
-    } catch (err: any) {
-      console.error('Server PDF Error:', err);
-      alert(`PDF Export Failed: ${err?.message || err}`);
-    } finally {
-      setIsExportingPDF(false);
+  // NATIVE BROWSER A4 PRINT ENGINE FOR 100% PERFECT PDF DOWNLOAD
+  const handleDownloadPDFCanvas = () => {
+    const routeId = params?.id ? String(params.id) : '';
+    if (routeId) {
+      window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
     }
   };
 
