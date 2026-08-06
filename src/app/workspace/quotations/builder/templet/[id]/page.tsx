@@ -2096,88 +2096,122 @@ function StudioCoreAiryBuilderContent() {
       const targets = pageEls.length > 0 ? pageEls : [container as HTMLElement];
       const pageImages: string[] = [];
 
-      // 2. Off-screen Virtual A4 Container Snapshot Engine for EACH page independently
+      // 2. Canva-Style Fixed A4 Fit Snapshot Engine (Zero Spillover, Zero Overflow)
       for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
 
-        // Create virtual off-screen container forced to A4 dimensions (794px x 1123px)
-        const virtualA4Container = document.createElement('div');
-        virtualA4Container.style.cssText = `
-          position: fixed !important;
-          left: -9999px !important;
-          top: 0 !important;
-          width: 794px !important;
-          min-width: 794px !important;
-          max-width: 794px !important;
-          height: 1123px !important;
-          min-height: 1123px !important;
-          max-height: 1123px !important;
-          padding: 0 !important;
-          margin: 0 !important;
-          overflow: hidden !important;
-          box-sizing: border-box !important;
-          background-color: #ffffff !important;
-          z-index: -99999 !important;
-        `;
+        // Measure natural scroll height to handle multi-page section content cleanly
+        const rawHeight = target.scrollHeight || target.offsetHeight || 1123;
+        const totalSubPages = Math.max(1, Math.ceil(rawHeight / 1123));
 
-        // Clone target DOM node and lock to desktop A4 layout
-        const clone = target.cloneNode(true) as HTMLElement;
-        clone.style.width = '794px';
-        clone.style.minWidth = '794px';
-        clone.style.maxWidth = '794px';
-        clone.style.height = '1123px';
-        clone.style.minHeight = '1123px';
-        clone.style.maxHeight = '1123px';
-        clone.style.margin = '0';
-        clone.style.padding = '0';
-        clone.style.transform = 'none';
-        clone.style.boxSizing = 'border-box';
-        clone.style.overflow = 'hidden';
+        for (let subPageIdx = 0; subPageIdx < totalSubPages; subPageIdx++) {
+          const virtualA4Container = document.createElement('div');
+          virtualA4Container.style.cssText = `
+            position: fixed !important;
+            left: -9999px !important;
+            top: 0 !important;
+            width: 794px !important;
+            min-width: 794px !important;
+            max-width: 794px !important;
+            height: 1123px !important;
+            min-height: 1123px !important;
+            max-height: 1123px !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+            box-sizing: border-box !important;
+            background-color: #ffffff !important;
+            z-index: -99999 !important;
+          `;
 
-        virtualA4Container.appendChild(clone);
-        document.body.appendChild(virtualA4Container);
+          const wrapper = document.createElement('div');
+          wrapper.style.cssText = `
+            width: 794px !important;
+            height: 1123px !important;
+            overflow: hidden !important;
+            position: relative !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            box-sizing: border-box !important;
+          `;
 
-        // Pre-load all images inside cloned virtual container
-        const images = Array.from(virtualA4Container.querySelectorAll('img'));
-        await Promise.all(
-          images.map((img) => {
-            if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
-            return new Promise((resolve) => {
-              img.onload = () => resolve(true);
-              img.onerror = () => resolve(true);
-              setTimeout(resolve, 1000);
-            });
-          })
-        );
+          // Clone target DOM node and strip all outer margins/spacers
+          const clone = target.cloneNode(true) as HTMLElement;
+          clone.style.margin = '0';
+          clone.style.marginBottom = '0';
+          clone.style.marginTop = '0';
+          clone.style.padding = '0';
+          clone.style.width = '794px';
+          clone.style.minWidth = '794px';
+          clone.style.maxWidth = '794px';
+          clone.style.boxSizing = 'border-box';
 
-        // Brief delay for DOM to settle
-        await new Promise(r => setTimeout(r, 100));
-
-        // Capture virtual off-screen container with toPng via html-to-image
-        const dataUrl = await toPng(virtualA4Container, {
-          quality: 0.98,
-          pixelRatio: 3,
-          cacheBust: true,
-          width: 794,
-          height: 1123,
-          style: {
-            transform: 'none',
-            margin: '0',
-            padding: '0',
-            boxShadow: 'none'
+          if (totalSubPages > 1) {
+            clone.style.transform = `translateY(-${subPageIdx * 1123}px)`;
+          } else {
+            clone.style.height = '1123px';
+            clone.style.minHeight = '1123px';
+            clone.style.maxHeight = '1123px';
+            clone.style.overflow = 'hidden';
           }
-        });
-        pageImages.push(dataUrl);
 
-        // Remove virtual container from DOM immediately
-        if (document.body.contains(virtualA4Container)) {
-          document.body.removeChild(virtualA4Container);
+          // Strip margin from all inner page elements
+          const nestedPages = Array.from(clone.querySelectorAll('.quotation-page, .quotation-canvas-page, section'));
+          nestedPages.forEach((p: any) => {
+            p.style.margin = '0';
+            p.style.marginBottom = '0';
+            p.style.marginTop = '0';
+            p.style.width = '794px';
+            p.style.boxSizing = 'border-box';
+          });
+
+          wrapper.appendChild(clone);
+          virtualA4Container.appendChild(wrapper);
+          document.body.appendChild(virtualA4Container);
+
+          // Pre-load all images inside cloned container
+          const images = Array.from(virtualA4Container.querySelectorAll('img'));
+          await Promise.all(
+            images.map((img) => {
+              if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
+              return new Promise((resolve) => {
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(true);
+                setTimeout(resolve, 1000);
+              });
+            })
+          );
+
+          // Brief delay for fonts & DOM to settle
+          await new Promise(r => setTimeout(r, 100));
+
+          // Capture exact 794x1123 A4 snapshot
+          const dataUrl = await toPng(virtualA4Container, {
+            quality: 0.98,
+            pixelRatio: 3,
+            cacheBust: true,
+            width: 794,
+            height: 1123,
+            style: {
+              transform: 'none',
+              margin: '0',
+              padding: '0',
+              boxShadow: 'none'
+            }
+          });
+
+          pageImages.push(dataUrl);
+
+          if (document.body.contains(virtualA4Container)) {
+            document.body.removeChild(virtualA4Container);
+          }
         }
       }
 
       const routeId = params?.id ? String(params.id) : '';
 
-      // 3. Compile full-bleed A4 PDF on server via pdf-lib
+      // 3. Compile clean full-bleed A4 PDF on server via pdf-lib
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2203,7 +2237,7 @@ function StudioCoreAiryBuilderContent() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('[Virtual Off-Screen A4 PDF Export Error]:', err);
+      console.error('[Canva-Style A4 PDF Export Error]:', err);
       const routeId = params?.id ? String(params.id) : '';
       if (routeId) {
         window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
