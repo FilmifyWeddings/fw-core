@@ -108,41 +108,47 @@ export default function QuotationViewPage() {
 
     // Trigger auto-print when requested after fonts and images are settled
     
-    // Inject single-page long height print styles
+    // Inject single-page long height print styles dynamically based on total scroll height
+    const canvasContainer = document.getElementById('quotation-canvas-container');
+    const totalHeight = canvasContainer 
+      ? Math.max(canvasContainer.scrollHeight, canvasContainer.offsetHeight, Math.ceil(canvasContainer.getBoundingClientRect().height))
+      : 14000;
+
     let singlePageStyleTag = document.getElementById('embedded-single-page-print-styles');
-    if (!singlePageStyleTag) {
-      singlePageStyleTag = document.createElement('style');
-      singlePageStyleTag.id = 'embedded-single-page-print-styles';
-      singlePageStyleTag.innerHTML = `
-        @page {
-          size: 794px auto !important;
-          margin: 0 !important;
-        }
-        @media print {
-          html, body {
-            width: 794px !important;
-            height: auto !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #ffffff !important;
-            overflow: visible !important;
-          }
-          #quotation-canvas-container, .pdf-container {
-            width: 794px !important;
-            height: auto !important;
-            margin: 0 auto !important;
-            overflow: visible !important;
-          }
-          .pdf-page, .quotation-canvas-page {
-            page-break-after: avoid !important;
-            break-after: avoid !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-        }
-      `;
-      document.head.appendChild(singlePageStyleTag);
+    if (singlePageStyleTag) {
+      singlePageStyleTag.remove();
     }
+    singlePageStyleTag = document.createElement('style');
+    singlePageStyleTag.id = 'embedded-single-page-print-styles';
+    singlePageStyleTag.innerHTML = `
+      @page {
+        size: 794px ${totalHeight}px !important;
+        margin: 0 !important;
+      }
+      @media print {
+        html, body {
+          width: 794px !important;
+          height: ${totalHeight}px !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #ffffff !important;
+          overflow: visible !important;
+        }
+        #quotation-canvas-container, .pdf-container {
+          width: 794px !important;
+          height: ${totalHeight}px !important;
+          margin: 0 auto !important;
+          overflow: visible !important;
+        }
+        .pdf-page, .quotation-canvas-page {
+          page-break-after: avoid !important;
+          break-after: avoid !important;
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+      }
+    `;
+    document.head.appendChild(singlePageStyleTag);
 
     if (isPrint) {
       const triggerPrint = async () => {
@@ -150,6 +156,39 @@ export default function QuotationViewPage() {
           try { await document.fonts.ready; } catch (e) {}
         }
         setTimeout(() => {
+          // Re-calculate height after fonts are loaded to ensure 100% accuracy
+          const updatedContainer = document.getElementById('quotation-canvas-container');
+          if (updatedContainer && singlePageStyleTag) {
+            const updatedHeight = Math.max(updatedContainer.scrollHeight, updatedContainer.offsetHeight, Math.ceil(updatedContainer.getBoundingClientRect().height));
+            singlePageStyleTag.innerHTML = `
+              @page {
+                size: 794px ${updatedHeight}px !important;
+                margin: 0 !important;
+              }
+              @media print {
+                html, body {
+                  width: 794px !important;
+                  height: ${updatedHeight}px !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: #ffffff !important;
+                  overflow: visible !important;
+                }
+                #quotation-canvas-container, .pdf-container {
+                  width: 794px !important;
+                  height: ${updatedHeight}px !important;
+                  margin: 0 auto !important;
+                  overflow: visible !important;
+                }
+                .pdf-page, .quotation-canvas-page {
+                  page-break-after: avoid !important;
+                  break-after: avoid !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+              }
+            `;
+          }
           window.print();
         }, 500);
       };

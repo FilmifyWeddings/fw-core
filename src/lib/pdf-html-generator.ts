@@ -524,123 +524,129 @@ Approx. 50 High Resolution Edited Images
       const mapPinIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
       const cameraIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
 
-      const funcCount = (functionsPage.items || []).length;
-      const cardPadding = funcCount >= 4 ? '10px 14px' : funcCount === 3 ? '12px 16px' : '18px 20px';
-      const cardGap = funcCount >= 4 ? '4px' : funcCount === 3 ? '6px' : '8px';
-      const cardMargin = funcCount >= 4 ? '6px' : funcCount === 3 ? '10px' : '14px';
-      const cardTitleSize = funcCount >= 4 ? '16px' : funcCount === 3 ? '18px' : '22px';
-      const sectionPadding = funcCount >= 4 ? '28px 36px' : funcCount === 3 ? '36px 44px' : '56px 48px';
-      const titleMargin = funcCount >= 4 ? '4px 0' : funcCount === 3 ? '8px 0' : '12px 0';
-      const headingSize = funcCount >= 4 ? '28px' : funcCount === 3 ? '32px' : '36px';
-
-      let itemsHTML = '';
-      (functionsPage.items || []).forEach((func: any, index: number) => {
-        const funcName = func.name || func.title || `Function ${index + 1}`;
-        const timingStr = [
-          func.dateNotFixed ? 'DATE NOT FIXED' : (func.date || func.dateTime || ''),
-          func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : (func.timing || ''),
-          func.durationSlot && func.durationSlot !== 'None' ? `(${func.durationSlot})` : ''
-        ].filter(Boolean).join(' • ');
-
-        const locationStr = func.location || func.venue || '';
-
-        let reqsHTML = '';
-        if (func.requirements && Array.isArray(func.requirements) && func.requirements.length > 0) {
-          const reqItems = func.requirements.map((req: any) => {
-            const q = req.qty || 1;
-            let label = req.name || '';
-            if (q > 1) {
-              if (label.toLowerCase().includes('photography') || label.toLowerCase().includes('photographer')) {
-                label = label.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
-              } else if (label.toLowerCase().includes('cinematography') || label.toLowerCase().includes('cinematographer')) {
-                label = label.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
-              }
-            }
-            return `<div style="display:flex;align-items:center;gap:6px;font-size:${funcCount >= 4 ? '11px' : '12px'};font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${q} × ${label}</span></div>`;
-          }).join('');
-
-          reqsHTML = `
-            <div style="margin-top:${funcCount >= 4 ? '4px' : '8px'};">
-              <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:${funcCount >= 4 ? '3px' : '6px'};">Crew & Requirements:</span>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:${funcCount >= 4 ? '4px' : '6px'};text-align:left;">
-                ${reqItems}
-              </div>
-            </div>
-          `;
-        } else if (func.team || func.crew) {
-          const crewArr = String(func.team || func.crew).split(',').filter(Boolean);
-          const reqItems = crewArr.map((t: string) => `<div style="display:flex;align-items:center;gap:6px;font-size:${funcCount >= 4 ? '11px' : '12px'};font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${t.trim()}</span></div>`).join('');
-          reqsHTML = `
-            <div style="margin-top:${funcCount >= 4 ? '4px' : '8px'};">
-              <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:${funcCount >= 4 ? '3px' : '6px'};">Crew & Requirements:</span>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:${funcCount >= 4 ? '4px' : '6px'};text-align:left;">
-                ${reqItems}
-              </div>
-            </div>
-          `;
+      const allItems = functionsPage.items || [];
+      const funcChunks: any[][] = [];
+      if (allItems.length === 0) {
+        funcChunks.push([]);
+      } else {
+        for (let i = 0; i < allItems.length; i += 3) {
+          funcChunks.push(allItems.slice(i, i + 3));
         }
+      }
 
-        const notesHTML = func.notes ? `
-          <p style="font-size:${funcCount >= 4 ? '11px' : '12px'};font-style:italic;line-height:1.3;opacity:0.85;margin:${funcCount >= 4 ? '4px 0 0 0' : '8px 0 0 0'};padding-top:${funcCount >= 4 ? '4px' : '8px'};border-top:1px solid ${theme.borderColor};color:${theme.text};text-align:left;">
-            "${func.notes}"
-          </p>
-        ` : '';
+      funcChunks.forEach((chunkItems: any[], chunkIdx: number) => {
+        let itemsHTML = '';
+        chunkItems.forEach((func: any, index: number) => {
+          const globalIdx = chunkIdx * 3 + index;
+          const funcName = func.name || func.title || `Function ${globalIdx + 1}`;
+          const timingStr = [
+            func.dateNotFixed ? 'DATE NOT FIXED' : (func.date || func.dateTime || ''),
+            func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : (func.timing || ''),
+            func.durationSlot && func.durationSlot !== 'None' ? `(${func.durationSlot})` : ''
+          ].filter(Boolean).join(' • ');
 
-        itemsHTML += `
-          <div style="padding:${cardPadding};border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:${cardGap};margin-bottom:${cardMargin};-webkit-print-color-adjust:exact;print-color-adjust:exact;width:100%;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid ${theme.borderColor};padding-bottom:${funcCount >= 4 ? '6px' : '10px'};">
-              <h3 style="font-family:${primaryFont};font-size:${cardTitleSize};letter-spacing:0.08em;font-weight:600;text-transform:uppercase;margin:0;color:${theme.text};">${funcName}</h3>
-              ${timingStr ? `
-                <div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:3px 10px;border-radius:20px;border:1px solid ${theme.borderColor};background-color:${theme.background};color:${theme.kicker};white-space:nowrap;display:flex;align-items:center;">
-                  ${calendarIconSVG}
-                  <span>${timingStr}</span>
+          const locationStr = func.location || func.venue || '';
+
+          let reqsHTML = '';
+          if (func.requirements && Array.isArray(func.requirements) && func.requirements.length > 0) {
+            const reqItems = func.requirements.map((req: any) => {
+              const q = req.qty || 1;
+              let label = req.name || '';
+              if (q > 1) {
+                if (label.toLowerCase().includes('photography') || label.toLowerCase().includes('photographer')) {
+                  label = label.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
+                } else if (label.toLowerCase().includes('cinematography') || label.toLowerCase().includes('cinematographer')) {
+                  label = label.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
+                }
+              }
+              return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${q} × ${label}</span></div>`;
+            }).join('');
+
+            reqsHTML = `
+              <div style="margin-top:4px;">
+                <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:3px;">Crew & Requirements:</span>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:left;">
+                  ${reqItems}
+                </div>
+              </div>
+            `;
+          } else if (func.team || func.crew) {
+            const crewArr = String(func.team || func.crew).split(',').filter(Boolean);
+            const reqItems = crewArr.map((t: string) => `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${t.trim()}</span></div>`).join('');
+            reqsHTML = `
+              <div style="margin-top:4px;">
+                <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:3px;">Crew & Requirements:</span>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:left;">
+                  ${reqItems}
+                </div>
+              </div>
+            `;
+          }
+
+          const notesHTML = func.notes ? `
+            <p style="font-size:11px;font-style:italic;line-height:1.3;opacity:0.85;margin:4px 0 0 0;padding-top:4px;border-top:1px solid ${theme.borderColor};color:${theme.text};text-align:left;">
+              "${func.notes}"
+            </p>
+          ` : '';
+
+          itemsHTML += `
+            <div style="padding:12px 16px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:6px;margin-bottom:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;width:100%;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid ${theme.borderColor};padding-bottom:6px;">
+                <h3 style="font-family:${primaryFont};font-size:18px;letter-spacing:0.08em;font-weight:600;text-transform:uppercase;margin:0;color:${theme.text};">${funcName}</h3>
+                ${timingStr ? `
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 8px;border-radius:20px;border:1px solid ${theme.borderColor};background-color:${theme.background};color:${theme.kicker};white-space:nowrap;display:flex;align-items:center;">
+                    ${calendarIconSVG}
+                    <span>${timingStr}</span>
+                  </div>
+                ` : ''}
+              </div>
+
+              ${locationStr ? `
+                <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${theme.text};margin-top:2px;text-align:left;">
+                  ${mapPinIconSVG}
+                  <span>${locationStr}</span>
                 </div>
               ` : ''}
+
+              ${reqsHTML}
+              ${notesHTML}
             </div>
+          `;
+        });
 
-            ${locationStr ? `
-              <div style="display:flex;align-items:center;gap:6px;font-size:${funcCount >= 4 ? '11px' : '12px'};font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${theme.text};margin-top:2px;text-align:left;">
-                ${mapPinIconSVG}
-                <span>${locationStr}</span>
+        const showImage = chunkIdx === 0;
+
+        pagesHTML += `
+          <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:36px 44px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+            ${showImage && funcPhoto && functionsPage.frameShape === 'background' ? bannerImgHTML : ''}
+
+            <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
+                ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'top' ? bannerImgHTML : ''}
+
+                <div style="text-align:center;margin:6px 0;">
+                  <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:4px;">
+                    ${functionsPage.kicker || 'EVENT SCHEDULE'} ${funcChunks.length > 1 ? `(${chunkIdx + 1}/${funcChunks.length})` : ''}
+                  </span>
+                  <h2 style="font-family:${primaryFont};font-size:30px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                    ${functionsPage.heading || 'Functions & Coverage'}
+                  </h2>
+                </div>
+
+                ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'center' ? bannerImgHTML : ''}
+
+                <div style="width:100%;max-width:640px;margin:6px auto;">
+                  ${itemsHTML}
+                </div>
+
+                ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && (functionsPage.imagePosition === 'bottom' || !functionsPage.imagePosition) ? bannerImgHTML : ''}
               </div>
-            ` : ''}
 
-            ${reqsHTML}
-            ${notesHTML}
-          </div>
+              ${footerHTML}
+            </div>
+          </section>
         `;
       });
-
-      pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:${sectionPadding};box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:avoid;break-after:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
-          ${funcPhoto && functionsPage.frameShape === 'background' ? bannerImgHTML : ''}
-
-          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
-            <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-              ${funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'top' ? bannerImgHTML : ''}
-
-              <div style="text-align:center;margin:${titleMargin};">
-                <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:${funcCount >= 4 ? '4px' : '8px'};">
-                  ${functionsPage.kicker || 'EVENT SCHEDULE'}
-                </span>
-                <h2 style="font-family:${primaryFont};font-size:${headingSize};letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
-                  ${functionsPage.heading || 'Functions & Coverage'}
-                </h2>
-              </div>
-
-              ${funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'center' ? bannerImgHTML : ''}
-
-              <div style="width:100%;max-width:640px;margin:6px auto;">
-                ${itemsHTML}
-              </div>
-
-              ${funcPhoto && functionsPage.frameShape !== 'background' && (functionsPage.imagePosition === 'bottom' || !functionsPage.imagePosition) ? bannerImgHTML : ''}
-            </div>
-
-            ${footerHTML}
-          </div>
-        </section>
-      `;
     } else if (pageType === 'deliverablesPage') {
       const delivPhoto = deliverablesPage.photo || deliverablesPage.photoUrl;
       const bannerImgHTML = renderSectionImage(
@@ -656,47 +662,61 @@ Approx. 50 High Resolution Edited Images
 
       const checkCircleIconSVG = `<div style="width:24px;height:24px;border-radius:50%;background-color:rgba(0,0,0,0.05);border:1px solid ${theme.borderColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>`;
 
-      let delivHTML = '';
-      (deliverablesPage.selectedItems || deliverablesPage.items || []).forEach((item: any) => {
-        const itemText = typeof item === 'string' ? item : item.title || item.name;
-        delivHTML += `
-          <div style="padding:14px 18px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;gap:14px;margin-bottom:10px;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-            ${checkCircleIconSVG}
-            <span style="font-size:14px;font-weight:700;line-height:1.3;">${itemText}</span>
-          </div>
+      const allDelivs = deliverablesPage.selectedItems || deliverablesPage.items || [];
+      const delivChunks: any[][] = [];
+      if (allDelivs.length === 0) {
+        delivChunks.push([]);
+      } else {
+        for (let i = 0; i < allDelivs.length; i += 5) {
+          delivChunks.push(allDelivs.slice(i, i + 5));
+        }
+      }
+
+      delivChunks.forEach((chunkItems: any[], chunkIdx: number) => {
+        let delivHTML = '';
+        chunkItems.forEach((item: any) => {
+          const itemText = typeof item === 'string' ? item : item.title || item.name;
+          delivHTML += `
+            <div style="padding:14px 18px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;gap:14px;margin-bottom:10px;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+              ${checkCircleIconSVG}
+              <span style="font-size:14px;font-weight:700;line-height:1.3;">${itemText}</span>
+            </div>
+          `;
+        });
+
+        const showImage = chunkIdx === 0;
+
+        pagesHTML += `
+          <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+            ${showImage && delivPhoto && deliverablesPage.frameShape === 'background' ? bannerImgHTML : ''}
+
+            <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
+                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'top' ? bannerImgHTML : ''}
+
+                <div style="text-align:center;margin:12px 0;">
+                  <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                    ${deliverablesPage.kicker || 'WHAT WE DELIVER'} ${delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
+                  </span>
+                  <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                    ${deliverablesPage.heading || 'DELIVERABLES'}
+                  </h2>
+                </div>
+
+                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'center' ? bannerImgHTML : ''}
+
+                <div style="width:100%;max-width:640px;margin:12px auto;">
+                  ${delivHTML}
+                </div>
+
+                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' && (deliverablesPage.imagePosition === 'bottom' || !deliverablesPage.imagePosition) ? bannerImgHTML : ''}
+              </div>
+
+              ${footerHTML}
+            </div>
+          </section>
         `;
       });
-
-      pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
-          ${delivPhoto && deliverablesPage.frameShape === 'background' ? bannerImgHTML : ''}
-
-          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
-            <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-              ${delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'top' ? bannerImgHTML : ''}
-
-              <div style="text-align:center;margin:12px 0;">
-                <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
-                  ${deliverablesPage.kicker || 'WHAT WE DELIVER'}
-                </span>
-                <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
-                  ${deliverablesPage.heading || 'DELIVERABLES'}
-                </h2>
-              </div>
-
-              ${delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'center' ? bannerImgHTML : ''}
-
-              <div style="width:100%;max-width:640px;margin:12px auto;">
-                ${delivHTML}
-              </div>
-
-              ${delivPhoto && deliverablesPage.frameShape !== 'background' && (deliverablesPage.imagePosition === 'bottom' || !deliverablesPage.imagePosition) ? bannerImgHTML : ''}
-            </div>
-
-            ${footerHTML}
-          </div>
-        </section>
-      `;
     } else if (pageType === 'specialValueAdditions') {
       let addValHTML = '';
       (specialValueAdditions.items || []).forEach((item: any) => {
@@ -836,25 +856,65 @@ Approx. 50 High Resolution Edited Images
         </section>
       `;
     } else if (pageType === 'termsPage') {
-      pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${termsPage.kicker || 'POLICIES & RULES'}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${termsPage.heading || 'TERMS & CONDITIONS'}
-            </h2>
-            <div style="padding:24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;">
-              <p style="font-size:12px;line-height:1.7;white-space:pre-line;font-weight:500;margin:0;">
-                ${termsPage.text}
-              </p>
-            </div>
-          </div>
+      const termsPhoto = termsPage.photo || termsPage.photoUrl;
+      const bannerImgHTML = renderSectionImage(
+        termsPhoto,
+        termsPage.frameShape || 'arch',
+        termsPage.photoHeight || 450,
+        termsPage.photoWidth || 75,
+        termsPage.photoFocalY || 50,
+        termsPage.bgOpacity || 40,
+        theme.background,
+        true
+      );
 
-          ${footerHTML}
-        </section>
-      `;
+      const termsRaw = termsPage.text || '';
+      const termLines = termsRaw.split('\n').filter(Boolean);
+      const termsChunks: string[][] = [];
+      if (termLines.length === 0) {
+        termsChunks.push([]);
+      } else {
+        for (let i = 0; i < termLines.length; i += 5) {
+          termsChunks.push(termLines.slice(i, i + 5));
+        }
+      }
+
+      termsChunks.forEach((chunkLines: string[], chunkIdx: number) => {
+        const showImage = chunkIdx === 0;
+
+        pagesHTML += `
+          <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+            ${showImage && termsPhoto && termsPage.frameShape === 'background' ? bannerImgHTML : ''}
+
+            <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
+                ${showImage && termsPhoto && termsPage.frameShape !== 'background' && termsPage.imagePosition === 'top' ? bannerImgHTML : ''}
+
+                <div style="text-align:center;margin:12px 0;">
+                  <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                    ${termsPage.kicker || 'POLICIES & RULES'} ${termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
+                  </span>
+                  <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
+                    ${termsPage.heading || 'TERMS & CONDITIONS'}
+                  </h2>
+                </div>
+
+                ${showImage && termsPhoto && termsPage.frameShape !== 'background' && termsPage.imagePosition === 'center' ? bannerImgHTML : ''}
+
+                <div style="padding:24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;width:100%;max-width:600px;margin:12px auto;">
+                  <p style="font-size:12px;line-height:1.7;white-space:pre-line;font-weight:500;margin:0;">
+                    ${chunkLines.join('\n')}
+                  </p>
+                </div>
+
+                ${showImage && termsPhoto && termsPage.frameShape !== 'background' && (termsPage.imagePosition === 'bottom' || !termsPage.imagePosition) ? bannerImgHTML : ''}
+              </div>
+
+              ${footerHTML}
+            </div>
+          </section>
+        `;
+      });
     } else if (pageType === 'thankYouPage') {
       pagesHTML += `
         <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">

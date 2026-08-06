@@ -1030,18 +1030,16 @@ function getDynamicPageHeight(sectionData?: {
   bottomBannerHeight?: number;
   backgroundPageHeight?: number;
 }) {
-  const isBackground = 
-    sectionData?.frameShape === 'background' || 
-    sectionData?.imageLayout === 'background' || 
-    sectionData?.imagePosition === 'background' || 
-    sectionData?.imagePosition === 'full';
-    
-  if (isBackground) {
-    const rawH = sectionData?.photoHeight || sectionData?.backgroundPageHeight || sectionData?.bottomBannerHeight || 1123;
-    const h = Math.max(1123, Number(rawH) || 1123);
-    return `${h}px`;
-  }
   return '1123px';
+}
+
+function chunkArray<T>(arr: T[] | undefined | null, size: number): T[][] {
+  if (!arr || arr.length === 0) return [[]];
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
 }
 
 function ThreeDCurvedSelect({
@@ -4393,285 +4391,296 @@ function StudioCoreAiryBuilderContent() {
             </section>
                       )}
 
-                      {pageItem.type === 'functionsPage' && (
-                        <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
-              style={{
-                width: '794px',
-                minWidth: '794px',
-                maxWidth: '794px',
-                height: getDynamicPageHeight(data.functionsPage),
-                minHeight: getDynamicPageHeight(data.functionsPage),
-                maxHeight: 'none',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                margin: '0 auto',
-                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-                backgroundColor: pageBgColor || '#FFFFFF',
-                color: textColor,
-                fontFamily: data.secondaryFont,
-              }}
-            >
-              {data.functionsPage?.photo && data.functionsPage?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.functionsPage.photo}
-                  frameShape="background"
-                  photoHeight={data.functionsPage.photoHeight}
-                  photoWidth={data.functionsPage.photoWidth}
-                  photoFocalY={data.functionsPage.photoFocalY}
-                  bgOpacity={data.functionsPage.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Functions Background"
-                />
-              )}
+                      {pageItem.type === 'functionsPage' && (() => {
+                        const funcChunks = chunkArray(data.functionsPage?.items, 3);
+                        return funcChunks.map((funcChunk, chunkIdx) => (
+                          <section 
+                            key={`func-chunk-${chunkIdx}`}
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col mb-10"
+                            style={{
+                              width: '794px',
+                              minWidth: '794px',
+                              maxWidth: '794px',
+                              height: '1123px',
+                              minHeight: '1123px',
+                              maxHeight: '1123px',
+                              boxSizing: 'border-box',
+                              position: 'relative',
+                              overflow: 'hidden',
+                              margin: '0 auto 40px auto',
+                              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                              backgroundColor: pageBgColor || '#FFFFFF',
+                              color: textColor,
+                              fontFamily: data.secondaryFont,
+                            }}
+                          >
+                            {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape === 'background' && (
+                              <SectionImageRenderer
+                                photo={data.functionsPage.photo}
+                                frameShape="background"
+                                photoHeight={data.functionsPage.photoHeight}
+                                photoWidth={data.functionsPage.photoWidth}
+                                photoFocalY={data.functionsPage.photoFocalY}
+                                bgOpacity={data.functionsPage.bgOpacity}
+                                pageBgColor={pageBgColor}
+                                altText="Functions Background"
+                              />
+                            )}
 
-              <div className={`relative z-10 mx-auto flex flex-col h-full w-full py-14 ${
-                data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.functionsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-start w-full ${data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.functionsPage.photo}
-                      frameShape={data.functionsPage.frameShape}
-                      photoHeight={data.functionsPage.photoHeight}
-                      photoWidth={data.functionsPage.photoWidth}
-                      photoFocalY={data.functionsPage.photoFocalY}
-                      altText="Functions Banner"
-                    />
-                  )}
+                            <div className={`relative z-10 mx-auto flex flex-col h-full w-full py-10 ${
+                              data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' 
+                                ? 'px-0' 
+                                : 'px-12'
+                            } justify-between`}>
+                              
+                              <div className={`flex flex-col items-center justify-start w-full ${data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                                {/* TOP IMAGE POSITION - Only on 1st Page */}
+                                {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'top' && (
+                                  <SectionImageRenderer
+                                    photo={data.functionsPage.photo}
+                                    frameShape={data.functionsPage.frameShape}
+                                    photoHeight={data.functionsPage.photoHeight}
+                                    photoWidth={data.functionsPage.photoWidth}
+                                    photoFocalY={data.functionsPage.photoFocalY}
+                                    altText="Functions Banner"
+                                  />
+                                )}
 
-                  <div className="text-center space-y-3 my-3">
-                    <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
-                      {data.functionsPage?.kicker || 'EVENT SCHEDULE'}
-                    </span>
-                    <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.functionsPage?.heading || 'Functions & Coverage'}
-                    </h2>
-                  </div>
+                                <div className="text-center space-y-2 my-2">
+                                  <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
+                                    {data.functionsPage?.kicker || 'EVENT SCHEDULE'} {funcChunks.length > 1 ? `(${chunkIdx + 1}/${funcChunks.length})` : ''}
+                                  </span>
+                                  <h2 className="text-3xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                    {data.functionsPage?.heading || 'Functions & Coverage'}
+                                  </h2>
+                                </div>
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.functionsPage.photo}
-                      frameShape={data.functionsPage.frameShape}
-                      photoHeight={data.functionsPage.photoHeight}
-                      photoWidth={data.functionsPage.photoWidth}
-                      photoFocalY={data.functionsPage.photoFocalY}
-                      altText="Functions Banner"
-                    />
-                  )}
+                                {/* CENTER IMAGE POSITION - Only on 1st Page */}
+                                {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'center' && (
+                                  <SectionImageRenderer
+                                    photo={data.functionsPage.photo}
+                                    frameShape={data.functionsPage.frameShape}
+                                    photoHeight={data.functionsPage.photoHeight}
+                                    photoWidth={data.functionsPage.photoWidth}
+                                    photoFocalY={data.functionsPage.photoFocalY}
+                                    altText="Functions Banner"
+                                  />
+                                )}
 
-                  <div className="w-full max-w-xl mx-auto space-y-5 my-auto">
-                    {(data.functionsPage?.items || []).map((func, index) => (
-                      <div 
-                        key={func.id || index} 
-                        className="p-5 rounded-2xl border transition-all space-y-3.5 shadow-xs"
-                        style={{ 
-                          borderColor: borderColor || 'rgba(0,0,0,0.12)',
-                          backgroundColor: boxBgColor || 'rgba(0,0,0,0.03)'
-                        }}
-                      >
-                        {/* Function Name & Timing Header */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-3" style={{ borderColor: borderColor || 'rgba(0,0,0,0.1)' }}>
-                          <h3 className="text-2xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                            {func.name || `Function ${index + 1}`}
-                          </h3>
-                          <div className="text-[11px] tracking-widest uppercase font-bold font-sans px-3 py-1 rounded-full border shadow-2xs inline-flex items-center gap-1.5 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
-                            <Calendar className="w-3 h-3" />
-                            <span className="font-sans font-medium tracking-tight">
-                              {[
-                                (func as FunctionItem).dateNotFixed ? 'DATE NOT FIXED' : func.date,
-                                func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
-                                (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
-                              ].filter(Boolean).join(' • ')}
-                            </span>
-                          </div>
-                        </div>
+                                <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                                  {funcChunk.map((func, index) => {
+                                    const globalIdx = chunkIdx * 3 + index;
+                                    return (
+                                      <div 
+                                        key={func.id || globalIdx} 
+                                        className="p-4 rounded-2xl border transition-all space-y-2.5 shadow-xs"
+                                        style={{ 
+                                          borderColor: borderColor || 'rgba(0,0,0,0.12)',
+                                          backgroundColor: boxBgColor || 'rgba(0,0,0,0.03)'
+                                        }}
+                                      >
+                                        {/* Function Name & Timing Header */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-2" style={{ borderColor: borderColor || 'rgba(0,0,0,0.1)' }}>
+                                          <h3 className="text-xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                            {func.name || `Function ${globalIdx + 1}`}
+                                          </h3>
+                                          <div className="text-[10px] tracking-widest uppercase font-bold font-sans px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
+                                            <Calendar className="w-3 h-3" />
+                                            <span className="font-sans font-medium tracking-tight">
+                                              {[
+                                                (func as FunctionItem).dateNotFixed ? 'DATE NOT FIXED' : func.date,
+                                                func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
+                                                (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
+                                              ].filter(Boolean).join(' • ')}
+                                            </span>
+                                          </div>
+                                        </div>
 
-                        {/* Venue Location */}
-                        {func.location && (
-                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90" style={{ color: textColor }}>
-                            <MapPin className="w-3.5 h-3.5 shrink-0 text-amber-600" style={{ color: kickerColor }} />
-                            <span>{func.location}</span>
-                          </div>
-                        )}
+                                        {/* Venue Location */}
+                                        {func.location && (
+                                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90" style={{ color: textColor }}>
+                                            <MapPin className="w-3.5 h-3.5 shrink-0 text-amber-600" style={{ color: kickerColor }} />
+                                            <span>{func.location}</span>
+                                          </div>
+                                        )}
 
-                        {/* Requirements & Crew List */}
-                        {func.requirements && func.requirements.length > 0 && (
-                          <div className="space-y-1.5 pt-1">
-                            <span className="text-[10px] uppercase font-bold tracking-widest block opacity-75" style={{ color: kickerColor }}>
-                              Crew &amp; Requirements:
-                            </span>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-medium">
-                              {func.requirements.map((req, rIdx) => {
-                                const q = req.qty || 1;
-                                let label = req.name;
-                                if (q > 1) {
-                                  if (req.name.toLowerCase().includes('photography') || req.name.toLowerCase().includes('photographer')) {
-                                    label = req.name.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
-                                  } else if (req.name.toLowerCase().includes('cinematography') || req.name.toLowerCase().includes('cinematographer')) {
-                                    label = req.name.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
-                                  }
-                                }
-                                return (
-                                  <div key={rIdx} className="flex items-center gap-2" style={{ color: textColor }}>
-                                    <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: kickerColor }} />
-                                    <span>{`${q} × ${label}`}</span>
-                                  </div>
-                                );
-                              })}
+                                        {/* Requirements & Crew List */}
+                                        {func.requirements && func.requirements.length > 0 && (
+                                          <div className="space-y-1 pt-0.5">
+                                            <span className="text-[10px] uppercase font-bold tracking-widest block opacity-75" style={{ color: kickerColor }}>
+                                              Crew &amp; Requirements:
+                                            </span>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-medium">
+                                              {func.requirements.map((req, rIdx) => {
+                                                const q = req.qty || 1;
+                                                let label = req.name;
+                                                if (q > 1) {
+                                                  if (req.name.toLowerCase().includes('photography') || req.name.toLowerCase().includes('photographer')) {
+                                                    label = req.name.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
+                                                  } else if (req.name.toLowerCase().includes('cinematography') || req.name.toLowerCase().includes('cinematographer')) {
+                                                    label = req.name.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
+                                                  }
+                                                }
+                                                return (
+                                                  <div key={rIdx} className="flex items-center gap-1.5" style={{ color: textColor }}>
+                                                    <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: kickerColor }} />
+                                                    <span>{`${q} × ${label}`}</span>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Custom Notes */}
+                                        {func.notes && (
+                                          <p className="text-xs italic leading-relaxed opacity-85 pt-1 border-t" style={{ color: textColor, borderColor: borderColor || 'rgba(0,0,0,0.08)' }}>
+                                            "{func.notes}"
+                                          </p>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* BOTTOM FLUSH IMAGE POSITION - Only on 1st Page */}
+                              {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && (data.functionsPage?.imagePosition === 'bottom' || !data.functionsPage?.imagePosition) && (
+                                <SectionImageRenderer
+                                  photo={data.functionsPage.photo}
+                                  frameShape={data.functionsPage.frameShape}
+                                  photoHeight={data.functionsPage.photoHeight}
+                                  photoWidth={data.functionsPage.photoWidth}
+                                  photoFocalY={data.functionsPage.photoFocalY}
+                                  isBottomFlush={true}
+                                  altText="Functions Banner"
+                                />
+                              )}
+
+                              {/* CANVAS FOOTER WATERMARK */}
+                              {isLastPage && chunkIdx === funcChunks.length - 1 && (
+                                <div className="w-full text-center py-3 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                                  Created by StudioCore.in
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        )}
+                          </section>
+                        ));
+                      })()}
 
-                        {/* Custom Notes */}
-                        {func.notes && (
-                          <p className="text-xs italic leading-relaxed opacity-85 pt-1 border-t" style={{ color: textColor, borderColor: borderColor || 'rgba(0,0,0,0.08)' }}>
-                            "{func.notes}"
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                      {pageItem.type === 'deliverablesPage' && (() => {
+                        const delivChunks = chunkArray(data.deliverablesPage?.selectedItems, 5);
+                        return delivChunks.map((delivChunk, chunkIdx) => (
+                          <section 
+                            key={`deliv-chunk-${chunkIdx}`}
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col mb-10"
+                            style={{
+                              width: '794px',
+                              minWidth: '794px',
+                              maxWidth: '794px',
+                              height: '1123px',
+                              minHeight: '1123px',
+                              maxHeight: '1123px',
+                              boxSizing: 'border-box',
+                              position: 'relative',
+                              overflow: 'hidden',
+                              margin: '0 auto 40px auto',
+                              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                              backgroundColor: pageBgColor || '#FFFFFF',
+                              color: textColor,
+                              fontFamily: data.secondaryFont,
+                            }}
+                          >
+                            {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape === 'background' && (
+                              <SectionImageRenderer
+                                photo={data.deliverablesPage.photo}
+                                frameShape="background"
+                                photoHeight={data.deliverablesPage.photoHeight}
+                                photoWidth={data.deliverablesPage.photoWidth}
+                                photoFocalY={data.deliverablesPage.photoFocalY}
+                                bgOpacity={data.deliverablesPage.bgOpacity}
+                                pageBgColor={pageBgColor}
+                                altText="Deliverables Background"
+                              />
+                            )}
 
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && (data.functionsPage?.imagePosition === 'bottom' || !data.functionsPage?.imagePosition) && (
-                  <SectionImageRenderer
-                    photo={data.functionsPage.photo}
-                    frameShape={data.functionsPage.frameShape}
-                    photoHeight={data.functionsPage.photoHeight}
-                    photoWidth={data.functionsPage.photoWidth}
-                    photoFocalY={data.functionsPage.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Functions Banner"
-                  />
-                )}
+                            <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 ${
+                              data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' 
+                                ? 'px-0' 
+                                : 'px-12'
+                            } justify-between`}>
+                              
+                              <div className={`flex flex-col items-center justify-center w-full ${data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                                {/* TOP IMAGE POSITION - Only on 1st Page */}
+                                {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'top' && (
+                                  <SectionImageRenderer
+                                    photo={data.deliverablesPage.photo}
+                                    frameShape={data.deliverablesPage.frameShape}
+                                    photoHeight={data.deliverablesPage.photoHeight}
+                                    photoWidth={data.deliverablesPage.photoWidth}
+                                    photoFocalY={data.deliverablesPage.photoFocalY}
+                                    altText="Deliverables Photo"
+                                  />
+                                )}
 
-                {/* CANVAS FOOTER WATERMARK */}
-                {isLastPage && (
-                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                    Created by StudioCore.in
-                  </div>
-                )}
-              </div>
-            </section>
-                      )}
+                                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
+                                  {data.deliverablesPage?.kicker || 'WHAT WE DELIVER'} {delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
+                                </span>
+                                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                  {data.deliverablesPage?.heading || 'DELIVERABLES'}
+                                </h2>
 
-                      {pageItem.type === 'deliverablesPage' && (
-                        <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
-              style={{
-                width: '794px',
-                minWidth: '794px',
-                maxWidth: '794px',
-                height: getDynamicPageHeight(data.deliverablesPage),
-                minHeight: getDynamicPageHeight(data.deliverablesPage),
-                maxHeight: 'none',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                margin: '0 auto',
-                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-                backgroundColor: pageBgColor || '#FFFFFF',
-                color: textColor,
-                fontFamily: data.secondaryFont,
-              }}
-            >
-              {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.deliverablesPage.photo}
-                  frameShape="background"
-                  photoHeight={data.deliverablesPage.photoHeight}
-                  photoWidth={data.deliverablesPage.photoWidth}
-                  photoFocalY={data.deliverablesPage.photoFocalY}
-                  bgOpacity={data.deliverablesPage.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Deliverables Background"
-                />
-              )}
+                                {/* CENTER IMAGE POSITION - Only on 1st Page */}
+                                {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'center' && (
+                                  <SectionImageRenderer
+                                    photo={data.deliverablesPage.photo}
+                                    frameShape={data.deliverablesPage.frameShape}
+                                    photoHeight={data.deliverablesPage.photoHeight}
+                                    photoWidth={data.deliverablesPage.photoWidth}
+                                    photoFocalY={data.deliverablesPage.photoFocalY}
+                                    altText="Deliverables Photo"
+                                  />
+                                )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
-                data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.deliverablesPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.deliverablesPage.photo}
-                      frameShape={data.deliverablesPage.frameShape}
-                      photoHeight={data.deliverablesPage.photoHeight}
-                      photoWidth={data.deliverablesPage.photoWidth}
-                      photoFocalY={data.deliverablesPage.photoFocalY}
-                      altText="Deliverables Photo"
-                    />
-                  )}
+                                <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
+                                  {delivChunk.map((item, idx) => (
+                                    <div 
+                                      key={idx}
+                                      className="p-3.5 rounded-2xl border flex items-center gap-3 shadow-xs"
+                                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                                    >
+                                      <div className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                                        <CheckCircle2 className="w-4 h-4 text-amber-700" style={{ color: kickerColor }} />
+                                      </div>
+                                      <span className="text-xs font-bold leading-snug">{item}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
 
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
-                    {data.deliverablesPage?.kicker || 'WHAT WE DELIVER'}
-                  </span>
-                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.deliverablesPage?.heading || 'DELIVERABLES'}
-                  </h2>
+                              {/* BOTTOM FLUSH IMAGE POSITION - Only on 1st Page */}
+                              {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && (data.deliverablesPage?.imagePosition === 'bottom' || !data.deliverablesPage?.imagePosition) && (
+                                <SectionImageRenderer
+                                  photo={data.deliverablesPage.photo}
+                                  frameShape={data.deliverablesPage.frameShape}
+                                  photoHeight={data.deliverablesPage.photoHeight}
+                                  photoWidth={data.deliverablesPage.photoWidth}
+                                  photoFocalY={data.deliverablesPage.photoFocalY}
+                                  isBottomFlush={true}
+                                  altText="Deliverables Photo"
+                                />
+                              )}
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.deliverablesPage.photo}
-                      frameShape={data.deliverablesPage.frameShape}
-                      photoHeight={data.deliverablesPage.photoHeight}
-                      photoWidth={data.deliverablesPage.photoWidth}
-                      photoFocalY={data.deliverablesPage.photoFocalY}
-                      altText="Deliverables Photo"
-                    />
-                  )}
-
-                  <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
-                    {(data.deliverablesPage?.selectedItems || []).map((item, idx) => (
-                      <div 
-                        key={idx}
-                        className="p-3.5 rounded-2xl border flex items-center gap-3 shadow-xs"
-                        style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
-                      >
-                        <div className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
-                          <CheckCircle2 className="w-4 h-4 text-amber-700" style={{ color: kickerColor }} />
-                        </div>
-                        <span className="text-xs font-bold leading-snug">{item}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && (data.deliverablesPage?.imagePosition === 'bottom' || !data.deliverablesPage?.imagePosition) && (
-                  <SectionImageRenderer
-                    photo={data.deliverablesPage.photo}
-                    frameShape={data.deliverablesPage.frameShape}
-                    photoHeight={data.deliverablesPage.photoHeight}
-                    photoWidth={data.deliverablesPage.photoWidth}
-                    photoFocalY={data.deliverablesPage.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Deliverables Photo"
-                  />
-                )}
-
-                {/* CANVAS FOOTER WATERMARK */}
-                {isLastPage && (
-                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                    Created by StudioCore.in
-                  </div>
-                )}
-              </div>
-            </section>
-                      )}
+                              {/* CANVAS FOOTER WATERMARK */}
+                              {isLastPage && chunkIdx === delivChunks.length - 1 && (
+                                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                                  Created by StudioCore.in
+                                </div>
+                              )}
+                            </div>
+                          </section>
+                        ));
+                      })()}
 
                       {pageItem.type === 'specialValueAdditions' && (
                         <section 
@@ -5240,111 +5249,117 @@ function StudioCoreAiryBuilderContent() {
             </section>
                       )}
 
-                      {pageItem.type === 'termsPage' && (
-                        <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
-              style={{
-                width: '794px',
-                minWidth: '794px',
-                maxWidth: '794px',
-                height: getDynamicPageHeight(data.termsPage),
-                minHeight: getDynamicPageHeight(data.termsPage),
-                maxHeight: 'none',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                margin: '0 auto',
-                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-                backgroundColor: pageBgColor || '#FFFFFF',
-                color: textColor,
-                fontFamily: data.secondaryFont,
-              }}
-            >
-              {data.termsPage?.photo && data.termsPage?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.termsPage.photo}
-                  frameShape="background"
-                  photoHeight={data.termsPage.photoHeight}
-                  photoWidth={data.termsPage.photoWidth}
-                  photoFocalY={data.termsPage.photoFocalY}
-                  bgOpacity={data.termsPage.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Terms & Conditions Background"
-                />
-              )}
+                      {pageItem.type === 'termsPage' && (() => {
+                        const termsRaw = data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text || '';
+                        const termLines = termsRaw.split('\n').filter(Boolean);
+                        const termsChunks = chunkArray(termLines, 5);
+                        return termsChunks.map((termsChunk, chunkIdx) => (
+                          <section 
+                            key={`terms-chunk-${chunkIdx}`}
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col mb-10"
+                            style={{
+                              width: '794px',
+                              minWidth: '794px',
+                              maxWidth: '794px',
+                              height: '1123px',
+                              minHeight: '1123px',
+                              maxHeight: '1123px',
+                              boxSizing: 'border-box',
+                              position: 'relative',
+                              overflow: 'hidden',
+                              margin: '0 auto 40px auto',
+                              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                              backgroundColor: pageBgColor || '#FFFFFF',
+                              color: textColor,
+                              fontFamily: data.secondaryFont,
+                            }}
+                          >
+                            {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape === 'background' && (
+                              <SectionImageRenderer
+                                photo={data.termsPage.photo}
+                                frameShape="background"
+                                photoHeight={data.termsPage.photoHeight}
+                                photoWidth={data.termsPage.photoWidth}
+                                photoFocalY={data.termsPage.photoFocalY}
+                                bgOpacity={data.termsPage.bgOpacity}
+                                pageBgColor={pageBgColor}
+                                altText="Terms & Conditions Background"
+                              />
+                            )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
-                data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.termsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.termsPage.photo}
-                      frameShape={data.termsPage.frameShape}
-                      photoHeight={data.termsPage.photoHeight}
-                      photoWidth={data.termsPage.photoWidth}
-                      photoFocalY={data.termsPage.photoFocalY}
-                      altText="Terms & Conditions Photo"
-                    />
-                  )}
+                            <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 ${
+                              data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' 
+                                ? 'px-0' 
+                                : 'px-12'
+                            } justify-between`}>
+                              
+                              <div className={`flex flex-col items-center justify-center w-full ${data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                                {/* TOP IMAGE POSITION - Only on 1st Page */}
+                                {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'top' && (
+                                  <SectionImageRenderer
+                                    photo={data.termsPage.photo}
+                                    frameShape={data.termsPage.frameShape}
+                                    photoHeight={data.termsPage.photoHeight}
+                                    photoWidth={data.termsPage.photoWidth}
+                                    photoFocalY={data.termsPage.photoFocalY}
+                                    altText="Terms & Conditions Photo"
+                                  />
+                                )}
 
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
-                    {data.termsPage?.kicker || 'POLICIES & RULES'}
-                  </span>
-                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.termsPage?.heading || 'TERMS & CONDITIONS'}
-                  </h2>
+                                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
+                                  {data.termsPage?.kicker || 'POLICIES & RULES'} {termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
+                                </span>
+                                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                  {data.termsPage?.heading || 'TERMS & CONDITIONS'}
+                                </h2>
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.termsPage.photo}
-                      frameShape={data.termsPage.frameShape}
-                      photoHeight={data.termsPage.photoHeight}
-                      photoWidth={data.termsPage.photoWidth}
-                      photoFocalY={data.termsPage.photoFocalY}
-                      altText="Terms & Conditions Photo"
-                    />
-                  )}
+                                {/* CENTER IMAGE POSITION - Only on 1st Page */}
+                                {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'center' && (
+                                  <SectionImageRenderer
+                                    photo={data.termsPage.photo}
+                                    frameShape={data.termsPage.frameShape}
+                                    photoHeight={data.termsPage.photoHeight}
+                                    photoWidth={data.termsPage.photoWidth}
+                                    photoFocalY={data.termsPage.photoFocalY}
+                                    altText="Terms & Conditions Photo"
+                                  />
+                                )}
 
-                  <div className="w-full max-w-xl mx-auto space-y-4 my-3 text-left">
-                    <div 
-                      className="p-6 rounded-2xl border shadow-xs leading-relaxed space-y-3"
-                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
-                    >
-                      <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
-                        {data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                                <div className="w-full max-w-xl mx-auto space-y-4 my-3 text-left">
+                                  <div 
+                                    className="p-6 rounded-2xl border shadow-xs leading-relaxed space-y-3"
+                                    style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                                  >
+                                    <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
+                                      {termsChunk.join('\n')}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
 
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && (data.termsPage?.imagePosition === 'bottom' || !data.termsPage?.imagePosition) && (
-                  <SectionImageRenderer
-                    photo={data.termsPage.photo}
-                    frameShape={data.termsPage.frameShape}
-                    photoHeight={data.termsPage.photoHeight}
-                    photoWidth={data.termsPage.photoWidth}
-                    photoFocalY={data.termsPage.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Terms & Conditions Photo"
-                  />
-                )}
+                              {/* BOTTOM FLUSH IMAGE POSITION - Only on 1st Page */}
+                              {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && (data.termsPage?.imagePosition === 'bottom' || !data.termsPage?.imagePosition) && (
+                                <SectionImageRenderer
+                                  photo={data.termsPage.photo}
+                                  frameShape={data.termsPage.frameShape}
+                                  photoHeight={data.termsPage.photoHeight}
+                                  photoWidth={data.termsPage.photoWidth}
+                                  photoFocalY={data.termsPage.photoFocalY}
+                                  isBottomFlush={true}
+                                  altText="Terms & Conditions Photo"
+                                />
+                              )}
 
-                {/* CANVAS FOOTER WATERMARK */}
-                {isLastPage && (
-                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                    Created by StudioCore.in
-                  </div>
-                )}
-              </div>
-            </section>
-                      )}
+                              {/* CANVAS FOOTER WATERMARK */}
+                              {isLastPage && chunkIdx === termsChunks.length - 1 && (
+                                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                                  Created by StudioCore.in
+                                </div>
+                              )}
+                            </div>
+                          </section>
+                        ));
+                      })()}
 
                       {pageItem.type === 'thankYouPage' && (
                         <section 

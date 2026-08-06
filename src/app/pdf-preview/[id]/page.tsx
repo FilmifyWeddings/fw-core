@@ -337,52 +337,72 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 )}
 
                 {/* 4. FUNCTIONS & COVERAGE */}
-                {pageType === 'functionsPage' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center">
-                    <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                      <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
-                        {functionsPage.kicker || 'EVENT SCHEDULE'}
-                      </span>
-                      <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
-                        {functionsPage.heading || 'Functions & Coverage'}
-                      </h2>
+                {pageType === 'functionsPage' && (() => {
+                  const items = functionsPage.items || [];
+                  const chunks: any[][] = [];
+                  if (items.length === 0) chunks.push([]);
+                  else {
+                    for (let i = 0; i < items.length; i += 3) {
+                      chunks.push(items.slice(i, i + 3));
+                    }
+                  }
+                  return chunks.map((chunkItems, chunkIdx) => (
+                    <section key={`pdf-func-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                        <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                          {functionsPage.kicker || 'EVENT SCHEDULE'} {chunks.length > 1 ? `(${chunkIdx + 1}/${chunks.length})` : ''}
+                        </span>
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                          {functionsPage.heading || 'Functions & Coverage'}
+                        </h2>
 
-                      <div className="grid grid-cols-2 gap-3 text-left pt-2">
-                        {(functionsPage.items || []).map((item: any, fIdx: number) => (
-                          <div key={item.id || fIdx} className="p-4 rounded-xl border space-y-1.5" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                            <h4 className="primary-font text-sm font-extrabold uppercase">{item.title || item.name}</h4>
-                            {item.dateTime && <p className="text-[11px] font-semibold opacity-80">{item.dateTime}</p>}
-                            {item.venue && <p className="text-[11px] font-medium opacity-75">{item.venue}</p>}
-                            {item.team && <p className="text-[10px] font-mono font-bold pt-1 opacity-90" style={{ color: theme.kicker }}>{item.team}</p>}
-                          </div>
-                        ))}
+                        <div className="grid grid-cols-1 gap-3 text-left pt-2">
+                          {chunkItems.map((item: any, fIdx: number) => (
+                            <div key={item.id || fIdx} className="p-4 rounded-xl border space-y-1.5" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
+                              <h4 className="primary-font text-sm font-extrabold uppercase">{item.title || item.name}</h4>
+                              {item.dateTime && <p className="text-[11px] font-semibold opacity-80">{item.dateTime}</p>}
+                              {item.venue && <p className="text-[11px] font-medium opacity-75">{item.venue}</p>}
+                              {item.team && <p className="text-[10px] font-mono font-bold pt-1 opacity-90" style={{ color: theme.kicker }}>{item.team}</p>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  ));
+                })()}
 
                 {/* 5. DELIVERABLES */}
-                {pageType === 'deliverablesPage' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center">
-                    <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                      <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
-                        {deliverablesPage.kicker || 'WHAT WE DELIVER'}
-                      </span>
-                      <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
-                        {deliverablesPage.heading || 'DELIVERABLES'}
-                      </h2>
+                {pageType === 'deliverablesPage' && (() => {
+                  const delivItems = deliverablesPage.selectedItems || deliverablesPage.items || [];
+                  const delivChunks: any[][] = [];
+                  if (delivItems.length === 0) delivChunks.push([]);
+                  else {
+                    for (let i = 0; i < delivItems.length; i += 5) {
+                      delivChunks.push(delivItems.slice(i, i + 5));
+                    }
+                  }
+                  return delivChunks.map((chunkItems, chunkIdx) => (
+                    <section key={`pdf-deliv-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                        <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                          {deliverablesPage.kicker || 'WHAT WE DELIVER'} {delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
+                        </span>
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                          {deliverablesPage.heading || 'DELIVERABLES'}
+                        </h2>
 
-                      <div className="space-y-2 text-left pt-2">
-                        {(deliverablesPage.selectedItems || deliverablesPage.items || []).map((item: any, dIdx: number) => (
-                          <div key={dIdx} className="p-3.5 rounded-xl border flex items-center gap-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                            <div className="w-4 h-4 rounded-full border flex items-center justify-center text-[10px] font-bold" style={{ borderColor: theme.kicker, color: theme.kicker }}>✓</div>
-                            <span className="text-xs font-bold">{typeof item === 'string' ? item : item.title || item.name}</span>
-                          </div>
-                        ))}
+                        <div className="space-y-2 text-left pt-2">
+                          {chunkItems.map((item: any, dIdx: number) => (
+                            <div key={dIdx} className="p-3.5 rounded-xl border flex items-center gap-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
+                              <div className="w-4 h-4 rounded-full border flex items-center justify-center text-[10px] font-bold" style={{ borderColor: theme.kicker, color: theme.kicker }}>✓</div>
+                              <span className="text-xs font-bold">{typeof item === 'string' ? item : item.title || item.name}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  ));
+                })()}
 
                 {/* 6. SPECIAL VALUE ADDITIONS */}
                 {pageType === 'specialValueAdditions' && (
@@ -499,24 +519,35 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 )}
 
                 {/* 10. TERMS & CONDITIONS */}
-                {pageType === 'termsPage' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center">
-                    <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                      <span className="text-xs tracking-[0.25em] font-bold uppercase block mb-2" style={{ color: theme.kicker }}>
-                        {termsPage.kicker || 'POLICIES & RULES'}
-                      </span>
-                      <h2 className="primary-font text-3xl uppercase tracking-widest font-normal mb-6" style={{ color: theme.text }}>
-                        {termsPage.heading || 'TERMS & CONDITIONS'}
-                      </h2>
+                {pageType === 'termsPage' && (() => {
+                  const termsRaw = termsPage.text || '';
+                  const termLines = termsRaw.split('\n').filter(Boolean);
+                  const termsChunks: string[][] = [];
+                  if (termLines.length === 0) termsChunks.push([]);
+                  else {
+                    for (let i = 0; i < termLines.length; i += 5) {
+                      termsChunks.push(termLines.slice(i, i + 5));
+                    }
+                  }
+                  return termsChunks.map((chunkLines, chunkIdx) => (
+                    <section key={`pdf-terms-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                        <span className="text-xs tracking-[0.25em] font-bold uppercase block mb-2" style={{ color: theme.kicker }}>
+                          {termsPage.kicker || 'POLICIES & RULES'} {termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
+                        </span>
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal mb-6" style={{ color: theme.text }}>
+                          {termsPage.heading || 'TERMS & CONDITIONS'}
+                        </h2>
 
-                      <div className="p-6 rounded-2xl border shadow-xs leading-relaxed text-left space-y-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                        <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
-                          {termsPage.text}
-                        </p>
+                        <div className="p-6 rounded-2xl border shadow-xs leading-relaxed text-left space-y-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
+                          <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
+                            {chunkLines.join('\n')}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  ));
+                })()}
 
                 {/* 11. THANK YOU PAGE */}
                 {pageType === 'thankYouPage' && (
