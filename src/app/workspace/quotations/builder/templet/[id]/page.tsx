@@ -2074,11 +2074,45 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // NATIVE BROWSER A4 PRINT ENGINE FOR 100% PERFECT PDF DOWNLOAD
-  const handleDownloadPDFCanvas = () => {
-    const routeId = params?.id ? String(params.id) : '';
-    if (routeId) {
-      window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
+  // PURE SERVER-SIDE PUPPETEER PDF ENGINE WITH CLIENT SNAPSHOT INGESTION
+  const handleDownloadPDFCanvas = async () => {
+    setIsExportingPDF(true);
+    try {
+      const container = document.getElementById('quotation-canvas-container');
+      const clientCanvasHTML = container ? container.innerHTML : '';
+      const routeId = params?.id ? String(params.id) : '';
+
+      const res = await fetch('/api/quotations/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quotationId: routeId,
+          htmlContent: clientCanvasHTML,
+          content_json: data
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`PDF generation endpoint returned status ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Quotation-${routeId || 'document'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[Export PDF Error]:', err);
+      const routeId = params?.id ? String(params.id) : '';
+      if (routeId) {
+        window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
+      }
+    } finally {
+      setIsExportingPDF(false);
     }
   };
 

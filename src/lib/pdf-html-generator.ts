@@ -36,7 +36,7 @@ const DEFAULT_PAGE_SEQUENCE = [
 ];
 
 // Helper to embed custom font files from disk as Base64 Data URIs safely in Node.js env
-function getEmbeddedCustomFontsBase64CSS(): string {
+export function getEmbeddedCustomFontsBase64CSS(): string {
   let css = '';
   if (typeof window !== 'undefined') {
     return css;
