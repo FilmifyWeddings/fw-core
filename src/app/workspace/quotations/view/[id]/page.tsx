@@ -176,17 +176,17 @@ export default function QuotationViewPage() {
         /* Standard A4 Print Rules */
         @media print {
           @page {
-            size: 210mm 297mm !important;
+            size: A4 portrait;
             margin: 0 !important;
           }
-          html, body {
-            width: 210mm !important;
-            height: 297mm !important;
+          html, body, .quotation-view-root, #quotation-canvas-container, .canvas-wrapper, main {
+            width: 100% !important;
+            height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
           }
-          aside, nav, header, footer, .sidebar-container, .no-print {
+          aside, nav, header, footer, .sidebar-container, .no-print, .canva-page-label {
             display: none !important;
           }
           .canvas-wrapper, #quotation-canvas-container {
@@ -200,7 +200,6 @@ export default function QuotationViewPage() {
             height: 1123px !important;
             min-height: 1123px !important;
             max-height: 1123px !important;
-            aspect-ratio: 1 / 1.414 !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
             border: none !important;
@@ -210,12 +209,18 @@ export default function QuotationViewPage() {
             break-after: page !important;
             page-break-inside: avoid !important;
           }
+          .pdf-page:last-child, .quotation-canvas-page:last-child, section:last-child, .pdf-page:last-of-type, section:last-of-type {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+            page-break-after: unset !important;
+            break-after: unset !important;
+          }
         }
       `}</style>
 
       <div 
         id="quotation-canvas-container"
-        className="canvas-wrapper w-full min-h-screen bg-[#2b2b2b]"
+        className="canvas-wrapper w-full min-h-screen bg-[#e5e7eb]"
         dangerouslySetInnerHTML={{ __html: htmlContent }} 
       />
     </div>

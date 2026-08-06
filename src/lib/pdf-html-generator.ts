@@ -999,6 +999,10 @@ Approx. 50 High Resolution Edited Images
             break-after: page !important;
             page-break-inside: avoid !important;
           }
+          .pdf-page:last-child, .quotation-canvas-page:last-child, section:last-child {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+          }
           @media print {
             .canvas-wrapper {
               gap: 0 !important;
