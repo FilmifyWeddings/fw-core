@@ -2541,6 +2541,7 @@ function StudioCoreAiryBuilderContent() {
       {/* Dynamic Accordion Cards List */}
       <div className="space-y-2.5">
         {pageSequence.map((pageItem, pIdx) => {
+                  const isLastPage = pIdx === pageSequence.length - 1;
           const isFirst = pIdx === 0;
           const isLast = pIdx === pageSequence.length - 1;
           const isOpen = openCard === pageItem.id;
@@ -4019,6 +4020,7 @@ function StudioCoreAiryBuilderContent() {
                 className="flex flex-col gap-0 shrink-0 mx-auto"
               >
                 {pageSequence.map((pageItem, pIdx) => {
+                  const isLastPage = pIdx === pageSequence.length - 1;
                   const isLast = pIdx === pageSequence.length - 1;
 
                   return (
@@ -4146,9 +4148,11 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -4252,9 +4256,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -4375,9 +4381,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -4543,9 +4551,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -4651,9 +4661,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -4770,9 +4782,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -4932,9 +4946,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -5085,9 +5101,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -5210,9 +5228,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -5314,9 +5334,11 @@ function StudioCoreAiryBuilderContent() {
                 )}
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -5448,9 +5470,11 @@ function StudioCoreAiryBuilderContent() {
 
 
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                       )}
@@ -5565,9 +5589,11 @@ function StudioCoreAiryBuilderContent() {
                               </div>
               
                 {/* CANVAS FOOTER WATERMARK */}
-                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                  Created by StudioCore.in
-                </div>
+                {isLastPage && (
+                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                    Created by StudioCore.in
+                  </div>
+                )}
               </div>
             </section>
                         );
