@@ -428,30 +428,83 @@ export function renderQuotationToHTML(documentData: any): string {
           </div>
         </section>
       `;
-    } else if (pageType === 'shootDetails') {
+        } else if (pageType === 'shootDetails') {
+      const shootPhoto = shootDetails.photo || shootDetails.photoUrl;
+      const bannerImgHTML = renderSectionImage(
+        shootPhoto,
+        shootDetails.frameShape || 'arch',
+        shootDetails.photoHeight || 450,
+        shootDetails.photoWidth || 75,
+        shootDetails.photoFocalY || 50,
+        shootDetails.bgOpacity || 40,
+        theme.background,
+        true
+      );
+
+      const cameraIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
+
+      const crewItems = (shootDetails.crewText || `Candid Photography
+Cinematography
+Portable Changing Room`)
+        .split('\n').filter(Boolean);
+
+      const deliverableItems = (shootDetails.deliverablesText || `Full Ultra HD Super-Fine Raw Photos
+Approx. 50 High Resolution Edited Images
+3 Save The Dates Photos
+1 count Down Reel
+1 video Reel`)
+        .split('\n').filter(Boolean);
+
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${shootDetails.kicker || 'WHAT WE DO'}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${shootDetails.heading || 'Pre-Wedding Shoot'}
-            </h2>
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          ${shootPhoto && shootDetails.frameShape === 'background' ? bannerImgHTML : ''}
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;">
-              <div style="padding:16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};">
-                <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:4px;">Duration & Days</span>
-                <p style="font-size:12px;font-weight:700;white-space:pre-line;margin:0;">${shootDetails.daysText}</p>
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
+              ${shootPhoto && shootDetails.frameShape !== 'background' && shootDetails.imagePosition === 'top' ? bannerImgHTML : ''}
+
+              <div style="text-align:center;margin:12px 0;">
+                <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;white-space:nowrap;">
+                  ${shootDetails.heading || 'Pre Wedding Shoot'}
+                </h2>
               </div>
-              <div style="padding:16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};">
-                <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:4px;">Crew & Equipment</span>
-                <p style="font-size:12px;font-weight:700;white-space:pre-line;margin:0;">${shootDetails.crewText}</p>
+
+              ${shootPhoto && shootDetails.frameShape !== 'background' && shootDetails.imagePosition === 'center' ? bannerImgHTML : ''}
+
+              <div style="margin:12px 0;display:flex;flex-direction:column;align-items:center;">
+                <p style="font-size:16px;font-weight:700;letter-spacing:0.025em;color:${theme.text};margin:0 0 10px 0;display:flex;align-items:center;justify-content:center;gap:6px;">
+                  ${cameraIconSVG}
+                  <span>${shootDetails.daysText || '1 Day Shoot'}</span>
+                </p>
+                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
+                  ${crewItems.map((item: string) => `
+                    <div style="display:flex;align-items:flex-start;gap:10px;font-size:14px;font-weight:600;letter-spacing:0.025em;line-height:1.3;color:${theme.text};">
+                      <span style="width:6px;height:6px;border-radius:50%;background-color:${theme.kicker};display:inline-block;margin-top:6px;flex-shrink:0;"></span>
+                      <span>${item.trim()}</span>
+                    </div>
+                  `).join('')}
+                </div>
               </div>
+
+              <div style="margin:16px 0;display:flex;flex-direction:column;align-items:center;">
+                <h3 style="font-family:${primaryFont};font-size:24px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0 0 10px 0;white-space:nowrap;">
+                  ${shootDetails.deliverablesHeading || 'Deliverables'}
+                </h3>
+                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
+                  ${deliverableItems.map((item: string) => `
+                    <div style="display:flex;align-items:flex-start;gap:10px;font-size:14px;font-weight:600;letter-spacing:0.025em;line-height:1.3;color:${theme.text};">
+                      <span style="width:6px;height:6px;border-radius:50%;background-color:${theme.kicker};display:inline-block;margin-top:6px;flex-shrink:0;"></span>
+                      <span>${item.trim()}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              ${shootPhoto && shootDetails.frameShape !== 'background' && (shootDetails.imagePosition === 'bottom' || !shootDetails.imagePosition) ? bannerImgHTML : ''}
             </div>
-          </div>
 
-          ${footerHTML}
+            ${footerHTML}
+          </div>
         </section>
       `;
     } else if (pageType === 'functionsPage') {
