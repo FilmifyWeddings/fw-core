@@ -507,83 +507,185 @@ Approx. 50 High Resolution Edited Images
           </div>
         </section>
       `;
-    } else if (pageType === 'functionsPage') {
+            } else if (pageType === 'functionsPage') {
+      const funcPhoto = functionsPage.photo || functionsPage.photoUrl;
+      const bannerImgHTML = renderSectionImage(
+        funcPhoto,
+        functionsPage.frameShape || 'arch',
+        functionsPage.photoHeight || 450,
+        functionsPage.photoWidth || 75,
+        functionsPage.photoFocalY || 50,
+        functionsPage.bgOpacity || 40,
+        theme.background,
+        true
+      );
+
+      const calendarIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+      const mapPinIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+      const cameraIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
+
       let itemsHTML = '';
-      (functionsPage.items || []).forEach((item: any) => {
-        const title = item.title || item.name || item.event_name || 'Event Function';
-        const timing = item.dateTime || item.timing || item.time || '';
-        const venue = item.venue || item.location || '';
-        const team = item.team || item.crew || '';
+      (functionsPage.items || []).forEach((func: any, index: number) => {
+        const funcName = func.name || func.title || `Function ${index + 1}`;
+        const timingStr = [
+          func.dateNotFixed ? 'DATE NOT FIXED' : (func.date || func.dateTime || ''),
+          func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : (func.timing || ''),
+          func.durationSlot && func.durationSlot !== 'None' ? `(${func.durationSlot})` : ''
+        ].filter(Boolean).join(' • ');
+
+        const locationStr = func.location || func.venue || '';
+
+        let reqsHTML = '';
+        if (func.requirements && Array.isArray(func.requirements) && func.requirements.length > 0) {
+          const reqItems = func.requirements.map((req: any) => {
+            const q = req.qty || 1;
+            let label = req.name || '';
+            if (q > 1) {
+              if (label.toLowerCase().includes('photography') || label.toLowerCase().includes('photographer')) {
+                label = label.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
+              } else if (label.toLowerCase().includes('cinematography') || label.toLowerCase().includes('cinematographer')) {
+                label = label.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
+              }
+            }
+            return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${q} × ${label}</span></div>`;
+          }).join('');
+
+          reqsHTML = `
+            <div style="margin-top:8px;">
+              <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:6px;">Crew & Requirements:</span>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;text-align:left;">
+                ${reqItems}
+              </div>
+            </div>
+          `;
+        } else if (func.team || func.crew) {
+          const crewArr = String(func.team || func.crew).split(',').filter(Boolean);
+          const reqItems = crewArr.map((t: string) => `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${t.trim()}</span></div>`).join('');
+          reqsHTML = `
+            <div style="margin-top:8px;">
+              <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:6px;">Crew & Requirements:</span>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;text-align:left;">
+                ${reqItems}
+              </div>
+            </div>
+          `;
+        }
+
+        const notesHTML = func.notes ? `
+          <p style="font-size:12px;font-style:italic;line-height:1.4;opacity:0.85;margin:8px 0 0 0;padding-top:8px;border-top:1px solid ${theme.borderColor};color:${theme.text};text-align:left;">
+            "${func.notes}"
+          </p>
+        ` : '';
 
         itemsHTML += `
-          <div style="padding:16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-              <h4 style="font-family:${primaryFont};font-size:15px;font-weight:800;text-transform:uppercase;margin:0;color:${theme.text};">${title}</h4>
-              ${timing ? `
-                <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background-color:${theme.borderColor};color:${theme.text};white-space:nowrap;">
-                  ${timing}
-                </span>
+          <div style="padding:18px 20px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:8px;margin-bottom:14px;-webkit-print-color-adjust:exact;print-color-adjust:exact;width:100%;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid ${theme.borderColor};padding-bottom:10px;">
+              <h3 style="font-family:${primaryFont};font-size:22px;letter-spacing:0.08em;font-weight:600;text-transform:uppercase;margin:0;color:${theme.text};">${funcName}</h3>
+              ${timingStr ? `
+                <div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:4px 12px;border-radius:20px;border:1px solid ${theme.borderColor};background-color:${theme.background};color:${theme.kicker};white-space:nowrap;display:flex;align-items:center;">
+                  ${calendarIconSVG}
+                  <span>${timingStr}</span>
+                </div>
               ` : ''}
             </div>
-            ${venue ? `<p style="font-size:11px;font-weight:600;opacity:0.85;margin:2px 0 4px 0;color:${theme.text};">${venue}</p>` : ''}
-            ${team ? `
-              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
-                ${String(team).split(',').map((t: string) => `
-                  <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;background-color:rgba(0,0,0,0.06);border:1px solid ${theme.borderColor};color:${theme.kicker};">
-                    ${t.trim()}
-                  </span>
-                `).join('')}
+
+            ${locationStr ? `
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${theme.text};margin-top:2px;text-align:left;">
+                ${mapPinIconSVG}
+                <span>${locationStr}</span>
               </div>
             ` : ''}
+
+            ${reqsHTML}
+            ${notesHTML}
           </div>
         `;
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${functionsPage.kicker || 'EVENT SCHEDULE'}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${functionsPage.heading || 'Functions & Coverage'}
-            </h2>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;">
-              ${itemsHTML}
-            </div>
-          </div>
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          ${funcPhoto && functionsPage.frameShape === 'background' ? bannerImgHTML : ''}
 
-          ${footerHTML}
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
+              ${funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'top' ? bannerImgHTML : ''}
+
+              <div style="text-align:center;margin:12px 0;">
+                <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                  ${functionsPage.kicker || 'EVENT SCHEDULE'}
+                </span>
+                <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                  ${functionsPage.heading || 'Functions & Coverage'}
+                </h2>
+              </div>
+
+              ${funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'center' ? bannerImgHTML : ''}
+
+              <div style="width:100%;max-width:640px;margin:12px auto;">
+                ${itemsHTML}
+              </div>
+
+              ${funcPhoto && functionsPage.frameShape !== 'background' && (functionsPage.imagePosition === 'bottom' || !functionsPage.imagePosition) ? bannerImgHTML : ''}
+            </div>
+
+            ${footerHTML}
+          </div>
         </section>
       `;
     } else if (pageType === 'deliverablesPage') {
+      const delivPhoto = deliverablesPage.photo || deliverablesPage.photoUrl;
+      const bannerImgHTML = renderSectionImage(
+        delivPhoto,
+        deliverablesPage.frameShape || 'arch',
+        deliverablesPage.photoHeight || 450,
+        deliverablesPage.photoWidth || 75,
+        deliverablesPage.photoFocalY || 50,
+        deliverablesPage.bgOpacity || 40,
+        theme.background,
+        true
+      );
+
+      const checkCircleIconSVG = `<div style="width:24px;height:24px;border-radius:50%;background-color:rgba(0,0,0,0.05);border:1px solid ${theme.borderColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>`;
+
       let delivHTML = '';
       (deliverablesPage.selectedItems || deliverablesPage.items || []).forEach((item: any) => {
+        const itemText = typeof item === 'string' ? item : item.title || item.name;
         delivHTML += `
-          <div style="padding:14px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;display:inline-block;vertical-align:middle;flex-shrink:0;">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-            <span style="font-size:12px;font-weight:700;">${typeof item === 'string' ? item : item.title || item.name}</span>
+          <div style="padding:14px 18px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;gap:14px;margin-bottom:10px;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+            ${checkCircleIconSVG}
+            <span style="font-size:14px;font-weight:700;line-height:1.3;">${itemText}</span>
           </div>
         `;
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${deliverablesPage.kicker || 'WHAT WE DELIVER'}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${deliverablesPage.heading || 'DELIVERABLES'}
-            </h2>
-            <div style="text-align:left;">
-              ${delivHTML}
-            </div>
-          </div>
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          ${delivPhoto && deliverablesPage.frameShape === 'background' ? bannerImgHTML : ''}
 
-          ${footerHTML}
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
+              ${delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'top' ? bannerImgHTML : ''}
+
+              <div style="text-align:center;margin:12px 0;">
+                <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                  ${deliverablesPage.kicker || 'WHAT WE DELIVER'}
+                </span>
+                <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                  ${deliverablesPage.heading || 'DELIVERABLES'}
+                </h2>
+              </div>
+
+              ${delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'center' ? bannerImgHTML : ''}
+
+              <div style="width:100%;max-width:640px;margin:12px auto;">
+                ${delivHTML}
+              </div>
+
+              ${delivPhoto && deliverablesPage.frameShape !== 'background' && (deliverablesPage.imagePosition === 'bottom' || !deliverablesPage.imagePosition) ? bannerImgHTML : ''}
+            </div>
+
+            ${footerHTML}
+          </div>
         </section>
       `;
     } else if (pageType === 'specialValueAdditions') {
