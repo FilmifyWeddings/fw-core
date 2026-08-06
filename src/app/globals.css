@@ -158,7 +158,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   opacity: 0.8;
 }
 
-/* Strict A4 Native Print Engine CSS */
+/* Strict A4 Native Print Engine CSS with 100% Visual Parity */
 @media print {
   @page {
     size: 210mm 297mm;
@@ -170,6 +170,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
     background: #ffffff !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
   /* Hide everything by default */
   body * {
@@ -182,6 +183,9 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   /* Make ONLY the quotation paper container visible */
   #quotation-canvas-container, #quotation-canvas-container * {
     visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
   #quotation-canvas-container {
     position: absolute !important;
@@ -194,10 +198,19 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .quotation-canvas-page {
     width: 210mm !important;
     height: 297mm !important;
-    max-height: 297mm !important;
+    box-sizing: border-box !important;
     page-break-after: always !important;
     page-break-inside: avoid !important;
-    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  /* Ensure photos in cover, pre-wedding, and functions render display: block, object-fit cover */
+  #quotation-canvas-container img {
+    display: block !important;
+    max-width: 100% !important;
+    object-fit: cover !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
+
 

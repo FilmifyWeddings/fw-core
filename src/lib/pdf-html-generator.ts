@@ -435,12 +435,31 @@ export function renderQuotationToHTML(documentData: any): string {
     } else if (pageType === 'functionsPage') {
       let itemsHTML = '';
       (functionsPage.items || []).forEach((item: any) => {
+        const title = item.title || item.name || item.event_name || 'Event Function';
+        const timing = item.dateTime || item.timing || item.time || '';
+        const venue = item.venue || item.location || '';
+        const team = item.team || item.crew || '';
+
         itemsHTML += `
-          <div style="padding:16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};">
-            <h4 style="font-family:${primaryFont};font-size:14px;font-weight:800;text-transform:uppercase;margin:0 0 4px 0;">${item.title || item.name}</h4>
-            ${item.dateTime ? `<p style="font-size:11px;font-weight:600;opacity:0.8;margin:0 0 2px 0;">${item.dateTime}</p>` : ''}
-            ${item.venue ? `<p style="font-size:11px;font-weight:500;opacity:0.75;margin:0 0 4px 0;">${item.venue}</p>` : ''}
-            ${item.team ? `<p style="font-size:10px;font-family:monospace;font-weight:700;color:${theme.kicker};margin:4px 0 0 0;">${item.team}</p>` : ''}
+          <div style="padding:16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <h4 style="font-family:${primaryFont};font-size:15px;font-weight:800;text-transform:uppercase;margin:0;color:${theme.text};">${title}</h4>
+              ${timing ? `
+                <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background-color:${theme.borderColor};color:${theme.text};white-space:nowrap;">
+                  ${timing}
+                </span>
+              ` : ''}
+            </div>
+            ${venue ? `<p style="font-size:11px;font-weight:600;opacity:0.85;margin:2px 0 4px 0;color:${theme.text};">${venue}</p>` : ''}
+            ${team ? `
+              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+                ${String(team).split(',').map((t: string) => `
+                  <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;background-color:rgba(0,0,0,0.06);border:1px solid ${theme.borderColor};color:${theme.kicker};">
+                    ${t.trim()}
+                  </span>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
         `;
       });
@@ -499,16 +518,18 @@ export function renderQuotationToHTML(documentData: any): string {
     } else if (pageType === 'specialValueAdditions') {
       let addValHTML = '';
       (specialValueAdditions.items || []).forEach((item: any) => {
+        const title = typeof item === 'string' ? item : (item.title || item.name || item.text || '');
+        if (!title) return;
         addValHTML += `
-          <div style="padding:14px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <div style="display:flex;align-items:center;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:8px;flex-shrink:0;">
+          <div style="padding:14px 18px;border-radius:12px;border:1px solid rgba(16, 185, 129, 0.35);background-color:rgba(16, 185, 129, 0.08);color:${theme.text};display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;display:inline-block;vertical-align:middle;flex-shrink:0;">
                 <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.41 0l6.59-6.59c.94-.94.94-2.48 0-3.41L12 2z"></path>
                 <line x1="7" y1="7" x2="7.01" y2="7"></line>
               </svg>
-              <span style="font-size:12px;font-weight:700;">${item.title || item.name}</span>
+              <span style="font-size:12px;font-weight:700;color:${theme.text};">${title}</span>
             </div>
-            <span style="font-size:10px;font-weight:900;text-transform:uppercase;padding:2px 8px;border-radius:6px;border:1px solid ${theme.kicker};color:${theme.kicker};">FREE</span>
+            <span style="font-size:10px;font-weight:900;text-transform:uppercase;padding:3px 10px;border-radius:6px;border:1px solid #10b981;background-color:#10b981;color:#ffffff;-webkit-print-color-adjust:exact;print-color-adjust:exact;">FREE</span>
           </div>
         `;
       });
