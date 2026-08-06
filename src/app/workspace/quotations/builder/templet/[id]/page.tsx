@@ -20,7 +20,7 @@ import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flush
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
-import html2canvas from 'html2canvas-pro';
+import { toPng } from 'html-to-image';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
@@ -2075,7 +2075,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // HIGH-DPI CANVAS SNAPSHOT SERVER ENGINE FOR 100% VISUAL PARITY
+  // CANVA-STYLE HIGH-DPI CANVAS SNAPSHOT PDF ENGINE
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
     try {
@@ -2101,18 +2101,20 @@ function StudioCoreAiryBuilderContent() {
       const pageEls = Array.from(container.querySelectorAll('.quotation-canvas-page')) as HTMLElement[];
       const targets = pageEls.length > 0 ? pageEls : [container];
 
-      const pageSnapshots: string[] = [];
+      const pageImages: string[] = [];
 
       for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
-        const canvas = await html2canvas(target, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          backgroundColor: '#ffffff'
+        const dataUrl = await toPng(target, {
+          quality: 0.95,
+          pixelRatio: 3,
+          cacheBust: true,
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          }
         });
-        pageSnapshots.push(canvas.toDataURL('image/png', 0.95));
+        pageImages.push(dataUrl);
       }
 
       const routeId = params?.id ? String(params.id) : '';
@@ -2122,7 +2124,8 @@ function StudioCoreAiryBuilderContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quotationId: routeId,
-          pageSnapshots,
+          pageImages,
+          pageSnapshots: pageImages,
           content_json: data
         })
       });

@@ -60,17 +60,19 @@ function makeImageUrlsAbsolute(html: string): string {
   });
 }
 
-// POST /api/quotations/pdf - HIGH-DPI CANVAS SNAPSHOT SERVER PDF COMPILATION ENGINE
+// POST /api/quotations/pdf - CANVA-STYLE HIGH-DPI CANVAS SNAPSHOT SERVER PDF COMPILATION ENGINE
 export async function POST(req: NextRequest) {
   let browser: any = null;
   try {
     const body = await req.json();
-    const { quotationId, templateId, filename, content_json, pageSnapshots, htmlContent: clientSnapshotHTML } = body;
+    const { quotationId, templateId, filename, content_json, pageSnapshots, pageImages, htmlContent: clientSnapshotHTML } = body;
     const targetId = quotationId || templateId;
 
-    // ── HIGH-DPI CANVAS SNAPSHOT COMPILATION ENGINE (100% VISUAL PARITY) ──
-    if (pageSnapshots && Array.isArray(pageSnapshots) && pageSnapshots.length > 0) {
-      console.log('[High-DPI PDF Server Engine] Compiling', pageSnapshots.length, 'page snapshots into A4 vector PDF...');
+    const rawImages: string[] = pageImages || pageSnapshots || [];
+
+    // ── CANVA-STYLE HIGH-DPI CANVAS SNAPSHOT COMPILATION ENGINE (100% VISUAL PARITY) ──
+    if (rawImages && Array.isArray(rawImages) && rawImages.length > 0) {
+      console.log('[Canva-Style PDF Server Engine] Compiling', rawImages.length, 'page snapshots into A4 vector PDF...');
       
       const pdfDoc = await PDFDocument.create();
 
@@ -78,8 +80,8 @@ export async function POST(req: NextRequest) {
       const pageWidth = 595.28;
       const pageHeight = 841.89;
 
-      for (let i = 0; i < pageSnapshots.length; i++) {
-        const dataUrl = pageSnapshots[i];
+      for (let i = 0; i < rawImages.length; i++) {
+        const dataUrl = rawImages[i];
         if (!dataUrl || typeof dataUrl !== 'string') continue;
 
         const base64Data = dataUrl.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
@@ -108,7 +110,7 @@ export async function POST(req: NextRequest) {
         .replace(/—/g, '-')
         .replace(/[^ -~]/g, '-');
 
-      console.log('[High-DPI PDF Server Engine] Successfully compiled PDF (Bytes:', pdfBytes.length, ')');
+      console.log('[Canva-Style PDF Server Engine] Successfully compiled PDF (Bytes:', pdfBytes.length, ')');
 
       return new NextResponse(new Uint8Array(pdfBytes), {
         status: 200,
@@ -122,7 +124,7 @@ export async function POST(req: NextRequest) {
 
     // ── FALLBACK SERVER PUPPETEER RENDER ENGINE ──
     if (!targetId && !clientSnapshotHTML) {
-      return NextResponse.json({ error: 'quotationId, pageSnapshots, or htmlContent is required' }, { status: 400 });
+      return NextResponse.json({ error: 'quotationId, pageImages, or htmlContent is required' }, { status: 400 });
     }
 
     let documentData = content_json;
