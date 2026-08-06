@@ -55,6 +55,7 @@ export default function QuotationViewPage() {
 
   return (
     <div 
+      id="quotation-canvas-container"
       className="w-full min-h-screen bg-white"
       dangerouslySetInnerHTML={{ __html: htmlContent }} 
     />

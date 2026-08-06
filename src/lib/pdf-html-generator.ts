@@ -745,7 +745,7 @@ export function renderQuotationToHTML(documentData: any): string {
         </style>
       </head>
       <body>
-        <div id="quotation-full-canvas" class="pdf-container">
+        <div id="quotation-canvas-container" class="pdf-container">
           ${pagesHTML}
         </div>
       </body>
