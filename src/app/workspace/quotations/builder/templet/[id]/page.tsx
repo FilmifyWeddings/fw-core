@@ -3903,10 +3903,13 @@ function StudioCoreAiryBuilderContent() {
           .quotation-canvas-page {
             width: 210mm !important;
             height: 297mm !important;
+            min-height: 297mm !important;
             max-height: 297mm !important;
             page-break-after: always !important;
             page-break-inside: avoid !important;
+            break-inside: avoid !important;
             box-sizing: border-box !important;
+            overflow: hidden !important;
           }
         }
       `}</style>
