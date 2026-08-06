@@ -3940,10 +3940,10 @@ function StudioCoreAiryBuilderContent() {
           <button
             onClick={handleDownloadPDFCanvas}
             disabled={isExportingPDF}
-            className="px-3 sm:px-4 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-black text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+            className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg disabled:opacity-50 active:scale-95"
             title="Download High-Res PDF"
           >
-            <Download className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Download PDF</span>
+            <Download className="w-3.5 h-3.5 stroke-[2.5]" /> <span>{isExportingPDF ? 'Generating PDF...' : 'Download PDF'}</span>
           </button>
 
           <button
@@ -5584,10 +5584,11 @@ function StudioCoreAiryBuilderContent() {
         <button
           type="button"
           onClick={handleDownloadPDFCanvas}
-          className="ml-2 py-2.5 px-4 rounded-xl bg-amber-500 text-black font-extrabold text-xs flex items-center gap-1.5 shadow-md"
+          disabled={isExportingPDF}
+          className="ml-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 active:from-emerald-500 active:to-teal-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50"
         >
-          <Download className="w-4 h-4" />
-          <span>PDF</span>
+          <Download className="w-4 h-4 stroke-[2.5]" />
+          <span>{isExportingPDF ? 'Exporting...' : 'PDF'}</span>
         </button>
       </div>
 
