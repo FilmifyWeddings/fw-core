@@ -37,37 +37,25 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
   return undefined;
 }
 
-// POST /api/pdf/render - Server-Side Headless Chromium PDF Export Route
+// POST /api/pdf/render - Dedicated Server-Side Headless Chromium PDF Export Route
 export async function POST(req: NextRequest) {
   let browser: any = null;
   try {
     const body = await req.json();
-    const { templateId, filename, content_json } = body;
+    const { templateId, filename } = body;
 
     if (!templateId) {
       return NextResponse.json({ error: 'templateId is required' }, { status: 400 });
     }
 
-    // 1. Fetch document from Supabase DB if content_json is not provided
-    let documentData = content_json;
-    if (!documentData) {
-      const { data: doc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .eq('template_id', templateId)
-        .maybeSingle();
+    // 1. Construct dedicated unauthenticated PDF Preview URL (/pdf-preview/[id])
+    const host = req.headers.get('host') || 'localhost:3000';
+    const protocol = req.headers.get('x-forwarded-proto') || 'http';
+    const requestedUrl = `${protocol}://${host}/pdf-preview/${templateId}`;
 
-      if (doc?.content_json) {
-        documentData = doc.content_json;
-      } else {
-        const { data: legacy } = await supabaseAdmin
-          .from('quotations')
-          .select('content_json')
-          .or(`id.eq.${templateId},quotation_number.eq.${templateId}`)
-          .maybeSingle();
-        documentData = legacy?.content_json || {};
-      }
-    }
+    console.log('[Puppeteer Engine] --------------------------------------------------');
+    console.log('[Puppeteer Engine] Requested URL:', requestedUrl);
+    console.log('[Puppeteer Engine] Auth State: Unauthenticated Dedicated PDF Preview Route');
 
     // 2. Launch Puppeteer Core with Headless Chromium
     const puppeteer = (await import('puppeteer-core')).default;
@@ -87,19 +75,22 @@ export async function POST(req: NextRequest) {
 
     const page = await browser.newPage();
 
-    // 3. Construct origin URL or preview HTML
-    const host = req.headers.get('host') || 'localhost:3000';
-    const protocol = req.headers.get('x-forwarded-proto') || 'http';
-    const previewUrl = `${protocol}://${host}/workspace/quotations/builder/templet/${templateId}`;
+    // 3. Navigate exclusively to /pdf-preview/[id]
+    const navigationResponse = await page.goto(requestedUrl, { waitUntil: 'networkidle0', timeout: 35000 });
+    const httpStatus = navigationResponse?.status() || 200;
+    const finalUrl = page.url();
 
-    // Navigate to builder route or load HTML directly
-    try {
-      await page.goto(previewUrl, { waitUntil: 'networkidle0', timeout: 30000 });
-    } catch {
-      await page.goto(previewUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    console.log('[Puppeteer Engine] Final URL after redirects:', finalUrl);
+    console.log('[Puppeteer Engine] HTTP Status Code:', httpStatus);
+    console.log('[Puppeteer Engine] --------------------------------------------------');
+
+    // Security & Route Integrity Assertion
+    if (finalUrl.includes('/login') || finalUrl.includes('/auth') || finalUrl.includes('/workspace')) {
+      console.error('[Puppeteer Engine CRITICAL ERROR] Redirected to invalid route:', finalUrl);
+      throw new Error(`Puppeteer redirected away from /pdf-preview to ${finalUrl}`);
     }
 
-    // Evaluate font loading inside Chromium page
+    // Wait for document fonts to finish loading
     await page.evaluate(async () => {
       if (document.fonts) {
         await document.fonts.ready;
