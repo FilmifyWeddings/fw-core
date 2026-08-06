@@ -34,13 +34,91 @@ export default function QuotationViewPage() {
   }, [id]);
 
   useEffect(() => {
-    if (!loading && isPrint) {
-      const timer = setTimeout(() => {
-        window.print();
-      }, 800);
-      return () => clearTimeout(timer);
+    if (loading || !htmlContent) return;
+
+    // Execute DOM Computed CSS Inlining & Style Freeze before print execution
+    const container = document.getElementById('quotation-canvas-container');
+    if (!container) return;
+
+    // 1. Force explicit image pixel dimensions and display block
+    const images = container.querySelectorAll('img');
+    images.forEach((img: HTMLImageElement) => {
+      const rect = img.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        img.style.width = `${rect.width}px`;
+        img.style.height = `${rect.height}px`;
+      }
+      img.style.display = 'block';
+      img.style.objectFit = 'cover';
+      img.style.setProperty('-webkit-print-color-adjust', 'exact', 'important');
+      img.style.setProperty('print-color-adjust', 'exact', 'important');
+    });
+
+    // 2. Freeze computed CSS inline on all child nodes
+    const allNodes = container.querySelectorAll('*');
+    allNodes.forEach((node) => {
+      const el = node as HTMLElement;
+      if (!el.style) return;
+      const cs = window.getComputedStyle(el);
+
+      const props = [
+        'backgroundColor', 'color', 'borderColor', 'borderWidth', 'borderStyle', 'borderRadius',
+        'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+        'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+        'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform',
+        'display', 'flexDirection', 'justifyContent', 'alignItems', 'gap', 'gridTemplateColumns',
+        'boxSizing', 'opacity'
+      ];
+
+      props.forEach((prop) => {
+        const cssProp = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
+        const val = cs.getPropertyValue(cssProp);
+        if (val && val !== 'initial' && val !== 'normal' && val !== 'none' && val !== '0px 0px 0px 0px') {
+          el.style.setProperty(cssProp, val, 'important');
+        }
+      });
+
+      el.style.setProperty('-webkit-print-color-adjust', 'exact', 'important');
+      el.style.setProperty('print-color-adjust', 'exact', 'important');
+    });
+
+    // 3. Inject explicit @font-face rules into document head for custom fonts if missing
+    let fontStyleTag = document.getElementById('embedded-print-fonts');
+    if (!fontStyleTag) {
+      fontStyleTag = document.createElement('style');
+      fontStyleTag.id = 'embedded-print-fonts';
+      fontStyleTag.innerHTML = `
+        @font-face {
+          font-family: 'Bevola Demo Regular';
+          src: url('/custom-fonts/BevolaDemo-Regular.ttf') format('truetype');
+          font-weight: normal;
+          font-style: normal;
+          font-display: block;
+        }
+        @font-face {
+          font-family: 'Bevola Demo';
+          src: url('/custom-fonts/BevolaDemo-Regular.ttf') format('truetype');
+          font-weight: normal;
+          font-style: normal;
+          font-display: block;
+        }
+      `;
+      document.head.appendChild(fontStyleTag);
     }
-  }, [loading, isPrint]);
+
+    // Trigger auto-print when requested after fonts and images are settled
+    if (isPrint) {
+      const triggerPrint = async () => {
+        if (document.fonts && document.fonts.ready) {
+          try { await document.fonts.ready; } catch (e) {}
+        }
+        setTimeout(() => {
+          window.print();
+        }, 500);
+      };
+      triggerPrint();
+    }
+  }, [loading, htmlContent, isPrint]);
 
   if (loading) {
     return (
