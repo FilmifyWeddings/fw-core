@@ -2077,25 +2077,31 @@ function StudioCoreAiryBuilderContent() {
   // SINGLE SOURCE OF TRUTH SERVER-SIDE HEADLESS CHROMIUM PDF ENGINE
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
-    setPdfToastMessage('Server Headless Chromium Generating PDF...');
-
     try {
-      const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
-      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
-      const { data: { session } } = await supabase.auth.getSession();
+      const routeId = params?.id ? String(params.id) : '';
+      if (routeId) {
+        // Auto-save latest quotation data before triggering print view
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const userAccessToken = session?.access_token;
+          if (userAccessToken) {
+            await fetch(`/api/templates/${routeId}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userAccessToken}`
+              },
+              body: JSON.stringify({ content_json: data })
+            });
+          }
+        } catch (e) {
+          console.warn('Auto-save before print warning:', e);
+        }
 
-      await downloadServerChromiumPdf({
-        templateId: routeId,
-        filename: `${clientName}-Full.pdf`,
-        content_json: data,
-        userAccessToken: session?.access_token || '',
-        onProgress: (msg) => setPdfToastMessage(msg)
-      });
-
-      setTimeout(() => setPdfToastMessage(null), 3000);
-    } catch (err: any) {
-      console.error('Server PDF Error:', err);
-      alert(`PDF Export Failed: ${err?.message || err}`);
+        window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
+      }
+    } catch (err) {
+      console.error('[Download PDF Error]:', err);
     } finally {
       setIsExportingPDF(false);
     }

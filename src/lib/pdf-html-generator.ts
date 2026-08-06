@@ -196,7 +196,7 @@ function renderSectionImage(
   if (frameShape === 'background') {
     const opacityVal = 1 - (bgOpacity / 100);
     return `
-      <div style="position:absolute;inset:0;width:100%;height:100%;overflow:hidden;pointer-events:none;z-index:0;">
+      <div style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:0;">
         <img src="${photo}" alt="Background" crossOrigin="anonymous" style="width:100%;height:100%;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;" />
         <div style="position:absolute;inset:0;background-color:${pageBgColor};opacity:${opacityVal};z-index:0;"></div>
       </div>
@@ -205,7 +205,7 @@ function renderSectionImage(
 
   if (frameShape === 'full-width') {
     return `
-      <div style="width:100%;overflow:hidden;margin:${isBottomFlush ? '24px 0 0 0' : '24px 0 16px 0'};">
+      <div style="width:100%;overflow:visible;margin:${isBottomFlush ? '24px 0 0 0' : '24px 0 16px 0'};">
         <img src="${photo}" alt="Full Width Photo" crossOrigin="anonymous" style="width:100%;height:${photoHeight}px;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;" />
       </div>
     `;
@@ -220,7 +220,7 @@ function renderSectionImage(
 
   return `
     <div style="width:100%;display:flex;justify-content:center;margin:${isBottomFlush ? '16px 0 0 0' : '16px 0'};">
-      <div style="width:${photoWidth || 75}%;height:${photoHeight || 450}px;overflow:hidden;${borderRadiusStyle}">
+      <div style="width:${photoWidth || 75}%;height:${photoHeight || 450}px;overflow:visible;${borderRadiusStyle}">
         <img src="${photo}" alt="Section Photo" crossOrigin="anonymous" style="width:100%;height:100%;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;" />
       </div>
     </div>
@@ -348,7 +348,7 @@ export function renderQuotationToHTML(documentData: any): string {
       const imgHTML = renderSectionImage(coverPhoto, coverFrameShape, coverPhotoHeight, coverPhotoWidth, coverPhotoFocalY, cover.bgOpacity || 40, theme.background);
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
           ${coverFrameShape === 'background' ? imgHTML : ''}
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
@@ -392,7 +392,7 @@ export function renderQuotationToHTML(documentData: any): string {
       const bannerImgHTML = renderSectionImage(aboutUs.bottomBannerPhoto, aboutUs.frameShape, aboutUs.bottomBannerHeight || 380, aboutUs.photoWidth || 75, aboutUs.photoFocalY || 50, aboutUs.bgOpacity || 40, theme.background, true);
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
           ${aboutUs.frameShape === 'background' ? bannerImgHTML : ''}
 
           <div style="position:absolute;top:24px;right:32px;z-index:10;opacity:0.85;">
@@ -456,7 +456,7 @@ Approx. 50 High Resolution Edited Images
         .split('\n').filter(Boolean);
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
           ${shootPhoto && shootDetails.frameShape === 'background' ? bannerImgHTML : ''}
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
@@ -603,7 +603,7 @@ Approx. 50 High Resolution Edited Images
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
           ${funcPhoto && functionsPage.frameShape === 'background' ? bannerImgHTML : ''}
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
@@ -659,7 +659,7 @@ Approx. 50 High Resolution Edited Images
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
           ${delivPhoto && deliverablesPage.frameShape === 'background' ? bannerImgHTML : ''}
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
@@ -708,7 +708,7 @@ Approx. 50 High Resolution Edited Images
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
           <div style="max-width:600px;width:100%;margin:auto;">
             <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
               ${specialValueAdditions.kicker || 'COMPLIMENTARY'}
@@ -727,7 +727,7 @@ Approx. 50 High Resolution Edited Images
     } else if (pageType === 'pricingPage') {
       const netTotal = (pricingPage.basePrice || 0) - (pricingPage.discountAmount || 0);
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
           <div style="max-width:600px;width:100%;margin:auto;">
             <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
               ${pricingPage.kicker || 'INVESTMENT SUMMARY'}
@@ -770,7 +770,7 @@ Approx. 50 High Resolution Edited Images
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
           <div style="max-width:600px;width:100%;margin:auto;">
             <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
               ${paymentTermsPage.kicker || 'PAYMENT SCHEDULE'}
@@ -779,7 +779,7 @@ Approx. 50 High Resolution Edited Images
               ${paymentTermsPage.heading || 'PAYMENT TERMS & SCHEDULE'}
             </h2>
 
-            <div style="border-radius:16px;overflow:hidden;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;">
+            <div style="border-radius:16px;overflow:visible;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;">
               <table style="width:100%;font-size:12px;border-collapse:collapse;">
                 <thead style="font-size:10px;text-transform:uppercase;font-weight:700;border-bottom:1px solid ${theme.borderColor};color:${theme.kicker};">
                   <tr>
@@ -810,7 +810,7 @@ Approx. 50 High Resolution Edited Images
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
           <div style="max-width:600px;width:100%;margin:auto;">
             <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
               ${addOnsPage.kicker || "EMBRACE YOUR DAY - YOU'RE IN CONTROL"}
@@ -828,7 +828,7 @@ Approx. 50 High Resolution Edited Images
       `;
     } else if (pageType === 'termsPage') {
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
           <div style="max-width:600px;width:100%;margin:auto;">
             <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
               ${termsPage.kicker || 'POLICIES & RULES'}
@@ -848,7 +848,7 @@ Approx. 50 High Resolution Edited Images
       `;
     } else if (pageType === 'thankYouPage') {
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:56px 48px;box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
           <div style="max-width:600px;margin:auto;">
             <h1 style="font-family:${primaryFont};font-size:48px;text-transform:uppercase;letter-spacing:0.2em;font-weight:900;line-height:1.2;color:${theme.text};margin:0 0 16px 0;">
               ${thankYouPage.heading || 'THANK YOU'}
@@ -913,16 +913,15 @@ Approx. 50 High Resolution Edited Images
             width: 794px !important;
             min-width: 794px !important;
             max-width: 794px !important;
-            height: 1123px !important;
             min-height: 1123px !important;
-            max-height: 1123px !important;
+            height: auto !important;
+            max-height: none !important;
             padding: 48px !important;
             position: relative !important;
             box-sizing: border-box !important;
-            overflow: hidden !important;
+            overflow: visible !important;
             background-color: ${theme.background} !important;
             page-break-after: always !important;
-            page-break-inside: avoid !important;
           }
         </style>
       </head>
