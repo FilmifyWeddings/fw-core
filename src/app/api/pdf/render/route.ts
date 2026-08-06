@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { renderQuotationToHTML } from '@/lib/pdf-html-generator';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -51,7 +52,7 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
   return undefined;
 }
 
-// POST /api/pdf/render - Dedicated Server-Side Headless Chromium PDF Export Route
+// POST /api/pdf/render - Canva-Grade Direct HTML Memory PDF Engine Route
 export async function POST(req: NextRequest) {
   let browser: any = null;
   try {
@@ -62,7 +63,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'templateId is required' }, { status: 400 });
     }
 
-    // 1. Sync live content JSON into Supabase DB before Puppeteer renders
+    // 1. Fetch data from Supabase if content_json was not passed directly
+    let documentData = content_json;
+    if (!documentData) {
+      const { data: doc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('content_json')
+        .eq('template_id', templateId)
+        .maybeSingle();
+
+      if (doc?.content_json) {
+        documentData = doc.content_json;
+      }
+    }
+
+    // 2. Sync live content JSON into Supabase DB asynchronously
     if (content_json && templateId) {
       try {
         await supabaseAdmin
@@ -77,15 +92,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Construct authoritative host URL matching exact active server app instance
-    const host = req.headers.get('host') || 'test.studiocore.in';
-    const protocol = req.headers.get('x-forwarded-proto') || 'https';
-    const publicUrl = `${protocol}://${host}/pdf-preview/${templateId}`;
+    // 3. Generate 100% Complete Standalone HTML Document
+    const htmlContent = renderQuotationToHTML(documentData || {});
 
     console.log('[Puppeteer Engine] --------------------------------------------------');
-    console.log('[Puppeteer Engine] Navigating to Public Host Route:', publicUrl);
+    console.log('[Puppeteer Engine] Rendering Direct HTML Payload (Length:', htmlContent.length, 'bytes)');
 
-    // 3. Launch Puppeteer Core with Headless Chromium
+    // 4. Launch Puppeteer Core with Headless Chromium
     const puppeteer = (await import('puppeteer-core')).default;
     const executablePath = await getChromiumExecutablePath();
 
@@ -112,32 +125,16 @@ export async function POST(req: NextRequest) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1810, deviceScaleFactor: 2 });
 
-    // 4. Navigate directly to publicUrl to guarantee routing to correct PM2 app instance
-    const navigationResponse = await page.goto(publicUrl, { waitUntil: 'networkidle0', timeout: 35000 });
-    const httpStatus = navigationResponse?.status() || 200;
-    const finalUrl = page.url();
+    // 5. Inject HTML string directly into Chromium memory
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0', timeout: 30000 });
 
-    console.log('[Puppeteer Engine] Final URL after navigation:', finalUrl);
-    console.log('[Puppeteer Engine] HTTP Status Code:', httpStatus);
-
-    if (finalUrl.includes('/login') || finalUrl.includes('/auth') || finalUrl.includes('/workspace')) {
-      console.error('[Puppeteer Engine CRITICAL ERROR] Redirected away to:', finalUrl);
-      throw new Error(`Puppeteer redirected away from /pdf-preview to ${finalUrl}`);
-    }
-
-    // Wait for canvas element to hydrate
-    await page.waitForSelector('#quotation-full-canvas', { timeout: 15000 }).catch((e: any) => {
-      console.warn('[Puppeteer Engine] Canvas selector wait notice:', e?.message);
-    });
-
-    // Wait for document web fonts to finish loading
     await page.evaluate(async () => {
       if (document.fonts) {
-        await document.fonts.ready;
+        try { await document.fonts.ready; } catch {}
       }
     });
 
-    // 5. Generate Deterministic A4 Vector PDF
+    // 6. Generate Deterministic A4 Vector PDF
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -147,6 +144,8 @@ export async function POST(req: NextRequest) {
 
     await browser.close();
     browser = null;
+
+    console.log('[Puppeteer Engine] Successfully Generated PDF Buffer Size:', pdfBuffer.length, 'bytes');
 
     const safeFilename = (filename || `${templateId}-Quotation.pdf`)
       .replace(/–/g, '-')
