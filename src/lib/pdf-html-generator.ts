@@ -35,6 +35,12 @@ const DEFAULT_PAGE_SEQUENCE = [
   { id: 'thankYouPage', type: 'thankYouPage', label: 'Thank You Page' }
 ];
 
+function getBirdsSVG(textColor: string): string {
+  return `<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1890 2363" style="width:220px;height:auto;object-fit:contain;display:block;margin:0 auto 16px auto;">
+    <path d="M0 0 C3.40320742 1.01176437 4.75725331 1.64843582 6.8125 4.625 C7.204375 5.40875 7.59625 6.1925 8 7 C8.66 6.34 9.32 5.68 10 5 C10.99 5 11.98 5 13 5 C13.84454356 8.37817425 14.10844919 10.67465243 13 14 C13.4125 13.484375 13.825 12.96875 14.25 12.4375 C14.8275 11.963125 15.405 11.48875 16 11 C18.1875 11.3125 18.1875 11.3125 20 12 C19.125 17.75 19.125 17.75 18 20 C18.99 19.34 19.98 18.68 21 18 C23.6875 18.375 23.6875 18.375 26 19 C25.74863281 19.94746094 25.49726562 20.89492187 25.23828125 21.87109375 C24.48387838 27.19747283 26.91959586 31.36992415 29.1875 36.0625 C29.58775391 36.93455078 29.98800781 37.80660156 30.40039062 38.70507812 C32.60369705 43.42236789 34.97377549 47.76328569 38 52 C41.30653354 50.58911589 43.1547817 48.94468631 45.4375 46.1875 C50.93589212 39.72365145 50.93589212 39.72365145 54 37 C54.99 37 55.98 37 57 37 C56.42415568 39.38564077 55.77772405 41.66682784 55 44 C55.763125 43.34 56.52625 42.68 57.3125 42 C60 40 60 40 63 40 C62.42647107 43.87132028 60.51295648 46.08172796 58 49 C61.3 47.68 64.6 46.36 68 45 C68 46.32 68 47.64 68 49 C65.69 50.32 63.38 51.64 61 53 C64.63 53 68.26 53 72 53 C71 55 71 55 68 57 C67.855625 57.5775 67.71125 58.155 67.5625 58.75 C67 61 67 61 65.05078125 63.66015625 C62.7904804 67.34121763 62.16416931 70.49922873 61.625 74.6875 C60.49316995 82.02359274 58.09483293 87.74510958 54 94 C55.36705078 93.93619141 55.36705078 93.93619141 56.76171875 93.87109375 C60.03263051 94.00129892 61.12646135 94.39432863 63.8125 96.0625 C69.13504497 98.67390196 74.07771757 97.99927884 79.79614258 97.29516602 C85.11571823 96.72059052 88.23202113 97.54092429 93 100 C92.67 100.99 92.34 101.98 92 103 C91.08001221 103.00410889 90.16002441 103.00821777 89.2121582 103.01245117 C72.01625693 103.14661806 55.74432245 103.45513824 39.12817383 108.38354492 C32.35197899 110.34636378 25.99484765 111.35610037 18.9375 111.3125 C18.10879395 111.31483643 17.28008789 111.31717285 16.42626953 111.31958008 C11.09907905 111.25575999 6.52312379 110.51919133 1.375 109.1875 C-9.03253057 106.95582511 -18.72455602 109.86531161 -28.90527344 112.27587891 C-33.54324043 113.36109586 -38.20475507 114.31514703 -42.875 115.25 C-43.68904297 115.41540283 -44.50308594 115.58080566 -45.34179688 115.7512207 C-51.20118466 116.9151966 -57.024912 117.72591339 -63 118 C-62.65670781 115.12015992 -62.12594192 114.11653246 -59.9609375 112.11328125 C-52.7013663 107.05790009 -48.12998414 105.6414674 -39.3125 106.625 C-31.28373633 107.37863864 -23.56644811 106.22182764 -16.9375 101.375 C-15.61659624 100.25987915 -14.30503951 99.13364595 -13 98 C-12.05511719 97.26910156 -11.11023437 96.53820313 -10.13671875 95.78515625 C-2.70137362 90.22623569 -2.70137362 90.22623569 0.30078125 81.78125 C0.34697096 72.78965321 -1.12013036 64.27571104 -5.578125 56.41796875 C-8.72892865 50.27566201 -8.72129126 44.60704397 -8.5625 37.8125 C-8.54735352 36.62156738 -8.53220703 35.43063477 -8.51660156 34.20361328 C-8.20130029 21.76616473 -5.49617742 11.18864689 0 0 Z M6 9 C7 11 7 11 7 11 Z " fill="${textColor}" transform="translate(1041,1048)"/>
+  </svg>`;
+}
+
 export function renderQuotationToHTML(documentData: any): string {
   const themeKey = documentData?.look || documentData?.theme || 'cyprus-sand-dune';
   const theme = COLOR_THEMES[themeKey] || COLOR_THEMES['cyprus-sand-dune'];
@@ -53,6 +59,15 @@ export function renderQuotationToHTML(documentData: any): string {
   const brandName = cover.brandName || 'FILMIFY WEDDINGS';
   const brandLogoUrl = cover.brandLogoUrl || '';
   const coverPhoto = cover.photoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80';
+  const frameShape = cover.frameShape || 'arch';
+
+  // Frame shape border radius calculation
+  let coverBorderRadius = '16px';
+  if (frameShape === 'arch') {
+    coverBorderRadius = '200px 200px 0 0';
+  } else if (frameShape === 'rounded') {
+    coverBorderRadius = '32px';
+  }
 
   const aboutUs = documentData?.aboutUs || documentData?.about || {
     kicker: 'INTRODUCTION',
@@ -146,17 +161,18 @@ export function renderQuotationToHTML(documentData: any): string {
     if (pageType === 'cover') {
       pagesHTML += `
         <section className="pdf-page" style="width:210mm;height:297mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="width:100%;display:flex;flex-direction:column;align-items:center;padding-top:24px;">
+          <div style="width:100%;display:flex;flex-direction:column;align-items:center;padding-top:16px;">
+            ${getBirdsSVG(theme.primary)}
             <div style="font-family:${primaryFont};font-size:42px;letter-spacing:0.18em;text-transform:uppercase;font-weight:900;line-height:1.2;color:${theme.text};">
               ${coupleName}
             </div>
-            <div style="font-family:${primaryFont};font-size:14px;letter-spacing:0.2em;text-transform:uppercase;font-weight:700;margin-top:12px;color:${theme.text};">
+            <div style="font-family:${primaryFont};font-size:14px;letter-spacing:0.2em;text-transform:uppercase;font-weight:700;margin-top:10px;color:${theme.text};">
               ${eventType} QUOTATION
             </div>
           </div>
 
           ${coverPhoto ? `
-            <div style="width:100%;height:450px;border-radius:16px;overflow:hidden;margin:24px 0;">
+            <div style="width:100%;height:450px;border-radius:${coverBorderRadius};overflow:hidden;margin:20px 0;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
               <img src="${coverPhoto}" alt="Cover Photo" style="width:100%;height:100%;object-fit:cover;" crossOrigin="anonymous" />
             </div>
           ` : ''}
@@ -259,6 +275,58 @@ export function renderQuotationToHTML(documentData: any): string {
             </h2>
             <div style="text-align:left;">
               ${delivHTML}
+            </div>
+          </div>
+        </section>
+      `;
+    } else if (pageType === 'specialValueAdditions') {
+      let addValHTML = '';
+      (specialValueAdditions.items || []).forEach((item: any) => {
+        addValHTML += `
+          <div style="padding:14px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:12px;font-weight:700;">${item.title || item.name}</span>
+            <span style="font-size:10px;font-weight:900;text-transform:uppercase;padding:2px 8px;border-radius:6px;border:1px solid ${theme.kicker};color:${theme.kicker};">FREE</span>
+          </div>
+        `;
+      });
+
+      pagesHTML += `
+        <section className="pdf-page" style="width:210mm;height:297mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">
+          <div style="max-width:600px;width:100%;margin:auto;">
+            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
+              ${specialValueAdditions.kicker || 'COMPLIMENTARY'}
+            </span>
+            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
+              ${specialValueAdditions.heading || 'SPECIAL VALUE ADDITIONS'}
+            </h2>
+            <div style="text-align:left;">
+              ${addValHTML}
+            </div>
+          </div>
+        </section>
+      `;
+    } else if (pageType === 'addOnsPage') {
+      let addOnsHTML = '';
+      (addOnsPage.items || []).forEach((item: any) => {
+        addOnsHTML += `
+          <div style="padding:14px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:12px;font-weight:700;">${item.title}</span>
+            <span style="font-size:12px;font-weight:900;font-family:sans-serif;">₹${Number(item.price || 0).toLocaleString('en-IN')}</span>
+          </div>
+        `;
+      });
+
+      pagesHTML += `
+        <section className="pdf-page" style="width:210mm;height:297mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">
+          <div style="max-width:600px;width:100%;margin:auto;">
+            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
+              ${addOnsPage.kicker || "EMBRACE YOUR DAY - YOU'RE IN CONTROL"}
+            </span>
+            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
+              ${addOnsPage.heading || 'ADD-ONS & UPGRADES'}
+            </h2>
+            <div style="text-align:left;">
+              ${addOnsHTML}
             </div>
           </div>
         </section>
