@@ -8,29 +8,47 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 });
 
-// Locate Chromium executable path cross-platform (Linux/VPS, Windows, Mac)
+// Locate Chromium executable path cross-platform (Linux VPS, Windows, Mac)
 async function getChromiumExecutablePath(): Promise<string | undefined> {
-  try {
-    const chromium = (await import('@sparticuz/chromium')).default;
-    const path = await chromium.executablePath();
-    if (path) return path;
-  } catch (e) {
-    console.warn('[Puppeteer Core] @sparticuz/chromium executable path notice:', e);
+  const fs = await import('fs');
+
+  // Linux VPS paths
+  const linuxPaths = [
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/snap/bin/chromium',
+    process.env.CHROME_PATH
+  ];
+
+  for (const path of linuxPaths) {
+    if (path && fs.existsSync(path)) {
+      return path;
+    }
   }
 
-  const fs = await import('fs');
+  // Windows local development paths
   const winPaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    process.env.CHROME_PATH
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
   ];
 
   for (const winPath of winPaths) {
     if (winPath && fs.existsSync(winPath)) {
       return winPath;
     }
+  }
+
+  // Fallback to @sparticuz/chromium (for AWS Lambda / Vercel serverless environments)
+  try {
+    const chromium = (await import('@sparticuz/chromium')).default;
+    const path = await chromium.executablePath();
+    if (path) return path;
+  } catch (e) {
+    console.warn('[Puppeteer Core] @sparticuz/chromium executable path notice:', e);
   }
 
   return undefined;
@@ -74,17 +92,25 @@ export async function POST(req: NextRequest) {
 
     // 3. Launch Puppeteer Core with Headless Chromium
     const puppeteer = (await import('puppeteer-core')).default;
-    const chromium = (await import('@sparticuz/chromium')).default;
     const executablePath = await getChromiumExecutablePath();
 
+    const launchArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-web-security',
+      '--font-render-hinting=none'
+    ];
+
     browser = await puppeteer.launch({
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      args: launchArgs,
       defaultViewport: {
         width: 1280,
         height: 1810,
         deviceScaleFactor: 2
       },
-      executablePath: executablePath || await chromium.executablePath(),
+      executablePath: executablePath || undefined,
       headless: true
     });
 
