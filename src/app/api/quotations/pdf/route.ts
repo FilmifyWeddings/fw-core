@@ -93,9 +93,9 @@ export async function POST(req: NextRequest) {
         const imgWidth = embeddedImage.width;
         const imgHeight = embeddedImage.height;
 
-        // Dynamic PDF page height matching actual section height (Zero Page Splitting, Zero White Gaps)
+        // Standard A4 PDF page dimensions (210mm x 297mm = 595.28 x 841.89 pts)
         const pdfWidth = 595.28;
-        const pdfHeight = imgWidth > 0 ? (imgHeight / imgWidth) * pdfWidth : 841.89;
+        const pdfHeight = 841.89;
 
         const pdfPage = pdfDoc.addPage([pdfWidth, pdfHeight]);
         pdfPage.drawImage(embeddedImage, {
