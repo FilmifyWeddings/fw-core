@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Generate 100% Complete Standalone HTML Document
+    // 3. Generate 100% Complete Standalone HTML Document with Embedded Base64 Custom Fonts & Vectors
     const htmlContent = renderQuotationToHTML(documentData || {});
 
     console.log('[Puppeteer Engine] --------------------------------------------------');
@@ -126,15 +126,30 @@ export async function POST(req: NextRequest) {
     await page.setViewport({ width: 1280, height: 1810, deviceScaleFactor: 2 });
 
     // 5. Inject HTML string directly into Chromium memory
-    await page.setContent(htmlContent, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0', timeout: 45000 });
 
+    // 6. Wait for all image URLs (including Supabase Storage bucket URLs) & fonts load
     await page.evaluate(async () => {
-      if (document.fonts) {
-        try { await document.fonts.ready; } catch {}
+      if (document.fonts && document.fonts.ready) {
+        try { await document.fonts.ready; } catch (e) {}
       }
+
+      const images = Array.from(document.querySelectorAll('img'));
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(true);
+          });
+        })
+      );
     });
 
-    // 6. Generate Deterministic A4 Vector PDF
+    // 7. Explicit Font Ready Lock
+    await page.evaluateHandle('document.fonts.ready');
+
+    // 8. Generate Deterministic A4 Vector PDF
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
