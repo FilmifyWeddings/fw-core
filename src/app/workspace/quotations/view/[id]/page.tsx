@@ -130,7 +130,7 @@ export default function QuotationViewPage() {
   }
 
   return (
-    <div className="quotation-view-root min-h-screen w-full bg-[#e5e7eb] flex flex-col items-center justify-start py-8">
+    <div className="quotation-view-root min-h-screen w-full bg-[#e5e7eb] flex flex-col items-center justify-start py-0">
       {/* Global CSS to override platform sidebar navigation and enforce clean Canva A4 viewer layout */}
       <style jsx global>{`
         /* Hide platform sidebar navigation on view route */
@@ -168,7 +168,7 @@ export default function QuotationViewPage() {
           flex-direction: column;
           align-items: center;
           gap: 32px !important;
-          padding: 32px 0;
+          padding: 0 0 32px 0 !important;
           background-color: #e5e7eb;
           width: 100%;
         }

@@ -3824,7 +3824,7 @@ function StudioCoreAiryBuilderContent() {
           flex-direction: column;
           align-items: center;
           gap: 32px !important;
-          padding: 32px 0;
+          padding: 0 0 32px 0 !important;
           background-color: #e5e7eb;
         }
         .quotation-canvas-page, .quotation-page {
