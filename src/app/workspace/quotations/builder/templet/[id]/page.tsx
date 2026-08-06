@@ -17,12 +17,9 @@ import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
-import { generateDeviceIndependentPdf } from '@/lib/pdf-export-engine';
+import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
-// @ts-ignore
-import html2canvasPro from 'html2canvas-pro';
-import jsPDF from 'jspdf';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
@@ -2077,88 +2074,30 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // SERVER-SIDE HEADLESS CHROMIUM (PUPPETEER) PDF ENGINE WITH ZERO-DOWNTIME FALLBACK
+  // SINGLE SOURCE OF TRUTH SERVER-SIDE HEADLESS CHROMIUM PDF ENGINE
   const handleDownloadPDFCanvas = async () => {
-    if (!canvasRef.current) return;
-    const previousScale = zoomScale;
     setIsExportingPDF(true);
     setPdfToastMessage('Server Headless Chromium Generating PDF...');
-
-    setZoomScale(1.0);
-    document.body.classList.add('pdf-capture-active');
 
     try {
       const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
       const routeId = params?.id ? String(params.id) : 'FW-2026-001';
-      const cleanClientName = clientName
-        .replace(/–/g, '-')
-        .replace(/—/g, '-')
-        .replace(/[^ -~]/g, '-');
-      const filename = `${cleanClientName}-Full.pdf`;
-
-      // Fetch session token
       const { data: { session } } = await supabase.auth.getSession();
-      const userAccessToken = session?.access_token || '';
 
-      // 1. Primary Engine: Invoke Server-Side Headless Chromium PDF API
-      const serverRes = await fetch('/api/pdf/render', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userAccessToken || ''}`
-        },
-        body: JSON.stringify({
-          templateId: routeId,
-          filename: filename,
-          content_json: data
-        })
-      });
-
-      if (serverRes.ok) {
-        const blob = await serverRes.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
-        setPdfToastMessage('Server PDF Downloaded Successfully!');
-        setTimeout(() => setPdfToastMessage(null), 3000);
-        return;
-      }
-
-      console.warn('[Server PDF Engine Warning] Server response not OK, triggering high-res fallback engine...');
-      setPdfToastMessage('Generating High-Res Fallback PDF...');
-
-      // 2. Secondary Engine: Device-Independent High-DPI Client Fallback
-      await generateDeviceIndependentPdf({
-        containerSelector: '#quotation-full-canvas',
-        filename: filename,
-        scale: 2.5,
+      await downloadServerChromiumPdf({
+        templateId: routeId,
+        filename: `${clientName}-Full.pdf`,
+        content_json: data,
+        userAccessToken: session?.access_token || '',
         onProgress: (msg) => setPdfToastMessage(msg)
       });
 
       setTimeout(() => setPdfToastMessage(null), 3000);
     } catch (err: any) {
-      console.warn('Server PDF Error, executing fallback:', err);
-      try {
-        const clientName = (data?.cover as any)?.clientName || data?.designName || 'Quotation';
-        await generateDeviceIndependentPdf({
-          containerSelector: '#quotation-full-canvas',
-          filename: `${clientName}-Full.pdf`,
-          scale: 2.5,
-          onProgress: (msg) => setPdfToastMessage(msg)
-        });
-      } catch (fallbackErr: any) {
-        alert(`PDF Export Failed: ${fallbackErr?.message || fallbackErr}`);
-      }
+      console.error('Server PDF Error:', err);
+      alert(`PDF Export Failed: ${err?.message || err}`);
     } finally {
       setIsExportingPDF(false);
-      document.body.classList.remove('pdf-capture-active');
-      setZoomScale(previousScale);
     }
   };
 
