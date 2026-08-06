@@ -2076,34 +2076,99 @@ function StudioCoreAiryBuilderContent() {
   };
 
   // CANVA-STYLE HIGH-DPI CANVAS SNAPSHOT PDF ENGINE (ZERO OVERLAP, 100% VISUAL PARITY)
+  // CANVA-STYLE HIGH-DPI CANVAS SNAPSHOT DYNAMIC PDF ENGINE (ZERO SPLITTING, ZERO WHITE GAPS)
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
+    const container = document.getElementById('quotation-canvas-container');
+    if (!container) {
+      setIsExportingPDF(false);
+      return;
+    }
+
+    const savedTransform = container.style.transform;
+
     try {
+      if (document.fonts && document.fonts.ready) {
+        try { await document.fonts.ready; } catch (e) {}
+      }
+
+      // 1. Reset zoom transform during snapshot capture
+      container.style.transform = 'none';
+
+      // 2. Pre-load all images
+      const images = Array.from(container.querySelectorAll('img'));
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(true);
+          });
+        })
+      );
+
+      // 3. Find ALL page elements
+      let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
+      if (pageEls.length === 0) {
+        pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
+      }
+
+      const targets = pageEls.length > 0 ? pageEls : [container];
+      const pageImages: string[] = [];
+
+      // 4. Capture isolated high-resolution snapshot for EACH page independently
+      for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+
+        const dataUrl = await toPng(target, {
+          quality: 0.98,
+          pixelRatio: 3,
+          cacheBust: true,
+          style: {
+            transform: 'none',
+            margin: '0',
+            boxShadow: 'none'
+          }
+        });
+        pageImages.push(dataUrl);
+      }
+
+      const routeId = params?.id ? String(params.id) : '';
+
+      const res = await fetch('/api/quotations/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quotationId: routeId,
+          pageImages,
+          pageSnapshots: pageImages,
+          content_json: data
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`PDF generation API returned status ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Quotation-${routeId || 'document'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[High-DPI Canvas Snapshot Export Error]:', err);
       const routeId = params?.id ? String(params.id) : '';
       if (routeId) {
-        // Auto-save latest quotation data before triggering print view
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const userAccessToken = session?.access_token;
-          if (userAccessToken) {
-            await fetch(`/api/templates/${routeId}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${userAccessToken}`
-              },
-              body: JSON.stringify({ content_json: data })
-            });
-          }
-        } catch (e) {
-          console.warn('Auto-save before print warning:', e);
-        }
-
         window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
       }
-    } catch (err) {
-      console.error('[Download PDF Error]:', err);
     } finally {
+      if (container) {
+        container.style.transform = savedTransform;
+      }
       setIsExportingPDF(false);
     }
   };

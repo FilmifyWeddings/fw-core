@@ -76,10 +76,6 @@ export async function POST(req: NextRequest) {
       
       const pdfDoc = await PDFDocument.create();
 
-      // Standard A4 dimensions in points (72 points = 1 inch): 595.28 x 841.89
-      const pageWidth = 595.28;
-      const pageHeight = 841.89;
-
       for (let i = 0; i < rawImages.length; i++) {
         const dataUrl = rawImages[i];
         if (!dataUrl || typeof dataUrl !== 'string') continue;
@@ -94,12 +90,19 @@ export async function POST(req: NextRequest) {
           embeddedImage = await pdfDoc.embedPng(imageBuffer);
         }
 
-        const pdfPage = pdfDoc.addPage([pageWidth, pageHeight]);
+        const imgWidth = embeddedImage.width;
+        const imgHeight = embeddedImage.height;
+
+        // Dynamic PDF page height matching actual section height (Zero Page Splitting, Zero White Gaps)
+        const pdfWidth = 595.28;
+        const pdfHeight = imgWidth > 0 ? (imgHeight / imgWidth) * pdfWidth : 841.89;
+
+        const pdfPage = pdfDoc.addPage([pdfWidth, pdfHeight]);
         pdfPage.drawImage(embeddedImage, {
           x: 0,
           y: 0,
-          width: pageWidth,
-          height: pageHeight
+          width: pdfWidth,
+          height: pdfHeight
         });
       }
 
