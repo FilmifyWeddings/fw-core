@@ -151,7 +151,6 @@ export async function POST(req: NextRequest) {
 
     // 8. Generate Deterministic A4 Vector PDF
     const pdfBuffer = await page.pdf({
-      format: 'A4',
       printBackground: true,
       margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' },
       preferCSSPageSize: true

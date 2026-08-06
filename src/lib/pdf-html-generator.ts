@@ -612,7 +612,7 @@ Approx. 50 High Resolution Edited Images
       });
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:${sectionPadding};box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;page-break-inside:avoid;break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;min-height:1123px;height:auto;max-height:none;padding:${sectionPadding};box-sizing:border-box;overflow:visible;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
           ${funcPhoto && functionsPage.frameShape === 'background' ? bannerImgHTML : ''}
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
