@@ -2070,100 +2070,21 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // INSTANT LIGHTNING-FAST HIGH-RES A4 PDF DOWNLOAD ENGINE (KB SIZE, 0.8s SPEED, EXACT USER DESIGN)
-  const handleDownloadPDFCanvas = async () => {
-    setIsExportingPDF(true);
-    setExportProgress(15);
-    setExportStatusText('Preparing Full-Bleed A4 Document...');
-    const routeId = params?.id ? String(params.id) : '';
-
-    const progressTimer = setInterval(() => {
-      setExportProgress(prev => (prev < 90 ? prev + 15 : prev));
-    }, 80);
-
+  // INSTANT MILLISECOND DIRECT A4 PRINT & SAVE AS PDF ENGINE (MOBILE & PC)
+  const handleDownloadPDFCanvas = () => {
     const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-    if (!container) {
-      clearInterval(progressTimer);
-      setIsExportingPDF(false);
-      return;
-    }
+    const savedTransform = container ? container.style.transform : '';
 
-    try {
-      const savedTransform = container.style.transform;
+    if (container) {
       container.style.transform = 'none';
-
-      let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
-      if (pageEls.length === 0) {
-        pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
-      }
-
-      const targets = pageEls.length > 0 ? pageEls : [container];
-      const pdfDoc = await PDFDocument.create();
-
-      for (let i = 0; i < targets.length; i++) {
-        setExportProgress(Math.min(95, Math.round(((i + 1) / targets.length) * 100)));
-        setExportStatusText(`Rendering Page ${i + 1} of ${targets.length}...`);
-
-        const target = targets[i];
-        const dataUrl = await toJpeg(target, {
-          quality: 0.85,
-          pixelRatio: 1.3,
-          cacheBust: true,
-          style: {
-            transform: 'none',
-            margin: '0',
-            padding: '0',
-            boxShadow: 'none',
-            border: 'none'
-          }
-        });
-
-        const base64Data = dataUrl.replace(/^data:image\/(jpeg|jpg);base64,/, '');
-        const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-        const embeddedImg = await pdfDoc.embedJpg(imageBytes);
-
-        const pdfPage = pdfDoc.addPage([595.28, 841.89]);
-        pdfPage.drawImage(embeddedImg, {
-          x: 0,
-          y: 0,
-          width: 595.28,
-          height: 841.89
-        });
-      }
-
-      container.style.transform = savedTransform;
-
-      clearInterval(progressTimer);
-      setExportProgress(100);
-      setExportStatusText('100% Complete! Downloading File...');
-
-      const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Quotation-${routeId || 'document'}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobile) {
-        window.open(url, '_blank');
-      }
-
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-        setIsExportingPDF(false);
-        setExportProgress(0);
-      }, 800);
-
-    } catch (err) {
-      console.error('[Instant High-Res PDF Engine Error]:', err);
-      clearInterval(progressTimer);
-      setIsExportingPDF(false);
-      setExportProgress(0);
     }
+
+    setTimeout(() => {
+      window.print();
+      if (container) {
+        container.style.transform = savedTransform;
+      }
+    }, 50);
   };
 
   useEffect(() => {
