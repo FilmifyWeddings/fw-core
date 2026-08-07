@@ -2068,38 +2068,7 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // INVISIBLE BACKGROUND PRINT IFRAME ENGINE (0 Visible New Tabs, 0 Screen Hang, Direct Native Mobile Print Dialog)
-  const triggerMobileBackgroundPrint = (routeId: string) => {
-    const existingFrame = document.getElementById('hidden-mobile-print-iframe');
-    if (existingFrame) existingFrame.remove();
-
-    const iframe = document.createElement('iframe');
-    iframe.id = 'hidden-mobile-print-iframe';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.border = 'none';
-    iframe.style.opacity = '0';
-    iframe.style.pointerEvents = 'none';
-    iframe.src = `/workspace/quotations/view/${routeId || 'FW-2026-001'}?print=true`;
-
-    document.body.appendChild(iframe);
-
-    iframe.onload = () => {
-      setTimeout(() => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } catch (e) {
-          console.warn('[Hidden Mobile Print Fallback Warning]:', e);
-        }
-      }, 400);
-    };
-  };
-
-  // INSTANT UNIVERSAL A4 DIRECT PDF DOWNLOAD ENGINE WITH PROGRESS BAR
+  // INSTANT DIRECT PDF DOWNLOAD ENGINE WITH PROGRESS BAR
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
     setExportProgress(15);
@@ -2112,25 +2081,21 @@ function StudioCoreAiryBuilderContent() {
       setExportProgress(prev => {
         if (prev < 40) {
           setExportStatusText('Optimizing Vector Page Layouts...');
-          return prev + 12;
+          return prev + 15;
         } else if (prev < 80) {
           setExportStatusText('Inlining High-Res Assets & Fonts...');
-          return prev + 8;
+          return prev + 10;
         } else if (prev < 95) {
-          setExportStatusText('Finalizing A4/B5 Page Compilation...');
-          return prev + 3;
+          setExportStatusText('Finalizing PDF File Build...');
+          return prev + 5;
         }
         return prev;
       });
-    }, 120);
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    }, 100);
 
     try {
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
-        signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quotationId: routeId,
@@ -2138,12 +2103,11 @@ function StudioCoreAiryBuilderContent() {
           filename: `Quotation-${routeId || 'document'}.pdf`
         })
       });
-      clearTimeout(timeoutId);
 
       if (res.ok && res.headers.get('content-type')?.includes('application/pdf')) {
         clearInterval(progressTimer);
         setExportProgress(100);
-        setExportStatusText('Document Ready! Downloading...');
+        setExportStatusText('PDF Complete! Downloading File...');
 
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
@@ -2162,16 +2126,20 @@ function StudioCoreAiryBuilderContent() {
         return;
       }
     } catch (err) {
-      clearTimeout(timeoutId);
-      console.warn('[Server PDF Engine Timeout/Notice, switching to Fast Mobile Print Engine]:', err);
+      console.warn('[Server PDF Engine Notice, attempting mobile view fallback]:', err);
     } finally {
       clearInterval(progressTimer);
     }
 
+    // Direct Mobile View Fallback if server API is unavailable
     setExportProgress(100);
-    setExportStatusText('Opening Direct PDF Print Dialog...');
+    setExportStatusText('Opening Document View...');
 
-    triggerMobileBackgroundPrint(routeId);
+    if (routeId) {
+      window.location.href = `/workspace/quotations/view/${routeId}?print=true`;
+    } else {
+      window.print();
+    }
 
     setTimeout(() => {
       setIsExportingPDF(false);

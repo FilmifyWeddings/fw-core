@@ -311,10 +311,9 @@ export async function POST(req: NextRequest) {
       fullHTML = await inlineAllImgTagsInHTMLServer(rendered);
     }
 
+    let pdfBuffer: Uint8Array | null = null;
     const puppeteer = (await import('puppeteer-core')).default;
-    const executablePath = await getChromiumExecutablePath();
-
-    const launchArgs = [
+    const defaultLaunchArgs = [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
@@ -324,56 +323,84 @@ export async function POST(req: NextRequest) {
       '--font-render-hinting=none'
     ];
 
-    browser = await puppeteer.launch({
-      args: launchArgs,
-      defaultViewport: {
-        width: 1280,
-        height: 1810,
-        deviceScaleFactor: 2
-      },
-      executablePath: executablePath || undefined,
-      headless: true
-    });
+    let executablePath = await getChromiumExecutablePath();
+    let chromiumArgs = defaultLaunchArgs;
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 1810, deviceScaleFactor: 2 });
-    await page.setContent(fullHTML, { waitUntil: ['domcontentloaded', 'networkidle0'], timeout: 30000 });
-
-    await page.evaluate(async () => {
-      if (document.fonts && document.fonts.ready) {
-        try { await document.fonts.ready; } catch (e) {}
+    try {
+      const chromium = (await import('@sparticuz/chromium')).default;
+      const sparticuzPath = await chromium.executablePath();
+      if (sparticuzPath) {
+        executablePath = sparticuzPath;
+        chromiumArgs = [...chromium.args, '--font-render-hinting=none'];
       }
+    } catch (e) {}
 
-      const images = Array.from(document.querySelectorAll('img'));
-      await Promise.all(
-        images.map((img) => {
-          if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
-          return new Promise((resolve) => {
-            img.onload = () => resolve(true);
-            img.onerror = () => resolve(true);
-          });
-        })
-      );
-    });
+    try {
+      browser = await puppeteer.launch({
+        args: chromiumArgs,
+        defaultViewport: {
+          width: 1280,
+          height: 1810,
+          deviceScaleFactor: 2
+        },
+        executablePath: executablePath || undefined,
+        headless: true
+      });
 
-    await page.evaluateHandle('document.fonts.ready');
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1280, height: 1810, deviceScaleFactor: 2 });
+      await page.setContent(fullHTML, { waitUntil: ['domcontentloaded', 'networkidle0'], timeout: 25000 });
 
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      preferCSSPageSize: true,
-      margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' }
-    });
+      await page.evaluate(async () => {
+        if (document.fonts && document.fonts.ready) {
+          try { await document.fonts.ready; } catch (e) {}
+        }
 
-    await browser.close();
-    browser = null;
+        const images = Array.from(document.querySelectorAll('img'));
+        await Promise.all(
+          images.map((img) => {
+            if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
+            return new Promise((resolve) => {
+              img.onload = () => resolve(true);
+              img.onerror = () => resolve(true);
+              setTimeout(resolve, 300);
+            });
+          })
+        );
+      });
+
+      const rawBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' }
+      });
+
+      pdfBuffer = new Uint8Array(rawBuffer);
+      await browser.close();
+      browser = null;
+    } catch (launchErr) {
+      console.warn('[Puppeteer Core Launcher Warning, falling back to pdf-lib server renderer]:', launchErr);
+      if (browser) {
+        try { await browser.close(); } catch (e) {}
+        browser = null;
+      }
+    }
+
+    // ── SECONDARY SERVER FALLBACK (pdf-lib) ──
+    if (!pdfBuffer) {
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([595.28, 841.89]);
+      const pdfBytes = await pdfDoc.save();
+      pdfBuffer = pdfBytes;
+    }
 
     const safeFilename = (filename || `${targetId || 'Quotation'}.pdf`)
       .replace(/–/g, '-')
       .replace(/—/g, '-')
       .replace(/[^ -~]/g, '-');
 
-    return new NextResponse(new Uint8Array(pdfBuffer), {
+    return new NextResponse(pdfBuffer as any, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
