@@ -2075,8 +2075,39 @@ function StudioCoreAiryBuilderContent() {
 
   // INSTANT SAME-PAGE BROWSER PDF PRINT ENGINE (ZERO REDIRECT, ZERO MEMORY LEAK, ZERO FREEZING)
   const handleDownloadPDFCanvas = () => {
+    const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
+    if (container) {
+      container.style.transform = 'none';
+    }
     window.print();
+    setTimeout(() => {
+      if (container) {
+        container.style.transform = `scale(${zoomScale})`;
+      }
+    }, 500);
   };
+
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
+      if (container) {
+        container.style.transform = 'none';
+      }
+    };
+    const handleAfterPrint = () => {
+      const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
+      if (container) {
+        container.style.transform = `scale(${zoomScale})`;
+      }
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, [zoomScale]);
 
   // Load User Session, User Isolation Check & Proposal
   useEffect(() => {
