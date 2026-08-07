@@ -2073,151 +2073,45 @@ function StudioCoreAiryBuilderContent() {
   // DANKA KA SYSTEM: HIGH-SPEED VECTOR A4 PDF DOWNLOAD ENGINE (PC & MOBILE)
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
-    setExportProgress(10);
-    setExportStatusText('Initializing 1:1 A4 Page Snapshot Engine...');
+    setExportProgress(15);
+    setExportStatusText('Preparing Lightweight Quotation Payload...');
 
     const routeId = params?.id ? String(params.id) : '';
-    const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-
-    if (!container) {
-      setIsExportingPDF(false);
-      alert('Error: Quotation canvas container element not found on page.');
-      return;
-    }
 
     const progressTimer = setInterval(() => {
-      setExportProgress(prev => (prev < 90 ? prev + 10 : prev));
+      setExportProgress(prev => (prev < 90 ? prev + 15 : prev));
     }, 150);
 
     try {
-      if (document.fonts && document.fonts.ready) {
-        try { await document.fonts.ready; } catch (e) {}
-      }
+      // Construct lightweight JSON payload (< 50KB instead of 35MB Base64 image payload)
+      const payload = {
+        quotationId: routeId,
+        templateId: routeId,
+        content_json: data,
+        filename: `Quotation-${routeId || 'document'}.pdf`
+      };
 
-      // STAGE 1: Target Page Elements Discovery
-      let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
-      if (pageEls.length === 0) {
-        pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
-      }
-      const targets = (pageEls.length > 0 ? pageEls : [container as HTMLElement]).filter(el => {
-        const h = el.offsetHeight || el.scrollHeight || 0;
-        const text = el.innerText || '';
-        const imgs = el.querySelectorAll('img');
-        return h > 50 && (text.trim().length > 0 || imgs.length > 0);
-      });
+      const payloadString = JSON.stringify(payload);
+      const payloadSize = payloadString.length;
 
-      const pageImages: string[] = [];
+      console.log('[Client PDF Export] ==================================================');
+      console.log('[Client PDF Export] Initiating Lightweight JSON Server PDF Generation');
+      console.log('[Client PDF Export] Quotation ID:', routeId);
+      console.log('[Client PDF Export] Payload Size:', payloadSize, 'bytes (~' + (payloadSize / 1024).toFixed(2) + ' KB)');
+      console.log('[Client PDF Export] Base64 pageImages Omitted: YES (Eliminates HTTP 413 Payload Too Large)');
+      console.log('[Client PDF Export] ==================================================');
 
-      // STAGE 2: Universal High-DPI Virtual Off-Screen A4 Snapshot Generation for ALL Devices
-      for (let i = 0; i < targets.length; i++) {
-        setExportStatusText(`Rendering A4 Page ${i + 1} of ${targets.length}...`);
-        const target = targets[i];
+      setExportProgress(40);
+      setExportStatusText('Generating Server-Side Vector PDF...');
 
-        let targetBgColor = window.getComputedStyle(target).backgroundColor;
-        if (!targetBgColor || targetBgColor === 'rgba(0, 0, 0, 0)' || targetBgColor === 'transparent') {
-          targetBgColor = activeTheme?.background || '#FBFCEB';
-        }
-
-        const virtualA4Container = document.createElement('div');
-        virtualA4Container.style.cssText = `
-          position: fixed !important;
-          left: -9999px !important;
-          top: 0 !important;
-          width: 794px !important;
-          min-width: 794px !important;
-          max-width: 794px !important;
-          height: 1123px !important;
-          min-height: 1123px !important;
-          max-height: 1123px !important;
-          padding: 0 !important;
-          margin: 0 !important;
-          overflow: hidden !important;
-          box-sizing: border-box !important;
-          background-color: ${targetBgColor} !important;
-          z-index: -99999 !important;
-        `;
-
-        const clone = target.cloneNode(true) as HTMLElement;
-        clone.style.margin = '0 !important';
-        clone.style.marginBottom = '0 !important';
-        clone.style.marginTop = '0 !important';
-        clone.style.padding = '0';
-        clone.style.width = '794px';
-        clone.style.minWidth = '794px';
-        clone.style.maxWidth = '794px';
-        clone.style.height = '1123px';
-        clone.style.minHeight = '1123px';
-        clone.style.maxHeight = '1123px';
-        clone.style.boxSizing = 'border-box';
-        clone.style.overflow = 'hidden';
-        clone.style.backgroundColor = targetBgColor;
-
-        const nestedPages = Array.from(clone.querySelectorAll('.quotation-page, .quotation-canvas-page, section'));
-        nestedPages.forEach((p: any) => {
-          p.style.margin = '0 !important';
-          p.style.marginBottom = '0 !important';
-          p.style.marginTop = '0 !important';
-          p.style.width = '794px';
-          p.style.boxSizing = 'border-box';
-          p.style.backgroundColor = targetBgColor;
-        });
-
-        virtualA4Container.appendChild(clone);
-        document.body.appendChild(virtualA4Container);
-
-        const images = Array.from(virtualA4Container.querySelectorAll('img'));
-        await Promise.all(
-          images.map((img) => {
-            if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
-            return new Promise((resolve) => {
-              img.onload = () => resolve(true);
-              img.onerror = () => resolve(true);
-              setTimeout(resolve, 1000);
-            });
-          })
-        );
-
-        await new Promise(r => setTimeout(r, 100));
-
-        const dataUrl = await toPng(virtualA4Container, {
-          quality: 0.98,
-          pixelRatio: 3,
-          cacheBust: true,
-          width: 794,
-          height: 1123,
-          backgroundColor: targetBgColor,
-          style: {
-            transform: 'none',
-            margin: '0',
-            padding: '0',
-            boxShadow: 'none'
-          }
-        });
-
-        pageImages.push(dataUrl);
-
-        if (document.body.contains(virtualA4Container)) {
-          document.body.removeChild(virtualA4Container);
-        }
-      }
-
-      setExportStatusText('Compiling Full-Bleed A4 PDF on Server...');
-
-      // STAGE 3: Unified Fetch POST Payload for ALL Devices (Desktop, Android, iPhone Safari, iPhone Chrome)
+      // Direct authenticated fetch POST to /api/quotations/pdf
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(userId ? { 'Authorization': `Bearer ${userId}` } : {})
         },
-        body: JSON.stringify({
-          quotationId: routeId,
-          templateId: routeId,
-          pageImages,
-          pageSnapshots: pageImages,
-          content_json: data,
-          filename: `Quotation-${routeId || 'document'}.pdf`
-        })
+        body: payloadString
       });
 
       clearInterval(progressTimer);
@@ -2233,12 +2127,11 @@ function StudioCoreAiryBuilderContent() {
 
       const blob = await res.blob();
       setExportProgress(100);
-      setExportStatusText('100% Complete! Opening PDF File...');
+      setExportStatusText('100% Complete! Downloading PDF...');
 
       const url = window.URL.createObjectURL(blob);
       const fileName = `Quotation-${routeId || 'document'}.pdf`;
 
-      // STAGE 4: Unified Universal Blob Download Triggers
       const a = document.createElement('a');
       a.href = url;
       a.download = fileName;
@@ -2251,7 +2144,7 @@ function StudioCoreAiryBuilderContent() {
       }, 15000);
     } catch (err: any) {
       clearInterval(progressTimer);
-      console.error('[PDF Unified Download Error]:', err);
+      console.error('[PDF Export Error]:', err);
       alert(`PDF Generation Notice: ${err.message || 'Server rendering unavailable'}`);
     } finally {
       setTimeout(() => {
