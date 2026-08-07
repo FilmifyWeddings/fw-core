@@ -238,7 +238,7 @@ export function renderQuotationToHTML(documentData: any): string {
     : DEFAULT_PAGE_SEQUENCE;
 
   const cover = documentData?.cover || {};
-  const coupleName = cover.coupleName !== undefined ? cover.coupleName : (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : 'RAHUL & NEHA\nPREMADB');
+  const coupleName = cover.coupleName !== undefined ? cover.coupleName : (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : 'YASH & TWINKLE');
   const eventType = (cover.eventType || 'WEDDING').toUpperCase();
   const sideOption = (cover.sideOption || 'BOTH SIDES').trim().toUpperCase();
   const locationName = (cover.locationName || cover.location || 'MUMBAI').trim().toUpperCase();
@@ -346,38 +346,50 @@ export function renderQuotationToHTML(documentData: any): string {
     if (pageType === 'cover') {
       const imgHTML = renderSectionImage(coverPhoto, coverFrameShape, coverPhotoHeight, coverPhotoWidth, coverPhotoFocalY, cover.bgOpacity || 40, theme.background);
 
+      const sideText = (cover.sideOption || '').trim().toUpperCase();
+      const locText = (cover.locationName || cover.location || '').trim().toUpperCase();
+      const subtitleText = [sideText, locText].filter(Boolean).join(' – ');
+
+      const isFullWidthText = coverFrameShape === 'full-width' || coverImagePos === 'full';
+      const textPaddingStyle = isFullWidthText ? 'padding:0 48px;' : '';
+
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};color:${theme.text};font-family:${secondaryFont};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;position:relative;margin:0 auto;">
           ${coverFrameShape === 'background' ? imgHTML : ''}
 
-          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+          <div style="position:relative;z-index:10;width:100%;height:100%;margin:0 auto;text-align:center;display:flex;flex-direction:column;padding:56px 0;box-sizing:border-box;${!coverPhoto ? 'justify-content:center;align-items:center;' : 'justify-content:space-between;'}">
             
-            <div style="width:100%;display:flex;flex-direction:column;align-items:center;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;margin:auto;">
+              
               ${coverImagePos === 'top' && coverFrameShape !== 'background' ? imgHTML : ''}
 
-              <div style="margin:24px 0 16px 0;">
-                <h1 style="font-family:${primaryFont};font-size:42px;letter-spacing:0.18em;text-transform:uppercase;font-weight:900;line-height:1.25;color:${theme.text};margin:0;white-space:pre-line;">
+              <div style="width:100%;margin:12px 0;${textPaddingStyle}">
+                <h1 class="couple-name-heading" style="font-family:${primaryFont};font-size:48px;letter-spacing:0.18em;text-transform:uppercase;font-weight:900;line-height:1.25;color:${theme.text};margin:0;white-space:pre-line;text-align:center;">
                   ${coupleName}
                 </h1>
-                <h3 style="font-family:${primaryFont};font-size:14px;letter-spacing:0.2em;text-transform:uppercase;font-weight:700;margin-top:12px;color:${theme.text};">
+                <h3 style="font-family:${primaryFont};font-size:16px;letter-spacing:0.2em;text-transform:uppercase;font-weight:700;margin-top:8px;color:${theme.text};white-space:nowrap;">
                   ${eventType} QUOTATION
                 </h3>
               </div>
 
               ${(coverImagePos === 'center' || !coverImagePos) && coverFrameShape !== 'background' ? imgHTML : ''}
 
-              <div style="margin-top:16px;">
-                ${brandLogoUrl ? `
-                  <img src="${brandLogoUrl}" alt="${brandName}" crossOrigin="anonymous" style="height:${brandLogoSize}px;object-fit:contain;display:block;margin:0 auto 8px auto;" />
-                ` : `
-                  <div style="font-family:${primaryFont};font-size:18px;letter-spacing:0.25em;text-transform:uppercase;font-weight:900;color:${theme.text};">
-                    ${brandName}
-                  </div>
-                `}
+              <div style="width:100%;margin-top:12px;${textPaddingStyle}">
+                <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 0;">
+                  ${brandLogoUrl ? `
+                    <img src="${brandLogoUrl}" alt="${brandName}" crossOrigin="anonymous" style="height:${brandLogoSize}px;object-fit:contain;display:block;margin:0 auto;" />
+                  ` : `
+                    <div style="font-family:${primaryFont};font-size:18px;letter-spacing:0.25em;text-transform:uppercase;font-weight:900;color:${theme.text};white-space:nowrap;">
+                      ${brandName}
+                    </div>
+                  `}
+                </div>
 
-                <p style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;font-weight:500;opacity:0.9;color:${theme.kicker};font-family:${secondaryFont};margin-top:6px;">
-                  ${[sideOption, locationName].filter(Boolean).join(' – ')}
-                </p>
+                ${subtitleText ? `
+                  <p style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;font-weight:500;opacity:0.9;color:${theme.kicker};font-family:${secondaryFont};margin-top:6px;white-space:nowrap;">
+                    ${subtitleText}
+                  </p>
+                ` : ''}
               </div>
 
               ${coverImagePos === 'bottom' && coverFrameShape !== 'background' ? imgHTML : ''}
