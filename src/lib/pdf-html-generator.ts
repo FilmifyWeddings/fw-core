@@ -985,9 +985,10 @@ Approx. 50 High Resolution Edited Images
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 32px !important;
+            gap: 0 !important;
             padding: 0 !important;
-            background-color: #e5e7eb;
+            margin: 0 !important;
+            background-color: transparent !important;
           }
           .pdf-page, .quotation-canvas-page {
             width: 794px !important;
@@ -1001,7 +1002,8 @@ Approx. 50 High Resolution Edited Images
             box-sizing: border-box !important;
             overflow: hidden !important;
             border: none !important;
-            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1) !important;
+            box-shadow: none !important;
+            margin: 0 auto !important;
             background-color: ${theme.background} !important;
             page-break-after: always !important;
             break-after: page !important;
@@ -1012,18 +1014,6 @@ Approx. 50 High Resolution Edited Images
             break-after: avoid !important;
             margin-bottom: 0 !important;
             padding-bottom: 0 !important;
-          }
-          @media print {
-            .canvas-wrapper {
-              gap: 0 !important;
-              padding: 0 !important;
-              margin: 0 !important;
-              background-color: transparent !important;
-            }
-            .pdf-page, .quotation-canvas-page, section {
-              box-shadow: none !important;
-              margin-bottom: 0 !important;
-            }
           }
         </style>
       </head>
