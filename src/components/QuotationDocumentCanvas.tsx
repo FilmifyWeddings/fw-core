@@ -1157,29 +1157,42 @@ function paginateFunctionItems(items: any[]): any[][] {
   const pages: any[][] = [];
   let currentPage: any[] = [];
   let currentHeight = 0;
-  const maxUsableHeight = 820;
+  // Maximum usable vertical content height inside 1123px A4 canvas
+  const maxUsableHeight = 910;
 
   items.forEach((item) => {
-    let cardHeight = 84;
+    // Card header (title + timing badge) + padding + border = 76px
+    let cardHeight = 76;
 
+    // Venue / Location line
     if (item.location || item.venue) {
       cardHeight += 24;
     }
 
-    const reqs = Array.isArray(item.requirements) ? item.requirements : [];
+    // Requirements & Crew grid height (2 columns layout)
+    const reqs = Array.isArray(item.requirements) ? item.requirements.filter((r: any) => r.qty > 0) : [];
     if (reqs.length > 0) {
       const rows = Math.ceil(reqs.length / 2);
-      cardHeight += 18 + (rows * 24);
+      cardHeight += 16 + (rows * 20) + 6;
     } else if (item.team) {
       cardHeight += 24;
     }
 
+    // Custom notes line height - accounts for both character wrapping AND manual Enter (\n) newlines!
     if (item.notes) {
       const notesStr = String(item.notes);
-      const linesCount = Math.max(1, Math.ceil(notesStr.length / 60));
-      cardHeight += 12 + (linesCount * 22);
+      const manualLines = notesStr.split('\n');
+      let totalLines = 0;
+      manualLines.forEach((line) => {
+        totalLines += Math.max(1, Math.ceil(line.length / 55));
+      });
+      cardHeight += 12 + (totalLines * 20);
     }
 
+    // Card margin gap
+    cardHeight += 16;
+
+    // If card fits on current page, place it; else push to next page
     if (currentPage.length === 0 || (currentHeight + cardHeight <= maxUsableHeight)) {
       currentPage.push(item);
       currentHeight += cardHeight;
@@ -1861,7 +1874,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
 
                                         {/* Custom Notes */}
                                         {func.notes && (
-                                          <p className="text-xs italic leading-relaxed opacity-85 pt-1 border-t" style={{ color: textColor, borderColor: borderColor || 'rgba(0,0,0,0.08)' }}>
+                                          <p className="text-xs italic leading-relaxed opacity-85 pt-1 border-t whitespace-pre-line" style={{ color: textColor, borderColor: borderColor || 'rgba(0,0,0,0.08)' }}>
                                             "{func.notes}"
                                           </p>
                                         )}
