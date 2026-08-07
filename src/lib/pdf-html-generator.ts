@@ -986,7 +986,7 @@ Approx. 50 High Resolution Edited Images
             flex-direction: column;
             align-items: center;
             gap: 32px !important;
-            padding: 32px 0;
+            padding: 0 !important;
             background-color: #e5e7eb;
           }
           .pdf-page, .quotation-canvas-page {
@@ -1007,18 +1007,22 @@ Approx. 50 High Resolution Edited Images
             break-after: page !important;
             page-break-inside: avoid !important;
           }
-          .pdf-page:last-child, .quotation-canvas-page:last-child, section:last-child {
+          .pdf-page:last-child, .quotation-canvas-page:last-child, section:last-child, section:last-of-type {
             page-break-after: avoid !important;
             break-after: avoid !important;
+            margin-bottom: 0 !important;
+            padding-bottom: 0 !important;
           }
           @media print {
             .canvas-wrapper {
               gap: 0 !important;
               padding: 0 !important;
+              margin: 0 !important;
               background-color: transparent !important;
             }
-            .pdf-page, .quotation-canvas-page {
+            .pdf-page, .quotation-canvas-page, section {
               box-shadow: none !important;
+              margin-bottom: 0 !important;
             }
           }
         </style>

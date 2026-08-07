@@ -4394,7 +4394,7 @@ function StudioCoreAiryBuilderContent() {
                         return funcChunks.map((funcChunk, chunkIdx) => (
                           <section 
                             key={`func-chunk-${chunkIdx}`}
-                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col mb-10"
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
                             style={{
                               width: '794px',
                               minWidth: '794px',
@@ -4571,7 +4571,7 @@ function StudioCoreAiryBuilderContent() {
                         return delivChunks.map((delivChunk, chunkIdx) => (
                           <section 
                             key={`deliv-chunk-${chunkIdx}`}
-                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col mb-10"
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
                             style={{
                               width: '794px',
                               minWidth: '794px',
@@ -5254,7 +5254,7 @@ function StudioCoreAiryBuilderContent() {
                         return termsChunks.map((termsChunk, chunkIdx) => (
                           <section 
                             key={`terms-chunk-${chunkIdx}`}
-                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col mb-10"
+                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
                             style={{
                               width: '794px',
                               minWidth: '794px',
