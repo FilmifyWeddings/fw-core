@@ -2073,18 +2073,49 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // INSTANT SAME-PAGE BROWSER PDF PRINT ENGINE (ZERO REDIRECT, ZERO MEMORY LEAK, ZERO FREEZING)
+  // INSTANT SAME-PAGE HIGH-DPI A4 PDF PRINT ENGINE (ZERO REDIRECT, ZERO FREEZING, ALL 12 A4 PAGES)
   const handleDownloadPDFCanvas = () => {
+    const routeId = params?.id ? String(params.id) : '';
+    
+    // Create clean hidden iframe to view route for perfect 12 A4 pages print rendering
+    if (routeId) {
+      let iframe = document.getElementById('pdf-print-iframe') as HTMLIFrameElement;
+      if (iframe) {
+        iframe.remove();
+      }
+      iframe = document.createElement('iframe');
+      iframe.id = 'pdf-print-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '-9999px';
+      iframe.style.width = '794px';
+      iframe.style.height = '1123px';
+      iframe.style.border = '0';
+      iframe.src = `/workspace/quotations/view/${routeId}?print=true`;
+
+      iframe.onload = () => {
+        setTimeout(() => {
+          try {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+          } catch (e) {
+            console.error('[Print Iframe Fallback]:', e);
+            const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
+            if (container) container.style.transform = 'none';
+            window.print();
+          }
+        }, 300);
+      };
+
+      document.body.appendChild(iframe);
+      return;
+    }
+
     const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
     if (container) {
       container.style.transform = 'none';
     }
     window.print();
-    setTimeout(() => {
-      if (container) {
-        container.style.transform = `scale(${zoomScale})`;
-      }
-    }, 500);
   };
 
   useEffect(() => {
