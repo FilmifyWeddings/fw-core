@@ -1150,6 +1150,48 @@ function ThreeDCurvedFunctionEditor({
 );
 }
 
+
+function paginateFunctionItems(items: any[]): any[][] {
+  if (!Array.isArray(items) || items.length === 0) return [[]];
+
+  const pages: any[][] = [];
+  let currentPage: any[] = [];
+  let currentHeight = 0;
+  const maxUsableHeight = 780;
+
+  items.forEach((item) => {
+    const titleH = 32;
+    const dateH = (item.date || item.dateNotFixed) ? 24 : 0;
+    const locH = item.location ? 24 : 0;
+    
+    const reqs = Array.isArray(item.requirements) ? item.requirements : [];
+    const reqsCount = reqs.filter((r: any) => r.qty > 0).length;
+    const reqsH = reqsCount > 0 ? Math.ceil(reqsCount / 3) * 26 : 0;
+
+    const notesStr = String(item.notes || '');
+    const notesLen = notesStr.length;
+    const notesLines = notesLen > 0 ? Math.max(1, Math.ceil(notesLen / 55)) : 0;
+    const notesH = notesLines * 22;
+
+    const cardHeight = 32 + titleH + dateH + locH + reqsH + notesH + 20;
+
+    if (currentPage.length === 0 || (currentHeight + cardHeight <= maxUsableHeight)) {
+      currentPage.push(item);
+      currentHeight += cardHeight;
+    } else {
+      pages.push(currentPage);
+      currentPage = [item];
+      currentHeight = cardHeight;
+    }
+  });
+
+  if (currentPage.length > 0) {
+    pages.push(currentPage);
+  }
+
+  return pages;
+}
+
 function normalizeQuotationData(loaded: any) {
   const d = DEFAULT_AIRY_PROPOSAL || {};
   if (!loaded || typeof loaded !== 'object') return d;
@@ -1672,7 +1714,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                       )}
 
                       {pageItem.type === 'functionsPage' && (() => {
-                        const funcChunks = chunkArray(data.functionsPage?.items, 3);
+                        const funcChunks = paginateFunctionItems(data.functionsPage?.items || []);
                         return funcChunks.map((funcChunk, chunkIdx) => (
                           <section 
                             key={`func-chunk-${chunkIdx}`}

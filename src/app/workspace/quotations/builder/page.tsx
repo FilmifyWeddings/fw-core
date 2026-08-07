@@ -2877,27 +2877,7 @@ function StudioCoreAiryBuilderContent() {
                 </button>
               </div>
 
-              <UnifiedPhotoControls
-                photoUrl={data.functionsPage?.photo}
-                frameShape={data.functionsPage?.frameShape}
-                photoHeight={data.functionsPage?.photoHeight}
-                photoWidth={data.functionsPage?.photoWidth}
-                photoFocalY={data.functionsPage?.photoFocalY}
-                bgOpacity={data.functionsPage?.bgOpacity}
-                imagePosition={data.functionsPage?.imagePosition}
-                onOpenAddModal={() => openAddImageModal('functionsPhoto')}
-                onDeletePhoto={() => setData({ ...data, functionsPage: { ...data.functionsPage, photo: '' } })}
-                onChangeShape={(shape) => {
-                  const currentH = data.functionsPage?.photoHeight || 380;
-                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
-                  setData({ ...data, functionsPage: { ...data.functionsPage, frameShape: shape, photoHeight: newH } });
-                }}
-                onChangePosition={(pos) => setData({ ...data, functionsPage: { ...data.functionsPage, imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, functionsPage: { ...data.functionsPage, photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, functionsPage: { ...data.functionsPage, bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, functionsPage: { ...data.functionsPage, photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, functionsPage: { ...data.functionsPage, photoWidth: w } })}
-              />
+              
             
                     </div>
                   )}

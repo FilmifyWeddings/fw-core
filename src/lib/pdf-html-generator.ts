@@ -226,6 +226,49 @@ function renderSectionImage(
   `;
 }
 
+
+function paginateFunctionItems(items: any[]): any[][] {
+  if (!Array.isArray(items) || items.length === 0) return [[]];
+
+  const pages: any[][] = [];
+  let currentPage: any[] = [];
+  let currentHeight = 0;
+  const maxUsableHeight = 780;
+
+  items.forEach((item) => {
+    const titleH = 32;
+    const dateH = (item.date || item.dateNotFixed) ? 24 : 0;
+    const locH = item.location ? 24 : 0;
+    
+    const reqs = Array.isArray(item.requirements) ? item.requirements : [];
+    const reqsCount = reqs.filter((r: any) => r.qty > 0).length;
+    const reqsH = reqsCount > 0 ? Math.ceil(reqsCount / 3) * 26 : 0;
+
+    const notesStr = String(item.notes || '');
+    const notesLen = notesStr.length;
+    const notesLines = notesLen > 0 ? Math.max(1, Math.ceil(notesLen / 55)) : 0;
+    const notesH = notesLines * 22;
+
+    const cardHeight = 32 + titleH + dateH + locH + reqsH + notesH + 20;
+
+    if (currentPage.length === 0 || (currentHeight + cardHeight <= maxUsableHeight)) {
+      currentPage.push(item);
+      currentHeight += cardHeight;
+    } else {
+      pages.push(currentPage);
+      currentPage = [item];
+      currentHeight = cardHeight;
+    }
+  });
+
+  if (currentPage.length > 0) {
+    pages.push(currentPage);
+  }
+
+  return pages;
+}
+
+
 export function renderQuotationToHTML(documentData: any): string {
   const theme = getThemeFromKey(documentData?.look || documentData?.theme);
   const primaryFont = documentData?.primaryFont || "'Cormorant Garamond', serif";
@@ -519,103 +562,55 @@ Approx. 50 High Resolution Edited Images
         </section>
       `;
             } else if (pageType === 'functionsPage') {
-      const funcPhoto = functionsPage.photo || functionsPage.photoUrl;
-      const bannerImgHTML = renderSectionImage(
-        funcPhoto,
-        functionsPage.frameShape || 'arch',
-        Math.min(functionsPage.photoHeight || 200, 200),
-        functionsPage.photoWidth || 75,
-        functionsPage.photoFocalY || 50,
-        functionsPage.bgOpacity || 40,
-        theme.background,
-        true
-      );
-
       const calendarIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
       const mapPinIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
-      const cameraIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
 
-      const allItems = functionsPage.items || [];
-      const funcChunks: any[][] = [];
-      if (allItems.length === 0) {
-        funcChunks.push([]);
-      } else {
-        for (let i = 0; i < allItems.length; i += 2) {
-          funcChunks.push(allItems.slice(i, i + 2));
-        }
-      }
+      const rawItems = functionsPage.items || [];
+      const funcChunks = paginateFunctionItems(rawItems);
 
       funcChunks.forEach((chunkItems: any[], chunkIdx: number) => {
         let itemsHTML = '';
-        chunkItems.forEach((func: any, index: number) => {
-          const globalIdx = chunkIdx * 2 + index;
-          const funcName = func.name || func.title || `Function ${globalIdx + 1}`;
-          const timingStr = [
-            func.dateNotFixed ? 'DATE NOT FIXED' : (func.date || func.dateTime || ''),
-            func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : (func.timing || ''),
-            func.durationSlot && func.durationSlot !== 'None' ? `(${func.durationSlot})` : ''
+        chunkItems.forEach((func: any, fIdx: number) => {
+          const title = func.name || func.title || `Function ${fIdx + 1}`;
+          const timingParts = [
+            (func.dateNotFixed ? 'DATE NOT FIXED' : func.date || func.dateTime),
+            func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
+            (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
           ].filter(Boolean).join(' • ');
 
-          const locationStr = func.location || func.venue || '';
-
-          let reqsHTML = '';
-          if (func.requirements && Array.isArray(func.requirements) && func.requirements.length > 0) {
-            const reqItems = func.requirements.map((req: any) => {
-              const q = req.qty || 1;
-              let label = req.name || '';
-              if (q > 1) {
-                if (label.toLowerCase().includes('photography') || label.toLowerCase().includes('photographer')) {
-                  label = label.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
-                } else if (label.toLowerCase().includes('cinematography') || label.toLowerCase().includes('cinematographer')) {
-                  label = label.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
-                }
-              }
-              return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${q} × ${label}</span></div>`;
-            }).join('');
-
-            reqsHTML = `
-              <div style="margin-top:4px;">
-                <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:3px;">Crew & Requirements:</span>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:left;">
-                  ${reqItems}
-                </div>
-              </div>
-            `;
-          } else if (func.team || func.crew) {
-            const crewArr = String(func.team || func.crew).split(',').filter(Boolean);
-            const reqItems = crewArr.map((t: string) => `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:${theme.text};">${cameraIconSVG}<span>${t.trim()}</span></div>`).join('');
-            reqsHTML = `
-              <div style="margin-top:4px;">
-                <span style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:0.1em;color:${theme.kicker};display:block;margin-bottom:3px;">Crew & Requirements:</span>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:left;">
-                  ${reqItems}
-                </div>
-              </div>
-            `;
-          }
+          const reqs = Array.isArray(func.requirements) ? func.requirements.filter((r: any) => r.qty > 0) : [];
+          const reqsHTML = reqs.length > 0 ? `
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+              ${reqs.map((r: any) => `
+                <span style="font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};">
+                  ${r.qty > 1 ? `${r.qty}x ` : ''}${r.name}
+                </span>
+              `).join('')}
+            </div>
+          ` : (func.team ? `<div style="font-size:11px;font-weight:600;opacity:0.85;color:${theme.text};margin-top:6px;">${func.team}</div>` : '');
 
           const notesHTML = func.notes ? `
-            <p style="font-size:11px;font-style:italic;line-height:1.3;opacity:0.85;margin:4px 0 0 0;padding-top:4px;border-top:1px solid ${theme.borderColor};color:${theme.text};text-align:left;">
-              "${func.notes}"
-            </p>
+            <div style="font-size:11px;line-height:1.5;opacity:0.85;color:${theme.text};margin-top:8px;padding-top:6px;border-top:1px dashed ${theme.borderColor};white-space:pre-line;">
+              ${func.notes}
+            </div>
           ` : '';
 
           itemsHTML += `
-            <div style="padding:10px 14px;border-radius:14px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:4px;margin-bottom:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;width:100%;">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid ${theme.borderColor};padding-bottom:4px;">
-                <h3 style="font-family:${primaryFont};font-size:17px;letter-spacing:0.08em;font-weight:600;text-transform:uppercase;margin:0;color:${theme.text};">${funcName}</h3>
-                ${timingStr ? `
-                  <div style="font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 8px;border-radius:20px;border:1px solid ${theme.borderColor};background-color:${theme.background};color:${theme.kicker};white-space:nowrap;display:flex;align-items:center;">
-                    ${calendarIconSVG}
-                    <span>${timingStr}</span>
+            <div style="width:100%;padding:16px;box-sizing:border-box;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+              <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${theme.borderColor};padding-bottom:8px;margin-bottom:8px;">
+                <h3 style="font-family:${primaryFont};font-size:20px;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;margin:0;color:${theme.text};">
+                  ${title}
+                </h3>
+                ${timingParts ? `
+                  <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;padding:2px 10px;border-radius:999px;border:1px solid ${theme.borderColor};background-color:${theme.background};color:${theme.kicker};white-space:nowrap;">
+                    ${calendarIconSVG} ${timingParts}
                   </div>
                 ` : ''}
               </div>
 
-              ${locationStr ? `
-                <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${theme.text};margin-top:2px;text-align:left;">
-                  ${mapPinIconSVG}
-                  <span>${locationStr}</span>
+              ${func.location || func.venue ? `
+                <div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${theme.text};opacity:0.9;display:flex;align-items:center;margin-top:4px;">
+                  ${mapPinIconSVG} ${func.location || func.venue}
                 </div>
               ` : ''}
 
@@ -625,39 +620,33 @@ Approx. 50 High Resolution Edited Images
           `;
         });
 
-        const showImage = chunkIdx === 0;
+        const isPageLast = isLastPage && chunkIdx === funcChunks.length - 1;
+        const pageFooterHTML = isPageLast ? `<div style="width:100%;text-align:center;padding:16px 0 0 0;font-size:11px;color:#a1a1aa;border-top:1px solid rgba(0,0,0,0.05);margin-top:auto;">Created by StudioCore.in</div>` : '';
 
         pagesHTML += `
-          <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:32px 40px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
-            ${showImage && funcPhoto && functionsPage.frameShape === 'background' ? bannerImgHTML : ''}
-
-            <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
-              <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-                ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'top' ? bannerImgHTML : ''}
-
-                <div style="text-align:center;margin:4px 0;">
-                  <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:2px;">
+          <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};color:${theme.text};font-family:${secondaryFont};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;position:relative;margin:0 auto;">
+            <div style="position:relative;z-index:10;width:100%;height:100%;display:flex;flex-direction:column;justify-content:space-between;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;">
+                <div style="text-align:center;margin-bottom:20px;">
+                  <span style="font-size:12px;letter-spacing:0.25em;text-transform:uppercase;font-weight:700;color:${theme.kicker};display:block;margin-bottom:6px;">
                     ${functionsPage.kicker || 'EVENT SCHEDULE'} ${funcChunks.length > 1 ? `(${chunkIdx + 1}/${funcChunks.length})` : ''}
                   </span>
-                  <h2 style="font-family:${primaryFont};font-size:28px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                  <h2 style="font-family:${primaryFont};font-size:30px;letter-spacing:0.02em;font-weight:400;margin:0;color:${theme.text};">
                     ${functionsPage.heading || 'Functions & Coverage'}
                   </h2>
                 </div>
 
-                ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'center' ? bannerImgHTML : ''}
-
-                <div style="width:100%;max-width:640px;margin:4px auto;">
+                <div style="width:100%;max-width:620px;margin:0 auto;">
                   ${itemsHTML}
                 </div>
-
-                ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && (functionsPage.imagePosition === 'bottom' || !functionsPage.imagePosition) ? bannerImgHTML : ''}
               </div>
 
-              ${footerHTML}
+              ${pageFooterHTML}
             </div>
           </section>
         `;
       });
+    
     } else if (pageType === 'deliverablesPage') {
       const delivPhoto = deliverablesPage.photo || deliverablesPage.photoUrl;
       const bannerImgHTML = renderSectionImage(
