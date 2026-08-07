@@ -309,7 +309,23 @@ export async function POST(req: NextRequest) {
     console.log('[PDF Server Pipeline] STAGE 5: Page Render & Fonts Lock');
     const page = await browser.newPage();
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
-    await page.setContent(fullHTML, { waitUntil: ['domcontentloaded', 'networkidle0'], timeout: 35000 });
+
+    // Track pending network requests to diagnose slow or hanging mobile resources
+    const pendingRequests = new Set<string>();
+    page.on('request', (req: any) => pendingRequests.add(req.url()));
+    page.on('requestfinished', (req: any) => pendingRequests.delete(req.url()));
+    page.on('requestfailed', (req: any) => pendingRequests.delete(req.url()));
+
+    // Set DOM content with domcontentloaded (instant < 50ms) to prevent mobile networkidle0 timeout
+    try {
+      await page.setContent(fullHTML, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch (e: any) {
+      console.warn('[PDF Server Pipeline] setContent Warning (Pending Requests:', Array.from(pendingRequests), '):', e.message);
+    }
+
+    if (pendingRequests.size > 0) {
+      console.log('[PDF Server Pipeline] Pending Network Requests Before Render:', Array.from(pendingRequests));
+    }
 
     await page.evaluate(async () => {
       if (document.fonts && document.fonts.ready) {

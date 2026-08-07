@@ -90,7 +90,21 @@ export async function POST(req: NextRequest) {
     const page = await browser.newPage();
 
     // 4. Navigate exclusively to /pdf-preview/[id]
-    const navigationResponse = await page.goto(requestedUrl, { waitUntil: 'networkidle0', timeout: 35000 });
+    const pendingRequests = new Set<string>();
+    page.on('request', (req: any) => pendingRequests.add(req.url()));
+    page.on('requestfinished', (req: any) => pendingRequests.delete(req.url()));
+    page.on('requestfailed', (req: any) => pendingRequests.delete(req.url()));
+
+    let navigationResponse: any = null;
+    try {
+      navigationResponse = await page.goto(requestedUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch (e: any) {
+      console.warn('[Canva PDF Engine Warning] page.goto notice (Pending Requests:', Array.from(pendingRequests), '):', e.message);
+    }
+
+    if (pendingRequests.size > 0) {
+      console.log('[Canva PDF Engine] Pending Network Requests Before Wait:', Array.from(pendingRequests));
+    }
     const httpStatus = navigationResponse?.status() || 200;
     const finalUrl = page.url();
 
