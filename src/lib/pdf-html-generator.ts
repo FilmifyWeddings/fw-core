@@ -972,13 +972,19 @@ Approx. 50 High Resolution Edited Images
             word-spacing: normal !important;
             font-variant-ligatures: none !important;
           }
+          @page {
+            size: 210mm 297mm;
+            margin: 0 !important;
+          }
           body, html {
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
             color: ${theme.text} !important;
             font-family: ${secondaryFont} !important;
-            width: 794px !important;
+            width: 210mm !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .canvas-wrapper {
             display: flex;
@@ -988,21 +994,22 @@ Approx. 50 High Resolution Edited Images
             padding: 0 !important;
             margin: 0 !important;
             background-color: transparent !important;
+            width: 210mm !important;
           }
           .pdf-page, .quotation-canvas-page {
-            width: 794px !important;
-            min-width: 794px !important;
-            max-width: 794px !important;
-            height: 1123px !important;
-            min-height: 1123px !important;
-            max-height: 1123px !important;
+            width: 210mm !important;
+            min-width: 210mm !important;
+            max-width: 210mm !important;
+            height: 297mm !important;
+            min-height: 297mm !important;
+            max-height: 297mm !important;
             padding: 48px !important;
             position: relative !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
             border: none !important;
             box-shadow: none !important;
-            margin: 0 auto !important;
+            margin: 0 !important;
             background-color: ${theme.background} !important;
             page-break-after: always !important;
             break-after: page !important;

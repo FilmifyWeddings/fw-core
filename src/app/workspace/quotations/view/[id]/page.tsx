@@ -198,15 +198,23 @@ export default function QuotationViewPage() {
         /* Standard A4 Print Rules */
         @media print {
           @page {
-            size: A4 portrait;
+            size: 210mm 297mm;
             margin: 0 !important;
           }
-          html, body, .quotation-view-root, #quotation-canvas-container, .canvas-wrapper, main {
-            width: 100% !important;
-            height: auto !important;
+          html, body {
+            width: 210mm !important;
+            height: 297mm !important;
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .quotation-view-root, #quotation-canvas-container, .canvas-wrapper, main {
+            width: 210mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
           }
           aside, nav, header, footer, .sidebar-container, .no-print, .canva-page-label {
             display: none !important;
@@ -218,14 +226,15 @@ export default function QuotationViewPage() {
             background-color: transparent !important;
           }
           .pdf-page, .quotation-canvas-page, section {
-            width: 794px !important;
-            height: 1123px !important;
-            min-height: 1123px !important;
-            max-height: 1123px !important;
+            width: 210mm !important;
+            height: 297mm !important;
+            min-height: 297mm !important;
+            max-height: 297mm !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
             border: none !important;
-            margin: 0 auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
             box-shadow: none !important;
             page-break-after: always !important;
             break-after: page !important;

@@ -5874,60 +5874,68 @@ function StudioCoreAiryBuilderContent() {
         )}
       </AnimatePresence>
 
-      {/* ── LUXURY MINIMALIST PDF GENERATION % PROGRESS MODAL UI ── */}
+      {/* ── LUXURY ANIMATED SEGMENTED PROGRESS MODAL (EXACT MATCH TO USER UI DESIGN) ── */}
       <AnimatePresence>
         {isExportingPDF && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 select-none"
+            className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 select-none"
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 10 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 10 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-zinc-900/95 border border-amber-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center space-y-6 relative overflow-hidden"
+              className="bg-white/95 dark:bg-zinc-900/95 border border-amber-400/30 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-5 relative overflow-hidden"
             >
-              {/* Ambient Glow Effects */}
-              <div className="absolute -top-10 -left-10 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
-
-              {/* Animated Download Icon Badge */}
-              <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-amber-600/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
-                <Download className="w-7 h-7 animate-bounce" />
+              {/* Header Title with Sparkles (Matching User Uploaded UI) */}
+              <div className="flex items-center justify-center gap-2 text-zinc-900 dark:text-zinc-100 font-semibold text-sm">
+                <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+                <span className="font-sans font-bold tracking-tight">
+                  {exportStatusText || 'Generating A4 PDF...'}
+                </span>
               </div>
 
-              {/* Header Title */}
-              <div className="space-y-1">
-                <h3 className="text-lg font-serif tracking-wide text-zinc-100 font-semibold">
-                  Generating A4 Document
-                </h3>
-                <p className="text-xs text-zinc-400 font-sans">
-                  {exportStatusText || 'Compiling vector pages & high-res assets...'}
-                </p>
+              {/* Segmented Glowing Pill Progress Bar (Matching User Design) */}
+              <div className="flex items-center justify-center gap-1.5 px-2 py-1">
+                {/* Left Pill Endcap */}
+                <div className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500 text-xs font-bold shadow-xs">
+                  ←
+                </div>
+
+                {/* 4 Segmented Glowing Progress Bars */}
+                <div className="flex-1 flex items-center gap-1.5">
+                  {[1, 2, 3, 4].map((segmentIndex) => {
+                    const segmentProgress = Math.min(100, Math.max(0, (exportProgress - (segmentIndex - 1) * 25) * 4));
+                    return (
+                      <div
+                        key={segmentIndex}
+                        className="flex-1 h-3 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden relative border border-zinc-300/40 dark:border-zinc-700/40 shadow-inner"
+                      >
+                        <motion.div
+                          className="h-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.6)]"
+                          initial={{ width: '0%' }}
+                          animate={{ width: `${segmentProgress}%` }}
+                          transition={{ duration: 0.25, ease: 'easeInOut' }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Right Pill Endcap */}
+                <div className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500 text-xs font-bold shadow-xs">
+                  →
+                </div>
               </div>
 
-              {/* Big Percentage Display */}
-              <div className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent font-mono">
-                {exportProgress}%
+              {/* Live Percentage Number & App Text */}
+              <div className="flex items-center justify-between px-2 text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
+                <span className="text-[11px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-extrabold">Filmify StudioCore</span>
+                <span className="text-amber-500 font-extrabold text-sm">{exportProgress}%</span>
               </div>
-
-              {/* Progress Bar Container */}
-              <div className="w-full bg-zinc-800/80 h-2.5 rounded-full overflow-hidden p-0.5 border border-zinc-700/50 shadow-inner">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-amber-600 via-amber-500 to-amber-300 rounded-full shadow-[0_0_12px_rgba(245,158,11,0.5)]"
-                  initial={{ width: '0%' }}
-                  animate={{ width: `${exportProgress}%` }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                />
-              </div>
-
-              {/* Footer Stamp */}
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">
-                StudioCore High-DPI Direct PDF Engine
-              </p>
             </motion.div>
           </motion.div>
         )}
