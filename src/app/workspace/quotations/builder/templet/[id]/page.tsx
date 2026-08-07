@@ -2096,7 +2096,7 @@ function StudioCoreAiryBuilderContent() {
         try { await document.fonts.ready; } catch (e) {}
       }
 
-      // 2. Pre-convert all images to inline Base64 Data URLs so html-to-image never taints canvas or misses cross-origin photos
+      // 2. Pre-convert all images to inline Base64 Data URLs so html-to-image never taints canvas or misses cross-origin photos on mobile
       const imgElements = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
 
       await Promise.all(
@@ -2104,23 +2104,38 @@ function StudioCoreAiryBuilderContent() {
           const src = img.getAttribute('src') || img.src;
           if (src && !src.startsWith('data:')) {
             originalSrcs.set(img, src);
+
+            // Tier 1: Direct Client Fetch
             try {
               const res = await fetch(src, { mode: 'cors' });
               if (res.ok) {
                 const blob = await res.blob();
                 const dataUrl = await new Promise<string>((resolve) => {
                   const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onloadend = () => resolve((reader.result as string) || '');
                   reader.onerror = () => resolve('');
                   reader.readAsDataURL(blob);
                 });
-                if (dataUrl) {
+                if (dataUrl && dataUrl.startsWith('data:image')) {
                   img.src = dataUrl;
                   return;
                 }
               }
             } catch (e) {}
 
+            // Tier 2: Server-Side Proxy (bypasses Mobile Safari/Chrome CORS limits)
+            try {
+              const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(src)}`);
+              if (proxyRes.ok) {
+                const json = await proxyRes.json();
+                if (json.dataUrl && json.dataUrl.startsWith('data:image')) {
+                  img.src = json.dataUrl;
+                  return;
+                }
+              }
+            } catch (e) {}
+
+            // Tier 3: HTMLCanvasElement Fallback
             try {
               const canvas = document.createElement('canvas');
               canvas.width = img.naturalWidth || img.width || 800;
