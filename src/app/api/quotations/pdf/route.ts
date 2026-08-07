@@ -256,6 +256,7 @@ export async function POST(req: NextRequest) {
     await page.evaluateHandle('document.fonts.ready');
 
     const pdfBuffer = await page.pdf({
+      format: 'A4',
       printBackground: true,
       preferCSSPageSize: true,
       margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' }

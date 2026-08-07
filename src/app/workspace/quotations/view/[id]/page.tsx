@@ -181,6 +181,20 @@ export default function QuotationViewPage() {
           width: 100%;
         }
 
+        @media screen and (max-width: 768px) {
+          .quotation-view-root {
+            padding: 0 !important;
+            overflow-x: hidden !important;
+          }
+          .canvas-wrapper, #quotation-canvas-container {
+            gap: 16px !important;
+            padding: 0 !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            overflow-x: hidden !important;
+          }
+        }
+
         /* Standard A4 Print Rules */
         @media print {
           @page {

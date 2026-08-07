@@ -2073,49 +2073,47 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // INSTANT SAME-PAGE HIGH-DPI A4 PDF PRINT ENGINE (ZERO REDIRECT, ZERO FREEZING, ALL 12 A4 PAGES)
-  const handleDownloadPDFCanvas = () => {
+  // HIGH-PRECISION UNIVERSAL A4 PDF DOWNLOAD ENGINE (DESKTOP & MOBILE COMPATIBLE)
+  const handleDownloadPDFCanvas = async () => {
+    setIsExportingPDF(true);
     const routeId = params?.id ? String(params.id) : '';
-    
-    // Create clean hidden iframe to view route for perfect 12 A4 pages print rendering
-    if (routeId) {
-      let iframe = document.getElementById('pdf-print-iframe') as HTMLIFrameElement;
-      if (iframe) {
-        iframe.remove();
+
+    try {
+      // 1. First try direct server-side high-res 12-page A4 PDF binary download
+      const res = await fetch('/api/quotations/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quotationId: routeId,
+          content_json: data,
+          filename: `Quotation-${routeId || 'document'}.pdf`
+        })
+      });
+
+      if (res.ok && res.headers.get('content-type')?.includes('application/pdf')) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Quotation-${routeId || 'document'}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        setIsExportingPDF(false);
+        return;
       }
-      iframe = document.createElement('iframe');
-      iframe.id = 'pdf-print-iframe';
-      iframe.style.position = 'fixed';
-      iframe.style.left = '-9999px';
-      iframe.style.top = '-9999px';
-      iframe.style.width = '794px';
-      iframe.style.height = '1123px';
-      iframe.style.border = '0';
-      iframe.src = `/workspace/quotations/view/${routeId}?print=true`;
-
-      iframe.onload = () => {
-        setTimeout(() => {
-          try {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-          } catch (e) {
-            console.error('[Print Iframe Fallback]:', e);
-            const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-            if (container) container.style.transform = 'none';
-            window.print();
-          }
-        }, 300);
-      };
-
-      document.body.appendChild(iframe);
-      return;
+    } catch (err) {
+      console.warn('[Server PDF Download Notice]:', err);
     }
 
-    const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-    if (container) {
-      container.style.transform = 'none';
+    // 2. Fallback: Open clean A4 print preview window in new tab for 100% reliability on Mobile & PC
+    if (routeId) {
+      window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
+    } else {
+      window.print();
     }
-    window.print();
+    setIsExportingPDF(false);
   };
 
   useEffect(() => {
