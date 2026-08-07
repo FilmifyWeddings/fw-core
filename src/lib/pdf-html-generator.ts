@@ -194,11 +194,10 @@ function renderSectionImage(
   if (!photo) return '';
 
   if (frameShape === 'background') {
-    const opacityVal = 1 - (bgOpacity / 100);
+    const imgOpacity = (bgOpacity ?? 40) / 100;
     return `
-      <div style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:0;">
-        <img src="${photo}" alt="Background" crossOrigin="anonymous" style="width:100%;height:100%;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;" />
-        <div style="position:absolute;inset:0;background-color:${pageBgColor};opacity:${opacityVal};z-index:0;"></div>
+      <div style="position:absolute;inset:0;z-index:0;overflow:hidden;width:100%;height:100%;background-color:${pageBgColor};">
+        <img src="${photo}" alt="Background" style="width:100%;height:100%;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;opacity:${imgOpacity};position:absolute;inset:0;z-index:0;" />
       </div>
     `;
   }
@@ -206,7 +205,7 @@ function renderSectionImage(
   if (frameShape === 'full-width') {
     return `
       <div style="width:100%;overflow:visible;margin:${isBottomFlush ? '24px 0 0 0' : '24px 0 16px 0'};">
-        <img src="${photo}" alt="Full Width Photo" crossOrigin="anonymous" style="width:100%;height:${photoHeight}px;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;" />
+        <img src="${photo}" alt="Full Width Photo" style="width:100%;height:${photoHeight}px;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;border:none;" />
       </div>
     `;
   }
@@ -221,7 +220,7 @@ function renderSectionImage(
   return `
     <div style="width:100%;display:flex;justify-content:center;margin:${isBottomFlush ? '16px 0 0 0' : '16px 0'};">
       <div style="width:${photoWidth || 75}%;height:${photoHeight || 450}px;overflow:visible;${borderRadiusStyle}">
-        <img src="${photo}" alt="Section Photo" crossOrigin="anonymous" style="width:100%;height:100%;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;" />
+        <img src="${photo}" alt="Section Photo" style="width:100%;height:100%;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;border:none;" />
       </div>
     </div>
   `;

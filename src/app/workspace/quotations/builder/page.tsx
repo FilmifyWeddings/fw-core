@@ -962,21 +962,18 @@ function SectionImageRenderer({
     return (
       <div 
         className="absolute inset-0 z-0 overflow-hidden w-full h-full pointer-events-none select-none transition-all duration-200"
-        style={{ height: '100%', width: '100%' }}
+        style={{ height: '100%', width: '100%', backgroundColor: pageBgColor }}
       >
         <img
           src={photo}
           alt={altText}
-          className="w-full h-full object-cover block"
-          style={{ objectPosition: `50% ${photoFocalY}%`, height: '100%', width: '100%' }}
-        />
-        {/* Background Opacity Blends cleanly with pageBgColor */}
-        <div 
-          className="absolute inset-0 z-0 transition-opacity duration-200" 
+          className="w-full h-full object-cover block absolute inset-0 z-0"
           style={{ 
-            backgroundColor: pageBgColor, 
-            opacity: 1 - ((bgOpacity ?? 40) / 100) 
-          }} 
+            objectPosition: `50% ${photoFocalY}%`, 
+            height: '100%', 
+            width: '100%',
+            opacity: (bgOpacity ?? 40) / 100 
+          }}
         />
       </div>
     );
@@ -988,7 +985,7 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
-          className="w-full block object-cover shadow-xs"
+          className="w-full block object-cover border-none"
           style={{ height: `${photoHeight}px`, objectPosition: `50% ${photoFocalY}%` }}
         />
       </div>
@@ -1003,7 +1000,7 @@ function SectionImageRenderer({
   return (
     <div className={`w-full flex justify-center ${isBottomFlush ? 'mt-4' : 'my-4'}`}>
       <div
-        className={`overflow-hidden shadow-md relative transition-all duration-200 ${shapeClass}`}
+        className={`overflow-hidden relative transition-all duration-200 border-none ${shapeClass}`}
         style={{
           width: `${photoWidth}%`,
           height: `${photoHeight}px`,
@@ -1012,7 +1009,7 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
-          className="w-full h-full object-cover bg-transparent"
+          className="w-full h-full object-cover bg-transparent border-none"
           style={{ objectPosition: `50% ${photoFocalY}%` }}
         />
       </div>
@@ -2071,132 +2068,13 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // UNIVERSAL A4 PDF EXPORT ENGINE (MOBILE SNAPSHOT + DESKTOP SERVER VECTOR)
+  // INSTANT UNIVERSAL A4 DIRECT PDF DOWNLOAD ENGINE (DESKTOP & MOBILE COMPATIBLE)
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
     const routeId = params?.id ? String(params.id) : '';
 
-    const isMobileDevice = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    // ── 1. FOR MOBILE DEVICES: SNAPSHOT COMPILATION ENGINE (GUARANTEED VISUAL PARITY WITH ALL PHOTOS) ──
-    if (isMobileDevice) {
-      const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-      if (container) {
-        const savedTransform = container.style.transform;
-        const originalSrcs = new Map<HTMLImageElement, string>();
-
-        try {
-          container.style.transform = 'none';
-
-          if (document.fonts && document.fonts.ready) {
-            try { await document.fonts.ready; } catch (e) {}
-          }
-
-          const imgElements = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
-          const originUrl = window.location.origin;
-
-          // Inline all images via proxy so Mobile Chrome/Safari never miss any photos
-          await Promise.all(
-            imgElements.map(async (img) => {
-              let src = img.getAttribute('src') || img.src;
-              if (!src || src.startsWith('data:')) return;
-
-              originalSrcs.set(img, src);
-
-              let fullUrl = src;
-              if (src.startsWith('//')) {
-                fullUrl = 'https:' + src;
-              } else if (src.startsWith('/')) {
-                fullUrl = originUrl + src;
-              }
-
-              try {
-                const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(fullUrl)}`);
-                if (proxyRes.ok) {
-                  const json = await proxyRes.json();
-                  if (json.dataUrl && json.dataUrl.startsWith('data:image')) {
-                    img.src = json.dataUrl;
-                    return;
-                  }
-                }
-              } catch (e) {}
-            })
-          );
-
-          await Promise.all(
-            imgElements.map((img) => {
-              if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
-              return new Promise((resolve) => {
-                img.onload = () => resolve(true);
-                img.onerror = () => resolve(true);
-                setTimeout(resolve, 300);
-              });
-            })
-          );
-
-          let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
-          if (pageEls.length === 0) {
-            pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
-          }
-
-          const targets = pageEls.length > 0 ? pageEls : [container];
-          const pageImages: string[] = [];
-
-          for (let i = 0; i < targets.length; i++) {
-            const target = targets[i];
-            const dataUrl = await toPng(target, {
-              quality: 0.95,
-              pixelRatio: 2,
-              cacheBust: true,
-              style: {
-                transform: 'none',
-                margin: '0',
-                padding: '0',
-                boxShadow: 'none',
-                border: 'none'
-              }
-            });
-            pageImages.push(dataUrl);
-          }
-
-          const res = await fetch('/api/quotations/pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              quotationId: routeId,
-              pageImages,
-              filename: `Quotation-${routeId || 'document'}.pdf`
-            })
-          });
-
-          if (res.ok && res.headers.get('content-type')?.includes('application/pdf')) {
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `Quotation-${routeId || 'document'}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
-            setIsExportingPDF(false);
-            return;
-          }
-        } catch (mobileErr) {
-          console.warn('[Mobile Snapshot Engine Notice]:', mobileErr);
-        } finally {
-          originalSrcs.forEach((origSrc, imgEl) => {
-            try { imgEl.src = origSrc; } catch (e) {}
-          });
-          if (container) {
-            container.style.transform = savedTransform;
-          }
-        }
-      }
-    }
-
-    // ── 2. FOR DESKTOP / PC: SERVER PUPPETEER VECTOR ENGINE ──
     try {
+      // 1. Primary Engine: Instant High-Res Server-Side Vector A4 PDF Generation (Takes 1-2s, 0% phone freezing)
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2221,21 +2099,15 @@ function StudioCoreAiryBuilderContent() {
         return;
       }
     } catch (err) {
-      console.warn('[Server PDF Engine Notice]:', err);
+      console.warn('[Server PDF Engine Notice, attempting client fallback]:', err);
     }
 
-    // ── 3. FALLBACK: DIRECT CLIENT-SIDE PDF-LIB BUILD ──
+    // 2. Client-Side Fallback Engine
     const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
     if (container) {
       const savedTransform = container.style.transform;
-
       try {
         container.style.transform = 'none';
-
-        if (document.fonts && document.fonts.ready) {
-          try { await document.fonts.ready; } catch (e) {}
-        }
-
         let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
         if (pageEls.length === 0) {
           pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
@@ -2295,7 +2167,6 @@ function StudioCoreAiryBuilderContent() {
         }
       }
     }
-    setIsExportingPDF(false);
   };
 
   useEffect(() => {
