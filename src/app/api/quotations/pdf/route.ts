@@ -10,11 +10,23 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 });
 
-// Locate Chromium executable path cross-platform (Linux VPS, Windows, Mac) fallback
 async function getChromiumExecutablePath(): Promise<string | undefined> {
   const fs = await import('fs');
 
-  const linuxPaths = [
+  try {
+    const chromium = (await import('@sparticuz/chromium')).default;
+    const path = await chromium.executablePath();
+    if (path) return path;
+  } catch (e) {
+    console.warn('[Puppeteer Core] @sparticuz/chromium executable path notice:', e);
+  }
+
+  const systemPaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
     '/usr/bin/google-chrome-stable',
@@ -23,31 +35,10 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
     process.env.CHROME_PATH
   ];
 
-  for (const path of linuxPaths) {
-    if (path && fs.existsSync(path)) {
-      return path;
+  for (const p of systemPaths) {
+    if (p && fs.existsSync(p)) {
+      return p;
     }
-  }
-
-  const winPaths = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-  ];
-
-  for (const winPath of winPaths) {
-    if (winPath && fs.existsSync(winPath)) {
-      return winPath;
-    }
-  }
-
-  try {
-    const chromium = (await import('@sparticuz/chromium')).default;
-    const path = await chromium.executablePath();
-    if (path) return path;
-  } catch (e) {
-    console.warn('[Puppeteer Core] @sparticuz/chromium executable path notice:', e);
   }
 
   return undefined;
