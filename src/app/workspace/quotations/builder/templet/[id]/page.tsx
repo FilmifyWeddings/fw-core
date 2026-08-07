@@ -21,6 +21,7 @@ import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 import { toPng } from 'html-to-image';
+import { PDFDocument } from 'pdf-lib';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
@@ -2073,47 +2074,105 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // HIGH-PRECISION UNIVERSAL A4 PDF DOWNLOAD ENGINE (DESKTOP & MOBILE COMPATIBLE)
+  // CANVA-STYLE PERFECT A4 DIRECT PDF DOWNLOAD ENGINE (DESKTOP & MOBILE 100% FULL-BLEED)
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
     const routeId = params?.id ? String(params.id) : '';
 
+    const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
+    if (!container) {
+      setIsExportingPDF(false);
+      return;
+    }
+
+    const savedTransform = container.style.transform;
+
     try {
-      // 1. First try direct server-side high-res 12-page A4 PDF binary download
-      const res = await fetch('/api/quotations/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quotationId: routeId,
-          content_json: data,
-          filename: `Quotation-${routeId || 'document'}.pdf`
-        })
-      });
+      // 1. Reset zoom transform during snapshot capture
+      container.style.transform = 'none';
 
-      if (res.ok && res.headers.get('content-type')?.includes('application/pdf')) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Quotation-${routeId || 'document'}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-        setIsExportingPDF(false);
-        return;
+      if (document.fonts && document.fonts.ready) {
+        try { await document.fonts.ready; } catch (e) {}
       }
-    } catch (err) {
-      console.warn('[Server PDF Download Notice]:', err);
-    }
 
-    // 2. Fallback: Open clean A4 print preview window in new tab for 100% reliability on Mobile & PC
-    if (routeId) {
-      window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
-    } else {
-      window.print();
+      // 2. Pre-load all images
+      const images = Array.from(container.querySelectorAll('img'));
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(true);
+            setTimeout(resolve, 500);
+          });
+        })
+      );
+
+      // 3. Find ALL page elements
+      let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
+      if (pageEls.length === 0) {
+        pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
+      }
+
+      const targets = pageEls.length > 0 ? pageEls : [container];
+
+      // 4. Create pure A4 PDF document via pdf-lib (595.28 x 841.89 points)
+      const pdfDoc = await PDFDocument.create();
+
+      for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+
+        const dataUrl = await toPng(target, {
+          quality: 0.95,
+          pixelRatio: 2,
+          cacheBust: true,
+          style: {
+            transform: 'none',
+            margin: '0',
+            padding: '0',
+            boxShadow: 'none',
+            border: 'none'
+          }
+        });
+
+        const base64Data = dataUrl.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+        const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        const embeddedImg = await pdfDoc.embedPng(imageBytes);
+
+        // Exact A4 dimensions in PDF Points (210mm x 297mm = 595.28 x 841.89 pts)
+        const pdfPage = pdfDoc.addPage([595.28, 841.89]);
+        pdfPage.drawImage(embeddedImg, {
+          x: 0,
+          y: 0,
+          width: 595.28,
+          height: 841.89
+        });
+      }
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Quotation-${routeId || 'document'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[Canva-Style A4 PDF Direct Download Error]:', err);
+      // Fallback
+      if (routeId) {
+        window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
+      } else {
+        window.print();
+      }
+    } finally {
+      if (container) {
+        container.style.transform = savedTransform;
+      }
+      setIsExportingPDF(false);
     }
-    setIsExportingPDF(false);
   };
 
   useEffect(() => {
