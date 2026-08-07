@@ -402,12 +402,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── SECONDARY SERVER FALLBACK (pdf-lib) ──
+    // If Puppeteer failed to generate pdfBuffer, return 500 so client fallback renders high-res PDF
     if (!pdfBuffer) {
-      const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([595.28, 841.89]);
-      const pdfBytes = await pdfDoc.save();
-      pdfBuffer = pdfBytes;
+      return NextResponse.json({ error: 'Puppeteer build failed' }, { status: 500 });
     }
 
     const safeFilename = (filename || `${targetId || 'Quotation'}.pdf`)
