@@ -2211,9 +2211,11 @@ function StudioCoreAiryBuilderContent() {
         }
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
+        setIsDataReady(true);
       } finally {
         setTimeout(() => {
           isInitialLoadedRef.current = true;
+          setIsDataReady(true);
           setAutoSaveStatus('Auto-saved to cloud');
         }, 100);
       }
@@ -3775,6 +3777,16 @@ function StudioCoreAiryBuilderContent() {
       </div>
     </div>
   );
+
+  // Render Guard: Never show default proposal on refresh while loading saved quotation
+  if (!isDataReady) {
+    return (
+      <div className="h-screen w-screen bg-[#EBECEF] flex flex-col items-center justify-center space-y-4 select-none">
+        <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs font-extrabold tracking-widest text-zinc-600 uppercase">Loading Saved Quotation...</p>
+      </div>
+    );
+  }
 
   // Financial Calculations for Pricing & Payment Terms
   const pricingCalculated = calculatePricingTotals(data.pricingPage);
