@@ -973,7 +973,7 @@ Approx. 50 High Resolution Edited Images
             font-variant-ligatures: none !important;
           }
           @page {
-            size: 210mm 297mm;
+            size: 794px 1123px;
             margin: 0 !important;
           }
           body, html {
@@ -982,7 +982,7 @@ Approx. 50 High Resolution Edited Images
             background: #ffffff !important;
             color: ${theme.text} !important;
             font-family: ${secondaryFont} !important;
-            width: 210mm !important;
+            width: 794px !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
@@ -994,12 +994,12 @@ Approx. 50 High Resolution Edited Images
             padding: 0 !important;
             margin: 0 !important;
             background-color: transparent !important;
-            width: 210mm !important;
+            width: 794px !important;
           }
           .pdf-page, .quotation-page, .quotation-canvas-page, section {
-            width: 210mm !important;
-            min-width: 210mm !important;
-            max-width: 210mm !important;
+            width: 794px !important;
+            min-width: 794px !important;
+            max-width: 794px !important;
             height: 295mm !important;
             min-height: 295mm !important;
             max-height: 295mm !important;

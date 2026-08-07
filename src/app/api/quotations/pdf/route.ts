@@ -345,8 +345,7 @@ export async function POST(req: NextRequest) {
       browser = await puppeteer.launch({
         args: chromiumArgs,
         defaultViewport: {
-          width: 1280,
-          height: 1810,
+          width: 794, height: 1123,
           deviceScaleFactor: 2
         },
         executablePath: executablePath || undefined,
@@ -354,7 +353,7 @@ export async function POST(req: NextRequest) {
       });
 
       const page = await browser.newPage();
-      await page.setViewport({ width: 1280, height: 1810, deviceScaleFactor: 2 });
+      await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
       await page.setContent(fullHTML, { waitUntil: ['domcontentloaded', 'networkidle0'], timeout: 25000 });
 
       await page.evaluate(async () => {
@@ -376,6 +375,8 @@ export async function POST(req: NextRequest) {
       });
 
       const rawBuffer = await page.pdf({
+      width: '794px',
+      height: '1123px',
         format: 'A4',
         printBackground: true,
         preferCSSPageSize: true,
