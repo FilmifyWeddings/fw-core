@@ -1151,103 +1151,103 @@ function ThreeDCurvedFunctionEditor({
 }
 
 function normalizeQuotationData(loaded: any) {
-  const d = DEFAULT_AIRY_PROPOSAL;
+  const d = DEFAULT_AIRY_PROPOSAL || {};
   if (!loaded || typeof loaded !== 'object') return d;
 
   return {
     ...d,
     ...loaded,
-    cover: { ...d.cover, ...(loaded.cover || {}) },
-    aboutUs: { ...d.aboutUs, ...(loaded.aboutUs || {}) },
-    shootDetails: { ...d.shootDetails, ...(loaded.shootDetails || {}) },
+    cover: { ...(d?.cover || {}), ...(loaded.cover || {}) },
+    aboutUs: { ...(d?.aboutUs || {}), ...(loaded.aboutUs || {}) },
+    shootDetails: { ...(d?.shootDetails || {}), ...(loaded.shootDetails || {}) },
     functionsPage: {
-      ...d.functionsPage,
+      ...(d?.functionsPage || {}),
       ...(loaded.functionsPage || {}),
-      items: Array.isArray(loaded.functionsPage?.items) ? loaded.functionsPage.items : d.functionsPage.items,
+      items: Array.isArray(loaded.functionsPage?.items) ? loaded.functionsPage.items : (d?.functionsPage?.items || []),
     },
     deliverablesPage: {
-      ...d.deliverablesPage,
+      ...(d?.deliverablesPage || {}),
       ...(loaded.deliverablesPage || {}),
       selectedItems: Array.isArray(loaded.deliverablesPage?.selectedItems)
         ? loaded.deliverablesPage.selectedItems
-        : d.deliverablesPage.selectedItems,
+        : (d?.deliverablesPage?.selectedItems || []),
       availableOptions: Array.isArray(loaded.deliverablesPage?.availableOptions)
         ? loaded.deliverablesPage.availableOptions
-        : d.deliverablesPage.availableOptions,
+        : (d?.deliverablesPage?.availableOptions || []),
     },
     specialValueAdditions: {
-      ...d.specialValueAdditions,
+      ...(d?.specialValueAdditions || {}),
       ...(loaded.specialValueAdditions || {}),
       selectedItems: Array.isArray(loaded.specialValueAdditions?.selectedItems)
         ? loaded.specialValueAdditions.selectedItems
-        : d.specialValueAdditions.selectedItems,
+        : (d?.specialValueAdditions?.selectedItems || []),
       availableOptions: Array.isArray(loaded.specialValueAdditions?.availableOptions)
         ? loaded.specialValueAdditions.availableOptions
-        : d.specialValueAdditions.availableOptions,
-      note: loaded.specialValueAdditions?.note ?? d.specialValueAdditions.note ?? '',
-      photo: loaded.specialValueAdditions?.photo ?? d.specialValueAdditions.photo ?? '',
-      photoHeight: loaded.specialValueAdditions?.photoHeight ?? d.specialValueAdditions.photoHeight ?? 360,
-      photoWidth: loaded.specialValueAdditions?.photoWidth ?? d.specialValueAdditions.photoWidth ?? 75,
-      photoFocalY: loaded.specialValueAdditions?.photoFocalY ?? d.specialValueAdditions.photoFocalY ?? 50,
-      bgOpacity: loaded.specialValueAdditions?.bgOpacity ?? d.specialValueAdditions.bgOpacity ?? 40,
-      frameShape: loaded.specialValueAdditions?.frameShape ?? d.specialValueAdditions.frameShape ?? 'rounded',
-      imagePosition: loaded.specialValueAdditions?.imagePosition ?? d.specialValueAdditions.imagePosition ?? 'bottom',
+        : (d?.specialValueAdditions?.availableOptions || []),
+      note: loaded.specialValueAdditions?.note ?? d?.specialValueAdditions?.note ?? '',
+      photo: loaded.specialValueAdditions?.photo ?? d?.specialValueAdditions?.photo ?? '',
+      photoHeight: loaded.specialValueAdditions?.photoHeight ?? d?.specialValueAdditions?.photoHeight ?? 360,
+      photoWidth: loaded.specialValueAdditions?.photoWidth ?? d?.specialValueAdditions?.photoWidth ?? 75,
+      photoFocalY: loaded.specialValueAdditions?.photoFocalY ?? d?.specialValueAdditions?.photoFocalY ?? 50,
+      bgOpacity: loaded.specialValueAdditions?.bgOpacity ?? d?.specialValueAdditions?.bgOpacity ?? 40,
+      frameShape: loaded.specialValueAdditions?.frameShape ?? d?.specialValueAdditions?.frameShape ?? 'rounded',
+      imagePosition: loaded.specialValueAdditions?.imagePosition ?? d?.specialValueAdditions?.imagePosition ?? 'bottom',
     },
     pricingPage: {
-      ...d.pricingPage,
+      ...(d?.pricingPage || {}),
       ...(loaded.pricingPage || {}),
-      basePrice: typeof loaded.pricingPage?.basePrice === 'number' ? loaded.pricingPage.basePrice : d.pricingPage.basePrice,
-      discountAmount: typeof loaded.pricingPage?.discountAmount === 'number' ? loaded.pricingPage.discountAmount : d.pricingPage.discountAmount,
-      accommodationCharges: typeof loaded.pricingPage?.accommodationCharges === 'number' ? loaded.pricingPage.accommodationCharges : d.pricingPage.accommodationCharges,
-      travelCharges: typeof loaded.pricingPage?.travelCharges === 'number' ? loaded.pricingPage.travelCharges : d.pricingPage.travelCharges,
-      additionalCharges: typeof loaded.pricingPage?.additionalCharges === 'number' ? loaded.pricingPage.additionalCharges : d.pricingPage.additionalCharges,
-      gstPct: typeof loaded.pricingPage?.gstPct === 'number' ? loaded.pricingPage.gstPct : d.pricingPage.gstPct,
-      note: loaded.pricingPage?.note ?? d.pricingPage.note ?? '',
-      photo: loaded.pricingPage?.photo ?? d.pricingPage.photo ?? '',
-      photoHeight: loaded.pricingPage?.photoHeight ?? d.pricingPage.photoHeight ?? 360,
-      photoWidth: loaded.pricingPage?.photoWidth ?? d.pricingPage.photoWidth ?? 75,
-      photoFocalY: loaded.pricingPage?.photoFocalY ?? d.pricingPage.photoFocalY ?? 50,
-      bgOpacity: loaded.pricingPage?.bgOpacity ?? d.pricingPage.bgOpacity ?? 40,
-      frameShape: loaded.pricingPage?.frameShape ?? d.pricingPage.frameShape ?? 'rounded',
-      imagePosition: loaded.pricingPage?.imagePosition ?? d.pricingPage.imagePosition ?? 'bottom',
+      basePrice: typeof loaded.pricingPage?.basePrice === 'number' ? loaded.pricingPage.basePrice : (d?.pricingPage?.basePrice ?? 0),
+      discountAmount: typeof loaded.pricingPage?.discountAmount === 'number' ? loaded.pricingPage.discountAmount : (d?.pricingPage?.discountAmount ?? 0),
+      accommodationCharges: typeof loaded.pricingPage?.accommodationCharges === 'number' ? loaded.pricingPage.accommodationCharges : (d?.pricingPage?.accommodationCharges ?? 0),
+      travelCharges: typeof loaded.pricingPage?.travelCharges === 'number' ? loaded.pricingPage.travelCharges : (d?.pricingPage?.travelCharges ?? 0),
+      additionalCharges: typeof loaded.pricingPage?.additionalCharges === 'number' ? loaded.pricingPage.additionalCharges : (d?.pricingPage?.additionalCharges ?? 0),
+      gstPct: typeof loaded.pricingPage?.gstPct === 'number' ? loaded.pricingPage.gstPct : (d?.pricingPage?.gstPct ?? 18),
+      note: loaded.pricingPage?.note ?? d?.pricingPage?.note ?? '',
+      photo: loaded.pricingPage?.photo ?? d?.pricingPage?.photo ?? '',
+      photoHeight: loaded.pricingPage?.photoHeight ?? d?.pricingPage?.photoHeight ?? 360,
+      photoWidth: loaded.pricingPage?.photoWidth ?? d?.pricingPage?.photoWidth ?? 75,
+      photoFocalY: loaded.pricingPage?.photoFocalY ?? d?.pricingPage?.photoFocalY ?? 50,
+      bgOpacity: loaded.pricingPage?.bgOpacity ?? d?.pricingPage?.bgOpacity ?? 40,
+      frameShape: loaded.pricingPage?.frameShape ?? d?.pricingPage?.frameShape ?? 'rounded',
+      imagePosition: loaded.pricingPage?.imagePosition ?? d?.pricingPage?.imagePosition ?? 'bottom',
     },
     paymentTermsPage: {
-      ...d.paymentTermsPage,
+      ...(d?.paymentTermsPage || {}),
       ...(loaded.paymentTermsPage || {}),
       steps: Array.isArray(loaded.paymentTermsPage?.steps)
         ? loaded.paymentTermsPage.steps
-        : d.paymentTermsPage.steps,
-      note: loaded.paymentTermsPage?.note ?? d.paymentTermsPage.note ?? '',
-      photo: loaded.paymentTermsPage?.photo ?? d.paymentTermsPage.photo ?? '',
-      photoHeight: loaded.paymentTermsPage?.photoHeight ?? d.paymentTermsPage.photoHeight ?? 360,
-      photoWidth: loaded.paymentTermsPage?.photoWidth ?? d.paymentTermsPage.photoWidth ?? 75,
-      photoFocalY: loaded.paymentTermsPage?.photoFocalY ?? d.paymentTermsPage.photoFocalY ?? 50,
-      bgOpacity: loaded.paymentTermsPage?.bgOpacity ?? d.paymentTermsPage.bgOpacity ?? 40,
-      frameShape: loaded.paymentTermsPage?.frameShape ?? d.paymentTermsPage.frameShape ?? 'rounded',
-      imagePosition: loaded.paymentTermsPage?.imagePosition ?? d.paymentTermsPage.imagePosition ?? 'bottom',
+        : (d?.paymentTermsPage?.steps || []),
+      note: loaded.paymentTermsPage?.note ?? d?.paymentTermsPage?.note ?? '',
+      photo: loaded.paymentTermsPage?.photo ?? d?.paymentTermsPage?.photo ?? '',
+      photoHeight: loaded.paymentTermsPage?.photoHeight ?? d?.paymentTermsPage?.photoHeight ?? 360,
+      photoWidth: loaded.paymentTermsPage?.photoWidth ?? d?.paymentTermsPage?.photoWidth ?? 75,
+      photoFocalY: loaded.paymentTermsPage?.photoFocalY ?? d?.paymentTermsPage?.photoFocalY ?? 50,
+      bgOpacity: loaded.paymentTermsPage?.bgOpacity ?? d?.paymentTermsPage?.bgOpacity ?? 40,
+      frameShape: loaded.paymentTermsPage?.frameShape ?? d?.paymentTermsPage?.frameShape ?? 'rounded',
+      imagePosition: loaded.paymentTermsPage?.imagePosition ?? d?.paymentTermsPage?.imagePosition ?? 'bottom',
     },
     addOnsPage: {
-      ...d.addOnsPage,
+      ...(d?.addOnsPage || {}),
       ...(loaded.addOnsPage || {}),
       items: Array.isArray(loaded.addOnsPage?.items)
         ? loaded.addOnsPage.items
-        : d.addOnsPage.items,
-      note: loaded.addOnsPage?.note ?? d.addOnsPage.note ?? '',
-      photo: loaded.addOnsPage?.photo ?? d.addOnsPage.photo ?? '',
-      photoHeight: loaded.addOnsPage?.photoHeight ?? d.addOnsPage.photoHeight ?? 360,
-      photoWidth: loaded.addOnsPage?.photoWidth ?? d.addOnsPage.photoWidth ?? 75,
-      photoFocalY: loaded.addOnsPage?.photoFocalY ?? d.addOnsPage.photoFocalY ?? 50,
-      bgOpacity: loaded.addOnsPage?.bgOpacity ?? d.addOnsPage.bgOpacity ?? 40,
-      frameShape: loaded.addOnsPage?.frameShape ?? d.addOnsPage.frameShape ?? 'rounded',
-      imagePosition: loaded.addOnsPage?.imagePosition ?? d.addOnsPage.imagePosition ?? 'bottom',
+        : (d?.addOnsPage?.items || []),
+      note: loaded.addOnsPage?.note ?? d?.addOnsPage?.note ?? '',
+      photo: loaded.addOnsPage?.photo ?? d?.addOnsPage?.photo ?? '',
+      photoHeight: loaded.addOnsPage?.photoHeight ?? d?.addOnsPage?.photoHeight ?? 360,
+      photoWidth: loaded.addOnsPage?.photoWidth ?? d?.addOnsPage?.photoWidth ?? 75,
+      photoFocalY: loaded.addOnsPage?.photoFocalY ?? d?.addOnsPage?.photoFocalY ?? 50,
+      bgOpacity: loaded.addOnsPage?.bgOpacity ?? d?.addOnsPage?.bgOpacity ?? 40,
+      frameShape: loaded.addOnsPage?.frameShape ?? d?.addOnsPage?.frameShape ?? 'rounded',
+      imagePosition: loaded.addOnsPage?.imagePosition ?? d?.addOnsPage?.imagePosition ?? 'bottom',
     },
 
     // Backwards Compatibility Aliases
-    deliverables: loaded.deliverables || loaded.deliverablesPage || { items: d.deliverablesPage.selectedItems, availableOptions: d.deliverablesPage.availableOptions, imagePosition: 'bottom' },
-    valueAdditions: loaded.valueAdditions || loaded.specialValueAdditions || { items: d.specialValueAdditions.selectedItems },
-    pricing: loaded.pricing || loaded.pricingPage || { basePrice: d.pricingPage.basePrice, discount: d.pricingPage.discountAmount, accommodation: d.pricingPage.accommodationCharges, travel: d.pricingPage.travelCharges, additional: d.pricingPage.additionalCharges, gstPercent: d.pricingPage.gstPct },
-    paymentTerms: loaded.paymentTerms || loaded.paymentTermsPage || { steps: d.paymentTermsPage.steps, fixedAmount: 0, receivedAmount: 0, pendingAmount: 0 },
-    addOns: loaded.addOns || loaded.addOnsPage || { subText: d.addOnsPage.subText, items: d.addOnsPage.items },
+    deliverables: loaded.deliverables || loaded.deliverablesPage || { items: [], availableOptions: [], imagePosition: 'bottom' },
+    valueAdditions: loaded.valueAdditions || loaded.specialValueAdditions || { items: [] },
+    pricing: loaded.pricing || loaded.pricingPage || { basePrice: 0, discount: 0, accommodation: 0, travel: 0, additional: 0, gstPercent: 18 },
+    paymentTerms: loaded.paymentTerms || loaded.paymentTermsPage || { steps: [], fixedAmount: 0, receivedAmount: 0, pendingAmount: 0 },
+    addOns: loaded.addOns || loaded.addOnsPage || { subText: '', items: [] },
   };
 }
 
