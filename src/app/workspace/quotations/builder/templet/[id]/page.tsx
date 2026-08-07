@@ -2092,6 +2092,34 @@ function StudioCoreAiryBuilderContent() {
       const savedTransform = container.style.transform;
       container.style.transform = 'none';
 
+      // Inline all DOM images to Base64 data URLs to bypass CORS on Mobile & PC
+      setExportStatusText('Inlining High-Res Photos & Icons...');
+      const imgElements = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+      await Promise.all(
+        imgElements.map(async (img) => {
+          const originalSrc = img.src || img.getAttribute('src') || '';
+          if (originalSrc && !originalSrc.startsWith('data:')) {
+            try {
+              const res = await fetch(originalSrc, { mode: 'cors' });
+              if (res.ok) {
+                const blob = await res.blob();
+                const base64 = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.readAsDataURL(blob);
+                });
+                if (base64) {
+                  img.src = base64;
+                  img.setAttribute('src', base64);
+                }
+              }
+            } catch (err) {
+              console.warn('[Image Base64 Conversion Notice]:', err);
+            }
+          }
+        })
+      );
+
       let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page, .pdf-page')) as HTMLElement[];
       if (pageEls.length === 0) {
         pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
