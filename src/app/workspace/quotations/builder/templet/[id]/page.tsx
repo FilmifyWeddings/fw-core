@@ -2084,17 +2084,52 @@ function StudioCoreAiryBuilderContent() {
         if (prev < 40) {
           setExportStatusText('Optimizing Vector Page Layouts...');
           return prev + 15;
-        } else if (prev < 80) {
+        } else if (prev < 85) {
           setExportStatusText('Inlining High-Res Assets & Fonts...');
           return prev + 10;
-        } else if (prev < 95) {
-          setExportStatusText('Finalizing PDF File Build...');
-          return prev + 5;
+        } else if (prev < 98) {
+          setExportStatusText('Finalizing PDF Download...');
+          return prev + 3;
         }
         return prev;
       });
     }, 100);
 
+    // On Mobile: Native Form Submission guarantees native Mobile Download prompt without popup blocking!
+    if (isMobileDevice) {
+      setTimeout(() => {
+        clearInterval(progressTimer);
+        setExportProgress(100);
+        setExportStatusText('Downloading PDF File...');
+
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/quotations/pdf';
+        form.style.display = 'none';
+
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'payload';
+        input.value = JSON.stringify({
+          quotationId: routeId,
+          content_json: data,
+          filename: `Quotation-${routeId || 'document'}.pdf`
+        });
+        form.appendChild(input);
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+
+        setTimeout(() => {
+          setIsExportingPDF(false);
+          setExportProgress(0);
+        }, 1200);
+      }, 600);
+      return;
+    }
+
+    // Desktop PC: Standard Fetch + Blob Download
     try {
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
@@ -2128,12 +2163,11 @@ function StudioCoreAiryBuilderContent() {
         return;
       }
     } catch (err) {
-      console.warn('[Server PDF Engine Notice, attempting mobile view fallback]:', err);
+      console.warn('[Server PDF Engine Notice, falling back to print view]:', err);
     } finally {
       clearInterval(progressTimer);
     }
 
-    // Direct Mobile View Fallback if server API is unavailable
     setExportProgress(100);
     setExportStatusText('Opening Document View...');
 

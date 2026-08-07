@@ -165,7 +165,22 @@ function makeImageUrlsAbsolute(html: string): string {
 export async function POST(req: NextRequest) {
   let browser: any = null;
   try {
-    const body = await req.json();
+    let body: any = {};
+    const contentType = req.headers.get('content-type') || '';
+    if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+      const formData = await req.formData();
+      const payloadStr = formData.get('payload') as string;
+      if (payloadStr) {
+        body = JSON.parse(payloadStr);
+      }
+    } else {
+      try {
+        body = await req.json();
+      } catch (e) {
+        body = {};
+      }
+    }
+
     const { quotationId, templateId, filename, content_json, pageSnapshots, pageImages, htmlContent: clientSnapshotHTML } = body;
     const targetId = quotationId || templateId;
 
