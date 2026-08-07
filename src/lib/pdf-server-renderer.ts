@@ -1,5 +1,6 @@
 import React from 'react';
-import QuotationDocumentCanvas, { getThemeFromKey } from '@/components/QuotationDocumentCanvas';
+import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
+import { getThemeFromKey } from '@/lib/quotation-theme';
 
 /**
  * Next.js 16 Compliant Server Renderer.

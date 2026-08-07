@@ -1759,6 +1759,7 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
 }
 
 function StudioCoreAiryBuilderContent() {
+  const [isDataReady, setIsDataReady] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const params = useParams();
