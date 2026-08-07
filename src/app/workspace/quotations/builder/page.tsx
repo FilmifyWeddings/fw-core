@@ -2013,10 +2013,10 @@ function StudioCoreAiryBuilderContent() {
 
   // Mobile Bottom Sheet Drawer State
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
-
-  // Viewport Zoom & Scaling Engine
   const [zoomScale, setZoomScale] = useState<number>(1.0);
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
+  const [exportProgress, setExportProgress] = useState<number>(0);
+  const [exportStatusText, setExportStatusText] = useState<string>('Compiling A4 PDF...');
   const [pdfToastMessage, setPdfToastMessage] = useState<string | null>(null);
 
   // Responsive Auto-Scale Calculation
@@ -2068,13 +2068,30 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // INSTANT UNIVERSAL A4 DIRECT PDF DOWNLOAD ENGINE (DESKTOP & MOBILE COMPATIBLE)
+  // INSTANT UNIVERSAL A4 DIRECT PDF DOWNLOAD ENGINE WITH PROGRESS BAR
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
+    setExportProgress(10);
+    setExportStatusText('Connecting to High-Res Server Engine...');
     const routeId = params?.id ? String(params.id) : '';
 
+    const progressTimer = setInterval(() => {
+      setExportProgress(prev => {
+        if (prev < 30) {
+          setExportStatusText('Optimizing Vector Page Layouts...');
+          return prev + 10;
+        } else if (prev < 70) {
+          setExportStatusText('Inlining High-Res Assets & Fonts...');
+          return prev + 8;
+        } else if (prev < 90) {
+          setExportStatusText('Compiling Full-Bleed A4 Pages...');
+          return prev + 3;
+        }
+        return prev;
+      });
+    }, 150);
+
     try {
-      // 1. Primary Engine: Instant High-Res Server-Side Vector A4 PDF Generation (Takes 1-2s, 0% phone freezing)
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2086,6 +2103,10 @@ function StudioCoreAiryBuilderContent() {
       });
 
       if (res.ok && res.headers.get('content-type')?.includes('application/pdf')) {
+        clearInterval(progressTimer);
+        setExportProgress(100);
+        setExportStatusText('PDF Complete! Downloading...');
+
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -2095,14 +2116,20 @@ function StudioCoreAiryBuilderContent() {
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
-        setIsExportingPDF(false);
+
+        setTimeout(() => {
+          setIsExportingPDF(false);
+          setExportProgress(0);
+        }, 500);
         return;
       }
     } catch (err) {
       console.warn('[Server PDF Engine Notice, attempting client fallback]:', err);
+    } finally {
+      clearInterval(progressTimer);
     }
 
-    // 2. Client-Side Fallback Engine
+    setExportStatusText('Running Client Snapshot Engine...');
     const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
     if (container) {
       const savedTransform = container.style.transform;
@@ -2117,6 +2144,9 @@ function StudioCoreAiryBuilderContent() {
         const pdfDoc = await PDFDocument.create();
 
         for (let i = 0; i < targets.length; i++) {
+          setExportProgress(Math.min(95, Math.round(((i + 1) / targets.length) * 100)));
+          setExportStatusText(`Rendering Page ${i + 1} of ${targets.length}...`);
+
           const target = targets[i];
           const dataUrl = await toPng(target, {
             quality: 0.95,
@@ -2144,6 +2174,8 @@ function StudioCoreAiryBuilderContent() {
           });
         }
 
+        setExportProgress(100);
+        setExportStatusText('Finalizing File Download...');
         const pdfBytes = await pdfDoc.save();
         const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
         const url = window.URL.createObjectURL(blob);
@@ -2167,6 +2199,10 @@ function StudioCoreAiryBuilderContent() {
         }
       }
     }
+    setTimeout(() => {
+      setIsExportingPDF(false);
+      setExportProgress(0);
+    }, 500);
   };
 
   useEffect(() => {
@@ -5835,6 +5871,65 @@ function StudioCoreAiryBuilderContent() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── LUXURY MINIMALIST PDF GENERATION % PROGRESS MODAL UI ── */}
+      <AnimatePresence>
+        {isExportingPDF && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-zinc-900/95 border border-amber-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center space-y-6 relative overflow-hidden"
+            >
+              {/* Ambient Glow Effects */}
+              <div className="absolute -top-10 -left-10 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Animated Download Icon Badge */}
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-amber-600/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
+                <Download className="w-7 h-7 animate-bounce" />
+              </div>
+
+              {/* Header Title */}
+              <div className="space-y-1">
+                <h3 className="text-lg font-serif tracking-wide text-zinc-100 font-semibold">
+                  Generating A4 Document
+                </h3>
+                <p className="text-xs text-zinc-400 font-sans">
+                  {exportStatusText || 'Compiling vector pages & high-res assets...'}
+                </p>
+              </div>
+
+              {/* Big Percentage Display */}
+              <div className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent font-mono">
+                {exportProgress}%
+              </div>
+
+              {/* Progress Bar Container */}
+              <div className="w-full bg-zinc-800/80 h-2.5 rounded-full overflow-hidden p-0.5 border border-zinc-700/50 shadow-inner">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-amber-600 via-amber-500 to-amber-300 rounded-full shadow-[0_0_12px_rgba(245,158,11,0.5)]"
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${exportProgress}%` }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                />
+              </div>
+
+              {/* Footer Stamp */}
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">
+                StudioCore High-DPI Direct PDF Engine
+              </p>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

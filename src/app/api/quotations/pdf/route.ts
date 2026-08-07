@@ -63,12 +63,17 @@ async function fetchAndInlineImageServer(url: string): Promise<string> {
     fetchUrl = 'https://test.studiocore.in' + fetchUrl;
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
+
   try {
     const res = await fetch(fetchUrl, {
+      signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
     });
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const contentType = res.headers.get('content-type') || 'image/jpeg';
@@ -77,7 +82,8 @@ async function fetchAndInlineImageServer(url: string): Promise<string> {
       return `data:${contentType};base64,${base64}`;
     }
   } catch (err) {
-    console.warn('[Server Image Inliner Warning] Could not fetch:', fetchUrl, err);
+    clearTimeout(timeoutId);
+    console.warn('[Server Image Inliner Fast Warning] Skipping slow/unreachable image:', fetchUrl);
   }
 
   return url;
@@ -106,9 +112,11 @@ async function deepInlineAllImagesServer(obj: any): Promise<any> {
   }
 
   if (typeof obj === 'object') {
+    const keys = Object.keys(obj);
+    const values = await Promise.all(keys.map(k => deepInlineAllImagesServer(obj[k])));
     const result: any = {};
-    for (const key of Object.keys(obj)) {
-      result[key] = await deepInlineAllImagesServer(obj[key]);
+    for (let i = 0; i < keys.length; i++) {
+      result[keys[i]] = values[i];
     }
     return result;
   }
@@ -120,21 +128,28 @@ async function inlineAllImgTagsInHTMLServer(html: string): Promise<string> {
   if (!html) return html;
 
   const matches = Array.from(html.matchAll(/src=["']([^"']+)["']/g));
-  const urlMap = new Map<string, string>();
+  const uniqueUrls: string[] = [];
 
   for (const match of matches) {
     const origUrl = match[1];
-    if (origUrl && !origUrl.startsWith('data:') && !urlMap.has(origUrl)) {
-      const inlined = await fetchAndInlineImageServer(origUrl);
-      urlMap.set(origUrl, inlined);
+    if (origUrl && !origUrl.startsWith('data:') && !uniqueUrls.includes(origUrl)) {
+      uniqueUrls.push(origUrl);
     }
   }
 
+  const inlinedResults = await Promise.all(
+    uniqueUrls.map(url => fetchAndInlineImageServer(url))
+  );
+
   let finalHTML = html;
-  urlMap.forEach((inlinedUrl, origUrl) => {
-    finalHTML = finalHTML.replaceAll(`src="${origUrl}"`, `src="${inlinedUrl}"`);
-    finalHTML = finalHTML.replaceAll(`src='${origUrl}'`, `src='${inlinedUrl}'`);
-  });
+  for (let i = 0; i < uniqueUrls.length; i++) {
+    const origUrl = uniqueUrls[i];
+    const inlinedUrl = inlinedResults[i];
+    if (inlinedUrl && inlinedUrl !== origUrl) {
+      finalHTML = finalHTML.replaceAll(`src="${origUrl}"`, `src="${inlinedUrl}"`);
+      finalHTML = finalHTML.replaceAll(`src='${origUrl}'`, `src='${inlinedUrl}'`);
+    }
+  }
 
   return finalHTML;
 }
