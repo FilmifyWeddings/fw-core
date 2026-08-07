@@ -2068,32 +2068,69 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
+  // INVISIBLE BACKGROUND PRINT IFRAME ENGINE (0 Visible New Tabs, 0 Screen Hang, Direct Native Mobile Print Dialog)
+  const triggerMobileBackgroundPrint = (routeId: string) => {
+    const existingFrame = document.getElementById('hidden-mobile-print-iframe');
+    if (existingFrame) existingFrame.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'hidden-mobile-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    iframe.src = `/workspace/quotations/view/${routeId || 'FW-2026-001'}?print=true`;
+
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (e) {
+          console.warn('[Hidden Mobile Print Fallback Warning]:', e);
+        }
+      }, 400);
+    };
+  };
+
   // INSTANT UNIVERSAL A4 DIRECT PDF DOWNLOAD ENGINE WITH PROGRESS BAR
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
-    setExportProgress(10);
-    setExportStatusText('Connecting to High-Res Server Engine...');
+    setExportProgress(15);
+    setExportStatusText('Preparing Full-Bleed A4 Document...');
     const routeId = params?.id ? String(params.id) : '';
+
+    const isMobileDevice = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     const progressTimer = setInterval(() => {
       setExportProgress(prev => {
-        if (prev < 30) {
+        if (prev < 40) {
           setExportStatusText('Optimizing Vector Page Layouts...');
-          return prev + 10;
-        } else if (prev < 70) {
+          return prev + 12;
+        } else if (prev < 80) {
           setExportStatusText('Inlining High-Res Assets & Fonts...');
           return prev + 8;
-        } else if (prev < 90) {
-          setExportStatusText('Compiling Full-Bleed A4 Pages...');
+        } else if (prev < 95) {
+          setExportStatusText('Finalizing A4/B5 Page Compilation...');
           return prev + 3;
         }
         return prev;
       });
-    }, 150);
+    }, 120);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
 
     try {
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quotationId: routeId,
@@ -2101,11 +2138,12 @@ function StudioCoreAiryBuilderContent() {
           filename: `Quotation-${routeId || 'document'}.pdf`
         })
       });
+      clearTimeout(timeoutId);
 
       if (res.ok && res.headers.get('content-type')?.includes('application/pdf')) {
         clearInterval(progressTimer);
         setExportProgress(100);
-        setExportStatusText('PDF Complete! Downloading...');
+        setExportStatusText('Document Ready! Downloading...');
 
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
@@ -2120,89 +2158,25 @@ function StudioCoreAiryBuilderContent() {
         setTimeout(() => {
           setIsExportingPDF(false);
           setExportProgress(0);
-        }, 500);
+        }, 400);
         return;
       }
     } catch (err) {
-      console.warn('[Server PDF Engine Notice, attempting client fallback]:', err);
+      clearTimeout(timeoutId);
+      console.warn('[Server PDF Engine Timeout/Notice, switching to Fast Mobile Print Engine]:', err);
     } finally {
       clearInterval(progressTimer);
     }
 
-    setExportStatusText('Running Client Snapshot Engine...');
-    const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-    if (container) {
-      const savedTransform = container.style.transform;
-      try {
-        container.style.transform = 'none';
-        let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
-        if (pageEls.length === 0) {
-          pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
-        }
+    setExportProgress(100);
+    setExportStatusText('Opening Direct PDF Print Dialog...');
 
-        const targets = pageEls.length > 0 ? pageEls : [container];
-        const pdfDoc = await PDFDocument.create();
+    triggerMobileBackgroundPrint(routeId);
 
-        for (let i = 0; i < targets.length; i++) {
-          setExportProgress(Math.min(95, Math.round(((i + 1) / targets.length) * 100)));
-          setExportStatusText(`Rendering Page ${i + 1} of ${targets.length}...`);
-
-          const target = targets[i];
-          const dataUrl = await toPng(target, {
-            quality: 0.95,
-            pixelRatio: 2,
-            cacheBust: true,
-            style: {
-              transform: 'none',
-              margin: '0',
-              padding: '0',
-              boxShadow: 'none',
-              border: 'none'
-            }
-          });
-
-          const base64Data = dataUrl.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
-          const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-          const embeddedImg = await pdfDoc.embedPng(imageBytes);
-
-          const pdfPage = pdfDoc.addPage([595.28, 841.89]);
-          pdfPage.drawImage(embeddedImg, {
-            x: 0,
-            y: 0,
-            width: 595.28,
-            height: 841.89
-          });
-        }
-
-        setExportProgress(100);
-        setExportStatusText('Finalizing File Download...');
-        const pdfBytes = await pdfDoc.save();
-        const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Quotation-${routeId || 'document'}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-      } catch (err) {
-        console.error('[Canva-Style A4 PDF Direct Download Error]:', err);
-        if (routeId) {
-          window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
-        } else {
-          window.print();
-        }
-      } finally {
-        if (container) {
-          container.style.transform = savedTransform;
-        }
-      }
-    }
     setTimeout(() => {
       setIsExportingPDF(false);
       setExportProgress(0);
-    }, 500);
+    }, 600);
   };
 
   useEffect(() => {
