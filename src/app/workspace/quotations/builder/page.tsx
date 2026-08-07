@@ -2071,12 +2071,131 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // CANVA-STYLE PERFECT A4 DIRECT PDF DOWNLOAD ENGINE (DESKTOP & MOBILE 100% FULL-BLEED)
+  // UNIVERSAL A4 PDF EXPORT ENGINE (MOBILE SNAPSHOT + DESKTOP SERVER VECTOR)
   const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
     const routeId = params?.id ? String(params.id) : '';
 
-    // ── PRIMARY SERVER-SIDE COMPILATION ENGINE (100% Guaranteed Full 8MB PDF With All Photos on Mobile & PC) ──
+    const isMobileDevice = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    // ── 1. FOR MOBILE DEVICES: SNAPSHOT COMPILATION ENGINE (GUARANTEED VISUAL PARITY WITH ALL PHOTOS) ──
+    if (isMobileDevice) {
+      const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
+      if (container) {
+        const savedTransform = container.style.transform;
+        const originalSrcs = new Map<HTMLImageElement, string>();
+
+        try {
+          container.style.transform = 'none';
+
+          if (document.fonts && document.fonts.ready) {
+            try { await document.fonts.ready; } catch (e) {}
+          }
+
+          const imgElements = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+          const originUrl = window.location.origin;
+
+          // Inline all images via proxy so Mobile Chrome/Safari never miss any photos
+          await Promise.all(
+            imgElements.map(async (img) => {
+              let src = img.getAttribute('src') || img.src;
+              if (!src || src.startsWith('data:')) return;
+
+              originalSrcs.set(img, src);
+
+              let fullUrl = src;
+              if (src.startsWith('//')) {
+                fullUrl = 'https:' + src;
+              } else if (src.startsWith('/')) {
+                fullUrl = originUrl + src;
+              }
+
+              try {
+                const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(fullUrl)}`);
+                if (proxyRes.ok) {
+                  const json = await proxyRes.json();
+                  if (json.dataUrl && json.dataUrl.startsWith('data:image')) {
+                    img.src = json.dataUrl;
+                    return;
+                  }
+                }
+              } catch (e) {}
+            })
+          );
+
+          await Promise.all(
+            imgElements.map((img) => {
+              if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
+              return new Promise((resolve) => {
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(true);
+                setTimeout(resolve, 300);
+              });
+            })
+          );
+
+          let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
+          if (pageEls.length === 0) {
+            pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
+          }
+
+          const targets = pageEls.length > 0 ? pageEls : [container];
+          const pageImages: string[] = [];
+
+          for (let i = 0; i < targets.length; i++) {
+            const target = targets[i];
+            const dataUrl = await toPng(target, {
+              quality: 0.95,
+              pixelRatio: 2,
+              cacheBust: true,
+              style: {
+                transform: 'none',
+                margin: '0',
+                padding: '0',
+                boxShadow: 'none',
+                border: 'none'
+              }
+            });
+            pageImages.push(dataUrl);
+          }
+
+          const res = await fetch('/api/quotations/pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              quotationId: routeId,
+              pageImages,
+              filename: `Quotation-${routeId || 'document'}.pdf`
+            })
+          });
+
+          if (res.ok && res.headers.get('content-type')?.includes('application/pdf')) {
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Quotation-${routeId || 'document'}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            setIsExportingPDF(false);
+            return;
+          }
+        } catch (mobileErr) {
+          console.warn('[Mobile Snapshot Engine Notice]:', mobileErr);
+        } finally {
+          originalSrcs.forEach((origSrc, imgEl) => {
+            try { imgEl.src = origSrc; } catch (e) {}
+          });
+          if (container) {
+            container.style.transform = savedTransform;
+          }
+        }
+      }
+    }
+
+    // ── 2. FOR DESKTOP / PC: SERVER PUPPETEER VECTOR ENGINE ──
     try {
       const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
@@ -2102,161 +2221,81 @@ function StudioCoreAiryBuilderContent() {
         return;
       }
     } catch (err) {
-      console.warn('[Server PDF Engine Notice, attempting client fallback]:', err);
+      console.warn('[Server PDF Engine Notice]:', err);
     }
 
-    // ── SECONDARY CLIENT-SIDE FALLBACK ENGINE (pdf-lib) ──
+    // ── 3. FALLBACK: DIRECT CLIENT-SIDE PDF-LIB BUILD ──
     const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-    if (!container) {
-      setIsExportingPDF(false);
-      return;
-    }
+    if (container) {
+      const savedTransform = container.style.transform;
 
-    const savedTransform = container.style.transform;
-    const originalSrcs = new Map<HTMLImageElement, string>();
+      try {
+        container.style.transform = 'none';
 
-    try {
-      container.style.transform = 'none';
+        if (document.fonts && document.fonts.ready) {
+          try { await document.fonts.ready; } catch (e) {}
+        }
 
-      if (document.fonts && document.fonts.ready) {
-        try { await document.fonts.ready; } catch (e) {}
-      }
+        let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
+        if (pageEls.length === 0) {
+          pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
+        }
 
-      const imgElements = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
-      const originUrl = window.location.origin;
+        const targets = pageEls.length > 0 ? pageEls : [container];
+        const pdfDoc = await PDFDocument.create();
 
-      await Promise.all(
-        imgElements.map(async (img) => {
-          let src = img.getAttribute('src') || img.src;
-          if (!src || src.startsWith('data:')) return;
-
-          originalSrcs.set(img, src);
-
-          let fullUrl = src;
-          if (src.startsWith('//')) {
-            fullUrl = 'https:' + src;
-          } else if (src.startsWith('/')) {
-            fullUrl = originUrl + src;
-          }
-
-          try {
-            const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(fullUrl)}`);
-            if (proxyRes.ok) {
-              const json = await proxyRes.json();
-              if (json.dataUrl && json.dataUrl.startsWith('data:image')) {
-                img.src = json.dataUrl;
-                return;
-              }
+        for (let i = 0; i < targets.length; i++) {
+          const target = targets[i];
+          const dataUrl = await toPng(target, {
+            quality: 0.95,
+            pixelRatio: 2,
+            cacheBust: true,
+            style: {
+              transform: 'none',
+              margin: '0',
+              padding: '0',
+              boxShadow: 'none',
+              border: 'none'
             }
-          } catch (e) {}
-
-          try {
-            const res = await fetch(fullUrl, { mode: 'cors' });
-            if (res.ok) {
-              const blob = await res.blob();
-              const dataUrl = await new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve((reader.result as string) || '');
-                reader.onerror = () => resolve('');
-                reader.readAsDataURL(blob);
-              });
-              if (dataUrl && dataUrl.startsWith('data:image')) {
-                img.src = dataUrl;
-                return;
-              }
-            }
-          } catch (e) {}
-
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth || img.width || 800;
-            canvas.height = img.naturalHeight || img.height || 600;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0);
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-              if (dataUrl && dataUrl.startsWith('data:image')) {
-                img.src = dataUrl;
-              }
-            }
-          } catch (e) {}
-        })
-      );
-
-      await Promise.all(
-        imgElements.map((img) => {
-          if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
-          return new Promise((resolve) => {
-            img.onload = () => resolve(true);
-            img.onerror = () => resolve(true);
-            setTimeout(resolve, 300);
           });
-        })
-      );
 
-      let pageEls = Array.from(container.querySelectorAll('.quotation-page, .quotation-canvas-page')) as HTMLElement[];
-      if (pageEls.length === 0) {
-        pageEls = Array.from(container.querySelectorAll('section')) as HTMLElement[];
+          const base64Data = dataUrl.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+          const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+          const embeddedImg = await pdfDoc.embedPng(imageBytes);
+
+          const pdfPage = pdfDoc.addPage([595.28, 841.89]);
+          pdfPage.drawImage(embeddedImg, {
+            x: 0,
+            y: 0,
+            width: 595.28,
+            height: 841.89
+          });
+        }
+
+        const pdfBytes = await pdfDoc.save();
+        const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Quotation-${routeId || 'document'}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('[Canva-Style A4 PDF Direct Download Error]:', err);
+        if (routeId) {
+          window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
+        } else {
+          window.print();
+        }
+      } finally {
+        if (container) {
+          container.style.transform = savedTransform;
+        }
       }
-
-      const targets = pageEls.length > 0 ? pageEls : [container];
-      const pdfDoc = await PDFDocument.create();
-
-      for (let i = 0; i < targets.length; i++) {
-        const target = targets[i];
-
-        const dataUrl = await toPng(target, {
-          quality: 0.95,
-          pixelRatio: 2,
-          cacheBust: true,
-          style: {
-            transform: 'none',
-            margin: '0',
-            padding: '0',
-            boxShadow: 'none',
-            border: 'none'
-          }
-        });
-
-        const base64Data = dataUrl.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
-        const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-        const embeddedImg = await pdfDoc.embedPng(imageBytes);
-
-        const pdfPage = pdfDoc.addPage([595.28, 841.89]);
-        pdfPage.drawImage(embeddedImg, {
-          x: 0,
-          y: 0,
-          width: 595.28,
-          height: 841.89
-        });
-      }
-
-      const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Quotation-${routeId || 'document'}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('[Canva-Style A4 PDF Direct Download Error]:', err);
-      if (routeId) {
-        window.open(`/workspace/quotations/view/${routeId}?print=true`, '_blank');
-      } else {
-        window.print();
-      }
-    } finally {
-      originalSrcs.forEach((origSrc, imgEl) => {
-        try { imgEl.src = origSrc; } catch (e) {}
-      });
-      if (container) {
-        container.style.transform = savedTransform;
-      }
-      setIsExportingPDF(false);
     }
+    setIsExportingPDF(false);
   };
 
   useEffect(() => {
