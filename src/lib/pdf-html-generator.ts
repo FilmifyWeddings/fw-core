@@ -432,7 +432,7 @@ export function renderQuotationToHTML(documentData: any): string {
       const bannerImgHTML = renderSectionImage(
         shootPhoto,
         shootDetails.frameShape || 'arch',
-        shootDetails.photoHeight || 450,
+        Math.min(shootDetails.photoHeight || 220, 220),
         shootDetails.photoWidth || 75,
         shootDetails.photoFocalY || 50,
         shootDetails.bgOpacity || 40,
@@ -455,7 +455,7 @@ Approx. 50 High Resolution Edited Images
         .split('\n').filter(Boolean);
 
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+        <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:36px 44px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
           ${shootPhoto && shootDetails.frameShape === 'background' ? bannerImgHTML : ''}
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
@@ -511,7 +511,7 @@ Approx. 50 High Resolution Edited Images
       const bannerImgHTML = renderSectionImage(
         funcPhoto,
         functionsPage.frameShape || 'arch',
-        functionsPage.photoHeight || 450,
+        Math.min(functionsPage.photoHeight || 200, 200),
         functionsPage.photoWidth || 75,
         functionsPage.photoFocalY || 50,
         functionsPage.bgOpacity || 40,
@@ -528,15 +528,15 @@ Approx. 50 High Resolution Edited Images
       if (allItems.length === 0) {
         funcChunks.push([]);
       } else {
-        for (let i = 0; i < allItems.length; i += 3) {
-          funcChunks.push(allItems.slice(i, i + 3));
+        for (let i = 0; i < allItems.length; i += 2) {
+          funcChunks.push(allItems.slice(i, i + 2));
         }
       }
 
       funcChunks.forEach((chunkItems: any[], chunkIdx: number) => {
         let itemsHTML = '';
         chunkItems.forEach((func: any, index: number) => {
-          const globalIdx = chunkIdx * 3 + index;
+          const globalIdx = chunkIdx * 2 + index;
           const funcName = func.name || func.title || `Function ${globalIdx + 1}`;
           const timingStr = [
             func.dateNotFixed ? 'DATE NOT FIXED' : (func.date || func.dateTime || ''),
@@ -589,9 +589,9 @@ Approx. 50 High Resolution Edited Images
           ` : '';
 
           itemsHTML += `
-            <div style="padding:12px 16px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:6px;margin-bottom:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;width:100%;">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid ${theme.borderColor};padding-bottom:6px;">
-                <h3 style="font-family:${primaryFont};font-size:18px;letter-spacing:0.08em;font-weight:600;text-transform:uppercase;margin:0;color:${theme.text};">${funcName}</h3>
+            <div style="padding:10px 14px;border-radius:14px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};box-sizing:border-box;display:flex;flex-direction:column;gap:4px;margin-bottom:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;width:100%;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid ${theme.borderColor};padding-bottom:4px;">
+                <h3 style="font-family:${primaryFont};font-size:17px;letter-spacing:0.08em;font-weight:600;text-transform:uppercase;margin:0;color:${theme.text};">${funcName}</h3>
                 ${timingStr ? `
                   <div style="font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 8px;border-radius:20px;border:1px solid ${theme.borderColor};background-color:${theme.background};color:${theme.kicker};white-space:nowrap;display:flex;align-items:center;">
                     ${calendarIconSVG}
@@ -616,25 +616,25 @@ Approx. 50 High Resolution Edited Images
         const showImage = chunkIdx === 0;
 
         pagesHTML += `
-          <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:36px 44px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          <section class="pdf-page quotation-canvas-page" style="width:794px;min-width:794px;max-width:794px;height:1123px;min-height:1123px;max-height:1123px;padding:32px 40px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
             ${showImage && funcPhoto && functionsPage.frameShape === 'background' ? bannerImgHTML : ''}
 
             <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
               <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
                 ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'top' ? bannerImgHTML : ''}
 
-                <div style="text-align:center;margin:6px 0;">
-                  <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:4px;">
+                <div style="text-align:center;margin:4px 0;">
+                  <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:2px;">
                     ${functionsPage.kicker || 'EVENT SCHEDULE'} ${funcChunks.length > 1 ? `(${chunkIdx + 1}/${funcChunks.length})` : ''}
                   </span>
-                  <h2 style="font-family:${primaryFont};font-size:30px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                  <h2 style="font-family:${primaryFont};font-size:28px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
                     ${functionsPage.heading || 'Functions & Coverage'}
                   </h2>
                 </div>
 
                 ${showImage && funcPhoto && functionsPage.frameShape !== 'background' && functionsPage.imagePosition === 'center' ? bannerImgHTML : ''}
 
-                <div style="width:100%;max-width:640px;margin:6px auto;">
+                <div style="width:100%;max-width:640px;margin:4px auto;">
                   ${itemsHTML}
                 </div>
 
@@ -651,7 +651,7 @@ Approx. 50 High Resolution Edited Images
       const bannerImgHTML = renderSectionImage(
         delivPhoto,
         deliverablesPage.frameShape || 'arch',
-        deliverablesPage.photoHeight || 450,
+        Math.min(deliverablesPage.photoHeight || 200, 200),
         deliverablesPage.photoWidth || 75,
         deliverablesPage.photoFocalY || 50,
         deliverablesPage.bgOpacity || 40,
@@ -666,8 +666,8 @@ Approx. 50 High Resolution Edited Images
       if (allDelivs.length === 0) {
         delivChunks.push([]);
       } else {
-        for (let i = 0; i < allDelivs.length; i += 5) {
-          delivChunks.push(allDelivs.slice(i, i + 5));
+        for (let i = 0; i < allDelivs.length; i += 4) {
+          delivChunks.push(allDelivs.slice(i, i + 4));
         }
       }
 
