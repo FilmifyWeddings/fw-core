@@ -2068,21 +2068,14 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // INSTANT MILLISECOND DIRECT A4 PRINT & SAVE AS PDF ENGINE (MOBILE & PC)
+  // INSTANT DIRECT A4 PRINT & SAVE AS PDF ENGINE (MOBILE & PC)
   const handleDownloadPDFCanvas = () => {
-    const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-    const savedTransform = container ? container.style.transform : '';
-
-    if (container) {
-      container.style.transform = 'none';
-    }
-
-    setTimeout(() => {
+    const routeId = params?.id ? String(params.id) : '';
+    if (routeId) {
+      window.location.href = `/workspace/quotations/view/${routeId}?print=true`;
+    } else {
       window.print();
-      if (container) {
-        container.style.transform = savedTransform;
-      }
-    }, 50);
+    }
   };
 
   useEffect(() => {

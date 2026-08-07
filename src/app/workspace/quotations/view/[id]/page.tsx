@@ -39,49 +39,7 @@ export default function QuotationViewPage() {
     const container = document.getElementById('quotation-canvas-container');
     if (!container) return;
 
-    // 1. Force explicit image pixel dimensions and display block
-    const images = container.querySelectorAll('img');
-    images.forEach((img: HTMLImageElement) => {
-      const rect = img.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        img.style.width = `${rect.width}px`;
-        img.style.height = `${rect.height}px`;
-      }
-      img.style.display = 'block';
-      img.style.objectFit = 'cover';
-      img.style.setProperty('-webkit-print-color-adjust', 'exact', 'important');
-      img.style.setProperty('print-color-adjust', 'exact', 'important');
-    });
-
-    // 2. Freeze computed CSS inline on all child nodes
-    const allNodes = container.querySelectorAll('*');
-    allNodes.forEach((node) => {
-      const el = node as HTMLElement;
-      if (!el.style) return;
-      const cs = window.getComputedStyle(el);
-
-      const props = [
-        'backgroundColor', 'color', 'borderColor', 'borderWidth', 'borderStyle', 'borderRadius',
-        'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-        'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
-        'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform',
-        'display', 'flexDirection', 'justifyContent', 'alignItems', 'gap', 'gridTemplateColumns',
-        'boxSizing', 'opacity'
-      ];
-
-      props.forEach((prop) => {
-        const cssProp = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
-        const val = cs.getPropertyValue(cssProp);
-        if (val && val !== 'initial' && val !== 'normal' && val !== 'none' && val !== '0px 0px 0px 0px') {
-          el.style.setProperty(cssProp, val, 'important');
-        }
-      });
-
-      el.style.setProperty('-webkit-print-color-adjust', 'exact', 'important');
-      el.style.setProperty('print-color-adjust', 'exact', 'important');
-    });
-
-    // 3. Inject font definitions if missing
+    // Inject font definitions if missing
     let fontStyleTag = document.getElementById('embedded-print-fonts');
     if (!fontStyleTag) {
       fontStyleTag = document.createElement('style');
