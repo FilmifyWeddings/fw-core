@@ -20,6 +20,9 @@ export async function GET(
       return NextResponse.json({ error: 'Quotation ID is required' }, { status: 400 });
     }
 
+    const url = new URL(req.url);
+    const isPrint = url.searchParams.get('print') === 'true';
+
     const { data: doc } = await supabaseAdmin
       .from('quotation_documents')
       .select('content_json')
@@ -27,7 +30,11 @@ export async function GET(
       .maybeSingle();
 
     const documentData = doc?.content_json || { templateId: id };
-    const html = renderQuotationToHTML(documentData);
+    let html = renderQuotationToHTML(documentData);
+
+    if (isPrint) {
+      html += `\n<script>window.onload = function() { setTimeout(function() { window.print(); }, 350); };</script>`;
+    }
 
     return new NextResponse(html, {
       status: 200,

@@ -996,14 +996,14 @@ Approx. 50 High Resolution Edited Images
             background-color: transparent !important;
             width: 210mm !important;
           }
-          .pdf-page, .quotation-canvas-page {
+          .pdf-page, .quotation-page, .quotation-canvas-page, section {
             width: 210mm !important;
             min-width: 210mm !important;
             max-width: 210mm !important;
             height: 297mm !important;
             min-height: 297mm !important;
             max-height: 297mm !important;
-            padding: 48px !important;
+            padding: 36px 40px !important;
             position: relative !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
@@ -1011,11 +1011,18 @@ Approx. 50 High Resolution Edited Images
             box-shadow: none !important;
             margin: 0 !important;
             background-color: ${theme.background} !important;
+            page-break-before: always !important;
             page-break-after: always !important;
+            break-before: page !important;
             break-after: page !important;
             page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
-          .pdf-page:last-child, .quotation-canvas-page:last-child, section:last-child, section:last-of-type {
+          .pdf-page:first-child, .quotation-page:first-child, section:first-child {
+            page-break-before: avoid !important;
+            break-before: avoid !important;
+          }
+          .pdf-page:last-child, .quotation-page:last-child, .quotation-canvas-page:last-child, section:last-child, section:last-of-type {
             page-break-after: avoid !important;
             break-after: avoid !important;
             margin-bottom: 0 !important;

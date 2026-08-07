@@ -2072,7 +2072,7 @@ function StudioCoreAiryBuilderContent() {
   const handleDownloadPDFCanvas = () => {
     const routeId = params?.id ? String(params.id) : '';
     if (routeId) {
-      window.location.href = `/workspace/quotations/view/${routeId}?print=true`;
+      window.location.href = `/api/quotations/${routeId}/render-html?print=true`;
     } else {
       window.print();
     }
