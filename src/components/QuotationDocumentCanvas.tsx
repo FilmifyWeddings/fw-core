@@ -1157,23 +1157,28 @@ function paginateFunctionItems(items: any[]): any[][] {
   const pages: any[][] = [];
   let currentPage: any[] = [];
   let currentHeight = 0;
-  const maxUsableHeight = 780;
+  const maxUsableHeight = 820;
 
   items.forEach((item) => {
-    const titleH = 32;
-    const dateH = (item.date || item.dateNotFixed) ? 24 : 0;
-    const locH = item.location ? 24 : 0;
-    
+    let cardHeight = 84;
+
+    if (item.location || item.venue) {
+      cardHeight += 24;
+    }
+
     const reqs = Array.isArray(item.requirements) ? item.requirements : [];
-    const reqsCount = reqs.filter((r: any) => r.qty > 0).length;
-    const reqsH = reqsCount > 0 ? Math.ceil(reqsCount / 3) * 26 : 0;
+    if (reqs.length > 0) {
+      const rows = Math.ceil(reqs.length / 2);
+      cardHeight += 18 + (rows * 24);
+    } else if (item.team) {
+      cardHeight += 24;
+    }
 
-    const notesStr = String(item.notes || '');
-    const notesLen = notesStr.length;
-    const notesLines = notesLen > 0 ? Math.max(1, Math.ceil(notesLen / 55)) : 0;
-    const notesH = notesLines * 22;
-
-    const cardHeight = 32 + titleH + dateH + locH + reqsH + notesH + 20;
+    if (item.notes) {
+      const notesStr = String(item.notes);
+      const linesCount = Math.max(1, Math.ceil(notesStr.length / 60));
+      cardHeight += 12 + (linesCount * 22);
+    }
 
     if (currentPage.length === 0 || (currentHeight + cardHeight <= maxUsableHeight)) {
       currentPage.push(item);
