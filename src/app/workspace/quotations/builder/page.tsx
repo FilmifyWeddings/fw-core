@@ -3797,42 +3797,55 @@ function StudioCoreAiryBuilderContent() {
             size: A4 portrait;
             margin: 0 !important;
           }
-          body, html {
+          html, body {
+            width: 100% !important;
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
             background: #ffffff !important;
-            color: #000000 !important;
             margin: 0 !important;
             padding: 0 !important;
-            overflow: visible !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          header, aside, .no-print, button, nav, .page-indicator {
+          aside, nav, header, footer, .sidebar-container, .builder-sidebar, .platform-header, .no-print, .canva-page-label, .mobile-bottom-bar, #builder-sidebar-panel {
             display: none !important;
           }
-          main {
-            padding: 0 !important;
-            margin: 0 !important;
-            width: 100% !important;
-            background: transparent !important;
+          main, .flex-1, #quotation-canvas-container, .proposal-canvas-container, .canvas-wrapper {
             overflow: visible !important;
-          }
-          .quotation-page, .quotation-canvas-page {
-            box-shadow: none !important;
-            margin: 0 auto !important;
-            width: 210mm !important;
-            height: 297mm !important;
-            box-sizing: border-box !important;
-            page-break-after: always !important;
-            page-break-inside: avoid !important;
-            break-after: page !important;
-            break-inside: avoid !important;
-            overflow: hidden !important;
-          }
-          .proposal-canvas-container {
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+            position: static !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
             transform: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+          }
+          .quotation-canvas-page, .quotation-page, section {
             width: 794px !important;
+            height: 1123px !important;
+            min-height: 1123px !important;
+            max-height: 1123px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
             margin: 0 auto !important;
             padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .quotation-canvas-page:last-child, .quotation-page:last-child, section:last-child {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+            page-break-after: unset !important;
+            break-after: unset !important;
           }
         }
       `}</style>

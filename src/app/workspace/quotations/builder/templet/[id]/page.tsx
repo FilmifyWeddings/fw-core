@@ -3794,47 +3794,58 @@ function StudioCoreAiryBuilderContent() {
         }
         @media print {
           @page {
-            size: 210mm 297mm;
-            margin: 0;
+            size: A4 portrait;
+            margin: 0 !important;
           }
           html, body {
-            width: 210mm;
-            height: 297mm;
+            width: 100% !important;
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
             background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          /* Hide everything by default */
-          body * {
-            visibility: hidden !important;
-          }
-          /* Hide sidebar navigation completely */
-          nav, sidebar, .sidebar-container, .builder-sidebar, .platform-header, header, aside, .no-print {
+          aside, nav, header, footer, .sidebar-container, .builder-sidebar, .platform-header, .no-print, .canva-page-label, .mobile-bottom-bar, #builder-sidebar-panel {
             display: none !important;
           }
-          /* Make ONLY the quotation paper container visible */
-          #quotation-canvas-container, #quotation-canvas-container * {
-            visibility: visible !important;
-          }
-          #quotation-canvas-container {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 210mm !important;
+          main, .flex-1, #quotation-canvas-container, .proposal-canvas-container, .canvas-wrapper {
+            overflow: visible !important;
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+            position: static !important;
+            width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
             transform: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
           }
-          .quotation-canvas-page {
-            width: 210mm !important;
-            height: 297mm !important;
-            min-height: 297mm !important;
-            max-height: 297mm !important;
-            page-break-after: always !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
+          .quotation-canvas-page, .quotation-page, section {
+            width: 794px !important;
+            height: 1123px !important;
+            min-height: 1123px !important;
+            max-height: 1123px !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .quotation-canvas-page:last-child, .quotation-page:last-child, section:last-child {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+            page-break-after: unset !important;
+            break-after: unset !important;
           }
         }
       `}</style>
