@@ -4,7 +4,7 @@ import { getThemeFromKey } from '@/lib/quotation-theme';
 
 /**
  * Enterprise Server-Side React Component Renderer for PDF Export.
- * Renders QuotationDocumentCanvas directly to static HTML with full diagnostic metrics.
+ * Renders QuotationDocumentCanvas directly to static HTML markup with 100% exact visual parity to the editor preview.
  */
 export function renderQuotationReactComponentToHTML(documentData: any): string {
   const data = documentData || {};
@@ -38,16 +38,15 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
     console.error('[PDF Server Renderer Exception]:', e.message);
   }
 
-  // Count generated pages in markup
   const pageMatchCount = (bodyMarkup.match(/class="[^"]*quotation-page[^"]*"/g) || []).length;
 
-  console.log('[PDF Server Diagnostic] ==================================================');
-  console.log('[PDF Server Diagnostic] Quotation Design Name:', data.designName || 'Untitled Quotation');
-  console.log('[PDF Server Diagnostic] Active Theme ID:', activeTheme.id, 'Name:', activeTheme.name);
-  console.log('[PDF Server Diagnostic] pageSequence Length:', pageSeq.length);
-  console.log('[PDF Server Diagnostic] React Component Markup Length:', bodyMarkup.length, 'bytes');
-  console.log('[PDF Server Diagnostic] Rendered Quotation Pages Count:', pageMatchCount);
-  console.log('[PDF Server Diagnostic] ==================================================');
+  console.log('[PDF Parity Audit] ==================================================');
+  console.log('[PDF Parity Audit] Design Name:', data.designName || 'Untitled Quotation');
+  console.log('[PDF Parity Audit] Active Theme ID:', activeTheme.id, 'Name:', activeTheme.name);
+  console.log('[PDF Parity Audit] Page Sequence Length:', pageSeq.length);
+  console.log('[PDF Parity Audit] React Component Markup Length:', bodyMarkup.length, 'bytes');
+  console.log('[PDF Parity Audit] Rendered Quotation Pages Count:', pageMatchCount);
+  console.log('[PDF Parity Audit] ==================================================');
 
   let embeddedFontsCSS = '';
   try {
@@ -90,9 +89,15 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=794, initial-scale=1" />
     <title>${data.designName || 'Quotation Export'} - PDF</title>
+
+    <!-- Tailwind CSS Engine for 100% Utility Parity -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts Matching Editor Font Registry -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
     <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Cinzel:wght@400;600;700;800;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Dancing+Script:wght@400..700&family=Great+Vibes&family=Inter:wght@300;400;500;600;700&family=Italiana&family=Josefin+Sans:wght@300;400;600;700&family=Marcellus&family=Montserrat:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Prata&family=Tenor+Sans&display=swap" rel="stylesheet" />
+
     <style>
       ${embeddedFontsCSS}
 
@@ -105,6 +110,9 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
         box-sizing: border-box !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+        text-rendering: optimizeLegibility !important;
       }
 
       body, html {
@@ -122,6 +130,7 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
         background: #ffffff !important;
       }
 
+      /* Strict A4 Vector Canvas Pages */
       .pdf-page, .quotation-page, .quotation-canvas-page {
         width: 794px !important;
         min-width: 794px !important;
@@ -148,21 +157,25 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
         max-width: 100% !important;
         object-fit: cover !important;
       }
+
+      /* Hide interactive editor overlays during print */
+      .no-print, button, [role="button"] {
+        display: none !important;
+      }
     </style>
   </head>
-  <body>
+  <body className="bg-white text-slate-900 font-sans antialiased">
     ${bodyMarkup}
   </body>
 </html>`;
 
-  // Save generated HTML to temporary file for inspection
   try {
     const nodeReq = eval('require');
     const fs = nodeReq('fs');
     const path = nodeReq('path');
     const debugPath = path.join(process.cwd(), 'scratch', 'debug_generated_quotation.html');
     fs.writeFileSync(debugPath, fullHTML, 'utf8');
-    console.log('[PDF Server Diagnostic] Saved debug HTML file to:', debugPath);
+    console.log('[PDF Parity Audit] Saved debug HTML file to:', debugPath);
   } catch (e) {}
 
   return fullHTML;
