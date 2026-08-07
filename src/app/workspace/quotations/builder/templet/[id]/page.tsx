@@ -967,7 +967,6 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
-          crossOrigin="anonymous"
           className="w-full h-full object-cover block"
           style={{ objectPosition: `50% ${photoFocalY}%`, height: '100%', width: '100%' }}
         />
@@ -989,7 +988,6 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
-          crossOrigin="anonymous"
           className="w-full block object-cover shadow-xs"
           style={{ height: `${photoHeight}px`, objectPosition: `50% ${photoFocalY}%` }}
         />
@@ -1014,7 +1012,6 @@ function SectionImageRenderer({
         <img
           src={photo}
           alt={altText}
-          crossOrigin="anonymous"
           className="w-full h-full object-cover bg-transparent"
           style={{ objectPosition: `50% ${photoFocalY}%` }}
         />
@@ -2098,58 +2095,66 @@ function StudioCoreAiryBuilderContent() {
 
       // 2. Pre-convert all images to inline Base64 Data URLs so html-to-image never taints canvas or misses cross-origin photos on mobile
       const imgElements = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+      const originUrl = window.location.origin;
 
       await Promise.all(
         imgElements.map(async (img) => {
-          const src = img.getAttribute('src') || img.src;
-          if (src && !src.startsWith('data:')) {
-            originalSrcs.set(img, src);
+          let src = img.getAttribute('src') || img.src;
+          if (!src || src.startsWith('data:')) return;
 
-            // Tier 1: Direct Client Fetch
-            try {
-              const res = await fetch(src, { mode: 'cors' });
-              if (res.ok) {
-                const blob = await res.blob();
-                const dataUrl = await new Promise<string>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve((reader.result as string) || '');
-                  reader.onerror = () => resolve('');
-                  reader.readAsDataURL(blob);
-                });
-                if (dataUrl && dataUrl.startsWith('data:image')) {
-                  img.src = dataUrl;
-                  return;
-                }
-              }
-            } catch (e) {}
+          originalSrcs.set(img, src);
 
-            // Tier 2: Server-Side Proxy (bypasses Mobile Safari/Chrome CORS limits)
-            try {
-              const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(src)}`);
-              if (proxyRes.ok) {
-                const json = await proxyRes.json();
-                if (json.dataUrl && json.dataUrl.startsWith('data:image')) {
-                  img.src = json.dataUrl;
-                  return;
-                }
-              }
-            } catch (e) {}
-
-            // Tier 3: HTMLCanvasElement Fallback
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.naturalWidth || img.width || 800;
-              canvas.height = img.naturalHeight || img.height || 600;
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                ctx.drawImage(img, 0, 0);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-                if (dataUrl && dataUrl.startsWith('data:image')) {
-                  img.src = dataUrl;
-                }
-              }
-            } catch (e) {}
+          let fullUrl = src;
+          if (src.startsWith('//')) {
+            fullUrl = 'https:' + src;
+          } else if (src.startsWith('/')) {
+            fullUrl = originUrl + src;
           }
+
+          // Tier 1: Server-Side Proxy (100% bypasses Mobile Safari/Chrome CORS limits)
+          try {
+            const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(fullUrl)}`);
+            if (proxyRes.ok) {
+              const json = await proxyRes.json();
+              if (json.dataUrl && json.dataUrl.startsWith('data:image')) {
+                img.src = json.dataUrl;
+                return;
+              }
+            }
+          } catch (e) {}
+
+          // Tier 2: Direct Client Fetch
+          try {
+            const res = await fetch(fullUrl, { mode: 'cors' });
+            if (res.ok) {
+              const blob = await res.blob();
+              const dataUrl = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve((reader.result as string) || '');
+                reader.onerror = () => resolve('');
+                reader.readAsDataURL(blob);
+              });
+              if (dataUrl && dataUrl.startsWith('data:image')) {
+                img.src = dataUrl;
+                return;
+              }
+            }
+          } catch (e) {}
+
+          // Tier 3: HTMLCanvasElement Fallback
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width || 800;
+            canvas.height = img.naturalHeight || img.height || 600;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+              if (dataUrl && dataUrl.startsWith('data:image')) {
+                img.src = dataUrl;
+              }
+            }
+          } catch (e) {}
         })
       );
 
