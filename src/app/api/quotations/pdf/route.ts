@@ -53,6 +53,80 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
   return undefined;
 }
 
+async function fetchAndInlineImageServer(url: string): Promise<string> {
+  if (!url || typeof url !== 'string' || url.startsWith('data:')) return url;
+
+  let fetchUrl = url;
+  if (fetchUrl.startsWith('//')) {
+    fetchUrl = 'https:' + fetchUrl;
+  } else if (fetchUrl.startsWith('/')) {
+    fetchUrl = 'https://test.studiocore.in' + fetchUrl;
+  }
+
+  try {
+    const res = await fetch(fetchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+
+    if (res.ok) {
+      const contentType = res.headers.get('content-type') || 'image/jpeg';
+      const arrayBuffer = await res.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      return `data:${contentType};base64,${base64}`;
+    }
+  } catch (err) {
+    console.warn('[Server Image Inliner Warning] Could not fetch:', fetchUrl, err);
+  }
+
+  return url;
+}
+
+async function inlineAllQuotationImagesInJson(data: any): Promise<any> {
+  if (!data || typeof data !== 'object') return data;
+  const cloned = JSON.parse(JSON.stringify(data));
+
+  if (cloned.cover?.photoUrl) {
+    cloned.cover.photoUrl = await fetchAndInlineImageServer(cloned.cover.photoUrl);
+  }
+  if (cloned.cover?.brandLogoUrl) {
+    cloned.cover.brandLogoUrl = await fetchAndInlineImageServer(cloned.cover.brandLogoUrl);
+  }
+
+  if (cloned.aboutUs?.photoUrl) {
+    cloned.aboutUs.photoUrl = await fetchAndInlineImageServer(cloned.aboutUs.photoUrl);
+  }
+  if (cloned.aboutUs?.photo1Url) {
+    cloned.aboutUs.photo1Url = await fetchAndInlineImageServer(cloned.aboutUs.photo1Url);
+  }
+  if (cloned.aboutUs?.photo2Url) {
+    cloned.aboutUs.photo2Url = await fetchAndInlineImageServer(cloned.aboutUs.photo2Url);
+  }
+
+  if (cloned.shootDetails?.photoUrl) {
+    cloned.shootDetails.photoUrl = await fetchAndInlineImageServer(cloned.shootDetails.photoUrl);
+  }
+
+  if (cloned.functionsPage?.photoUrl) {
+    cloned.functionsPage.photoUrl = await fetchAndInlineImageServer(cloned.functionsPage.photoUrl);
+  }
+
+  if (cloned.deliverablesPage?.photoUrl) {
+    cloned.deliverablesPage.photoUrl = await fetchAndInlineImageServer(cloned.deliverablesPage.photoUrl);
+  }
+
+  if (Array.isArray(cloned.pageOrder)) {
+    for (const item of cloned.pageOrder) {
+      if (item && item.photoUrl) {
+        item.photoUrl = await fetchAndInlineImageServer(item.photoUrl);
+      }
+    }
+  }
+
+  return cloned;
+}
+
 function makeImageUrlsAbsolute(html: string): string {
   if (!html) return html;
   return html.replace(/src=["'](\/[^"']+)["']/g, (match, path) => {
@@ -205,7 +279,8 @@ export async function POST(req: NextRequest) {
         </html>
       `;
     } else {
-      fullHTML = renderQuotationToHTML(documentData || {});
+      const inlinedData = await inlineAllQuotationImagesInJson(documentData || {});
+      fullHTML = renderQuotationToHTML(inlinedData);
     }
 
     const puppeteer = (await import('puppeteer-core')).default;
