@@ -83,48 +83,60 @@ async function fetchAndInlineImageServer(url: string): Promise<string> {
   return url;
 }
 
-async function inlineAllQuotationImagesInJson(data: any): Promise<any> {
-  if (!data || typeof data !== 'object') return data;
-  const cloned = JSON.parse(JSON.stringify(data));
+async function deepInlineAllImagesServer(obj: any): Promise<any> {
+  if (!obj) return obj;
 
-  if (cloned.cover?.photoUrl) {
-    cloned.cover.photoUrl = await fetchAndInlineImageServer(cloned.cover.photoUrl);
-  }
-  if (cloned.cover?.brandLogoUrl) {
-    cloned.cover.brandLogoUrl = await fetchAndInlineImageServer(cloned.cover.brandLogoUrl);
-  }
-
-  if (cloned.aboutUs?.photoUrl) {
-    cloned.aboutUs.photoUrl = await fetchAndInlineImageServer(cloned.aboutUs.photoUrl);
-  }
-  if (cloned.aboutUs?.photo1Url) {
-    cloned.aboutUs.photo1Url = await fetchAndInlineImageServer(cloned.aboutUs.photo1Url);
-  }
-  if (cloned.aboutUs?.photo2Url) {
-    cloned.aboutUs.photo2Url = await fetchAndInlineImageServer(cloned.aboutUs.photo2Url);
+  if (typeof obj === 'string') {
+    if (obj.startsWith('data:image')) return obj;
+    if (
+      obj.startsWith('http://') ||
+      obj.startsWith('https://') ||
+      obj.startsWith('//') ||
+      obj.startsWith('/uploads/') ||
+      obj.startsWith('/_next/image') ||
+      /\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i.test(obj)
+    ) {
+      return await fetchAndInlineImageServer(obj);
+    }
+    return obj;
   }
 
-  if (cloned.shootDetails?.photoUrl) {
-    cloned.shootDetails.photoUrl = await fetchAndInlineImageServer(cloned.shootDetails.photoUrl);
+  if (Array.isArray(obj)) {
+    return await Promise.all(obj.map(item => deepInlineAllImagesServer(item)));
   }
 
-  if (cloned.functionsPage?.photoUrl) {
-    cloned.functionsPage.photoUrl = await fetchAndInlineImageServer(cloned.functionsPage.photoUrl);
+  if (typeof obj === 'object') {
+    const result: any = {};
+    for (const key of Object.keys(obj)) {
+      result[key] = await deepInlineAllImagesServer(obj[key]);
+    }
+    return result;
   }
 
-  if (cloned.deliverablesPage?.photoUrl) {
-    cloned.deliverablesPage.photoUrl = await fetchAndInlineImageServer(cloned.deliverablesPage.photoUrl);
-  }
+  return obj;
+}
 
-  if (Array.isArray(cloned.pageOrder)) {
-    for (const item of cloned.pageOrder) {
-      if (item && item.photoUrl) {
-        item.photoUrl = await fetchAndInlineImageServer(item.photoUrl);
-      }
+async function inlineAllImgTagsInHTMLServer(html: string): Promise<string> {
+  if (!html) return html;
+
+  const matches = Array.from(html.matchAll(/src=["']([^"']+)["']/g));
+  const urlMap = new Map<string, string>();
+
+  for (const match of matches) {
+    const origUrl = match[1];
+    if (origUrl && !origUrl.startsWith('data:') && !urlMap.has(origUrl)) {
+      const inlined = await fetchAndInlineImageServer(origUrl);
+      urlMap.set(origUrl, inlined);
     }
   }
 
-  return cloned;
+  let finalHTML = html;
+  urlMap.forEach((inlinedUrl, origUrl) => {
+    finalHTML = finalHTML.replaceAll(`src="${origUrl}"`, `src="${inlinedUrl}"`);
+    finalHTML = finalHTML.replaceAll(`src='${origUrl}'`, `src='${inlinedUrl}'`);
+  });
+
+  return finalHTML;
 }
 
 function makeImageUrlsAbsolute(html: string): string {
@@ -279,8 +291,9 @@ export async function POST(req: NextRequest) {
         </html>
       `;
     } else {
-      const inlinedData = await inlineAllQuotationImagesInJson(documentData || {});
-      fullHTML = renderQuotationToHTML(inlinedData);
+      const inlinedData = await deepInlineAllImagesServer(documentData || {});
+      const rendered = renderQuotationToHTML(inlinedData);
+      fullHTML = await inlineAllImgTagsInHTMLServer(rendered);
     }
 
     const puppeteer = (await import('puppeteer-core')).default;
