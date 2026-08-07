@@ -2071,68 +2071,79 @@ function StudioCoreAiryBuilderContent() {
   };
 
   // DANKA KA SYSTEM: HIGH-SPEED VECTOR A4 PDF DOWNLOAD ENGINE (PC & MOBILE)
-  const handleDownloadPDFCanvas = () => {
+  const handleDownloadPDFCanvas = async () => {
     setIsExportingPDF(true);
     setExportProgress(20);
     setExportStatusText('Preparing Full-Bleed A4 Vector Document...');
+
     const routeId = params?.id ? String(params.id) : '';
+    const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     const progressTimer = setInterval(() => {
-      setExportProgress(prev => (prev < 95 ? prev + 15 : prev));
-    }, 100);
+      setExportProgress(prev => (prev < 90 ? prev + 15 : prev));
+    }, 120);
 
-    setTimeout(() => {
+    try {
+      // 1. Direct authenticated fetch POST to /api/quotations/pdf
+      const res = await fetch('/api/quotations/pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(userId ? { 'Authorization': `Bearer ${userId}` } : {})
+        },
+        body: JSON.stringify({
+          quotationId: routeId,
+          templateId: routeId,
+          content_json: data,
+          filename: `Quotation-${routeId || 'document'}.pdf`
+        })
+      });
+
       clearInterval(progressTimer);
+
+      if (!res.ok) {
+        let errDetail = 'PDF Server Rendering Failed';
+        try {
+          const errJson = await res.json();
+          errDetail = errJson.detail || errJson.error || errJson.message || errDetail;
+        } catch (e) {}
+        throw new Error(`HTTP ${res.status}: ${errDetail}`);
+      }
+
+      const blob = await res.blob();
       setExportProgress(100);
       setExportStatusText('100% Complete! Opening PDF File...');
 
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/api/quotations/pdf';
-      form.style.display = 'none';
+      const url = window.URL.createObjectURL(blob);
+      const fileName = `Quotation-${routeId || 'document'}.pdf`;
 
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'payload';
-      input.value = JSON.stringify({
-        quotationId: routeId,
-        content_json: data,
-        filename: `Quotation-${routeId || 'document'}.pdf`
-      });
-      form.appendChild(input);
+      if (isIOS) {
+        // iOS Safari / Chrome Native PDF Reader Tab
+        window.open(url, '_blank');
+      } else {
+        // Desktop / Android Browser File Download Bar
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
 
-      document.body.appendChild(form);
-      form.submit();
-      document.body.removeChild(form);
-
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 15000);
+    } catch (err: any) {
+      clearInterval(progressTimer);
+      console.error('[iOS/Desktop PDF Download Error]:', err);
+      alert(`PDF Download Notice: ${err.message || 'Server rendering unavailable'}`);
+    } finally {
       setTimeout(() => {
         setIsExportingPDF(false);
         setExportProgress(0);
       }, 1500);
-    }, 700);
+    }
   };
-
-  useEffect(() => {
-    const handleBeforePrint = () => {
-      const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-      if (container) {
-        container.style.transform = 'none';
-      }
-    };
-    const handleAfterPrint = () => {
-      const container = document.getElementById('quotation-canvas-container') || document.getElementById('quotation-full-canvas');
-      if (container) {
-        container.style.transform = `scale(${zoomScale})`;
-      }
-    };
-
-    window.addEventListener('beforeprint', handleBeforePrint);
-    window.addEventListener('afterprint', handleAfterPrint);
-    return () => {
-      window.removeEventListener('beforeprint', handleBeforePrint);
-      window.removeEventListener('afterprint', handleAfterPrint);
-    };
-  }, [zoomScale]);
 
     // Load User Session, User Isolation Check & Proposal
   useEffect(() => {
