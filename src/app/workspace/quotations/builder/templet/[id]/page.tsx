@@ -1767,7 +1767,7 @@ function StudioCoreAiryBuilderContent() {
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(DEFAULT_AIRY_PROPOSAL);
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1779,7 +1779,7 @@ function StudioCoreAiryBuilderContent() {
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
   const [draggedPageIndex, setDraggedPageIndex] = useState<number | null>(null);
 
-  const pageSequence: PageSequenceItem[] = data.pageSequence || DEFAULT_PAGE_SEQUENCE;
+  const pageSequence: PageSequenceItem[] = data?.pageSequence || DEFAULT_PAGE_SEQUENCE;
 
   const updatePageSequence = (newSeq: PageSequenceItem[]) => {
     setData((prev: any) => ({ ...prev, pageSequence: newSeq }));
