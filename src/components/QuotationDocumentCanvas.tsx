@@ -1,5 +1,65 @@
 'use client';
 
+import { COLOR_THEMES, getThemeFromKey } from '@/lib/quotation-theme';
+
+export interface PageSequenceItem {
+  id: string;
+  type: string;
+  label: string;
+  customId?: string;
+}
+
+export interface CustomPageItem {
+  id: string;
+  heading: string;
+  subheading?: string;
+  content: string;
+  imageUrl?: string;
+  layout?: 'text-only' | 'text-image' | 'image-focus' | 'split';
+}
+
+export interface PaymentTermStep {
+  id: string;
+  date: string;
+  stepName: string;
+  amount: number;
+  status: 'PENDING' | 'PAID';
+}
+
+export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = [
+  { id: 'cover-std', type: 'cover', label: 'Cover Page' },
+  { id: 'about-std', type: 'aboutUs', label: 'About Us' },
+  { id: 'shoot-std', type: 'shootDetails', label: 'Pre-Wedding Shoot' },
+  { id: 'funcs-std', type: 'functionsPage', label: 'Functions & Coverage' },
+  { id: 'deliv-std', type: 'deliverablesPage', label: 'Deliverables' },
+  { id: 'sva-std', type: 'specialValueAdditions', label: 'Special Value Additions' },
+  { id: 'price-std', type: 'pricingPage', label: 'Pricing Details' },
+  { id: 'pay-std', type: 'paymentTermsPage', label: 'Payment Terms & Schedule' },
+  { id: 'addons-std', type: 'addOnsPage', label: 'Add-Ons & Upgrades' },
+  { id: 'terms-std', type: 'termsPage', label: 'Terms & Conditions' },
+  { id: 'thankyou-std', type: 'thankYouPage', label: 'Thank You Page' }
+];
+
+export const DEFAULT_AIRY_PROPOSAL: any = {
+  theme: 'cyprus-sand-dune',
+  primaryFont: 'Cormorant Garamond',
+  secondaryFont: 'Plus Jakarta Sans',
+  designName: 'Minimalist Airy Proposal',
+  cover: {
+    coupleName: 'YASH & TWINKLE',
+    eventType: 'WEDDING',
+    eventDate: 'DECEMBER 2026',
+    location: 'MUMBAI',
+    brandName: 'FILMIFY WEDDINGS'
+  },
+  aboutUs: {
+    kicker: 'CREATIVE FILMMAKERS',
+    heading: 'ABOUT US',
+    text: 'We capture stories that move hearts.'
+  },
+  pageSequence: DEFAULT_PAGE_SEQUENCE
+};
+
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
@@ -39,572 +99,9 @@ interface ColorTheme {
   isDark?: boolean;
 }
 
-const COLOR_THEMES: ColorTheme[] = [
-  {
-    id: 'cherry-red-cream',
-    name: 'Cherry Red & Cream',
-    primary: '#750505',
-    background: '#FBFCEB',
-    text: '#750505',
-    kicker: '#750505',
-    borderColor: 'rgba(117, 5, 5, 0.2)',
-    boxBgColor: 'rgba(117, 5, 5, 0.06)',
-  },
-  {
-    id: 'cream-cherry-red',
-    name: 'Cream & Cherry Red (Inverted)',
-    primary: '#FBFCEB',
-    background: '#750505',
-    text: '#FBFCEB',
-    kicker: '#FFECD1',
-    borderColor: 'rgba(251, 252, 235, 0.25)',
-    boxBgColor: 'rgba(251, 252, 235, 0.08)',
-    isDark: true,
-  },
 
-  {
-    id: 'cyprus-sand-dune',
-    name: 'Cyprus & Sand Dune',
-    primary: '#004643',
-    background: '#F0EDE5',
-    text: '#004643',
-    kicker: '#004643',
-    borderColor: 'rgba(0, 70, 67, 0.2)',
-    boxBgColor: 'rgba(0, 70, 67, 0.06)',
-  },
-  {
-    id: 'sand-dune-cyprus',
-    name: 'Sand Dune & Cyprus (Inverted)',
-    primary: '#F0EDE5',
-    background: '#004643',
-    text: '#F0EDE5',
-    kicker: '#E6CFA7',
-    borderColor: 'rgba(240, 237, 229, 0.25)',
-    boxBgColor: 'rgba(240, 237, 229, 0.08)',
-    isDark: true,
-  },
 
-  {
-    id: 'plum-milk',
-    name: 'Plum & Milk',
-    primary: '#381932',
-    background: '#FFF3E6',
-    text: '#381932',
-    kicker: '#381932',
-    borderColor: 'rgba(56, 25, 50, 0.2)',
-    boxBgColor: 'rgba(56, 25, 50, 0.06)',
-  },
-  {
-    id: 'milk-plum',
-    name: 'Milk & Plum (Inverted)',
-    primary: '#FFF3E6',
-    background: '#381932',
-    text: '#FFF3E6',
-    kicker: '#FFECD1',
-    borderColor: 'rgba(255, 243, 230, 0.25)',
-    boxBgColor: 'rgba(255, 243, 230, 0.08)',
-    isDark: true,
-  },
 
-  {
-    id: 'sand-chocolate',
-    name: 'Sand & Chocolate',
-    primary: '#3E000C',
-    background: '#FFECD1',
-    text: '#3E000C',
-    kicker: '#3E000C',
-    borderColor: 'rgba(62, 0, 12, 0.2)',
-    boxBgColor: 'rgba(62, 0, 12, 0.06)',
-  },
-  {
-    id: 'chocolate-sand',
-    name: 'Chocolate & Sand (Inverted)',
-    primary: '#FFECD1',
-    background: '#3E000C',
-    text: '#FFECD1',
-    kicker: '#FFECD1',
-    borderColor: 'rgba(255, 236, 209, 0.25)',
-    boxBgColor: 'rgba(255, 236, 209, 0.08)',
-    isDark: true,
-  },
-
-  {
-    id: 'feldgrau-wheat',
-    name: 'Feldgrau & Wheat',
-    primary: '#3A4B41',
-    background: '#E6CFA7',
-    text: '#3A4B41',
-    kicker: '#3A4B41',
-    borderColor: 'rgba(58, 75, 65, 0.2)',
-    boxBgColor: 'rgba(58, 75, 65, 0.06)',
-  },
-  {
-    id: 'wheat-feldgrau',
-    name: 'Wheat & Feldgrau (Inverted)',
-    primary: '#E6CFA7',
-    background: '#3A4B41',
-    text: '#E6CFA7',
-    kicker: '#E6CFA7',
-    borderColor: 'rgba(230, 207, 167, 0.25)',
-    boxBgColor: 'rgba(230, 207, 167, 0.08)',
-    isDark: true,
-  },
-
-  {
-    id: 'noctis-marigold',
-    name: 'Noctis & Marigold',
-    primary: '#1F2235',
-    background: '#E3A419',
-    text: '#1F2235',
-    kicker: '#1F2235',
-    borderColor: 'rgba(31, 34, 53, 0.2)',
-    boxBgColor: 'rgba(31, 34, 53, 0.08)',
-  },
-  {
-    id: 'marigold-noctis',
-    name: 'Marigold & Noctis (Inverted)',
-    primary: '#E3A419',
-    background: '#1F2235',
-    text: '#E3A419',
-    kicker: '#E3A419',
-    borderColor: 'rgba(227, 164, 25, 0.25)',
-    boxBgColor: 'rgba(227, 164, 25, 0.08)',
-    isDark: true,
-  },
-
-  {
-    id: 'champagne-obsidian',
-    name: 'Champagne & Obsidian',
-    primary: '#111111',
-    background: '#F7F4EF',
-    text: '#111111',
-    kicker: '#71717A',
-    borderColor: 'rgba(228, 228, 231, 1)',
-    boxBgColor: 'rgba(244, 244, 245, 1)',
-  },
-  {
-    id: 'obsidian-champagne',
-    name: 'Obsidian & Champagne (Inverted)',
-    primary: '#F7F4EF',
-    background: '#111111',
-    text: '#F7F4EF',
-    kicker: '#D4D4D8',
-    borderColor: 'rgba(247, 244, 239, 0.25)',
-    boxBgColor: 'rgba(247, 244, 239, 0.08)',
-    isDark: true,
-  },
-
-  {
-    id: 'forest-olive-ivory',
-    name: 'Forest Olive & Ivory',
-    primary: '#2C352E',
-    background: '#F2EFE9',
-    text: '#2C352E',
-    kicker: '#58695C',
-    borderColor: 'rgba(44, 53, 46, 0.2)',
-    boxBgColor: 'rgba(44, 53, 46, 0.06)',
-  },
-  {
-    id: 'ivory-forest-olive',
-    name: 'Ivory & Forest Olive (Inverted)',
-    primary: '#F2EFE9',
-    background: '#2C352E',
-    text: '#F2EFE9',
-    kicker: '#E2DFD9',
-    borderColor: 'rgba(242, 239, 233, 0.25)',
-    boxBgColor: 'rgba(242, 239, 233, 0.08)',
-    isDark: true,
-  },
-
-  {
-    id: 'airy-white',
-    name: 'Airy White (Pre-Wed)',
-    primary: '#27272A',
-    background: '#FFFFFF',
-    text: '#27272A',
-    kicker: '#A1A1AA',
-    borderColor: 'rgba(228, 228, 231, 1)',
-    boxBgColor: 'rgba(244, 244, 245, 1)',
-  },
-  {
-    id: 'royal-gold',
-    name: 'Royal Gold (Classic)',
-    primary: '#8A6D2F',
-    background: '#FFF8EA',
-    text: '#8A6D2F',
-    kicker: '#8A6D2F',
-    borderColor: 'rgba(138, 109, 47, 0.25)',
-    boxBgColor: 'rgba(138, 109, 47, 0.08)',
-  },
-  {
-    id: 'dark-studio',
-    name: 'Dark Studio',
-    primary: '#F3F4F6',
-    background: '#141622',
-    text: '#F3F4F6',
-    kicker: '#E5C365',
-    borderColor: '#232634',
-    boxBgColor: '#0F1017',
-    isDark: true,
-  },
-];
-
-// Base Page Section Image Config Interface
-interface PageImageConfig {
-  photoUrl?: string;
-  photo?: string;
-  photoHeight: number;
-  photoWidth: number;
-  photoFocalY: number;
-  bgOpacity?: number;
-  frameShape: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
-  imagePosition?: 'top' | 'center' | 'bottom';
-}
-
-interface PaymentTermStep {
-  id: string;
-  date: string;
-  stepName: string;
-  amount: number;
-  status: 'Completed' | 'Pending';
-}
-
-interface AddOnItem {
-  id: string;
-  title: string;
-  price: number;
-  selected: boolean;
-}
-
-interface PageSequenceItem {
-  id: string;
-  type: string;
-  label: string;
-  isStandard?: boolean;
-  customId?: string;
-}
-
-interface CustomPageItem {
-  id: string;
-  heading: string;
-  kicker?: string;
-  subtitle?: string;
-  text?: string;
-  photo?: string;
-  photoHeight?: number;
-  photoWidth?: number;
-  photoFocalY?: number;
-  bgOpacity?: number;
-  frameShape?: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
-  imagePosition?: 'top' | 'center' | 'bottom' | 'full';
-}
-
-const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
-  { type: 'cover', label: 'Cover Page' },
-  { type: 'aboutUs', label: 'About Us' },
-  { type: 'shootDetails', label: 'Pre-Wedding Shoot' },
-  { type: 'functionsPage', label: 'Functions & Coverage' },
-  { type: 'deliverablesPage', label: 'Deliverables' },
-  { type: 'specialValueAdditions', label: 'Special Value Additions' },
-  { type: 'pricingPage', label: 'Pricing Details' },
-  { type: 'paymentTermsPage', label: 'Payment Terms & Schedule' },
-  { type: 'addOnsPage', label: 'Add-Ons & Upgrades' },
-  { type: 'termsPage', label: 'Terms & Conditions' },
-  { type: 'thankYouPage', label: 'Thank You Page' },
-];
-
-const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(std => ({
-  id: std.type,
-  type: std.type,
-  label: std.label,
-  isStandard: true,
-}));
-
-// StudioCore Presets & Full Dynamic State
-const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Wedding - Design 1',
-  eventGroup: 'Wedding',
-  look: 'Cyprus & Sand Dune',
-  primaryFont: "'Cormorant Garamond', serif",
-  secondaryFont: "'Plus Jakarta Sans', sans-serif",
-  pageSequence: DEFAULT_PAGE_SEQUENCE,
-  customPages: {} as Record<string, CustomPageItem>,
-
-  // 1. Cover Page State
-  cover: {
-    groomName: 'Rahul',
-    brideName: 'Neha',
-    coupleName: 'Rahul & Neha',
-    eventType: 'Wedding',
-    sideOption: 'Both Sides',
-    locationName: 'MUMBAI',
-    brandName: 'FILMIFY WEDDINGS',
-    brandLogoUrl: '',
-    brandLogoSize: 64,
-    photoUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
-    photoHeight: 450,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'center' as 'top' | 'center' | 'bottom',
-  },
-  
-  // 2. About Us
-  aboutUs: {
-    kicker: 'INTRODUCTION',
-    heading: 'ABOUT US',
-    text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
-    signature: 'FOUNDER & DIRECTOR, AS',
-    bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
-    bottomBannerHeight: 380,
-    frameShape: 'full-width' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    photoFocalY: 50,
-    photoWidth: 100,
-    bgOpacity: 40,
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 3. Pre-Wedding Shoot Details
-  shootDetails: {
-    kicker: 'WHAT WE DO',
-    heading: 'Pre-Wedding Shoot',
-    daysText: '1 Day Shoot',
-    crewText: 'Candid Photography\nCinematography\nPortable Changing Room',
-    deliverablesHeading: 'Deliverables',
-    deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
-    photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 380,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 4. Functions Page Module State
-  functionsPage: {
-    kicker: 'EVENT SCHEDULE',
-    heading: 'Functions & Coverage',
-    photo: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
-    photoHeight: 380,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-    items: [
-      {
-        id: 'func-1',
-        name: 'Haldi & Sangeet',
-        date: '4 MAR 26',
-        dateNotFixed: false,
-        startTime: '10:00 AM',
-        endTime: '05:00 PM',
-        durationSlot: '7 Hours',
-        location: 'JW MARRIOTT, MUMBAI',
-        requirements: [
-          { name: 'Candid Photography', qty: 2 },
-          { name: 'Cinematography', qty: 2 },
-          { name: 'Drone', qty: 1 },
-        ],
-        notes: 'Includes traditional setup & evening sangeet performances coverage.',
-      },
-      {
-        id: 'func-2',
-        name: 'Wedding',
-        date: '5 MAR 26',
-        dateNotFixed: false,
-        startTime: '04:00 PM',
-        endTime: '11:00 PM',
-        durationSlot: '7 Hours',
-        location: 'PALACE GROUNDS, MUMBAI',
-        requirements: [
-          { name: 'Candid Photography', qty: 2 },
-          { name: 'Cinematography', qty: 2 },
-          { name: 'Drone', qty: 1 },
-          { name: 'Traditional Video', qty: 1 },
-        ],
-        notes: 'Varmala & Pheras high speed cinema capture.',
-      }
-    ] as FunctionItem[]
-  },
-
-  // 5. Deliverables Page
-  deliverablesPage: {
-    kicker: 'WHAT WE DELIVER',
-    heading: 'DELIVERABLES',
-    selectedItems: [
-      '1 Teaser Video (1-2 Min)',
-      '1 Main Highlight Film (15-20 Min)',
-      '3 Instagram Reels',
-      'All Raw Photos & Footage in Hard Drive',
-      '75-80 Retouched High-Res Images'
-    ],
-    availableOptions: [
-      '1 Teaser Video (1-2 Min)',
-      '1 Main Highlight Film (15-20 Min)',
-      '3 Instagram Reels',
-      'All Raw Photos & Footage in Hard Drive',
-      '75-80 Retouched High-Res Images',
-      'Pre-Wedding Teaser Video',
-      'Traditional Long Video (2-3 Hours)',
-      'Custom Printed Coffee Table Album'
-    ],
-    photo: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 6. Special Value Additions
-  specialValueAdditions: {
-    kicker: 'COMPLIMENTARY',
-    heading: 'SPECIAL VALUE ADDITIONS',
-    selectedItems: [
-      'Complimentary Pre-Wedding Session (1 Day)',
-      'Free Luxury Album Upgrade (40 Pages)',
-      'Drone Coverage Included for Wedding & Sangeet',
-      'Same Day Edit Reel for Instagram'
-    ],
-    availableOptions: [
-      'Complimentary Pre-Wedding Session (1 Day)',
-      'Free Luxury Album Upgrade (40 Pages)',
-      'Drone Coverage Included for Wedding & Sangeet',
-      'Same Day Edit Reel for Instagram',
-      'Free Raw Data Hard Drive (1TB)',
-      'Complimentary LED Wall Feed Live Output'
-    ],
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 7. Pricing Details
-  pricingPage: {
-    kicker: 'INVESTMENT & BREAKDOWN',
-    heading: 'PRICING DETAILS',
-    basePrice: 150000,
-    discountAmount: 10000,
-    accommodationCharges: 15000,
-    travelCharges: 10000,
-    additionalCharges: 5000,
-    gstPct: 18,
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 8. Payment Terms & Schedule
-  paymentTermsPage: {
-    kicker: 'SCHEDULE',
-    heading: 'PAYMENT TERMS & SCHEDULE',
-    steps: [
-      { id: 'pt-1', date: '10 FEB 26', stepName: 'Token Booking Amount', amount: 25000, status: 'Completed' },
-      { id: 'pt-2', date: '01 MAR 26', stepName: 'Advance Amount (Pre-Event)', amount: 75000, status: 'Pending' },
-      { id: 'pt-3', date: '06 MAR 26', stepName: 'On Wedding Day', amount: 50000, status: 'Pending' },
-      { id: 'pt-4', date: '25 MAR 26', stepName: 'Final Delivery Amount', amount: 20000, status: 'Pending' },
-    ] as PaymentTermStep[],
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 9. Add-Ons & Upgrades
-  addOnsPage: {
-    kicker: "EMBRACE YOUR DAY — YOU'RE IN CONTROL",
-    heading: 'ADD-ONS & UPGRADES',
-    subText: 'Select extra services to enhance your wedding story package.',
-    items: [
-      { id: 'add-1', title: 'Additional Candid Photographer', price: 15000, selected: true },
-      { id: 'add-2', title: 'Additional Cinematographer', price: 22000, selected: true },
-      { id: 'add-3', title: 'FPV Drone Pilot (Per Event)', price: 18000, selected: false },
-      { id: 'add-4', title: 'Live Streaming Setup (Per Event)', price: 25000, selected: false },
-      { id: 'add-5', title: 'Extra Album Pages (Per 10 Pages)', price: 5000, selected: true },
-      { id: 'add-6', title: 'Express 7-Day Video Edit Delivery', price: 20000, selected: false },
-    ] as AddOnItem[],
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 10. Terms & Conditions Page State
-  termsPage: {
-    kicker: 'POLICIES & RULES',
-    heading: 'TERMS & CONDITIONS',
-    text: `1. Advance payment is non-refundable upon booking confirmation.
-2. Travel and accommodation charges outside the base city shall be borne by the client or billed at actuals.
-3. Raw footage and unedited photos will be delivered as per agreed timelines.
-4. One cycle of revision is included for final video edits within 30 days of delivery.
-5. All copyright of photographs and films remains with the studio unless explicitly transferred.`,
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  },
-
-  // 11. Thank You Page State
-  thankYouPage: {
-    heading: 'THANK YOU',
-    subHeading: 'LOOKING FORWARD TO CREATING MAGIC',
-    message: 'We would be honored to capture your celebration and create memories for a lifetime.',
-    brandLogoUrl: '',
-    brandName: 'FILMIFY WEDDINGS',
-    contactNumber: '+91 98765 43210',
-    email: 'contact@filmifyweddings.com',
-    website: 'www.filmifyweddings.com',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
-  }
-};
-
-export function getThemeFromKey(key: any) {
-  if (!key) return (COLOR_THEMES as any)['cyprus-sand-dune'];
-  if (typeof key === 'object') {
-    if (key.primary && key.background) return key;
-    key = key.name || key.id || '';
-  }
-  const strKey = String(key).trim();
-  if ((COLOR_THEMES as any)[strKey]) return (COLOR_THEMES as any)[strKey];
-  const lowerKey = strKey.toLowerCase();
-  for (const val of Object.values(COLOR_THEMES)) {
-    if (val.id.toLowerCase() === lowerKey || val.name.toLowerCase() === lowerKey) {
-      return val;
-    }
-  }
-  return (COLOR_THEMES as any)['cyprus-sand-dune'];
-}
 
 
 
@@ -618,7 +115,8 @@ function CanvaThemeSelector({ value, onChange }: CanvaThemeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const activeTheme = COLOR_THEMES.find(t => t.name === value || t.id === value) || COLOR_THEMES[0];
+  const themeList = Array.isArray(COLOR_THEMES) ? COLOR_THEMES : Object.values(COLOR_THEMES);
+  const activeTheme = themeList.find((t: any) => t.name === value || t.id === value) || themeList[0];
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -657,7 +155,7 @@ function CanvaThemeSelector({ value, onChange }: CanvaThemeSelectorProps) {
             exit={{ opacity: 0, y: -4 }}
             className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 space-y-1 max-h-64 overflow-y-auto"
           >
-            {COLOR_THEMES.map(theme => {
+            {(Array.isArray(COLOR_THEMES) ? COLOR_THEMES : Object.values(COLOR_THEMES)).map((theme: any) => {
               const isSelected = activeTheme.name === theme.name;
               return (
                 <button
@@ -1771,7 +1269,7 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
   const fixedAmount = Number(totalProjectAmount || 0);
   const stepList = Array.isArray(steps) ? steps : [];
   const receivedAmount = stepList
-    .filter(s => s && s.status === 'Completed')
+    .filter((s: any) => s && (s.status === 'Completed' || s.status === 'PAID'))
     .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
   const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
   return { fixedAmount, receivedAmount, pendingAmount };
@@ -2842,7 +2340,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                                 <span 
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border"
                                   style={{
-                                    backgroundColor: step.status === 'Completed' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                    backgroundColor: (step.status as string) === 'Completed' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
                                     borderColor: step.status === 'Completed' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)',
                                     color: textColor
                                   }}

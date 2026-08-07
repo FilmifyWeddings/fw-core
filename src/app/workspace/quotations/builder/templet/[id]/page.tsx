@@ -1255,12 +1255,12 @@ function ThreeDCurvedMultiSelect({
   onChangeSelectedText: (newText: string) => void;
   onAddCustomOption: (newItem: string) => void;
 }) {
-  const selectedItems = (selectedText || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const selectedItems = (selectedText || '').split('\n').map((s: any) => s.trim()).filter(Boolean);
 
   const toggleItem = (item: string) => {
     let newSelected: string[];
     if (selectedItems.includes(item)) {
-      newSelected = selectedItems.filter(i => i !== item);
+      newSelected = selectedItems.filter((i: any) => i !== item);
     } else {
       newSelected = [...selectedItems, item];
     }
@@ -1293,7 +1293,7 @@ function ThreeDCurvedMultiSelect({
       </div>
 
       <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-        {availableOptions.map((item) => {
+        {availableOptions.map((item: any) => {
           const isSelected = selectedItems.includes(item);
           return (
             <div
@@ -1359,7 +1359,7 @@ function ThreeDCurvedFunctionEditor({
   onAddCustomDuration: (dur: string) => void;
   onAddCustomRequirement: (req: string) => void;
 }) {
-  const selectedEventNames = (func.name || '').split(' + ').map(s => s.trim()).filter(Boolean);
+  const selectedEventNames = (func.name || '').split(' + ').map((s: any) => s.trim()).filter(Boolean);
 
   const toggleEventName = (evtName: string) => {
     let updated: string[];
@@ -1752,7 +1752,7 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
   const fixedAmount = Number(totalProjectAmount || 0);
   const stepList = Array.isArray(steps) ? steps : [];
   const receivedAmount = stepList
-    .filter(s => s && s.status === 'Completed')
+    .filter((s: any) => s && s.status === 'Completed')
     .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
   const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
   return { fixedAmount, receivedAmount, pendingAmount };
@@ -1767,7 +1767,7 @@ function StudioCoreAiryBuilderContent() {
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   
-  const [data, setData] = useState(DEFAULT_AIRY_PROPOSAL);
+  const [data, setData] = useState<any>(null);
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1782,7 +1782,7 @@ function StudioCoreAiryBuilderContent() {
   const pageSequence: PageSequenceItem[] = data.pageSequence || DEFAULT_PAGE_SEQUENCE;
 
   const updatePageSequence = (newSeq: PageSequenceItem[]) => {
-    setData(prev => ({ ...prev, pageSequence: newSeq }));
+    setData((prev: any) => ({ ...prev, pageSequence: newSeq }));
     setHasUnsavedChanges(true);
   };
 
@@ -1852,7 +1852,7 @@ function StudioCoreAiryBuilderContent() {
 
     const newSeq = [...pageSequence];
     newSeq.splice(index + 1, 0, newItem);
-    setData(prev => ({
+    setData((prev: any) => ({
       ...prev,
       pageSequence: newSeq,
       customPages: newCustomPages,
@@ -1893,7 +1893,7 @@ function StudioCoreAiryBuilderContent() {
       },
     };
 
-    setData(prev => ({
+    setData((prev: any) => ({
       ...prev,
       pageSequence: newSeq,
       customPages: newCustoms,
@@ -1904,7 +1904,7 @@ function StudioCoreAiryBuilderContent() {
   };
 
   const restoreStandardPage = (stdType: string) => {
-    const stdDef = STANDARD_PAGE_DEFINITIONS.find(s => s.type === stdType);
+    const stdDef = STANDARD_PAGE_DEFINITIONS.find((s: any) => s.type === stdType);
     if (!stdDef) return;
 
     const newItem: PageSequenceItem = {
@@ -2064,10 +2064,10 @@ function StudioCoreAiryBuilderContent() {
         const updatedList = Array.from(new Set([...customEventTypes, trimmed]));
         setCustomEventTypes(updatedList);
         localStorage.setItem('wg_custom_event_types', JSON.stringify(updatedList));
-        setData(prev => ({ ...prev, cover: { ...prev.cover, eventType: trimmed } }));
+        setData((prev: any) => ({ ...prev, cover: { ...prev.cover, eventType: trimmed } }));
       }
     } else {
-      setData(prev => ({ ...prev, cover: { ...prev.cover, eventType: val } }));
+      setData((prev: any) => ({ ...prev, cover: { ...prev.cover, eventType: val } }));
     }
   };
 
@@ -2355,34 +2355,34 @@ function StudioCoreAiryBuilderContent() {
     if (!activeTargetField) return;
 
     if (activeTargetField === 'coverLogo') {
-      setData(prev => ({ ...prev, cover: { ...prev.cover, brandLogoUrl: url } }));
+      setData((prev: any) => ({ ...prev, cover: { ...prev.cover, brandLogoUrl: url } }));
     } else if (activeTargetField === 'coverPhoto') {
-      setData(prev => ({ ...prev, cover: { ...prev.cover, photoUrl: url } }));
+      setData((prev: any) => ({ ...prev, cover: { ...prev.cover, photoUrl: url } }));
     } else if (activeTargetField === 'aboutUsBanner') {
-      setData(prev => ({ ...prev, aboutUs: { ...prev.aboutUs, bottomBannerPhoto: url } }));
+      setData((prev: any) => ({ ...prev, aboutUs: { ...prev.aboutUs, bottomBannerPhoto: url } }));
     } else if (activeTargetField === 'shootPhoto') {
-      setData(prev => ({ ...prev, shootDetails: { ...prev.shootDetails, photo: url } }));
+      setData((prev: any) => ({ ...prev, shootDetails: { ...prev.shootDetails, photo: url } }));
     } else if (activeTargetField === 'functionsPhoto') {
-      setData(prev => ({ ...prev, functionsPage: { ...prev.functionsPage, photo: url } }));
+      setData((prev: any) => ({ ...prev, functionsPage: { ...prev.functionsPage, photo: url } }));
     } else if (activeTargetField === 'deliverablesPhoto') {
-      setData(prev => ({ ...prev, deliverablesPage: { ...prev.deliverablesPage, photo: url } }));
+      setData((prev: any) => ({ ...prev, deliverablesPage: { ...prev.deliverablesPage, photo: url } }));
     } else if (activeTargetField === 'specialValuePhoto') {
-      setData(prev => ({ ...prev, specialValueAdditions: { ...(prev.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: url } }));
+      setData((prev: any) => ({ ...prev, specialValueAdditions: { ...(prev.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: url } }));
     } else if (activeTargetField === 'pricingPhoto') {
-      setData(prev => ({ ...prev, pricingPage: { ...(prev.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: url } }));
+      setData((prev: any) => ({ ...prev, pricingPage: { ...(prev.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: url } }));
     } else if (activeTargetField === 'paymentTermsPhoto') {
-      setData(prev => ({ ...prev, paymentTermsPage: { ...(prev.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: url } }));
+      setData((prev: any) => ({ ...prev, paymentTermsPage: { ...(prev.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: url } }));
     } else if (activeTargetField === 'addOnsPhoto') {
-      setData(prev => ({ ...prev, addOnsPage: { ...(prev.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: url } }));
+      setData((prev: any) => ({ ...prev, addOnsPage: { ...(prev.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage), photo: url } }));
     } else if (activeTargetField === 'termsPhoto') {
-      setData(prev => ({ ...prev, termsPage: { ...(prev.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photo: url } }));
+      setData((prev: any) => ({ ...prev, termsPage: { ...(prev.termsPage || DEFAULT_AIRY_PROPOSAL.termsPage), photo: url } }));
     } else if (activeTargetField === 'thankYouPhoto') {
-      setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photo: url } }));
+      setData((prev: any) => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), photo: url } }));
     } else if (activeTargetField === 'thankYouLogo') {
-      setData(prev => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), brandLogoUrl: url } }));
+      setData((prev: any) => ({ ...prev, thankYouPage: { ...(prev.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage), brandLogoUrl: url } }));
     } else if (activeTargetField.startsWith('customPhoto_')) {
       const cKey = activeTargetField.replace('customPhoto_', '');
-      setData(prev => {
+      setData((prev: any) => {
         const customObj = (prev.customPages || {})[cKey] || {};
         return {
           ...prev,
@@ -2851,7 +2851,7 @@ function StudioCoreAiryBuilderContent() {
               </div>
 
               <div className="space-y-3">
-                {(data.functionsPage?.items || []).map((funcItem, fIdx) => (
+                {(data.functionsPage?.items || []).map((funcItem: any, fIdx: number) => (
                   <ThreeDCurvedFunctionEditor
                     key={funcItem.id || fIdx}
                     func={funcItem}
@@ -2865,7 +2865,7 @@ function StudioCoreAiryBuilderContent() {
                       setData({ ...data, functionsPage: { ...data.functionsPage, items: updatedItems } });
                     }}
                     onDelete={() => {
-                      const filtered = (data.functionsPage?.items || []).filter((_, i) => i !== fIdx);
+                      const filtered = (data.functionsPage?.items || []).filter((_: any, i: number) => i !== fIdx);
                       setData({ ...data, functionsPage: { ...data.functionsPage, items: filtered } });
                     }}
                     onAddCustomFunctionName={(newName) => setAvailableFunctionNames(prev => Array.from(new Set([...prev, newName])))}
@@ -2933,7 +2933,7 @@ function StudioCoreAiryBuilderContent() {
                 availableOptions={data.deliverablesPage?.availableOptions || DEFAULT_AIRY_PROPOSAL.deliverablesPage.availableOptions}
                 selectedText={(data.deliverablesPage?.selectedItems || DEFAULT_AIRY_PROPOSAL.deliverablesPage.selectedItems).join('\n')}
                 onChangeSelectedText={(newText) => {
-                  const arr = newText.split('\n').map(s => s.trim()).filter(Boolean);
+                  const arr = newText.split('\n').map((s: any) => s.trim()).filter(Boolean);
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
                   setData({ ...data, deliverablesPage: { ...currentObj, selectedItems: arr } });
                 }}
@@ -2985,7 +2985,7 @@ function StudioCoreAiryBuilderContent() {
                 availableOptions={data.specialValueAdditions?.availableOptions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.availableOptions}
                 selectedText={(data.specialValueAdditions?.selectedItems || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.selectedItems).join('\n')}
                 onChangeSelectedText={(newText) => {
-                  const arr = newText.split('\n').map(s => s.trim()).filter(Boolean);
+                  const arr = newText.split('\n').map((s: any) => s.trim()).filter(Boolean);
                   const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
                   setData({ ...data, specialValueAdditions: { ...currentObj, selectedItems: arr } });
                 }}
@@ -3171,7 +3171,7 @@ function StudioCoreAiryBuilderContent() {
                     <div className="space-y-3">
                       
               <div className="space-y-2">
-                {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps).map((step, idx) => (
+                {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps).map((step: any, idx: number) => (
                   <div key={step?.id || idx} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase text-amber-950">Installment #{idx + 1}</span>
@@ -3179,7 +3179,7 @@ function StudioCoreAiryBuilderContent() {
                         type="button"
                         onClick={() => {
                           const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.filter(s => s.id !== step.id);
+                          const updated = steps.filter((s: any) => s.id !== step.id);
                           const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                           setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
@@ -3196,7 +3196,7 @@ function StudioCoreAiryBuilderContent() {
                         disabled={false}
                         onChange={(val) => {
                           const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.map(s => s.id === step.id ? { ...s, date: val } : s);
+                          const updated = steps.map((s: any) => s.id === step.id ? { ...s, date: val } : s);
                           const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                           setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
@@ -3210,7 +3210,7 @@ function StudioCoreAiryBuilderContent() {
                         value={step?.stepName || ''}
                         onChange={(e) => {
                           const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.map(s => s.id === step.id ? { ...s, stepName: e.target.value } : s);
+                          const updated = steps.map((s: any) => s.id === step.id ? { ...s, stepName: e.target.value } : s);
                           const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                           setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
@@ -3226,7 +3226,7 @@ function StudioCoreAiryBuilderContent() {
                           value={step?.amount ?? 0}
                           onChange={(e) => {
                             const steps = data.paymentTermsPage?.steps || [];
-                            const updated = steps.map(s => s.id === step.id ? { ...s, amount: Number(e.target.value) || 0 } : s);
+                            const updated = steps.map((s: any) => s.id === step.id ? { ...s, amount: Number(e.target.value) || 0 } : s);
                             const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                             setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                           }}
@@ -3243,7 +3243,7 @@ function StudioCoreAiryBuilderContent() {
                           ]}
                           onChange={(val) => {
                             const steps = data.paymentTermsPage?.steps || [];
-                            const updated = steps.map(s => s.id === step.id ? { ...s, status: val as 'Completed' | 'Pending' } : s);
+                            const updated = steps.map((s: any) => s.id === step.id ? { ...s, status: val as 'Completed' | 'Pending' } : s);
                             const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                             setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                           }}
@@ -3336,7 +3336,7 @@ function StudioCoreAiryBuilderContent() {
               </div>
 
               <div className="space-y-2">
-                {(data.addOnsPage?.items || DEFAULT_AIRY_PROPOSAL.addOnsPage.items).map((item, idx) => (
+                {(data.addOnsPage?.items || DEFAULT_AIRY_PROPOSAL.addOnsPage.items).map((item: any, idx: number) => (
                   <div key={item?.id || idx} className="p-2.5 rounded-xl border border-amber-200/80 bg-zinc-50/80 space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -3345,7 +3345,7 @@ function StudioCoreAiryBuilderContent() {
                           checked={!!item?.selected}
                           onChange={(e) => {
                             const items = data.addOnsPage?.items || [];
-                            const updated = items.map(i => i.id === item.id ? { ...i, selected: e.target.checked } : i);
+                            const updated = items.map((i: any) => i.id === item.id ? { ...i, selected: e.target.checked } : i);
                             const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
                             setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                           }}
@@ -3358,7 +3358,7 @@ function StudioCoreAiryBuilderContent() {
                         type="button"
                         onClick={() => {
                           const items = data.addOnsPage?.items || [];
-                          const updated = items.filter(i => i.id !== item.id);
+                          const updated = items.filter((i: any) => i.id !== item.id);
                           const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
                           setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                         }}
@@ -3375,7 +3375,7 @@ function StudioCoreAiryBuilderContent() {
                         value={item?.price ?? 0}
                         onChange={(e) => {
                           const items = data.addOnsPage?.items || [];
-                          const updated = items.map(i => i.id === item.id ? { ...i, price: Number(e.target.value) || 0 } : i);
+                          const updated = items.map((i: any) => i.id === item.id ? { ...i, price: Number(e.target.value) || 0 } : i);
                           const currentObj = data.addOnsPage || DEFAULT_AIRY_PROPOSAL.addOnsPage;
                           setData({ ...data, addOnsPage: { ...currentObj, items: updated } });
                         }}
@@ -4358,7 +4358,7 @@ function StudioCoreAiryBuilderContent() {
                     </p>
                     <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
                       {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
-                        .split('\n').filter(Boolean).map((item, idx) => (
+                        .split('\n').filter(Boolean).map((item: any, idx: number) => (
                           <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
                             <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
                             <span>{item.trim()}</span>
@@ -4373,7 +4373,7 @@ function StudioCoreAiryBuilderContent() {
                     </h3>
                     <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
                       {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
-                        .split('\n').filter(Boolean).map((item, idx) => (
+                        .split('\n').filter(Boolean).map((item: any, idx: number) => (
                           <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
                             <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
                             <span>{item.trim()}</span>
@@ -4483,7 +4483,7 @@ function StudioCoreAiryBuilderContent() {
                                 )}
 
                                 <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                                  {funcChunk.map((func, index) => {
+                                  {funcChunk.map((func: any, index: number) => {
                                     const globalIdx = chunkIdx * 3 + index;
                                     return (
                                       <div 
@@ -4526,7 +4526,7 @@ function StudioCoreAiryBuilderContent() {
                                               Crew &amp; Requirements:
                                             </span>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-medium">
-                                              {func.requirements.map((req, rIdx) => {
+                                              {func.requirements.map((req: any, rIdx: number) => {
                                                 const q = req.qty || 1;
                                                 let label = req.name;
                                                 if (q > 1) {
@@ -4658,7 +4658,7 @@ function StudioCoreAiryBuilderContent() {
                                 )}
 
                                 <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
-                                  {delivChunk.map((item, idx) => (
+                                  {delivChunk.map((item: any, idx: number) => (
                                     <div 
                                       key={idx}
                                       className="p-3.5 rounded-2xl border flex items-center gap-3 shadow-xs"
@@ -4769,7 +4769,7 @@ function StudioCoreAiryBuilderContent() {
                   )}
 
                   <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
-                    {(data.specialValueAdditions?.selectedItems || []).map((item, idx) => (
+                    {(data.specialValueAdditions?.selectedItems || []).map((item: any, idx: number) => (
                       <div 
                         key={idx}
                         className="p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all"
@@ -5066,7 +5066,7 @@ function StudioCoreAiryBuilderContent() {
                           </tr>
                         </thead>
                         <tbody className="divide-y text-xs font-semibold" style={{ borderColor, color: textColor }}>
-                          {(data.paymentTermsPage?.steps || []).map((step) => (
+                          {(data.paymentTermsPage?.steps || []).map((step: any) => (
                             <tr key={step.id} style={{ borderColor }}>
                               <td className="py-3 px-4 font-sans font-medium tracking-tight uppercase">{step.date}</td>
                               <td className="py-3 px-4 font-bold">{step.stepName}</td>
@@ -5223,7 +5223,7 @@ function StudioCoreAiryBuilderContent() {
                           </tr>
                         </thead>
                         <tbody className="divide-y text-xs font-semibold" style={{ borderColor, color: textColor }}>
-                          {(data.addOnsPage?.items || []).filter(item => item.selected).map((item) => (
+                          {(data.addOnsPage?.items || []).filter((item: any) => item.selected).map((item: any) => (
                             <tr key={item.id} style={{ borderColor }}>
                               <td className="py-3.5 px-5 font-bold">{item.title}</td>
                               <td className="py-3.5 px-5 text-right font-sans font-medium tracking-tight">₹{Number(item.price || 0).toLocaleString('en-IN')}</td>

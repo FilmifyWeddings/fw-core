@@ -3,9 +3,8 @@ import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
 import { getThemeFromKey } from '@/lib/quotation-theme';
 
 /**
- * Next.js 16 Compliant Server Renderer.
- * Uses dynamic runtime require('react-dom/server') to render QuotationDocumentCanvas to static HTML markup
- * without triggering Turbopack static import restrictions during build time.
+ * Enterprise Server-Side React Component Renderer for PDF Export.
+ * Renders QuotationDocumentCanvas directly to static HTML with full diagnostic metrics.
  */
 export function renderQuotationReactComponentToHTML(documentData: any): string {
   const data = documentData || {};
@@ -13,15 +12,42 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
   const primaryFont = data.primaryFont || "'Cormorant Garamond', serif";
   const secondaryFont = data.secondaryFont || "'Plus Jakarta Sans', sans-serif";
 
+  const defaultSequence = [
+    { id: 'cover-std', type: 'cover', label: 'Cover Page' },
+    { id: 'about-std', type: 'aboutUs', label: 'About Us' },
+    { id: 'shoot-std', type: 'shootDetails', label: 'Pre-Wedding Shoot' },
+    { id: 'funcs-std', type: 'functionsPage', label: 'Functions & Coverage' },
+    { id: 'deliv-std', type: 'deliverablesPage', label: 'Deliverables' },
+    { id: 'sva-std', type: 'specialValueAdditions', label: 'Special Value Additions' },
+    { id: 'price-std', type: 'pricingPage', label: 'Pricing Details' },
+    { id: 'pay-std', type: 'paymentTermsPage', label: 'Payment Terms & Schedule' },
+    { id: 'addons-std', type: 'addOnsPage', label: 'Add-Ons & Upgrades' },
+    { id: 'terms-std', type: 'termsPage', label: 'Terms & Conditions' },
+    { id: 'thankyou-std', type: 'thankYouPage', label: 'Thank You Page' }
+  ];
+
+  const pageSeq = data.pageSequence || defaultSequence;
+
   let bodyMarkup = '';
   try {
     const reactDomServer = eval("require('react-dom/server')");
     bodyMarkup = reactDomServer.renderToStaticMarkup(
       React.createElement(QuotationDocumentCanvas, { documentData: data })
     );
-  } catch (e) {
-    console.error('[Next.js 16 Server Renderer Error]:', e);
+  } catch (e: any) {
+    console.error('[PDF Server Renderer Exception]:', e.message);
   }
+
+  // Count generated pages in markup
+  const pageMatchCount = (bodyMarkup.match(/class="[^"]*quotation-page[^"]*"/g) || []).length;
+
+  console.log('[PDF Server Diagnostic] ==================================================');
+  console.log('[PDF Server Diagnostic] Quotation Design Name:', data.designName || 'Untitled Quotation');
+  console.log('[PDF Server Diagnostic] Active Theme ID:', activeTheme.id, 'Name:', activeTheme.name);
+  console.log('[PDF Server Diagnostic] pageSequence Length:', pageSeq.length);
+  console.log('[PDF Server Diagnostic] React Component Markup Length:', bodyMarkup.length, 'bytes');
+  console.log('[PDF Server Diagnostic] Rendered Quotation Pages Count:', pageMatchCount);
+  console.log('[PDF Server Diagnostic] ==================================================');
 
   let embeddedFontsCSS = '';
   try {
@@ -58,7 +84,7 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
     }
   } catch (e) {}
 
-  return `<!DOCTYPE html>
+  const fullHTML = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -96,7 +122,7 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
         background: #ffffff !important;
       }
 
-      .pdf-page, .quotation-page, .quotation-canvas-page, section {
+      .pdf-page, .quotation-page, .quotation-canvas-page {
         width: 794px !important;
         min-width: 794px !important;
         max-width: 794px !important;
@@ -112,7 +138,7 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
         break-inside: avoid !important;
       }
 
-      .pdf-page:last-child, .quotation-page:last-child, .quotation-canvas-page:last-child, section:last-child {
+      .pdf-page:last-child, .quotation-page:last-child, .quotation-canvas-page:last-child {
         page-break-after: avoid !important;
         break-after: avoid !important;
       }
@@ -128,4 +154,16 @@ export function renderQuotationReactComponentToHTML(documentData: any): string {
     ${bodyMarkup}
   </body>
 </html>`;
+
+  // Save generated HTML to temporary file for inspection
+  try {
+    const nodeReq = eval('require');
+    const fs = nodeReq('fs');
+    const path = nodeReq('path');
+    const debugPath = path.join(process.cwd(), 'scratch', 'debug_generated_quotation.html');
+    fs.writeFileSync(debugPath, fullHTML, 'utf8');
+    console.log('[PDF Server Diagnostic] Saved debug HTML file to:', debugPath);
+  } catch (e) {}
+
+  return fullHTML;
 }
