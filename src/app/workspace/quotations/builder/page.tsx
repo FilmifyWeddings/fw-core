@@ -2086,6 +2086,7 @@ function StudioCoreAiryBuilderContent() {
     }
 
     const savedTransform = container.style.transform;
+    const originalSrcs = new Map<HTMLImageElement, string>();
 
     try {
       // 1. Reset zoom transform during snapshot capture
@@ -2095,15 +2096,56 @@ function StudioCoreAiryBuilderContent() {
         try { await document.fonts.ready; } catch (e) {}
       }
 
-      // 2. Pre-load all images
-      const images = Array.from(container.querySelectorAll('img'));
+      // 2. Pre-convert all images to inline Base64 Data URLs so html-to-image never taints canvas or misses cross-origin photos
+      const imgElements = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+
       await Promise.all(
-        images.map((img) => {
+        imgElements.map(async (img) => {
+          const src = img.getAttribute('src') || img.src;
+          if (src && !src.startsWith('data:')) {
+            originalSrcs.set(img, src);
+            try {
+              const res = await fetch(src, { mode: 'cors' });
+              if (res.ok) {
+                const blob = await res.blob();
+                const dataUrl = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = () => resolve('');
+                  reader.readAsDataURL(blob);
+                });
+                if (dataUrl) {
+                  img.src = dataUrl;
+                  return;
+                }
+              }
+            } catch (e) {}
+
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth || img.width || 800;
+              canvas.height = img.naturalHeight || img.height || 600;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+                if (dataUrl && dataUrl.startsWith('data:image')) {
+                  img.src = dataUrl;
+                }
+              }
+            } catch (e) {}
+          }
+        })
+      );
+
+      // Wait for image loading to settle
+      await Promise.all(
+        imgElements.map((img) => {
           if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
           return new Promise((resolve) => {
             img.onload = () => resolve(true);
             img.onerror = () => resolve(true);
-            setTimeout(resolve, 500);
+            setTimeout(resolve, 300);
           });
         })
       );
@@ -2168,6 +2210,9 @@ function StudioCoreAiryBuilderContent() {
         window.print();
       }
     } finally {
+      originalSrcs.forEach((origSrc, imgEl) => {
+        try { imgEl.src = origSrc; } catch (e) {}
+      });
       if (container) {
         container.style.transform = savedTransform;
       }
