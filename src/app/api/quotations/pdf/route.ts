@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument } from 'pdf-lib';
 import { createClient } from '@supabase/supabase-js';
@@ -330,50 +329,7 @@ export async function POST(req: NextRequest) {
       );
     });
 
-    // ── PUPPETEER RUNTIME EVIDENCE & DOM EVALUATION ──
-    const domEvidence = await page.evaluate(() => {
-      const rootCanvas = document.querySelector('#quotation-full-canvas');
-      const rootRectObj = rootCanvas ? rootCanvas.getBoundingClientRect() : null;
-      const rootStyleObj = rootCanvas ? getComputedStyle(rootCanvas) : null;
-      return {
-        bodyChildren: document.body.children.length,
-        bodyHTMLLength: document.body.innerHTML.length,
-        bodyHeight: document.body.scrollHeight,
-        bodyWidth: document.body.scrollWidth,
-        rootExists: !!rootCanvas,
-        rootRect: rootRectObj ? { top: rootRectObj.top, left: rootRectObj.left, width: rootRectObj.width, height: rootRectObj.height } : null,
-        rootStyle: rootStyleObj ? { display: rootStyleObj.display, visibility: rootStyleObj.visibility, opacity: rootStyleObj.opacity } : null,
-        pageCount: document.querySelectorAll('.quotation-page,.pdf-page,.quotation-canvas-page').length
-      };
-    });
-
-    console.log('[Puppeteer Runtime Evidence]:', JSON.stringify(domEvidence, null, 2));
-
-    try {
-      const nodeReq = eval("require");
-      const pathNode = nodeReq("path");
-      const fsNode = nodeReq("fs");
-      const brainDir = pathNode.join(process.cwd(), '..', '..', 'brain', '040a13ae-0bc5-428f-843e-9962d21a0717');
-      
-      // Save Full Page Screenshot
-      const screenshotBuffer = await page.screenshot({ fullPage: true });
-      if (fsNode.existsSync(brainDir)) {
-        fsNode.writeFileSync(pathNode.join(brainDir, 'puppeteer_screenshot.png'), screenshotBuffer);
-      }
-      fsNode.writeFileSync(pathNode.join(process.cwd(), 'scratch', 'puppeteer_screenshot.png'), screenshotBuffer);
-
-      // Save Rendered DOM HTML Content
-      const domContent = await page.content();
-      if (fsNode.existsSync(brainDir)) {
-        fsNode.writeFileSync(pathNode.join(brainDir, 'puppeteer_dom_content.html'), domContent, 'utf8');
-      }
-      fsNode.writeFileSync(pathNode.join(process.cwd(), 'scratch', 'puppeteer_dom_content.html'), domContent, 'utf8');
-      console.log('[Puppeteer Evidence Saved] Screenshot & DOM HTML Content saved successfully.');
-    } catch (e: any) {
-      console.warn('[Puppeteer Evidence Saver Error]:', e.message);
-    }
-
-    // STAGE 6: Vector A4 PDF Generation & SHA-256 Pipeline Audit
+    // STAGE 6: Vector A4 PDF Generation
     console.log('[PDF Server Pipeline] STAGE 6: Vector A4 PDF Generation');
     const rawBuffer = await page.pdf({
       width: '794px',
@@ -384,19 +340,8 @@ export async function POST(req: NextRequest) {
     });
 
     const pdfBuffer = new Uint8Array(rawBuffer);
-    const puppeteerSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-    console.log('[Puppeteer PDF Buffer Evidence] Length:', pdfBuffer.length, 'bytes');
-    console.log('[Puppeteer PDF SHA-256 Hash]:', puppeteerSha256);
-
     await browser.close();
     browser = null;
-
-    // PRE-RESPONSE SHA-256 EVIDENCE
-    const responseBuffer = pdfBuffer;
-    const responseSha256 = crypto.createHash('sha256').update(responseBuffer).digest('hex');
-    console.log('[Pre-Response Evidence] Response Buffer Length:', responseBuffer.length, 'bytes');
-    console.log('[Pre-Response SHA-256 Hash]:', responseSha256);
-    console.log('[SHA-256 Pipeline Comparison]: Puppeteer vs Response Hash Match:', puppeteerSha256 === responseSha256);
 
     const durationMs = Date.now() - startTime;
     console.log('[PDF Server Pipeline] STAGE 7: PDF Response Delivered');
