@@ -2068,14 +2068,46 @@ function StudioCoreAiryBuilderContent() {
     }
   };
 
-  // 100% EXACT A4 PRINT & SAVE AS PDF ENGINE WITH FULL PHOTO VISIBILITY (MOBILE & PC)
+  // DANKA KA SYSTEM: HIGH-SPEED VECTOR A4 PDF DOWNLOAD ENGINE (PC & MOBILE)
   const handleDownloadPDFCanvas = () => {
+    setIsExportingPDF(true);
+    setExportProgress(20);
+    setExportStatusText('Preparing Full-Bleed A4 Vector Document...');
     const routeId = params?.id ? String(params.id) : '';
-    if (routeId) {
-      window.location.href = `/api/quotations/${routeId}/render-html?print=true`;
-    } else {
-      window.print();
-    }
+
+    const progressTimer = setInterval(() => {
+      setExportProgress(prev => (prev < 95 ? prev + 15 : prev));
+    }, 100);
+
+    setTimeout(() => {
+      clearInterval(progressTimer);
+      setExportProgress(100);
+      setExportStatusText('100% Complete! Opening PDF File...');
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/api/quotations/pdf';
+      form.style.display = 'none';
+
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'payload';
+      input.value = JSON.stringify({
+        quotationId: routeId,
+        content_json: data,
+        filename: `Quotation-${routeId || 'document'}.pdf`
+      });
+      form.appendChild(input);
+
+      document.body.appendChild(form);
+      form.submit();
+      document.body.removeChild(form);
+
+      setTimeout(() => {
+        setIsExportingPDF(false);
+        setExportProgress(0);
+      }, 1500);
+    }, 700);
   };
 
   useEffect(() => {
