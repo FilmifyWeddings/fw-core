@@ -1883,9 +1883,12 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                                               overflowWrap: 'anywhere',
                                               wordBreak: 'break-word'
                                             }}
-                                          >
-                                            "{func.notes}"
-                                          </p>
+                                          >&ldquo;{String(func.notes).split('\n').map((line, lIdx, arr) => (
+                                            <React.Fragment key={lIdx}>
+                                              {line}
+                                              {lIdx < arr.length - 1 && <br />}
+                                            </React.Fragment>
+                                          ))}&rdquo;</p>
                                         )}
                                       </div>
                                     );
