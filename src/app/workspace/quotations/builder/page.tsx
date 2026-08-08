@@ -5779,7 +5779,7 @@ function StudioCoreAiryBuilderContent() {
               <div className="flex items-center justify-center gap-2 text-zinc-900 dark:text-zinc-100 font-semibold text-sm">
                 <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
                 <span className="font-sans font-bold tracking-tight">
-                  {exportStatusText || 'Generating A4 PDF...'}
+                  {'Quotation downloading...'}
                 </span>
               </div>
 
@@ -5818,7 +5818,7 @@ function StudioCoreAiryBuilderContent() {
 
               {/* Live Percentage Number & App Text */}
               <div className="flex items-center justify-between px-2 text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
-                <span className="text-[11px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-extrabold">Filmify StudioCore</span>
+                
                 <span className="text-amber-500 font-extrabold text-sm">{exportProgress}%</span>
               </div>
             </motion.div>

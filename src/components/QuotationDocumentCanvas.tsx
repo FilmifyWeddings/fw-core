@@ -1874,7 +1874,16 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
 
                                         {/* Custom Notes */}
                                         {func.notes && (
-                                          <p className="text-xs italic leading-relaxed opacity-85 pt-1 border-t whitespace-pre-line" style={{ color: textColor, borderColor: borderColor || 'rgba(0,0,0,0.08)' }}>
+                                          <p 
+                                            className="text-xs italic leading-relaxed opacity-85 pt-1 border-t" 
+                                            style={{ 
+                                              color: textColor, 
+                                              borderColor: borderColor || 'rgba(0,0,0,0.08)',
+                                              whiteSpace: 'pre-wrap',
+                                              overflowWrap: 'anywhere',
+                                              wordBreak: 'break-word'
+                                            }}
+                                          >
                                             "{func.notes}"
                                           </p>
                                         )}
