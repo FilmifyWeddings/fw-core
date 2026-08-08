@@ -847,14 +847,6 @@ function UnifiedPhotoControls({
             onChange={onChangeShape}
           />
 
-          {/* Page Image Position Alignment (Top / Center / Bottom) */}
-          {onChangePosition && frameShape !== 'background' && (
-            <ImagePositionSelector
-              value={imagePosition}
-              onChange={onChangePosition}
-            />
-          )}
-
           {/* Smooth Photo Focus (Up / Down) Percentage Slider */}
           <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
             <div className="flex items-center justify-between text-[10px] text-slate-700 font-extrabold">
@@ -4038,19 +4030,6 @@ function StudioCoreAiryBuilderContent() {
                   : 'px-12'
               } ${!data.cover.photoUrl ? 'justify-center items-center' : 'justify-between'}`}>
                 <div className={`w-full space-y-6 flex flex-col items-center justify-center my-auto ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-0' : ''}`}>
-                  
-                  {/* TOP POSITION IMAGE */}
-                  {data.cover.photoUrl && data.cover.frameShape !== 'background' && data.cover.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.cover.photoUrl}
-                      frameShape={data.cover.frameShape}
-                      photoHeight={data.cover.photoHeight}
-                      photoWidth={data.cover.photoWidth}
-                      photoFocalY={data.cover.photoFocalY}
-                      altText="Wedding Couple"
-                    />
-                  )}
-
                   <div className={`space-y-3 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                     <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-pre-line text-center" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
@@ -4059,18 +4038,6 @@ function StudioCoreAiryBuilderContent() {
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}
                     </h3>
                   </div>
-
-                  {/* CENTER POSITION IMAGE (DEFAULT) */}
-                  {data.cover.photoUrl && data.cover.frameShape !== 'background' && (data.cover.imagePosition === 'center' || !data.cover.imagePosition) && (
-                    <SectionImageRenderer
-                      photo={data.cover.photoUrl}
-                      frameShape={data.cover.frameShape}
-                      photoHeight={data.cover.photoHeight}
-                      photoWidth={data.cover.photoWidth}
-                      photoFocalY={data.cover.photoFocalY}
-                      altText="Wedding Couple"
-                    />
-                  )}
 
                   <div className={`space-y-3 pt-1 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
 
@@ -4106,20 +4073,20 @@ function StudioCoreAiryBuilderContent() {
                       );
                     })()}
                   </div>
-
-                  {/* BOTTOM POSITION IMAGE */}
-                  {data.cover.photoUrl && data.cover.frameShape !== 'background' && data.cover.imagePosition === 'bottom' && (
-                    <SectionImageRenderer
-                      photo={data.cover.photoUrl}
-                      frameShape={data.cover.frameShape}
-                      photoHeight={data.cover.photoHeight}
-                      photoWidth={data.cover.photoWidth}
-                      photoFocalY={data.cover.photoFocalY}
-                      altText="Wedding Couple"
-                    />
-                  )}
-
                 </div>
+
+                {/* BOTTOM POSITION IMAGE */}
+                {data.cover.photoUrl && data.cover.frameShape !== 'background' && (
+                  <SectionImageRenderer
+                    photo={data.cover.photoUrl}
+                    frameShape={data.cover.frameShape}
+                    photoHeight={data.cover.photoHeight}
+                    photoWidth={data.cover.photoWidth}
+                    photoFocalY={data.cover.photoFocalY}
+                    isBottomFlush={true}
+                    altText="Wedding Couple"
+                  />
+                )}
 
                 {/* CANVAS FOOTER WATERMARK */}
                 {isLastPage && (
@@ -4175,33 +4142,9 @@ function StudioCoreAiryBuilderContent() {
               } ${!data.aboutUs.bottomBannerPhoto ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.aboutUs.frameShape === 'full-width' || (data.aboutUs.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.aboutUs.bottomBannerPhoto}
-                      frameShape={data.aboutUs.frameShape}
-                      photoHeight={data.aboutUs.bottomBannerHeight}
-                      photoWidth={data.aboutUs.photoWidth}
-                      photoFocalY={data.aboutUs.photoFocalY}
-                      altText="About Us Banner"
-                    />
-                  )}
-
                   <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.aboutUs.kicker || 'INTRODUCTION'}
                   </span>
-
-                  {/* CENTER IMAGE POSITION */}
-                  {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && data.aboutUs.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.aboutUs.bottomBannerPhoto}
-                      frameShape={data.aboutUs.frameShape}
-                      photoHeight={data.aboutUs.bottomBannerHeight}
-                      photoWidth={data.aboutUs.photoWidth}
-                      photoFocalY={data.aboutUs.photoFocalY}
-                      altText="About Us Banner"
-                    />
-                  )}
 
                   <div className="flex flex-col items-center justify-center my-4 select-none">
                     <MonogramSVG textColor={textColor} className="w-[260px] h-auto object-contain block mx-auto" />
@@ -4217,7 +4160,7 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && (data.aboutUs.imagePosition === 'bottom' || !data.aboutUs.imagePosition) && (
+                {data.aboutUs.bottomBannerPhoto && data.aboutUs.frameShape !== 'background' && (
                   <SectionImageRenderer
                     photo={data.aboutUs.bottomBannerPhoto}
                     frameShape={data.aboutUs.frameShape}
@@ -4279,35 +4222,11 @@ function StudioCoreAiryBuilderContent() {
               } ${!data.shootDetails.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.shootDetails.frameShape === 'full-width' || (data.shootDetails.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.shootDetails.photo}
-                      frameShape={data.shootDetails.frameShape}
-                      photoHeight={data.shootDetails.photoHeight}
-                      photoWidth={data.shootDetails.photoWidth}
-                      photoFocalY={data.shootDetails.photoFocalY}
-                      altText="Pre-Wedding Photo"
-                    />
-                  )}
-
                   <div className="text-center space-y-3 my-3">
                     <h2 className="text-4xl tracking-wide font-normal whitespace-nowrap" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {data.shootDetails.heading || 'Pre-Wedding Shoot'}
                     </h2>
                   </div>
-
-                  {/* CENTER IMAGE POSITION */}
-                  {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && data.shootDetails.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.shootDetails.photo}
-                      frameShape={data.shootDetails.frameShape}
-                      photoHeight={data.shootDetails.photoHeight}
-                      photoWidth={data.shootDetails.photoWidth}
-                      photoFocalY={data.shootDetails.photoFocalY}
-                      altText="Pre-Wedding Photo"
-                    />
-                  )}
 
                   <div className="space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
                     <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2 mb-1" style={{ color: textColor }}>
@@ -4342,7 +4261,7 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && (data.shootDetails.imagePosition === 'bottom' || !data.shootDetails.imagePosition) && (
+                {data.shootDetails.photo && data.shootDetails.frameShape !== 'background' && (
                   <SectionImageRenderer
                     photo={data.shootDetails.photo}
                     frameShape={data.shootDetails.frameShape}
@@ -4409,18 +4328,6 @@ function StudioCoreAiryBuilderContent() {
                             } justify-between`}>
                               
                               <div className={`flex flex-col items-center justify-start w-full ${data.functionsPage?.frameShape === 'full-width' || (data.functionsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                                {/* TOP IMAGE POSITION - Only on 1st Page */}
-                                {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'top' && (
-                                  <SectionImageRenderer
-                                    photo={data.functionsPage.photo}
-                                    frameShape={data.functionsPage.frameShape}
-                                    photoHeight={data.functionsPage.photoHeight}
-                                    photoWidth={data.functionsPage.photoWidth}
-                                    photoFocalY={data.functionsPage.photoFocalY}
-                                    altText="Functions Banner"
-                                  />
-                                )}
-
                                 <div className="text-center space-y-2 my-2">
                                   <span className="text-xs tracking-[0.25em] uppercase font-bold block whitespace-nowrap" style={{ color: kickerColor }}>
                                     {data.functionsPage?.kicker || 'EVENT SCHEDULE'} {funcChunks.length > 1 ? `(${chunkIdx + 1}/${funcChunks.length})` : ''}
@@ -4429,18 +4336,6 @@ function StudioCoreAiryBuilderContent() {
                                     {data.functionsPage?.heading || 'Functions & Coverage'}
                                   </h2>
                                 </div>
-
-                                {/* CENTER IMAGE POSITION - Only on 1st Page */}
-                                {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && data.functionsPage?.imagePosition === 'center' && (
-                                  <SectionImageRenderer
-                                    photo={data.functionsPage.photo}
-                                    frameShape={data.functionsPage.frameShape}
-                                    photoHeight={data.functionsPage.photoHeight}
-                                    photoWidth={data.functionsPage.photoWidth}
-                                    photoFocalY={data.functionsPage.photoFocalY}
-                                    altText="Functions Banner"
-                                  />
-                                )}
 
                                 <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
                                   {funcChunk.map((func, index) => {
@@ -4530,7 +4425,7 @@ function StudioCoreAiryBuilderContent() {
                               </div>
 
                               {/* BOTTOM FLUSH IMAGE POSITION - Only on 1st Page */}
-                              {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && (data.functionsPage?.imagePosition === 'bottom' || !data.functionsPage?.imagePosition) && (
+                              {chunkIdx === 0 && data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background' && (
                                 <SectionImageRenderer
                                   photo={data.functionsPage.photo}
                                   frameShape={data.functionsPage.frameShape}
@@ -4596,36 +4491,12 @@ function StudioCoreAiryBuilderContent() {
                             } justify-between`}>
                               
                               <div className={`flex flex-col items-center justify-center w-full ${data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                                {/* TOP IMAGE POSITION - Only on 1st Page */}
-                                {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'top' && (
-                                  <SectionImageRenderer
-                                    photo={data.deliverablesPage.photo}
-                                    frameShape={data.deliverablesPage.frameShape}
-                                    photoHeight={data.deliverablesPage.photoHeight}
-                                    photoWidth={data.deliverablesPage.photoWidth}
-                                    photoFocalY={data.deliverablesPage.photoFocalY}
-                                    altText="Deliverables Photo"
-                                  />
-                                )}
-
                                 <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                                   {data.deliverablesPage?.kicker || 'WHAT WE DELIVER'} {delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
                                 </span>
                                 <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
                                   {data.deliverablesPage?.heading || 'DELIVERABLES'}
                                 </h2>
-
-                                {/* CENTER IMAGE POSITION - Only on 1st Page */}
-                                {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && data.deliverablesPage?.imagePosition === 'center' && (
-                                  <SectionImageRenderer
-                                    photo={data.deliverablesPage.photo}
-                                    frameShape={data.deliverablesPage.frameShape}
-                                    photoHeight={data.deliverablesPage.photoHeight}
-                                    photoWidth={data.deliverablesPage.photoWidth}
-                                    photoFocalY={data.deliverablesPage.photoFocalY}
-                                    altText="Deliverables Photo"
-                                  />
-                                )}
 
                                 <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
                                   {delivChunk.map((item, idx) => (
@@ -4644,7 +4515,7 @@ function StudioCoreAiryBuilderContent() {
                               </div>
 
                               {/* BOTTOM FLUSH IMAGE POSITION - Only on 1st Page */}
-                              {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && (data.deliverablesPage?.imagePosition === 'bottom' || !data.deliverablesPage?.imagePosition) && (
+                              {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && (
                                 <SectionImageRenderer
                                   photo={data.deliverablesPage.photo}
                                   frameShape={data.deliverablesPage.frameShape}
@@ -4704,39 +4575,13 @@ function StudioCoreAiryBuilderContent() {
                 data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' 
                   ? 'px-0' 
                   : 'px-12'
-              } ${!data.specialValueAdditions?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && data.specialValueAdditions?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.specialValueAdditions.photo}
-                      frameShape={data.specialValueAdditions.frameShape}
-                      photoHeight={data.specialValueAdditions.photoHeight}
-                      photoWidth={data.specialValueAdditions.photoWidth}
-                      photoFocalY={data.specialValueAdditions.photoFocalY}
-                      altText="Special Value Additions Photo"
-                    />
-                  )}
-
+              } ${!data.specialValueAdditions?.ph                <div className={`flex flex-col items-center justify-center w-full ${data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
-                    {data.specialValueAdditions?.kicker || 'COMPLIMENTARY'}
+                    {data.specialValueAdditions?.kicker || 'COMPLIMENTARY GIFTS & BONUSES'}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.specialValueAdditions?.heading || 'SPECIAL VALUE ADDITIONS'}
                   </h2>
-
-                  {/* CENTER IMAGE POSITION */}
-                  {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && data.specialValueAdditions?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.specialValueAdditions.photo}
-                      frameShape={data.specialValueAdditions.frameShape}
-                      photoHeight={data.specialValueAdditions.photoHeight}
-                      photoWidth={data.specialValueAdditions.photoWidth}
-                      photoFocalY={data.specialValueAdditions.photoFocalY}
-                      altText="Special Value Additions Photo"
-                    />
-                  )}
 
                   <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
                     {(data.specialValueAdditions?.selectedItems || []).map((item, idx) => (
@@ -4766,7 +4611,7 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && (data.specialValueAdditions?.imagePosition === 'bottom' || !data.specialValueAdditions?.imagePosition) && (
+                {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && (
                   <SectionImageRenderer
                     photo={data.specialValueAdditions.photo}
                     frameShape={data.specialValueAdditions.frameShape}
@@ -4828,36 +4673,12 @@ function StudioCoreAiryBuilderContent() {
               } ${!data.pricingPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && data.pricingPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.pricingPage.photo}
-                      frameShape={data.pricingPage.frameShape}
-                      photoHeight={data.pricingPage.photoHeight}
-                      photoWidth={data.pricingPage.photoWidth}
-                      photoFocalY={data.pricingPage.photoFocalY}
-                      altText="Pricing Details Photo"
-                    />
-                  )}
-
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.pricingPage?.heading || 'PRICING DETAILS'}
                   </h2>
-
-                  {/* CENTER IMAGE POSITION */}
-                  {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && data.pricingPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.pricingPage.photo}
-                      frameShape={data.pricingPage.frameShape}
-                      photoHeight={data.pricingPage.photoHeight}
-                      photoWidth={data.pricingPage.photoWidth}
-                      photoFocalY={data.pricingPage.photoFocalY}
-                      altText="Pricing Details Photo"
-                    />
-                  )}
 
                   <div className="w-full max-w-xl mx-auto space-y-4 my-3">
                     <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
@@ -4930,7 +4751,7 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && (data.pricingPage?.imagePosition === 'bottom' || !data.pricingPage?.imagePosition) && (
+                {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && (
                   <SectionImageRenderer
                     photo={data.pricingPage.photo}
                     frameShape={data.pricingPage.frameShape}
@@ -4992,36 +4813,12 @@ function StudioCoreAiryBuilderContent() {
               } ${!data.paymentTermsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.paymentTermsPage?.frameShape === 'full-width' || (data.paymentTermsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && data.paymentTermsPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.paymentTermsPage.photo}
-                      frameShape={data.paymentTermsPage.frameShape}
-                      photoHeight={data.paymentTermsPage.photoHeight}
-                      photoWidth={data.paymentTermsPage.photoWidth}
-                      photoFocalY={data.paymentTermsPage.photoFocalY}
-                      altText="Payment Terms Photo"
-                    />
-                  )}
-
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.paymentTermsPage?.kicker || 'SCHEDULE'}
                   </span>
                   <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
                     {data.paymentTermsPage?.heading || 'PAYMENT TERMS & SCHEDULE'}
                   </h2>
-
-                  {/* CENTER IMAGE POSITION */}
-                  {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && data.paymentTermsPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.paymentTermsPage.photo}
-                      frameShape={data.paymentTermsPage.frameShape}
-                      photoHeight={data.paymentTermsPage.photoHeight}
-                      photoWidth={data.paymentTermsPage.photoWidth}
-                      photoFocalY={data.paymentTermsPage.photoFocalY}
-                      altText="Payment Terms Photo"
-                    />
-                  )}
 
                   <div className="w-full max-w-xl mx-auto space-y-4 my-3">
                     {/* Structured Table matching reference design */}
@@ -5085,7 +4882,7 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && (data.paymentTermsPage?.imagePosition === 'bottom' || !data.paymentTermsPage?.imagePosition) && (
+                {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && (
                   <SectionImageRenderer
                     photo={data.paymentTermsPage.photo}
                     frameShape={data.paymentTermsPage.frameShape}
@@ -5147,18 +4944,6 @@ function StudioCoreAiryBuilderContent() {
               } ${!data.addOnsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
                 
                 <div className={`flex flex-col items-center justify-center w-full ${data.addOnsPage?.frameShape === 'full-width' || (data.addOnsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && data.addOnsPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.addOnsPage.photo}
-                      frameShape={data.addOnsPage.frameShape}
-                      photoHeight={data.addOnsPage.photoHeight}
-                      photoWidth={data.addOnsPage.photoWidth}
-                      photoFocalY={data.addOnsPage.photoFocalY}
-                      altText="Add-Ons Photo"
-                    />
-                  )}
-
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.addOnsPage?.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
                   </span>
@@ -5169,18 +4954,6 @@ function StudioCoreAiryBuilderContent() {
                     <p className="text-xs font-medium opacity-80 mb-6" style={{ color: textColor }}>
                       {data.addOnsPage.subText}
                     </p>
-                  )}
-
-                  {/* CENTER IMAGE POSITION */}
-                  {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && data.addOnsPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.addOnsPage.photo}
-                      frameShape={data.addOnsPage.frameShape}
-                      photoHeight={data.addOnsPage.photoHeight}
-                      photoWidth={data.addOnsPage.photoWidth}
-                      photoFocalY={data.addOnsPage.photoFocalY}
-                      altText="Add-Ons Photo"
-                    />
                   )}
 
                   <div className="w-full max-w-xl mx-auto space-y-4 my-3">
@@ -5212,7 +4985,7 @@ function StudioCoreAiryBuilderContent() {
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && (data.addOnsPage?.imagePosition === 'bottom' || !data.addOnsPage?.imagePosition) && (
+                {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && (
                   <SectionImageRenderer
                     photo={data.addOnsPage.photo}
                     frameShape={data.addOnsPage.frameShape}
@@ -5279,36 +5052,12 @@ function StudioCoreAiryBuilderContent() {
                             } justify-between`}>
                               
                               <div className={`flex flex-col items-center justify-center w-full ${data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                                {/* TOP IMAGE POSITION - Only on 1st Page */}
-                                {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'top' && (
-                                  <SectionImageRenderer
-                                    photo={data.termsPage.photo}
-                                    frameShape={data.termsPage.frameShape}
-                                    photoHeight={data.termsPage.photoHeight}
-                                    photoWidth={data.termsPage.photoWidth}
-                                    photoFocalY={data.termsPage.photoFocalY}
-                                    altText="Terms & Conditions Photo"
-                                  />
-                                )}
-
                                 <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                                   {data.termsPage?.kicker || 'POLICIES & RULES'} {termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
                                 </span>
                                 <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
                                   {data.termsPage?.heading || 'TERMS & CONDITIONS'}
                                 </h2>
-
-                                {/* CENTER IMAGE POSITION - Only on 1st Page */}
-                                {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'center' && (
-                                  <SectionImageRenderer
-                                    photo={data.termsPage.photo}
-                                    frameShape={data.termsPage.frameShape}
-                                    photoHeight={data.termsPage.photoHeight}
-                                    photoWidth={data.termsPage.photoWidth}
-                                    photoFocalY={data.termsPage.photoFocalY}
-                                    altText="Terms & Conditions Photo"
-                                  />
-                                )}
 
                                 <div className="w-full max-w-xl mx-auto space-y-4 my-3 text-left">
                                   <div 
@@ -5323,9 +5072,10 @@ function StudioCoreAiryBuilderContent() {
                               </div>
 
                               {/* BOTTOM FLUSH IMAGE POSITION - Only on 1st Page */}
-                              {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && (data.termsPage?.imagePosition === 'bottom' || !data.termsPage?.imagePosition) && (
+                              {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && (
                                 <SectionImageRenderer
                                   photo={data.termsPage.photo}
+                                  frameShape={data.termsPage.frameShape}     photo={data.termsPage.photo}
                                   frameShape={data.termsPage.frameShape}
                                   photoHeight={data.termsPage.photoHeight}
                                   photoWidth={data.termsPage.photoWidth}

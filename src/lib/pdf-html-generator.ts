@@ -219,7 +219,7 @@ function renderSectionImage(
 
   return `
     <div style="width:100%;display:flex;justify-content:center;margin:${isBottomFlush ? '16px 0 0 0' : '16px 0'};">
-      <div style="width:${photoWidth || 75}%;height:${photoHeight || 450}px;overflow:visible;${borderRadiusStyle}">
+      <div style="width:${photoWidth || 75}%;height:${photoHeight || 450}px;overflow:hidden;${borderRadiusStyle}">
         <img src="${photo}" alt="Section Photo" style="width:100%;height:100%;object-fit:cover;object-position:50% ${photoFocalY}%;display:block;border:none;" />
       </div>
     </div>
@@ -404,13 +404,13 @@ export function renderQuotationToHTML(documentData: any): string {
     const pageType = pageItem.type || pageItem.id;
 
     if (pageType === 'cover') {
-      const imgHTML = renderSectionImage(coverPhoto, coverFrameShape, coverPhotoHeight, coverPhotoWidth, coverPhotoFocalY, cover.bgOpacity || 40, theme.background);
+      const imgHTML = renderSectionImage(coverPhoto, coverFrameShape, coverPhotoHeight, coverPhotoWidth, coverPhotoFocalY, cover.bgOpacity || 40, theme.background, true);
 
       const sideText = (cover.sideOption || '').trim().toUpperCase();
       const locText = (cover.locationName || cover.location || '').trim().toUpperCase();
       const subtitleText = [sideText, locText].filter(Boolean).join(' – ');
 
-      const isFullWidthText = coverFrameShape === 'full-width' || coverImagePos === 'full';
+      const isFullWidthText = coverFrameShape === 'full-width';
       const textPaddingStyle = isFullWidthText ? 'padding:0 48px;' : '';
 
       pagesHTML += `
@@ -420,9 +420,6 @@ export function renderQuotationToHTML(documentData: any): string {
           <div style="position:relative;z-index:10;width:100%;height:100%;margin:0 auto;text-align:center;display:flex;flex-direction:column;padding:56px 0;box-sizing:border-box;${!coverPhoto ? 'justify-content:center;align-items:center;' : 'justify-content:space-between;'}">
             
             <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;margin:auto;">
-              
-              ${coverImagePos === 'top' && coverFrameShape !== 'background' ? imgHTML : ''}
-
               <div style="width:100%;margin:12px 0;${textPaddingStyle}">
                 <h1 class="couple-name-heading" style="font-family:${primaryFont};font-size:48px;letter-spacing:0.18em;text-transform:uppercase;font-weight:900;line-height:1.25;color:${theme.text};margin:0;white-space:pre-line;text-align:center;">
                   ${coupleName}
@@ -431,8 +428,6 @@ export function renderQuotationToHTML(documentData: any): string {
                   ${eventType} QUOTATION
                 </h3>
               </div>
-
-              ${(coverImagePos === 'center' || !coverImagePos) && coverFrameShape !== 'background' ? imgHTML : ''}
 
               <div style="width:100%;margin-top:12px;${textPaddingStyle}">
                 <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 0;">
@@ -451,11 +446,9 @@ export function renderQuotationToHTML(documentData: any): string {
                   </p>
                 ` : ''}
               </div>
-
-              ${coverImagePos === 'bottom' && coverFrameShape !== 'background' ? imgHTML : ''}
             </div>
 
-            ${footerHTML}
+            ${coverFrameShape !== 'background' ? imgHTML : ''}
           </div>
         </section>
       `;
@@ -472,13 +465,9 @@ export function renderQuotationToHTML(documentData: any): string {
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
             <div style="max-width:600px;width:100%;margin:auto;">
-              ${aboutUs.imagePosition === 'top' && aboutUs.frameShape !== 'background' ? bannerImgHTML : ''}
-
               <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
                 ${aboutUs.kicker || 'INTRODUCTION'}
               </span>
-
-              ${aboutUs.imagePosition === 'center' && aboutUs.frameShape !== 'background' ? bannerImgHTML : ''}
 
               <div style="margin:16px 0;">
                 ${getMonogramSVG(theme.text)}
@@ -492,19 +481,19 @@ export function renderQuotationToHTML(documentData: any): string {
                 <span style="font-size:32px;font-family:serif;color:${theme.kicker};line-height:1;">”</span>
               </div>
 
-              ${(aboutUs.imagePosition === 'bottom' || !aboutUs.imagePosition) && aboutUs.frameShape !== 'background' ? bannerImgHTML : ''}
+              ${aboutUs.frameShape !== 'background' ? bannerImgHTML : ''}
             </div>
 
             ${footerHTML}
           </div>
         </section>
       `;
-        } else if (pageType === 'shootDetails') {
+    } else if (pageType === 'shootDetails') {
       const shootPhoto = shootDetails.photo || shootDetails.photoUrl;
       const bannerImgHTML = renderSectionImage(
         shootPhoto,
         shootDetails.frameShape || 'arch',
-        Math.min(shootDetails.photoHeight || 220, 220),
+        shootDetails.photoHeight || 220,
         shootDetails.photoWidth || 75,
         shootDetails.photoFocalY || 50,
         shootDetails.bgOpacity || 40,
@@ -532,15 +521,11 @@ Approx. 50 High Resolution Edited Images
 
           <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
             <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-              ${shootPhoto && shootDetails.frameShape !== 'background' && shootDetails.imagePosition === 'top' ? bannerImgHTML : ''}
-
               <div style="text-align:center;margin:12px 0;">
                 <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;white-space:nowrap;">
                   ${shootDetails.heading || 'Pre Wedding Shoot'}
                 </h2>
               </div>
-
-              ${shootPhoto && shootDetails.frameShape !== 'background' && shootDetails.imagePosition === 'center' ? bannerImgHTML : ''}
 
               <div style="margin:12px 0;display:flex;flex-direction:column;align-items:center;">
                 <p style="font-size:16px;font-weight:700;letter-spacing:0.025em;color:${theme.text};margin:0 0 10px 0;display:flex;align-items:center;justify-content:center;gap:6px;">
@@ -571,7 +556,7 @@ Approx. 50 High Resolution Edited Images
                 </div>
               </div>
 
-              ${shootPhoto && shootDetails.frameShape !== 'background' && (shootDetails.imagePosition === 'bottom' || !shootDetails.imagePosition) ? bannerImgHTML : ''}
+              ${shootPhoto && shootDetails.frameShape !== 'background' ? bannerImgHTML : ''}
             </div>
 
             ${footerHTML}
@@ -735,8 +720,6 @@ Approx. 50 High Resolution Edited Images
 
             <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
               <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'top' ? bannerImgHTML : ''}
-
                 <div style="text-align:center;margin:12px 0;">
                   <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
                     ${deliverablesPage.kicker || 'WHAT WE DELIVER'} ${delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
@@ -746,13 +729,11 @@ Approx. 50 High Resolution Edited Images
                   </h2>
                 </div>
 
-                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' && deliverablesPage.imagePosition === 'center' ? bannerImgHTML : ''}
-
                 <div style="width:100%;max-width:640px;margin:12px auto;">
                   ${delivHTML}
                 </div>
 
-                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' && (deliverablesPage.imagePosition === 'bottom' || !deliverablesPage.imagePosition) ? bannerImgHTML : ''}
+                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' ? bannerImgHTML : ''}
               </div>
 
               ${footerHTML}
@@ -931,8 +912,6 @@ Approx. 50 High Resolution Edited Images
 
             <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
               <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-                ${showImage && termsPhoto && termsPage.frameShape !== 'background' && termsPage.imagePosition === 'top' ? bannerImgHTML : ''}
-
                 <div style="text-align:center;margin:12px 0;">
                   <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
                     ${termsPage.kicker || 'POLICIES & RULES'} ${termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
@@ -942,15 +921,13 @@ Approx. 50 High Resolution Edited Images
                   </h2>
                 </div>
 
-                ${showImage && termsPhoto && termsPage.frameShape !== 'background' && termsPage.imagePosition === 'center' ? bannerImgHTML : ''}
-
                 <div style="padding:24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;width:100%;max-width:600px;margin:12px auto;">
                   <p style="font-size:12px;line-height:1.7;white-space:pre-line;font-weight:500;margin:0;">
                     ${chunkLines.join('\n')}
                   </p>
                 </div>
 
-                ${showImage && termsPhoto && termsPage.frameShape !== 'background' && (termsPage.imagePosition === 'bottom' || !termsPage.imagePosition) ? bannerImgHTML : ''}
+                ${showImage && termsPhoto && termsPage.frameShape !== 'background' ? bannerImgHTML : ''}
               </div>
 
               ${footerHTML}
