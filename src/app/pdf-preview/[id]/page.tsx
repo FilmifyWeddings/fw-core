@@ -699,16 +699,17 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 {pageType === 'termsPage' && (() => {
                   const termsRaw = termsPage.text || '';
                   const termLines = termsRaw.split('\n').filter(Boolean);
+                  const TERMS_PER_PAGE = 11;
                   const termsChunks: string[][] = [];
                   if (termLines.length === 0) termsChunks.push([]);
                   else {
-                    for (let i = 0; i < termLines.length; i += 5) {
-                      termsChunks.push(termLines.slice(i, i + 5));
+                    for (let i = 0; i < termLines.length; i += TERMS_PER_PAGE) {
+                      termsChunks.push(termLines.slice(i, i + TERMS_PER_PAGE));
                     }
                   }
                   return termsChunks.map((chunkLines, chunkIdx) => (
                     <section key={`pdf-terms-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
-                      <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                      <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
                         <span className="text-xs tracking-[0.25em] font-bold uppercase block mb-2" style={{ color: theme.kicker }}>
                           {termsPage.kicker || 'POLICIES & RULES'} {termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
                         </span>
@@ -718,7 +719,7 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
 
                         <div className="p-6 rounded-2xl border shadow-xs leading-relaxed text-left space-y-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
                           <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
-                            {chunkLines.join('\n')}
+                            {chunkLines.join('\n\n')}
                           </p>
                         </div>
                       </div>

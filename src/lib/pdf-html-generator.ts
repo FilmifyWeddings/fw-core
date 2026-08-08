@@ -1086,12 +1086,13 @@ Approx. 50 High Resolution Edited Images
 
       const termsRaw = termsPage.text || '';
       const termLines = termsRaw.split('\n').filter(Boolean);
+      const TERMS_PER_PAGE = 11;
       const termsChunks: string[][] = [];
       if (termLines.length === 0) {
         termsChunks.push([]);
       } else {
-        for (let i = 0; i < termLines.length; i += 5) {
-          termsChunks.push(termLines.slice(i, i + 5));
+        for (let i = 0; i < termLines.length; i += TERMS_PER_PAGE) {
+          termsChunks.push(termLines.slice(i, i + TERMS_PER_PAGE));
         }
       }
 
@@ -1103,19 +1104,19 @@ Approx. 50 High Resolution Edited Images
             ${showImage && termsPhoto && termsPage.frameShape === 'background' ? bannerImgHTML : ''}
 
             <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
-              <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-                <div style="text-align:center;margin:12px 0;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">
+                <div style="text-align:center;margin:0 0 20px 0;">
                   <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
                     ${termsPage.kicker || 'POLICIES & RULES'} ${termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
                   </span>
-                  <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
+                  <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0;">
                     ${termsPage.heading || 'TERMS & CONDITIONS'}
                   </h2>
                 </div>
 
-                <div style="padding:24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;width:100%;max-width:600px;margin:12px auto;">
+                <div style="padding:24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;width:100%;max-width:600px;margin:0 auto 16px auto;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
                   <p style="font-size:12px;line-height:1.7;white-space:pre-line;font-weight:500;margin:0;">
-                    ${chunkLines.join('\n')}
+                    ${chunkLines.join('\n\n')}
                   </p>
                 </div>
 

@@ -4831,7 +4831,7 @@ function StudioCoreAiryBuilderContent() {
                       {pageItem.type === 'termsPage' && (() => {
                         const termsRaw = data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text || '';
                         const termLines = termsRaw.split('\n').filter(Boolean);
-                        const termsChunks = chunkArray(termLines, 5);
+                        const termsChunks = chunkArray(termLines, 11);
                         return termsChunks.map((termsChunk, chunkIdx) => (
                           <section 
                             key={`terms-chunk-${chunkIdx}`}
@@ -4872,7 +4872,7 @@ function StudioCoreAiryBuilderContent() {
                                 : 'px-12'
                             } justify-between`}>
                               
-                              <div className={`flex flex-col items-center justify-center w-full ${data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                              <div className={`flex flex-col items-center justify-start w-full ${data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                                 {/* TOP IMAGE POSITION - Only on 1st Page */}
                                 {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'top' && (
                                   <SectionImageRenderer
@@ -4904,13 +4904,13 @@ function StudioCoreAiryBuilderContent() {
                                   />
                                 )}
 
-                                <div className="w-full max-w-xl mx-auto space-y-4 my-3 text-left">
+                                <div className="w-full max-w-xl mx-auto space-y-4 my-0 text-left">
                                   <div 
                                     className="p-6 rounded-2xl border shadow-xs leading-relaxed space-y-3"
                                     style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
                                   >
                                     <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
-                                      {termsChunk.join('\n')}
+                                      {termsChunk.join('\n\n')}
                                     </p>
                                   </div>
                                 </div>
