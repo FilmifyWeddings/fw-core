@@ -994,17 +994,18 @@ function SectionImageRenderer({
   return (
     <div className={`w-full flex justify-center ${isBottomFlush ? 'mt-4' : 'my-4'}`}>
       <div
-        className={`overflow-hidden relative transition-all duration-200 border-none ${shapeClass}`}
+        className={`overflow-hidden relative transition-all duration-200 border-none bg-transparent ${shapeClass}`}
         style={{
           width: `${photoWidth}%`,
           height: `${photoHeight}px`,
+          backgroundColor: 'transparent'
         }}
       >
         <img
           src={photo}
           alt={altText}
           className="w-full h-full object-cover bg-transparent border-none"
-          style={{ objectPosition: `50% ${photoFocalY}%` }}
+          style={{ objectPosition: `50% ${photoFocalY}%`, backgroundColor: 'transparent' }}
         />
       </div>
     </div>
@@ -2477,7 +2478,32 @@ function StudioCoreAiryBuilderContent() {
       const userAccessToken = session?.access_token;
       const routeId = params?.id ? String(params.id) : 'FW-2026-001';
 
-      const saveRes = await fetch(`/api/quotations/${routeId}`, {
+      // 1. Save template payload and sync current version
+      const saveRes = await fetch(`/api/templates/${routeId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userAccessToken || ''}`
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          version: currentVersionRef.current,
+          content_json: data
+        })
+      });
+
+      if (saveRes.ok) {
+        try {
+          const resJson = await saveRes.json();
+          if (resJson.version) {
+            currentVersionRef.current = resJson.version;
+          }
+        } catch (e) {}
+        cacheDocumentLocal(routeId, data, currentVersionRef.current);
+      }
+
+      // 2. Save quotation record
+      await fetch(`/api/quotations/${routeId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -2493,14 +2519,8 @@ function StudioCoreAiryBuilderContent() {
         })
       });
 
-      if (saveRes.status === 403) {
-        alert('Access Denied: You do not have permission to modify this quotation.');
-        setAutoSaveStatus('Access Denied');
-        return;
-      }
-
       setHasUnsavedChanges(false);
-      setAutoSaveStatus('Saved');
+      setAutoSaveStatus('Auto-saved to cloud');
       alert('Quotation proposal saved to your workspace!');
     } catch {
       alert('Saved locally!');
@@ -4888,7 +4908,7 @@ function StudioCoreAiryBuilderContent() {
                       {pageItem.type === 'termsPage' && (() => {
                         const termsRaw = data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text || '';
                         const termLines = termsRaw.split('\n').filter(Boolean);
-                        const termsChunks = chunkArray(termLines, 11);
+                        const termsChunks = chunkArray(termLines, 13);
                         return termsChunks.map((termsChunk, chunkIdx) => (
                           <section 
                             key={`terms-chunk-${chunkIdx}`}

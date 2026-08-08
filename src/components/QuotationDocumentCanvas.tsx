@@ -517,17 +517,18 @@ function SectionImageRenderer({
   return (
     <div className={`w-full flex justify-center ${isBottomFlush ? 'mt-4' : 'my-4'}`}>
       <div
-        className={`overflow-hidden relative transition-all duration-200 border-none ${shapeClass}`}
+        className={`overflow-hidden relative transition-all duration-200 border-none bg-transparent ${shapeClass}`}
         style={{
           width: `${photoWidth}%`,
           height: `${photoHeight}px`,
+          backgroundColor: 'transparent'
         }}
       >
         <img
           src={photo}
           alt={altText}
           className="w-full h-full object-cover bg-transparent border-none"
-          style={{ objectPosition: `50% ${photoFocalY}%` }}
+          style={{ objectPosition: `50% ${photoFocalY}%`, backgroundColor: 'transparent' }}
         />
       </div>
     </div>
@@ -2439,7 +2440,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                       {pageItem.type === 'termsPage' && (() => {
                         const termsRaw = data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text || '';
                         const termLines = termsRaw.split('\n').filter(Boolean);
-                        const termsChunks = chunkArray(termLines, 11);
+                        const termsChunks = chunkArray(termLines, 13);
                         return termsChunks.map((termsChunk, chunkIdx) => (
                           <section 
                             key={`terms-chunk-${chunkIdx}`}
