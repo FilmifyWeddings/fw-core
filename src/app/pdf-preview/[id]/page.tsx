@@ -408,27 +408,53 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 {pageType === 'specialValueAdditions' && (() => {
                   const addValItems = specialValueAdditions.selectedItems || specialValueAdditions.items || [];
                   const addValChunks = paginateSpecialValueAdditionsPageItems(addValItems);
-                  return addValChunks.map((chunkItems, chunkIdx) => (
-                    <section key={`pdf-addval-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
-                      <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
-                        <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
-                          {specialValueAdditions.kicker || 'COMPLIMENTARY'} {addValChunks.length > 1 ? `(${chunkIdx + 1}/${addValChunks.length})` : ''}
-                        </span>
-                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
-                          {specialValueAdditions.heading || 'SPECIAL VALUE ADDITIONS'}
-                        </h2>
+                  return addValChunks.map((chunkItems, chunkIdx) => {
+                    const isLastChunk = chunkIdx === addValChunks.length - 1;
+                    return (
+                      <section key={`pdf-addval-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
+                        <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
+                          <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                            {specialValueAdditions.kicker || 'COMPLIMENTARY GIFTS & BONUSES'} {addValChunks.length > 1 ? `(${chunkIdx + 1}/${addValChunks.length})` : ''}
+                          </span>
+                          <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                            {specialValueAdditions.heading || 'SPECIAL VALUE ADDITIONS'}
+                          </h2>
 
-                        <div className="space-y-2 text-left pt-2">
-                          {chunkItems.map((item: any, sIdx: number) => (
-                            <div key={sIdx} className="p-3.5 rounded-xl border flex items-center justify-between gap-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                              <span className="text-xs font-bold whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]">{typeof item === 'string' ? item : item.title || item.name || item.text}</span>
-                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded border shrink-0" style={{ borderColor: theme.kicker, color: theme.kicker }}>FREE</span>
-                            </div>
-                          ))}
+                          <div className="space-y-3 text-left pt-2 max-w-xl mx-auto">
+                            {chunkItems.map((item: any, sIdx: number) => (
+                              <div 
+                                key={sIdx}
+                                className="p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all"
+                                style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={theme.kicker} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16, display: 'block' }}>
+                                      <polyline points="20 12 20 22 4 22 4 12"></polyline>
+                                      <rect x="2" y="7" width="20" height="5"></rect>
+                                      <line x1="12" y1="22" x2="12" y2="7"></line>
+                                      <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path>
+                                      <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path>
+                                    </svg>
+                                  </div>
+                                  <span className="text-xs font-bold leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]">{typeof item === 'string' ? item : item.title || item.name || item.text}</span>
+                                </div>
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)', color: theme.text }}>
+                                  FREE
+                                </span>
+                              </div>
+                            ))}
+
+                            {isLastChunk && specialValueAdditions?.note && (
+                              <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: theme.text, borderColor: theme.borderColor }}>
+                                "{specialValueAdditions.note}"
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </section>
-                  ));
+                      </section>
+                    );
+                  });
                 })()}
 
                 {/* 7. PRICING DETAILS */}
