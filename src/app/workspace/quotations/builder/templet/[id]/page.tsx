@@ -1775,6 +1775,7 @@ function StudioCoreAiryBuilderContent() {
   const currentVersionRef = useRef<number>(1);
   const clientTabIdRef = useRef<string>(`tab_${Math.random().toString(36).substring(2, 9)}`);
   const realtimeChannelRef = useRef<any>(null);
+  const isRemoteUpdateRef = useRef<boolean>(false);
   const [openCard, setOpenCard] = useState<string | null>('cover');
   // ── DYNAMIC PAGE SEQUENCE & CUSTOM PAGE CONTROLS ──
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
@@ -2257,26 +2258,16 @@ function StudioCoreAiryBuilderContent() {
         let loadedData: any = null;
 
         if (json.document?.content_json) {
+          // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
           loadedData = normalizeQuotationData(json.document.content_json);
           currentVersionRef.current = json.document.version || 1;
         } else {
-          // Try local IndexedDB cache before initializing fresh preset
+          // Fallback to local IndexedDB cache only if document does not exist on DB
           const cachedLocal = await getCachedDocumentLocal(routeId);
           if (cachedLocal) {
             currentVersionRef.current = cachedLocal.version || 1;
             loadedData = normalizeQuotationData(cachedLocal.documentJson);
           }
-        }
-
-        // Check if there is a more recent instant local draft saved in localStorage
-        const draftStr = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
-        if (draftStr) {
-          try {
-            const parsedDraft = normalizeQuotationData(JSON.parse(draftStr));
-            if (parsedDraft && parsedDraft.cover) {
-              loadedData = parsedDraft;
-            }
-          } catch (e) {}
         }
 
         if (!loadedData) {
@@ -2287,7 +2278,13 @@ function StudioCoreAiryBuilderContent() {
           loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
         }
 
+        // Cache canonical state locally and hydrate editor
         cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
+        try {
+          localStorage.setItem(`wg_proposal_draft_${currentUserId}`, JSON.stringify(loadedData));
+        } catch (e) {}
+
+        isRemoteUpdateRef.current = true;
         setData(loadedData);
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
@@ -2303,26 +2300,6 @@ function StudioCoreAiryBuilderContent() {
     initUserAndLoadData();
   }, [params]);
 
-  // Synchronous Instant Local Draft Storage & Realtime WebSocket Broadcast Sync (0ms delay)
-  useEffect(() => {
-    if (!userId || !isInitialLoadedRef.current) return;
-    try {
-      localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
-      // Broadcast instant live update to all other devices (PC -> Mobile)
-      if (realtimeChannelRef.current) {
-        realtimeChannelRef.current.send({
-          type: 'broadcast',
-          event: 'doc_update',
-          payload: {
-            data: data,
-            version: currentVersionRef.current,
-            senderId: clientTabIdRef.current
-          }
-        }).catch(() => {});
-      }
-    } catch (e) {}
-  }, [data, userId]);
-
   // Flush state to localStorage on tab unload/refresh
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -2336,11 +2313,36 @@ function StudioCoreAiryBuilderContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [data, userId]);
 
-  // ── SUPABASE REALTIME WEBSOCKET SUBSCRIPTION FOR INSTANT MULTI-DEVICE SYNC (PC <-> MOBILE) ──
+  // ── 2. REALTIME WEBSOCKET SUBSCRIPTION & LOOP-FREE MULTI-DEVICE SYNC ──
   useEffect(() => {
     const routeId = params?.id ? String(params.id) : 'FW-2026-001';
-    
-    // Subscribe to realtime updates with broadcast & postgres_changes
+
+    const handleRemoteData = (remoteContent: any, remoteVersion?: number, senderId?: string) => {
+      if (senderId && senderId === clientTabIdRef.current) {
+        // Ignore self-broadcasts
+        return;
+      }
+
+      if (remoteVersion && remoteVersion <= currentVersionRef.current) {
+        console.log(`[Realtime Sync] Ignored outdated update v${remoteVersion} <= current v${currentVersionRef.current}`);
+        return;
+      }
+
+      console.log(`[Realtime Sync] Applying remote live update v${remoteVersion || 'latest'}`);
+      if (remoteVersion) {
+        currentVersionRef.current = remoteVersion;
+      }
+
+      const normalized = normalizeQuotationData(remoteContent);
+      isRemoteUpdateRef.current = true;
+      setData(normalized);
+      try {
+        localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(normalized));
+      } catch (e) {}
+      cacheDocumentLocal(routeId, normalized, currentVersionRef.current);
+      setAutoSaveStatus('Synced in real-time');
+    };
+
     const channel = supabase
       .channel(`doc_sync_${routeId}`, {
         config: {
@@ -2348,15 +2350,8 @@ function StudioCoreAiryBuilderContent() {
         }
       })
       .on('broadcast', { event: 'doc_update' }, (payload: any) => {
-        if (payload?.payload?.data && payload.payload.senderId !== clientTabIdRef.current) {
-          console.log('[Supabase Realtime Broadcast] Multi-device live sync update received from remote device');
-          const remoteData = normalizeQuotationData(payload.payload.data);
-          if (payload.payload.version) {
-            currentVersionRef.current = payload.payload.version;
-          }
-          setData(remoteData);
-          cacheDocumentLocal(routeId, remoteData, currentVersionRef.current);
-          setAutoSaveStatus('Synced in real-time');
+        if (payload?.payload?.data) {
+          handleRemoteData(payload.payload.data, payload.payload.version, payload.payload.senderId);
         }
       })
       .on('postgres_changes', {
@@ -2365,15 +2360,8 @@ function StudioCoreAiryBuilderContent() {
         table: 'quotation_documents',
         filter: `template_id=eq.${routeId}`
       }, (payload: any) => {
-        if (payload.new && payload.new.version > currentVersionRef.current) {
-          console.log('[Supabase Realtime Postgres] Remote update v' + payload.new.version);
-          currentVersionRef.current = payload.new.version;
-          if (payload.new.content_json) {
-            const remoteData = normalizeQuotationData(payload.new.content_json);
-            setData(remoteData);
-            cacheDocumentLocal(routeId, remoteData, payload.new.version);
-            setAutoSaveStatus('Synced in real-time');
-          }
+        if (payload.new && payload.new.content_json) {
+          handleRemoteData(payload.new.content_json, payload.new.version);
         }
       })
       .on('postgres_changes', {
@@ -2383,11 +2371,7 @@ function StudioCoreAiryBuilderContent() {
         filter: `quotation_number=eq.${routeId}`
       }, (payload: any) => {
         if (payload.new && payload.new.content_json) {
-          console.log('[Supabase Realtime Quotations] Remote update received');
-          const remoteData = normalizeQuotationData(payload.new.content_json);
-          setData(remoteData);
-          cacheDocumentLocal(routeId, remoteData, currentVersionRef.current);
-          setAutoSaveStatus('Synced in real-time');
+          handleRemoteData(payload.new.content_json);
         }
       })
       .subscribe();
@@ -2427,17 +2411,21 @@ function StudioCoreAiryBuilderContent() {
     };
   }, [params, userId]);
 
-    // Real-Time Instant Debounced Auto-Save (500ms sync)
+  // ── 3. CANVA-STYLE DEBOUNCED PERSISTENCE TO SUPABASE DB + BROADCAST ──
   useEffect(() => {
     if (!userId || !isInitialLoadedRef.current) return;
+
+    // Skip auto-save if this state change was triggered by an incoming remote update
+    if (isRemoteUpdateRef.current) {
+      isRemoteUpdateRef.current = false;
+      return;
+    }
 
     setAutoSaveStatus('Saving...');
     setHasUnsavedChanges(true);
 
     const timer = setTimeout(async () => {
       try {
-        localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
-        
         const calc = calculatePricingTotals(data.pricingPage);
         const grandTotal = calc.netTotal;
         const subtotal = calc.gross;
@@ -2460,32 +2448,43 @@ function StudioCoreAiryBuilderContent() {
         });
 
         if (saveRes.status === 403) {
-          console.warn('[Auto-Save Forbidden]: User does not own this template.');
           setAutoSaveStatus('Access Denied');
           setHasUnsavedChanges(false);
           return;
         }
 
         if (saveRes.status === 409) {
-          console.warn('[Optimistic Lock Conflict]: Outdated version rejected by server.');
+          console.warn('[Optimistic Lock Conflict]: Fetching canonical DB state...');
           const conflictData = await saveRes.json();
           if (conflictData.serverVersion) {
             currentVersionRef.current = conflictData.serverVersion;
           }
-          setAutoSaveStatus('Version updated');
+          const freshRes = await fetch(`/api/templates/${routeId}`, {
+            headers: { 'Authorization': `Bearer ${userAccessToken || ''}` }
+          });
+          if (freshRes.ok) {
+            const freshJson = await freshRes.json();
+            if (freshJson.document?.content_json) {
+              isRemoteUpdateRef.current = true;
+              setData(normalizeQuotationData(freshJson.document.content_json));
+            }
+          }
+          setAutoSaveStatus('Version updated from cloud');
           setHasUnsavedChanges(false);
           return;
         }
 
+        let newVersion = currentVersionRef.current + 1;
         if (saveRes.ok) {
           const resJson = await saveRes.json();
           if (resJson.version) {
-            currentVersionRef.current = resJson.version;
+            newVersion = resJson.version;
+            currentVersionRef.current = newVersion;
           }
-          cacheDocumentLocal(routeId, data, currentVersionRef.current);
+          cacheDocumentLocal(routeId, data, newVersion);
         }
 
-        // Also update quotation payload in real-time
+        // Also sync quotation payload in real-time
         await fetch(`/api/quotations/${routeId}`, {
           method: 'PUT',
           headers: {
@@ -2502,16 +2501,29 @@ function StudioCoreAiryBuilderContent() {
           })
         });
 
+        // Broadcast confirmed saved revision to all connected devices
+        if (realtimeChannelRef.current) {
+          realtimeChannelRef.current.send({
+            type: 'broadcast',
+            event: 'doc_update',
+            payload: {
+              data: data,
+              version: newVersion,
+              senderId: clientTabIdRef.current
+            }
+          }).catch(() => {});
+        }
+
         setHasUnsavedChanges(false);
         setAutoSaveStatus('Auto-saved to cloud');
       } catch (err) {
-        setAutoSaveStatus('Auto-saved locally');
+        setAutoSaveStatus('Offline / Retrying');
         setHasUnsavedChanges(false);
       }
-    }, 500);
+    }, 400);
 
     return () => clearTimeout(timer);
-  }, [data, userId, params]);
+  }, [data, userId]);
 
   const openAddImageModal = (target: string) => {
     setActiveTargetField(target);
