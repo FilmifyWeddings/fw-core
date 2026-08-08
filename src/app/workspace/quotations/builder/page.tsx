@@ -2015,11 +2015,47 @@ function StudioCoreAiryBuilderContent() {
 
   // Mobile Bottom Sheet Drawer State
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
-  const [zoomScale, setZoomScale] = useState<number>(1.0);
+  // Viewport Zoom & Scaling Engine (Device-Specific Persistence: Mobile=45%, Desktop=90%)
+  const [zoomScale, setZoomScale] = useState<number>(0.90);
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<number>(0);
   const [exportStatusText, setExportStatusText] = useState<string>('Compiling A4 PDF...');
   const [pdfToastMessage, setPdfToastMessage] = useState<string | null>(null);
+
+  // Initialize device-specific zoom default & load saved preference
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+      const isMobile = window.innerWidth < 768;
+      const key = isMobile ? `quotationZoom_mobile_${routeId}` : `quotationZoom_desktop_${routeId}`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 0.25 && parsed <= 2.0) {
+          setZoomScale(parsed);
+          return;
+        }
+      }
+      setZoomScale(isMobile ? 0.45 : 0.90);
+    }
+  }, [params]);
+
+  // Helper to change zoom and persist preference per device
+  const updateZoomScale = (newScaleVal: number | ((prev: number) => number)) => {
+    setZoomScale((prev) => {
+      const targetVal = typeof newScaleVal === 'function' ? newScaleVal(prev) : newScaleVal;
+      const clamped = Number(Math.max(0.25, Math.min(1.5, targetVal)).toFixed(2));
+      if (typeof window !== 'undefined') {
+        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+        const isMobile = window.innerWidth < 768;
+        const key = isMobile ? `quotationZoom_mobile_${routeId}` : `quotationZoom_desktop_${routeId}`;
+        try {
+          localStorage.setItem(key, clamped.toString());
+        } catch (e) {}
+      }
+      return clamped;
+    });
+  };
 
   // Responsive Auto-Scale Calculation
   const autoFitScale = () => {
@@ -2027,9 +2063,10 @@ function StudioCoreAiryBuilderContent() {
       const availableWidth = mainContainerRef.current.clientWidth - 32;
       if (availableWidth < 794 && availableWidth > 200) {
         const fitScale = Math.max(0.35, Math.min(1.0, Number((availableWidth / 794).toFixed(2))));
-        setZoomScale(fitScale);
+        updateZoomScale(fitScale);
       } else {
-        setZoomScale(1.0);
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        updateZoomScale(isMobile ? 0.45 : 0.90);
       }
     }
   };
@@ -4102,7 +4139,7 @@ function StudioCoreAiryBuilderContent() {
         <div className="flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-full border border-zinc-200 text-[10px] font-bold text-zinc-700">
           <button 
             type="button" 
-            onClick={() => setZoomScale(s => Math.max(0.35, Number((s - 0.1).toFixed(2))))} 
+            onClick={() => updateZoomScale(s => s - 0.05)} 
             className="p-1 hover:bg-zinc-200 rounded-full transition-all cursor-pointer" 
             title="Zoom Out"
           >
@@ -4111,7 +4148,7 @@ function StudioCoreAiryBuilderContent() {
           <span className="w-8 sm:w-10 text-center font-mono font-bold text-zinc-800 text-[10px]">{Math.round(zoomScale * 100)}%</span>
           <button 
             type="button" 
-            onClick={() => setZoomScale(s => Math.min(1.5, Number((s + 0.1).toFixed(2))))} 
+            onClick={() => updateZoomScale(s => s + 0.05)} 
             className="p-1 hover:bg-zinc-200 rounded-full transition-all cursor-pointer" 
             title="Zoom In"
           >
@@ -4131,7 +4168,7 @@ function StudioCoreAiryBuilderContent() {
           <button
             onClick={handleDownloadPDFCanvas}
             disabled={isExportingPDF}
-            className="px-3 sm:px-4 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-black text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+            className="px-3 sm:px-4 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-black text-[10px] sm:text-[11px] font-extrabold transition-all items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50 hidden md:flex"
             title="Download High-Res PDF"
           >
             <Download className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Download PDF</span>
@@ -5535,8 +5572,12 @@ function StudioCoreAiryBuilderContent() {
               <div className="p-3 border-t border-zinc-100 bg-white shrink-0">
                 <button
                   type="button"
-                  onClick={() => setMobileSheetOpen(false)}
-                  className="w-full py-2.5 rounded-xl bg-black text-white font-bold text-xs"
+                  onClick={() => {
+                    setHasUnsavedChanges(true);
+                    setData((prev: any) => ({ ...prev }));
+                    setMobileSheetOpen(false);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-black hover:bg-zinc-900 active:scale-98 text-white font-bold text-xs transition-transform cursor-pointer"
                 >
                   Apply &amp; Done
                 </button>
