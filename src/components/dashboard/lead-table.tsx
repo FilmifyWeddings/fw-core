@@ -37,6 +37,9 @@ interface LeadTableProps {
   renderHeader?: () => React.ReactNode;
   activeLeadId?: string | null;
   onDrawerClose?: () => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 interface ColumnConfig {
@@ -199,7 +202,10 @@ export function LeadTable({
   userEmail,
   renderHeader,
   activeLeadId,
-  onDrawerClose
+  onDrawerClose,
+  onLoadMore,
+  hasMore = false,
+  loadingMore = false
 }: LeadTableProps) {
   const [mounted, setMounted] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(104);
@@ -895,6 +901,22 @@ export function LeadTable({
       };
     }
   }, [mounted]);
+
+  // Infinite scroll threshold listener (triggers onLoadMore near bottom)
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (!container || !onLoadMore || loadingMore || !hasMore) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      if (scrollTop + clientHeight >= scrollHeight - 350) {
+        onLoadMore();
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [onLoadMore, loadingMore, hasMore]);
 
   // Load configuration preferences
   useEffect(() => {
@@ -3212,11 +3234,22 @@ export function LeadTable({
 
           {/* Synced scrollbar removed from here to escape backdrop-filter containing block context */}
 
+          {/* Infinite Scroll Loading & Status Indicator */}
+          {loadingMore && (
+            <div className="py-3 px-4 flex items-center justify-center gap-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50/90 dark:bg-amber-950/60 border-t border-amber-200 dark:border-amber-900/50 sticky bottom-0 z-40 backdrop-blur-md shadow-lg">
+              <RefreshCw className="w-4 h-4 animate-spin text-amber-500" />
+              <span>Loading 100 more leads...</span>
+            </div>
+          )}
+
           {/* Pagination replaced by Load Info for Infinite Scroll */}
-          <div className="flex items-center justify-end mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
-            {visibleCount < totalLeads && (
-              <div className="text-zinc-400 dark:text-zinc-500 animate-pulse font-medium">
-                Scroll down to load more leads...
+          <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-zinc-500 px-4 py-3 border-t border-slate-200 dark:border-zinc-900/40">
+            <div className="font-semibold text-slate-600 dark:text-zinc-400">
+              Showing {leads.length} leads
+            </div>
+            {hasMore && !loadingMore && (
+              <div className="text-amber-600 dark:text-amber-400 animate-pulse font-medium flex items-center gap-1.5">
+                <span>Scroll down to load next 100 leads</span>
               </div>
             )}
           </div>

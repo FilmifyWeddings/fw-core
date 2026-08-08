@@ -121,6 +121,10 @@ export default function LeadsPage() {
   const [stages, setStages] = useState<any[]>(DEFAULT_STAGES);
   const [preferences, setPreferences] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState<number>(0);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const PAGE_SIZE = 100;
   const [isDemoMode, setIsDemoMode] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
@@ -250,59 +254,92 @@ export default function LeadsPage() {
     return () => clearInterval(interval);
   }, [leads, notifiedCommentIds, isDemoMode]);
 
-  const loadLeadsAndPreferences = async (targetUserId: string) => {
-    setLoading(true);
+  const loadLeadsAndPreferences = async (targetUserId: string, pageNum = 0) => {
+    if (pageNum === 0) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+
     try {
-      // Load Leads
+      const from = pageNum * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      // Load Leads batch of 100
       const { data: dbLeads, error: leadsErr } = await supabase
         .from('leads')
         .select('*')
         .eq('workspace_id', targetUserId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
       if (!leadsErr && dbLeads) {
-        setLeads(dbLeads as Lead[]);
+        if (dbLeads.length < PAGE_SIZE) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+        }
+
+        if (pageNum === 0) {
+          setLeads(dbLeads as Lead[]);
+        } else {
+          setLeads(prev => {
+            const existingIds = new Set(prev.map(l => l.id));
+            const newLeads = (dbLeads as Lead[]).filter(l => !existingIds.has(l.id));
+            return [...prev, ...newLeads];
+          });
+        }
       }
 
-      // Load CRM Stages
-      const { data: dbStages, error: stagesErr } = await supabase
-        .from('crm_stages')
-        .select('*')
-        .eq('workspace_id', targetUserId)
-        .order('position', { ascending: true });
+      if (pageNum === 0) {
+        // Load CRM Stages
+        const { data: dbStages, error: stagesErr } = await supabase
+          .from('crm_stages')
+          .select('*')
+          .eq('workspace_id', targetUserId)
+          .order('position', { ascending: true });
 
-      if (!stagesErr && dbStages && dbStages.length > 0) {
-        setStages(dbStages);
-      } else {
-        setStages(DEFAULT_STAGES);
-      }
+        if (!stagesErr && dbStages && dbStages.length > 0) {
+          setStages(dbStages);
+        } else {
+          setStages(DEFAULT_STAGES);
+        }
 
-      // Load Layout Configurations (try table_layouts first, fallback to profiles)
-      const { data: layout, error: layoutErr } = await supabase
-        .from('table_layouts')
-        .select('columns')
-        .eq('workspace_id', targetUserId)
-        .eq('layout_name', 'default')
-        .single();
-
-      if (!layoutErr && layout?.columns) {
-        setPreferences(layout.columns);
-      } else {
-        const { data: profile, error: profileErr } = await supabase
-          .from('profiles')
-          .select('leads_table_preferences')
-          .eq('id', targetUserId)
+        // Load Layout Configurations (try table_layouts first, fallback to profiles)
+        const { data: layout, error: layoutErr } = await supabase
+          .from('table_layouts')
+          .select('columns')
+          .eq('workspace_id', targetUserId)
+          .eq('layout_name', 'default')
           .single();
 
-        if (!profileErr && profile?.leads_table_preferences) {
-          setPreferences(profile.leads_table_preferences);
+        if (!layoutErr && layout?.columns) {
+          setPreferences(layout.columns);
+        } else {
+          const { data: profile, error: profileErr } = await supabase
+            .from('profiles')
+            .select('leads_table_preferences')
+            .eq('id', targetUserId)
+            .single();
+
+          if (!profileErr && profile?.leads_table_preferences) {
+            setPreferences(profile.leads_table_preferences);
+          }
         }
       }
     } catch (err) {
       console.log('Database read error, falling back to mock leads data.', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    if (loading || loadingMore || !hasMore || isDemoMode) return;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    loadLeadsAndPreferences(userId, nextPage);
   };
 
   const handleStatusChange = async (leadId: string, newStatus: Lead['status']) => {
@@ -512,6 +549,9 @@ export default function LeadsPage() {
             userEmail={userEmail}
             activeLeadId={activeLeadId}
             onDrawerClose={() => setActiveLeadId(null)}
+            onLoadMore={handleLoadMore}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
             renderHeader={() => (
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-zinc-900">
                 <div className="flex items-center gap-3">
