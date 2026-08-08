@@ -2384,38 +2384,8 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                 fontFamily: data.secondaryFont,
               }}
             >
-              {data.addOnsPage?.photo && data.addOnsPage?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.addOnsPage.photo}
-                  frameShape="background"
-                  photoHeight={data.addOnsPage.photoHeight}
-                  photoWidth={data.addOnsPage.photoWidth}
-                  photoFocalY={data.addOnsPage.photoFocalY}
-                  bgOpacity={data.addOnsPage.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Add-Ons Background"
-                />
-              )}
-
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
-                data.addOnsPage?.frameShape === 'full-width' || (data.addOnsPage?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.addOnsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.addOnsPage?.frameShape === 'full-width' || (data.addOnsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && data.addOnsPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.addOnsPage.photo}
-                      frameShape={data.addOnsPage.frameShape}
-                      photoHeight={data.addOnsPage.photoHeight}
-                      photoWidth={data.addOnsPage.photoWidth}
-                      photoFocalY={data.addOnsPage.photoFocalY}
-                      altText="Add-Ons Photo"
-                    />
-                  )}
-
+              <div className="relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 px-12 justify-between">
+                <div className="flex flex-col items-center justify-start w-full px-12">
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.addOnsPage?.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
                   </span>
@@ -2428,19 +2398,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                     </p>
                   )}
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && data.addOnsPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.addOnsPage.photo}
-                      frameShape={data.addOnsPage.frameShape}
-                      photoHeight={data.addOnsPage.photoHeight}
-                      photoWidth={data.addOnsPage.photoWidth}
-                      photoFocalY={data.addOnsPage.photoFocalY}
-                      altText="Add-Ons Photo"
-                    />
-                  )}
-
-                  <div className="w-full max-w-xl mx-auto space-y-4 my-3">
+                  <div className="w-full max-w-xl mx-auto space-y-4 my-0">
                     <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
                       <table className="w-full text-left border-collapse">
                         <thead className="text-[11px] uppercase tracking-wider font-extrabold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
@@ -2461,25 +2419,12 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                     </div>
 
                     {data.addOnsPage?.note && (
-                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: textColor, borderColor }}>
                         "{data.addOnsPage.note}"
                       </p>
                     )}
                   </div>
                 </div>
-
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.addOnsPage?.photo && data.addOnsPage?.frameShape !== 'background' && (data.addOnsPage?.imagePosition === 'bottom' || !data.addOnsPage?.imagePosition) && (
-                  <SectionImageRenderer
-                    photo={data.addOnsPage.photo}
-                    frameShape={data.addOnsPage.frameShape}
-                    photoHeight={data.addOnsPage.photoHeight}
-                    photoWidth={data.addOnsPage.photoWidth}
-                    photoFocalY={data.addOnsPage.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Add-Ons Photo"
-                  />
-                )}
 
                 {/* CANVAS FOOTER WATERMARK */}
                 {isLastPage && (

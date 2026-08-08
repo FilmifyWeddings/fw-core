@@ -1012,31 +1012,63 @@ Approx. 50 High Resolution Edited Images
         </section>
       `;
     } else if (pageType === 'addOnsPage') {
-      let addOnsHTML = '';
-      (addOnsPage.items || []).forEach((item: any) => {
-        addOnsHTML += `
-          <div style="padding:14px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <span style="font-size:12px;font-weight:700;">${item.title}</span>
-            <span style="font-size:12px;font-weight:900;font-family:system-ui, -apple-system, sans-serif;"><span style="font-family:Arial, sans-serif;">₹</span>${Number(item.price || 0).toLocaleString('en-IN')}</span>
-          </div>
+      let rowsHTML = '';
+      (addOnsPage.items || []).filter((item: any) => item.selected !== false).forEach((item: any) => {
+        rowsHTML += `
+          <tr style="border-bottom:1px solid ${theme.borderColor};">
+            <td style="padding:14px 20px;font-weight:700;">${item.title || ''}</td>
+            <td style="padding:14px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${Number(item.price || 0).toLocaleString('en-IN')}</td>
+          </tr>
         `;
       });
 
-      pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${addOnsPage.kicker || "EMBRACE YOUR DAY - YOU'RE IN CONTROL"}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${addOnsPage.heading || 'ADD-ONS & UPGRADES'}
-            </h2>
-            <div style="text-align:left;">
-              ${addOnsHTML}
-            </div>
-          </div>
+      const subTextHTML = (addOnsPage.subText || addOnsPage.subHeading) ? `
+        <p style="font-size:12px;font-weight:500;opacity:0.8;margin:8px 0 24px 0;color:${theme.text};">
+          ${addOnsPage.subText || addOnsPage.subHeading}
+        </p>
+      ` : '';
 
-          ${footerHTML}
+      const noteHTML = addOnsPage.note ? `
+        <p style="font-size:12px;font-style:italic;line-height:1.6;opacity:0.85;margin-top:16px;padding-top:12px;border-top:1px solid ${theme.borderColor};max-width:600px;text-align:center;margin-left:auto;margin-right:auto;color:${theme.text};white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;">
+          "${addOnsPage.note}"
+        </p>
+      ` : '';
+
+      pagesHTML += `
+        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">
+              <div style="text-align:center;margin:0 0 24px 0;">
+                <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                  ${addOnsPage.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
+                </span>
+                <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                  ${addOnsPage.heading || 'ADD-ONS & UPGRADES'}
+                </h2>
+                ${subTextHTML}
+              </div>
+
+              <div style="width:100%;max-width:600px;margin:0 auto 16px auto;">
+                <div style="width:100%;border-radius:16px;overflow:hidden;border:1px solid ${theme.borderColor};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                  <table style="width:100%;border-collapse:collapse;text-align:left;font-size:12px;">
+                    <thead style="background-color:${theme.boxBgColor};border-bottom:1px solid ${theme.borderColor};font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:${theme.kicker};">
+                      <tr>
+                        <th style="padding:14px 20px;text-align:left;">ADD-ON SERVICE / PARTICULAR</th>
+                        <th style="padding:14px 20px;text-align:right;">PRICE</th>
+                      </tr>
+                    </thead>
+                    <tbody style="color:${theme.text};font-weight:600;">
+                      ${rowsHTML}
+                    </tbody>
+                  </table>
+                </div>
+
+                ${noteHTML}
+              </div>
+            </div>
+
+            ${footerHTML}
+          </div>
         </section>
       `;
     } else if (pageType === 'termsPage') {

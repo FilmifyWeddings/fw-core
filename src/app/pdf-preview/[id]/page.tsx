@@ -645,27 +645,55 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 })()}
 
                 {/* 9. ADD-ONS */}
-                {pageType === 'addOnsPage' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center">
-                    <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                      <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
-                        {addOnsPage.kicker || "EMBRACE YOUR DAY - YOU'RE IN CONTROL"}
-                      </span>
-                      <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
-                        {addOnsPage.heading || 'ADD-ONS & UPGRADES'}
-                      </h2>
+                {pageType === 'addOnsPage' && (() => {
+                  const items = (addOnsPage.items || []).filter((item: any) => item.selected !== false);
+                  const subText = addOnsPage.subText || addOnsPage.subHeading;
 
-                      <div className="space-y-2 text-left pt-2">
-                        {(addOnsPage.items || []).map((item: any, aIdx: number) => (
-                          <div key={item.id || aIdx} className="p-3.5 rounded-xl border flex items-center justify-between" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                            <span className="text-xs font-bold">{item.title}</span>
-                            <span className="text-xs font-black font-sans">₹{Number(item.price || 0).toLocaleString('en-IN')}</span>
+                  return (
+                    <section className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
+                        <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                          {addOnsPage.kicker || "EMBRACE YOUR DAY — YOU'RE IN CONTROL"}
+                        </span>
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                          {addOnsPage.heading || 'ADD-ONS & UPGRADES'}
+                        </h2>
+                        {subText && (
+                          <p className="text-xs font-medium opacity-80" style={{ color: theme.text }}>
+                            {subText}
+                          </p>
+                        )}
+
+                        <div className="w-full max-w-xl mx-auto space-y-4 my-0">
+                          <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor: theme.borderColor }}>
+                            <table className="w-full text-left border-collapse">
+                              <thead className="text-[11px] uppercase tracking-wider font-extrabold border-b" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.kicker }}>
+                                <tr>
+                                  <th className="py-3.5 px-5">ADD-ON SERVICE / PARTICULAR</th>
+                                  <th className="py-3.5 px-5 text-right">PRICE</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y text-xs font-semibold" style={{ borderColor: theme.borderColor, color: theme.text }}>
+                                {items.map((item: any, aIdx: number) => (
+                                  <tr key={item.id || aIdx} style={{ borderColor: theme.borderColor }}>
+                                    <td className="py-3.5 px-5 font-bold">{item.title}</td>
+                                    <td className="py-3.5 px-5 text-right font-sans font-medium tracking-tight">₹{Number(item.price || 0).toLocaleString('en-IN')}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
-                        ))}
+
+                          {addOnsPage?.note && (
+                            <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: theme.text, borderColor: theme.borderColor }}>
+                              "{addOnsPage.note}"
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  );
+                })()}
 
                 {/* 10. TERMS & CONDITIONS */}
                 {pageType === 'termsPage' && (() => {
