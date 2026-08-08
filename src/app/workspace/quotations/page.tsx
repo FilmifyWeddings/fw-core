@@ -16,6 +16,9 @@ import { MasterMediaModal } from '@/components/MasterMediaModal';
 
 import { getThemeFromKey } from '@/lib/quotation-theme';
 
+import { getThemeFromKey } from '@/lib/quotation-theme';
+import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
+
 interface SavedQuotation {
   id: string;
   title: string;
@@ -36,80 +39,54 @@ interface UserGalleryImage {
   created_at: string;
 }
 
-// REAL QUOTATION DESIGN COVER PAGE MINIATURE THUMBNAIL PREVIEW
-function QuotationDesignThumbnail({ contentJson, title, coupleName }: { contentJson?: any; title?: string; coupleName?: string }) {
-  const data = contentJson || {};
-  const theme = getThemeFromKey(data.theme || data.look);
+// 1:1 ACTUAL FIRST PAGE DESIGN CARD THUMBNAIL PREVIEW
+function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJson?: any; title?: string; coupleName?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState<number>(0.28);
 
-  const bg = data.pageBgColor || theme.background || '#F0EDE5';
-  const textColor = theme.primary || theme.text || '#004643';
-  const kickerColor = theme.kicker || textColor;
-  const borderColor = theme.borderColor || 'rgba(0, 70, 67, 0.2)';
+  useEffect(() => {
+    const updateScale = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.clientWidth;
+        if (width > 0) {
+          setScale(width / 794);
+        }
+      }
+    };
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    return () => window.removeEventListener('resize', updateScale);
+  }, []);
 
-  const cover = data.cover || {};
-  const photoUrl = cover.photoUrl || (typeof data.coverPhoto === 'string' ? data.coverPhoto : 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80');
-  const displayCouple = (cover.coupleName || (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : null) || coupleName || 'RAHUL & NEHA').toUpperCase();
-  const displayEvent = (cover.eventType || 'WEDDING PROPOSAL').toUpperCase();
-  const displayDate = (cover.eventDate || 'DECEMBER 2026').toUpperCase();
-  const displayLocation = (cover.location || 'MUMBAI').toUpperCase();
-  const displayBrand = (cover.brandName || 'FILMIFY WEDDINGS').toUpperCase();
-  const fontPrimary = data.primaryFont || 'Cormorant Garamond, serif';
+  const data = contentJson || {
+    theme: 'cyprus-sand-dune',
+    primaryFont: 'Cormorant Garamond',
+    secondaryFont: 'Plus Jakarta Sans',
+    designName: title || 'Wedding - Design 1',
+    cover: {
+      coupleName: coupleName || 'RAHUL & NEHA',
+      eventType: 'WEDDING',
+      eventDate: 'DECEMBER 2026',
+      location: 'MUMBAI',
+      brandName: 'FILMIFY WEDDINGS'
+    }
+  };
 
   return (
     <div 
-      className="relative h-40 w-full overflow-hidden flex flex-col justify-between p-3 select-none transition-all duration-300 shadow-inner"
-      style={{ backgroundColor: bg }}
+      ref={containerRef} 
+      className="relative w-full h-52 sm:h-56 bg-slate-200 dark:bg-zinc-800 overflow-hidden shadow-inner flex items-center justify-center select-none"
     >
-      {/* Background Image / Overlay if present */}
-      {photoUrl && (
-        <div className="absolute inset-0 z-0 opacity-20 overflow-hidden">
-          <img src={photoUrl} alt="" className="w-full h-full object-cover filter blur-[0.5px]" />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/10 to-black/50" />
-        </div>
-      )}
-
-      {/* Mini Decorative Inner Border Frame */}
       <div 
-        className="absolute inset-2 border rounded-xl pointer-events-none z-10"
-        style={{ borderColor: borderColor }}
-      />
-
-      {/* Top Header Row in Thumbnail */}
-      <div className="relative z-20 flex items-center justify-between gap-1 px-1 pt-0.5">
-        <span 
-          className="text-[8px] font-black tracking-widest uppercase truncate max-w-[130px]"
-          style={{ color: kickerColor }}
-        >
-          {displayBrand}
-        </span>
-        <span className="text-[7px] font-extrabold px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 backdrop-blur-xs text-slate-800 dark:text-zinc-200">
-          DESIGN PREVIEW
-        </span>
-      </div>
-
-      {/* Center Mini Title & Couple Name Card */}
-      <div className="relative z-20 text-center my-auto px-2 space-y-0.5">
-        <span 
-          className="text-[7px] font-extrabold tracking-widest uppercase block"
-          style={{ color: kickerColor }}
-        >
-          {displayEvent}
-        </span>
-        <h3 
-          className="text-xs sm:text-sm font-black tracking-tight leading-tight uppercase truncate drop-shadow-xs"
-          style={{ color: textColor, fontFamily: fontPrimary }}
-        >
-          {displayCouple}
-        </h3>
-        <p className="text-[7px] font-bold opacity-80 tracking-wider truncate" style={{ color: textColor }}>
-          {displayDate} • {displayLocation}
-        </p>
-      </div>
-
-      {/* Bottom Footer Accent Row */}
-      <div className="relative z-20 flex items-center justify-between text-[7px] font-bold opacity-80 pt-1 border-t px-1 pb-0.5" style={{ borderColor: borderColor, color: textColor }}>
-        <span>QUOTATION DESIGN</span>
-        <span>A4 FORMAT</span>
+        className="absolute top-0 left-0 origin-top-left pointer-events-none"
+        style={{
+          width: '794px',
+          height: '1123px',
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left'
+        }}
+      >
+        <QuotationDocumentCanvas documentData={data} onlyFirstPage={true} />
       </div>
     </div>
   );
@@ -182,7 +159,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const currentUserId = session?.user?.id || userId || 'demo_user';
 
-      // 1. Fetch full source document content_json
+      // 1. Fetch full source document content_json from quotation_documents
       let sourceContentJson = sourceQuote.content_json;
       if (!sourceContentJson) {
         const { data: docData } = await supabase
@@ -194,9 +171,11 @@ export default function WorkspaceQuotationsGalleryPage() {
       }
       if (!sourceContentJson) {
         const { data: qDoc } = await supabase
-          .from('quotations')
+          .from('quotation_documents')
           .select('content_json')
-          .or(`id.eq.${sourceId},quotation_number.eq.${sourceId}`)
+          .eq('user_id', currentUserId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         sourceContentJson = qDoc?.content_json;
       }
@@ -216,7 +195,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         };
       }
 
-      // 2. COMPLETE DEEP CLONE (Structured clone, no shared references)
+      // 2. COMPLETE DEEP CLONE (Structured clone, no shared mutable references)
       const clonedJson = typeof structuredClone === 'function' 
         ? structuredClone(sourceContentJson) 
         : JSON.parse(JSON.stringify(sourceContentJson));
@@ -246,7 +225,8 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       const now = new Date().toISOString();
 
-      // 5. Persist independent database record in Supabase
+      // 5. Persist independent database records in Supabase matching CURRENT SCHEMA
+      // Note: quotations table does NOT have content_json column
       const { data: newQuote, error: insertErr } = await supabase
         .from('quotations')
         .insert({
@@ -255,7 +235,6 @@ export default function WorkspaceQuotationsGalleryPage() {
           title: uniqueTitle,
           client_name: sourceQuote.client_name || `${clonedJson?.cover?.coupleName || 'Rahul & Neha'}`,
           financials: sourceQuote.financials || {},
-          content_json: clonedJson,
           status: 'draft',
           created_at: now,
           updated_at: now
@@ -265,7 +244,7 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       if (insertErr) throw insertErr;
 
-      // Save into quotation_templates & quotation_documents for complete editor compatibility
+      // Save template metadata into quotation_templates
       await supabase.from('quotation_templates').insert({
         id: newDesignId,
         user_id: currentUserId,
@@ -275,18 +254,31 @@ export default function WorkspaceQuotationsGalleryPage() {
         updated_at: now
       });
 
-      await supabase.from('quotation_documents').insert({
+      // Save document JSON into quotation_documents (authoritative source for content_json)
+      const { data: newDoc } = await supabase.from('quotation_documents').insert({
         template_id: newDesignId,
         user_id: currentUserId,
         version: 1,
         content_json: clonedJson,
         created_at: now,
         updated_at: now
-      });
+      }).select().single();
+
+      // Save initial version into quotation_versions
+      if (newDoc?.id) {
+        await supabase.from('quotation_versions').insert({
+          document_id: newDoc.id,
+          template_id: newDesignId,
+          user_id: currentUserId,
+          version: 1,
+          content_json: clonedJson,
+          created_at: now
+        });
+      }
 
       // 6. Insert new design card IMMEDIATELY AFTER the original in the array
-      const duplicatedRecord: SavedQuotation = (newQuote || {
-        id: newDesignId,
+      const duplicatedRecord: SavedQuotation = {
+        id: newQuote?.id || newDesignId,
         quotation_number: newDesignId,
         title: uniqueTitle,
         client_name: sourceQuote.client_name || 'Rahul & Neha',
@@ -294,7 +286,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         content_json: clonedJson,
         status: 'draft',
         updated_at: now
-      }) as SavedQuotation;
+      };
 
       setQuotations(prev => {
         const sourceIndex = prev.findIndex(q => (q.quotation_number || q.id) === sourceId);
@@ -392,17 +384,42 @@ export default function WorkspaceQuotationsGalleryPage() {
           } catch {}
         }
 
-        // 1. SINGLE RECORD FETCH: Query existing quotation for logged-in user
-        const { data: qData } = await supabase
+        // 1. Fetch user quotations metadata matching EXACT DB schema
+        const { data: qData, error: qErr } = await supabase
           .from('quotations')
-          .select('id, title, client_name, quotation_number, financials, status, updated_at, content_json')
+          .select('id, title, client_name, quotation_number, financials, status, updated_at')
           .eq('workspace_id', currentUserId)
           .order('updated_at', { ascending: false });
 
+        if (qErr) {
+          console.warn('[Quotations Fetch Warning]:', qErr.message);
+        }
+
+        // 2. Fetch associated document content_json from quotation_documents (authoritative source)
+        const { data: docsData } = await supabase
+          .from('quotation_documents')
+          .select('template_id, content_json')
+          .eq('user_id', currentUserId);
+
+        const docsMap: Record<string, any> = {};
+        if (docsData) {
+          docsData.forEach(d => {
+            if (d.template_id && d.content_json) {
+              docsMap[d.template_id] = d.content_json;
+            }
+          });
+        }
+
         if (qData && qData.length > 0) {
-          // REUSE EXISTING QUOTATION: Always bind existing UUID to Royale template card
-          setQuotations(qData as SavedQuotation[]);
-          const primary = qData[0];
+          const hydratedQuotations: SavedQuotation[] = qData.map((q: any) => {
+            const qNum = q.quotation_number || q.id;
+            return {
+              ...q,
+              content_json: docsMap[qNum] || docsMap[q.id] || null
+            };
+          });
+          setQuotations(hydratedQuotations);
+          const primary = hydratedQuotations[0];
           const primaryId = primary.quotation_number || primary.id;
           setActiveQuotationId(primaryId);
 
@@ -690,7 +707,7 @@ export default function WorkspaceQuotationsGalleryPage() {
                 <div>
                   {/* REAL DESIGN PAGE 1 PREVIEW THUMBNAIL */}
                   <div className="relative w-full overflow-hidden">
-                    <QuotationDesignThumbnail 
+                    <QuotationCardThumbnail 
                       contentJson={(quote as any).content_json}
                       title={customTitle}
                       coupleName={clientName}
@@ -771,7 +788,7 @@ export default function WorkspaceQuotationsGalleryPage() {
           >
             <div>
               <div className="relative w-full overflow-hidden">
-                <QuotationDesignThumbnail 
+                <QuotationCardThumbnail 
                   title="Wedding - Design 1"
                   coupleName={activeCoupleName}
                 />

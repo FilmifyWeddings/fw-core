@@ -1338,7 +1338,13 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
 
 
 
-export default function QuotationDocumentCanvas({ documentData }: { documentData: any }) {
+export default function QuotationDocumentCanvas({ 
+  documentData, 
+  onlyFirstPage = false 
+}: { 
+  documentData: any; 
+  onlyFirstPage?: boolean; 
+}) {
   const loadedData = documentData || {};
   const data = normalizeQuotationData(loadedData);
   const activeTheme = getThemeFromKey(data.theme);
@@ -1356,11 +1362,12 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
     pricingCalculated.netTotal || 0
   );
 
-  const pageSequence: PageSequenceItem[] = data.pageSequence || DEFAULT_PAGE_SEQUENCE;
+  const fullSequence: PageSequenceItem[] = data.pageSequence || DEFAULT_PAGE_SEQUENCE;
+  const pageSequence = onlyFirstPage && fullSequence.length > 0 ? [fullSequence[0]] : fullSequence;
   const customPages: Record<string, CustomPageItem> = data.customPages || {};
 
   return (
-    <div id="quotation-full-canvas" style={{ width: '794px', minWidth: '794px', maxWidth: '794px', background: '#e5e7eb', margin: '0 auto' }}>
+    <div id={onlyFirstPage ? undefined : "quotation-full-canvas"} style={{ width: '794px', minWidth: '794px', maxWidth: '794px', background: onlyFirstPage ? 'transparent' : '#e5e7eb', margin: '0 auto' }}>
                 {pageSequence.map((pageItem, pIdx) => {
                   const isLastPage = pIdx === pageSequence.length - 1;
                   const isLast = pIdx === pageSequence.length - 1;
