@@ -1582,7 +1582,7 @@ export function LeadTable({
   };
 
   return (
-    <div className="flex-1 h-0 min-h-0 min-w-0 w-full flex relative overflow-hidden">
+    <div className="flex-1 min-h-0 min-w-0 w-full flex relative overflow-hidden">
       
       {/* Dynamic Left Sidebar Menu Bar */}
       <aside 
@@ -1668,7 +1668,7 @@ export function LeadTable({
       </aside>
 
       {/* Main Table viewport container */}
-      <div className="flex-1 h-0 min-h-0 min-w-0 w-full max-w-full flex flex-col relative overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 w-full max-w-full flex flex-col relative overflow-hidden">
 
         {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
         <div className="shrink-0 w-full max-w-full overflow-hidden border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
@@ -2096,7 +2096,7 @@ export function LeadTable({
     </div>
 
       {/* Scrollable Main Viewport Container */}
-      <div className="flex-1 h-0 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-auto relative" ref={tableContainerRef}>
+      <div className="flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-auto relative" ref={tableContainerRef}>
         {/* Main View Mode rendering */}
         {viewMode === 'table' ? (
           <>
