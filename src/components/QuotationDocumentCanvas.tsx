@@ -1822,7 +1822,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
 
                                 <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
                                   {funcChunk.map((func: any, index: number) => {
-                                    const globalIdx = chunkIdx * 3 + index;
+                                    const globalIdx = funcChunks.slice(0, chunkIdx).reduce((acc, curr) => acc + curr.length, 0) + index;
                                     return (
                                       <div 
                                         key={func.id || globalIdx} 
@@ -1887,7 +1887,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
 
                                         {/* Custom Notes */}
                                         {func.notes && (
-                                          <p 
+                                          <div 
                                             className="text-xs italic leading-relaxed opacity-85 pt-1 border-t" 
                                             style={{ 
                                               color: textColor, 
@@ -1901,7 +1901,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                                               {line}
                                               {lIdx < arr.length - 1 && <br />}
                                             </React.Fragment>
-                                          ))}&rdquo;</p>
+                                          ))}&rdquo;</div>
                                         )}
                                       </div>
                                     );

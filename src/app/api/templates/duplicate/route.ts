@@ -9,22 +9,20 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 function getUniqueDesignName(requestedName: string, existingNames: string[]): string {
-  const cleanName = requestedName.trim();
-  if (!existingNames.includes(cleanName)) {
-    return cleanName;
+  const cleanName = (requestedName || 'Wedding - Design 1').trim();
+  const baseName = cleanName
+    .replace(/\s*\(?Copy\s*\d*\)?$/i, '')
+    .trim() || 'Wedding - Design 1';
+
+  let candidate = `${baseName} Copy`;
+  if (!existingNames.includes(candidate)) {
+    return candidate;
   }
 
-  // Extract base name without trailing copy/numeric suffix
-  const baseName = cleanName
-    .replace(/\s*\(Copy\s*\d*\)$/i, '')
-    .replace(/\s*\(\d+\)$/, '')
-    .trim();
-
-  let counter = 1;
-  let candidate = `${baseName} (Copy ${counter})`;
-  while (existingNames.includes(candidate)) {
+  let counter = 2;
+  while (existingNames.includes(`${baseName} Copy ${counter}`)) {
     counter++;
-    candidate = `${baseName} (Copy ${counter})`;
+    candidate = `${baseName} Copy ${counter}`;
   }
   return candidate;
 }
@@ -50,7 +48,15 @@ export async function POST(req: NextRequest) {
       .select('title')
       .eq('user_id', userId);
 
-    const existingTitles = (userTemplates || []).map(t => t.title).filter(Boolean);
+    const { data: userQuotes } = await supabaseAdmin
+      .from('quotations')
+      .select('title')
+      .eq('workspace_id', userId);
+
+    const existingTitles = Array.from(new Set([
+      ...(userTemplates || []).map(t => t.title),
+      ...(userQuotes || []).map(q => q.title)
+    ].filter(Boolean)));
 
     // 2. Fetch source template document
     let sourceJson: any = null;
@@ -73,15 +79,32 @@ export async function POST(req: NextRequest) {
     }
 
     const baseTitle = sourceJson?.designName || 'Wedding - Design 1';
-    const uniqueTitle = getUniqueDesignName(`${baseTitle} (Copy 1)`, existingTitles);
+    const uniqueTitle = getUniqueDesignName(baseTitle, existingTitles);
 
     const newTemplateId = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
     const now = new Date().toISOString();
 
-    const duplicatedJson = {
-      ...sourceJson,
-      designName: uniqueTitle
-    };
+    // Deep clone source document JSON
+    const duplicatedJson = typeof structuredClone === 'function'
+      ? structuredClone(sourceJson)
+      : JSON.parse(JSON.stringify(sourceJson));
+
+    duplicatedJson.id = newTemplateId;
+    duplicatedJson.designName = uniqueTitle;
+
+    if (Array.isArray(duplicatedJson.pageSequence)) {
+      duplicatedJson.pageSequence = duplicatedJson.pageSequence.map((p: any) => ({
+        ...p,
+        id: 'page_' + Math.random().toString(36).substring(2, 9)
+      }));
+    }
+
+    if (Array.isArray(duplicatedJson.customPages)) {
+      duplicatedJson.customPages = duplicatedJson.customPages.map((cp: any) => ({
+        ...cp,
+        id: 'cpage_' + Math.random().toString(36).substring(2, 9)
+      }));
+    }
 
     // 3. Insert new template record
     const { data: newTemplate } = await supabaseAdmin.from('quotation_templates').insert({
@@ -120,9 +143,10 @@ export async function POST(req: NextRequest) {
       workspace_id: userId,
       quotation_number: newTemplateId,
       title: uniqueTitle,
-      client_name: `${duplicatedJson?.cover?.groomName || 'Rahul'} & ${duplicatedJson?.cover?.brideName || 'Neha'}`,
+      client_name: `${duplicatedJson?.cover?.coupleName || duplicatedJson?.cover?.groomName || 'Rahul & Neha'}`,
       content_json: duplicatedJson,
       status: 'draft',
+      created_at: now,
       updated_at: now
     });
 
@@ -130,7 +154,7 @@ export async function POST(req: NextRequest) {
       id: newTemplateId,
       quotation_number: newTemplateId,
       title: uniqueTitle,
-      client_name: `${duplicatedJson?.cover?.groomName || 'Rahul'} & ${duplicatedJson?.cover?.brideName || 'Neha'}`,
+      client_name: `${duplicatedJson?.cover?.coupleName || duplicatedJson?.cover?.groomName || 'Rahul & Neha'}`,
       content_json: duplicatedJson,
       updated_at: now
     };

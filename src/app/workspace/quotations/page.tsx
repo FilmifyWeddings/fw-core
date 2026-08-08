@@ -14,6 +14,8 @@ import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 
+import { getThemeFromKey } from '@/lib/quotation-theme';
+
 interface SavedQuotation {
   id: string;
   title: string;
@@ -22,6 +24,7 @@ interface SavedQuotation {
   financials: { total_amount?: number };
   status: string;
   updated_at: string;
+  content_json?: any;
 }
 
 interface UserGalleryImage {
@@ -31,6 +34,105 @@ interface UserGalleryImage {
   file_size: number;
   compression_quality: string;
   created_at: string;
+}
+
+// REAL QUOTATION DESIGN COVER PAGE MINIATURE THUMBNAIL PREVIEW
+function QuotationDesignThumbnail({ contentJson, title, coupleName }: { contentJson?: any; title?: string; coupleName?: string }) {
+  const data = contentJson || {};
+  const theme = getThemeFromKey(data.theme || data.look);
+
+  const bg = data.pageBgColor || theme.background || '#F0EDE5';
+  const textColor = theme.primary || theme.text || '#004643';
+  const kickerColor = theme.kicker || textColor;
+  const borderColor = theme.borderColor || 'rgba(0, 70, 67, 0.2)';
+
+  const cover = data.cover || {};
+  const photoUrl = cover.photoUrl || (typeof data.coverPhoto === 'string' ? data.coverPhoto : 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80');
+  const displayCouple = (cover.coupleName || (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : null) || coupleName || 'RAHUL & NEHA').toUpperCase();
+  const displayEvent = (cover.eventType || 'WEDDING PROPOSAL').toUpperCase();
+  const displayDate = (cover.eventDate || 'DECEMBER 2026').toUpperCase();
+  const displayLocation = (cover.location || 'MUMBAI').toUpperCase();
+  const displayBrand = (cover.brandName || 'FILMIFY WEDDINGS').toUpperCase();
+  const fontPrimary = data.primaryFont || 'Cormorant Garamond, serif';
+
+  return (
+    <div 
+      className="relative h-40 w-full overflow-hidden flex flex-col justify-between p-3 select-none transition-all duration-300 shadow-inner"
+      style={{ backgroundColor: bg }}
+    >
+      {/* Background Image / Overlay if present */}
+      {photoUrl && (
+        <div className="absolute inset-0 z-0 opacity-20 overflow-hidden">
+          <img src={photoUrl} alt="" className="w-full h-full object-cover filter blur-[0.5px]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/10 to-black/50" />
+        </div>
+      )}
+
+      {/* Mini Decorative Inner Border Frame */}
+      <div 
+        className="absolute inset-2 border rounded-xl pointer-events-none z-10"
+        style={{ borderColor: borderColor }}
+      />
+
+      {/* Top Header Row in Thumbnail */}
+      <div className="relative z-20 flex items-center justify-between gap-1 px-1 pt-0.5">
+        <span 
+          className="text-[8px] font-black tracking-widest uppercase truncate max-w-[130px]"
+          style={{ color: kickerColor }}
+        >
+          {displayBrand}
+        </span>
+        <span className="text-[7px] font-extrabold px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 backdrop-blur-xs text-slate-800 dark:text-zinc-200">
+          DESIGN PREVIEW
+        </span>
+      </div>
+
+      {/* Center Mini Title & Couple Name Card */}
+      <div className="relative z-20 text-center my-auto px-2 space-y-0.5">
+        <span 
+          className="text-[7px] font-extrabold tracking-widest uppercase block"
+          style={{ color: kickerColor }}
+        >
+          {displayEvent}
+        </span>
+        <h3 
+          className="text-xs sm:text-sm font-black tracking-tight leading-tight uppercase truncate drop-shadow-xs"
+          style={{ color: textColor, fontFamily: fontPrimary }}
+        >
+          {displayCouple}
+        </h3>
+        <p className="text-[7px] font-bold opacity-80 tracking-wider truncate" style={{ color: textColor }}>
+          {displayDate} • {displayLocation}
+        </p>
+      </div>
+
+      {/* Bottom Footer Accent Row */}
+      <div className="relative z-20 flex items-center justify-between text-[7px] font-bold opacity-80 pt-1 border-t px-1 pb-0.5" style={{ borderColor: borderColor, color: textColor }}>
+        <span>QUOTATION DESIGN</span>
+        <span>A4 FORMAT</span>
+      </div>
+    </div>
+  );
+}
+
+function generateUniqueCopyName(requestedTitle: string, existingTitles: string[]): string {
+  const cleanTitle = (requestedTitle || 'Wedding - Design 1').trim();
+  
+  // Base name without any trailing " Copy" or " Copy N"
+  const baseTitle = cleanTitle
+    .replace(/\s*\(?Copy\s*\d*\)?$/i, '')
+    .trim() || 'Wedding - Design 1';
+
+  let candidate = `${baseTitle} Copy`;
+  if (!existingTitles.includes(candidate)) {
+    return candidate;
+  }
+
+  let counter = 2;
+  while (existingTitles.includes(`${baseTitle} Copy ${counter}`)) {
+    counter++;
+  }
+  return `${baseTitle} Copy ${counter}`;
 }
 
 export default function WorkspaceQuotationsGalleryPage() {
@@ -45,6 +147,9 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [activeQuotationId, setActiveQuotationId] = useState<string>('1');
   const [activeCoverPhoto, setActiveCoverPhoto] = useState<string>('https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80');
   const [activeCoupleName, setActiveCoupleName] = useState<string>('Rahul & Neha');
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const [userImages, setUserImages] = useState<UserGalleryImage[]>(() => {
     if (typeof window !== 'undefined') {
       for (let i = 0; i < localStorage.length; i++) {
@@ -68,6 +173,150 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDuplicateDesign = async (sourceQuote: SavedQuotation) => {
+    const sourceId = sourceQuote.quotation_number || sourceQuote.id;
+    setDuplicatingId(sourceId);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id || userId || 'demo_user';
+
+      // 1. Fetch full source document content_json
+      let sourceContentJson = sourceQuote.content_json;
+      if (!sourceContentJson) {
+        const { data: docData } = await supabase
+          .from('quotation_documents')
+          .select('content_json')
+          .eq('template_id', sourceId)
+          .maybeSingle();
+        sourceContentJson = docData?.content_json;
+      }
+      if (!sourceContentJson) {
+        const { data: qDoc } = await supabase
+          .from('quotations')
+          .select('content_json')
+          .or(`id.eq.${sourceId},quotation_number.eq.${sourceId}`)
+          .maybeSingle();
+        sourceContentJson = qDoc?.content_json;
+      }
+      if (!sourceContentJson) {
+        sourceContentJson = {
+          theme: 'cyprus-sand-dune',
+          primaryFont: 'Cormorant Garamond',
+          secondaryFont: 'Plus Jakarta Sans',
+          designName: sourceQuote.title || 'Wedding - Design 1',
+          cover: {
+            coupleName: sourceQuote.client_name || 'Rahul & Neha',
+            eventType: 'WEDDING',
+            eventDate: 'DECEMBER 2026',
+            location: 'MUMBAI',
+            brandName: 'FILMIFY WEDDINGS'
+          }
+        };
+      }
+
+      // 2. COMPLETE DEEP CLONE (Structured clone, no shared references)
+      const clonedJson = typeof structuredClone === 'function' 
+        ? structuredClone(sourceContentJson) 
+        : JSON.parse(JSON.stringify(sourceContentJson));
+
+      // 3. Generate NEW Unique Design ID & NEW Page IDs
+      const newDesignId = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+      clonedJson.id = newDesignId;
+
+      if (Array.isArray(clonedJson.pageSequence)) {
+        clonedJson.pageSequence = clonedJson.pageSequence.map((p: any) => ({
+          ...p,
+          id: 'page_' + Math.random().toString(36).substring(2, 9)
+        }));
+      }
+
+      if (Array.isArray(clonedJson.customPages)) {
+        clonedJson.customPages = clonedJson.customPages.map((cp: any) => ({
+          ...cp,
+          id: 'cpage_' + Math.random().toString(36).substring(2, 9)
+        }));
+      }
+
+      // 4. Generate Unique Title
+      const existingNames = quotations.map(q => q.title).filter(Boolean);
+      const uniqueTitle = generateUniqueCopyName(sourceQuote.title || clonedJson.designName || 'Wedding - Design 1', existingNames);
+      clonedJson.designName = uniqueTitle;
+
+      const now = new Date().toISOString();
+
+      // 5. Persist independent database record in Supabase
+      const { data: newQuote, error: insertErr } = await supabase
+        .from('quotations')
+        .insert({
+          workspace_id: currentUserId,
+          quotation_number: newDesignId,
+          title: uniqueTitle,
+          client_name: sourceQuote.client_name || `${clonedJson?.cover?.coupleName || 'Rahul & Neha'}`,
+          financials: sourceQuote.financials || {},
+          content_json: clonedJson,
+          status: 'draft',
+          created_at: now,
+          updated_at: now
+        })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      // Save into quotation_templates & quotation_documents for complete editor compatibility
+      await supabase.from('quotation_templates').insert({
+        id: newDesignId,
+        user_id: currentUserId,
+        title: uniqueTitle,
+        category: clonedJson?.eventGroup || 'Wedding',
+        created_at: now,
+        updated_at: now
+      });
+
+      await supabase.from('quotation_documents').insert({
+        template_id: newDesignId,
+        user_id: currentUserId,
+        version: 1,
+        content_json: clonedJson,
+        created_at: now,
+        updated_at: now
+      });
+
+      // 6. Insert new design card IMMEDIATELY AFTER the original in the array
+      const duplicatedRecord: SavedQuotation = (newQuote || {
+        id: newDesignId,
+        quotation_number: newDesignId,
+        title: uniqueTitle,
+        client_name: sourceQuote.client_name || 'Rahul & Neha',
+        financials: sourceQuote.financials || {},
+        content_json: clonedJson,
+        status: 'draft',
+        updated_at: now
+      }) as SavedQuotation;
+
+      setQuotations(prev => {
+        const sourceIndex = prev.findIndex(q => (q.quotation_number || q.id) === sourceId);
+        if (sourceIndex !== -1) {
+          const nextList = [...prev];
+          nextList.splice(sourceIndex + 1, 0, duplicatedRecord);
+          return nextList;
+        }
+        return [duplicatedRecord, ...prev];
+      });
+
+      // Toast notification
+      setToastMessage('Design duplicated successfully');
+      setTimeout(() => setToastMessage(null), 3000);
+
+    } catch (err: any) {
+      console.error('[Duplicate Error]:', err);
+      alert('Duplication failed: ' + (err?.message || 'Unknown database error'));
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
 
   // Active Unlocked Templates
   const activeDesigns = [
@@ -428,7 +677,6 @@ export default function WorkspaceQuotationsGalleryPage() {
           quotations.map((quote, idx) => {
             const quoteId = quote.quotation_number || quote.id;
             const customTitle = quote.title || (quote as any).content_json?.designName || 'Wedding - Design 1';
-            const coverPhoto = (quote as any).content_json?.cover?.photoUrl || activeCoverPhoto;
             const clientName = quote.client_name || activeCoupleName;
 
             return (
@@ -440,15 +688,14 @@ export default function WorkspaceQuotationsGalleryPage() {
                 className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
               >
                 <div>
-                  {/* 1:1 Cover Page Thumbnail Sync */}
-                  <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-                    <img 
-                      src={coverPhoto} 
-                      alt={customTitle}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  {/* REAL DESIGN PAGE 1 PREVIEW THUMBNAIL */}
+                  <div className="relative w-full overflow-hidden">
+                    <QuotationDesignThumbnail 
+                      contentJson={(quote as any).content_json}
+                      title={customTitle}
+                      coupleName={clientName}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
-                    <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm">
+                    <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm z-30">
                       {idx === 0 ? 'Active' : 'Saved'}
                     </span>
                   </div>
@@ -474,34 +721,24 @@ export default function WorkspaceQuotationsGalleryPage() {
                       Preview
                     </button>
                     
-                    {/* Instant Duplication with Real-time State Insert */}
+                    {/* Instant Duplication placed immediately after original design */}
                     <button 
                       type="button"
-                      onClick={async () => {
-                        try {
-                          const { data: { session } } = await supabase.auth.getSession();
-                          const res = await fetch('/api/templates/duplicate', {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              'Authorization': `Bearer ${session?.access_token || ''}`
-                            },
-                            body: JSON.stringify({ sourceTemplateId: quoteId })
-                          });
-                          const json = await res.json();
-                          if (json.quotation) {
-                            // Instant UI State Insert without browser refresh
-                            setQuotations(prev => [json.quotation, ...prev]);
-                          } else if (json.newTemplateId) {
-                            router.push(`/workspace/quotations/builder/templet/${json.newTemplateId}`);
-                          }
-                        } catch (err) {
-                          console.error('Duplication error:', err);
-                        }
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                      disabled={duplicatingId === quoteId}
+                      onClick={() => handleDuplicateDesign(quote)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50"
                     >
-                      Duplicate
+                      {duplicatingId === quoteId ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
+                          <span>Duplicating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-slate-500" />
+                          <span>Duplicate</span>
+                        </>
+                      )}
                     </button>
                   </div>
 
@@ -533,14 +770,12 @@ export default function WorkspaceQuotationsGalleryPage() {
             className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
           >
             <div>
-              <div className="relative h-40 w-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-                <img 
-                  src={activeCoverPhoto} 
-                  alt="Royale Template"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              <div className="relative w-full overflow-hidden">
+                <QuotationDesignThumbnail 
+                  title="Wedding - Design 1"
+                  coupleName={activeCoupleName}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
-                <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm">
+                <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm z-30">
                   Active
                 </span>
               </div>
@@ -566,26 +801,29 @@ export default function WorkspaceQuotationsGalleryPage() {
                 </button>
                 <button 
                   type="button"
-                  onClick={async () => {
-                    try {
-                      const { data: { session } } = await supabase.auth.getSession();
-                      const res = await fetch('/api/templates/duplicate', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${session?.access_token || ''}`
-                        },
-                        body: JSON.stringify({ sourceTemplateId: activeQuotationId })
-                      });
-                      const json = await res.json();
-                      if (json.quotation) {
-                        setQuotations(prev => [json.quotation, ...prev]);
-                      }
-                    } catch {}
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                  disabled={duplicatingId === activeQuotationId}
+                  onClick={() => handleDuplicateDesign({
+                    id: activeQuotationId,
+                    quotation_number: activeQuotationId,
+                    title: 'Wedding - Design 1',
+                    client_name: activeCoupleName,
+                    financials: {},
+                    status: 'draft',
+                    updated_at: new Date().toISOString()
+                  })}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50"
                 >
-                  Duplicate
+                  {duplicatingId === activeQuotationId ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
+                      <span>Duplicating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3 text-slate-500" />
+                      <span>Duplicate</span>
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -817,6 +1055,21 @@ export default function WorkspaceQuotationsGalleryPage() {
         onClose={() => setShowGalleryModal(false)} 
         userId={userId} 
       />
+
+      {/* Floating Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-emerald-600 text-white font-extrabold text-xs rounded-2xl shadow-2xl flex items-center gap-2"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{toastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
