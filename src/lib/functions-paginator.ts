@@ -19,41 +19,56 @@ export interface FunctionItem {
 /**
  * Calculates the rendered pixel height of a Function Card based on its title,
  * location, crew requirements, and multiline notes content.
+ * Includes text wrapping calculations for mobile/narrow viewports.
  */
 export function getFunctionCardHeight(item: FunctionItem): number {
   if (!item) return 100;
 
-  // Base card padding (p-4 = 32px) + borders (2px) + shadow/margin (4px)
-  let height = 38;
+  // Base card padding (p-4 = 32px) + borders (2px) + shadow/margin (8px) = 42px
+  let height = 42;
 
   // Header line (Function Name & Timing Badge + border-b + pb-2)
-  height += 36;
-
-  // Location line (if present)
-  if (item.location || item.venue) {
-    height += 22;
+  const titleStr = item.name || item.title || '';
+  if (titleStr.length > 25) {
+    const titleLines = Math.max(1, Math.ceil(titleStr.length / 25));
+    height += 36 + (titleLines - 1) * 20;
+  } else {
+    height += 36;
   }
 
-  // Requirements & Crew List
+  // Location / Venue line (if present)
+  if (item.location || item.venue) {
+    const locStr = String(item.location || item.venue);
+    const locLines = Math.max(1, Math.ceil(locStr.length / 38));
+    height += locLines * 22;
+  }
+
+  // Requirements & Crew List (2-column layout)
   if (item.requirements && Array.isArray(item.requirements) && item.requirements.length > 0) {
-    const reqRows = Math.ceil(item.requirements.length / 2);
-    height += 16 + reqRows * 20 + 4;
+    const activeReqs = item.requirements.filter(r => (r.qty === undefined || r.qty > 0));
+    if (activeReqs.length > 0) {
+      const reqRows = Math.ceil(activeReqs.length / 2);
+      height += 18 + reqRows * 24 + 6;
+    }
   } else if (item.team || item.crew) {
     const crewArr = String(item.team || item.crew).split(',').filter(Boolean);
-    const reqRows = Math.ceil(crewArr.length / 2);
-    height += 16 + reqRows * 20 + 4;
+    if (crewArr.length > 0) {
+      const reqRows = Math.ceil(crewArr.length / 2);
+      height += 18 + reqRows * 24 + 6;
+    }
   }
 
-  // Notes / Highlights (with multiline support preserving \n)
+  // Notes / Highlights (with multiline support preserving \n and character wrapping)
   if (item.notes && item.notes.trim().length > 0) {
-    height += 10;
+    height += 12;
     const lines = item.notes.split('\n');
     let totalLines = 0;
     for (const line of lines) {
-      const wrapped = Math.max(1, Math.ceil(line.length / 55));
+      // 38 characters per line accounts for mobile text wrapping and desktop
+      const wrapped = Math.max(1, Math.ceil(line.length / 38));
       totalLines += wrapped;
     }
-    height += totalLines * 18;
+    height += totalLines * 20;
   }
 
   return height;
@@ -74,9 +89,10 @@ export function paginateFunctionsPageItems(
   let currentChunk: FunctionItem[] = [];
   let currentChunkHeight = 0;
 
-  const maxPageHeight = 1043; // 1123px A4 canvas height - 80px (py-10 padding)
-  const headerHeight = 80;   // Kicker + Title + margins
-  const safetyBuffer = 20;   // Margin of safety for subpixel layout
+  // Total available vertical height inside A4 canvas (1123px - py-14 112px padding = 1011px)
+  const maxPageHeight = 1011;
+  const headerHeight = 90;    // Kicker + Title + margins
+  const safetyBuffer = 55;    // Generous margin of safety for mobile text wrapping & subpixel layout
   const photoFlow = hasPhoto ? (Math.min(photoHeight || 200, 200) + 16) : 0;
 
   for (let i = 0; i < items.length; i++) {

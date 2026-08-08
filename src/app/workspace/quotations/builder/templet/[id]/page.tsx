@@ -4209,7 +4209,7 @@ function StudioCoreAiryBuilderContent() {
         {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS */}
         <main 
           ref={mainContainerRef}
-          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-20 md:pb-8"
+          className="flex-1 bg-[#EBECEF] p-2 sm:p-8 overflow-y-auto overflow-x-auto flex flex-col items-center justify-start pb-28 md:pb-12"
         >
           
           {/* Scaled Continuous Canvas Container Wrapper */}

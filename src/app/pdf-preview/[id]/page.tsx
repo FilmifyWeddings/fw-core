@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Phone, Mail, Globe } from 'lucide-react';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
+import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -352,13 +353,9 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 {/* 4. FUNCTIONS & COVERAGE */}
                 {pageType === 'functionsPage' && (() => {
                   const items = functionsPage.items || [];
-                  const chunks: any[][] = [];
-                  if (items.length === 0) chunks.push([]);
-                  else {
-                    for (let i = 0; i < items.length; i += 3) {
-                      chunks.push(items.slice(i, i + 3));
-                    }
-                  }
+                  const hasPhoto = !!(functionsPage.photo && functionsPage.frameShape !== 'background');
+                  const photoHeight = functionsPage.photoHeight || 200;
+                  const chunks = paginateFunctionsPageItems(items, hasPhoto, photoHeight);
                   return chunks.map((chunkItems, chunkIdx) => (
                     <section key={`pdf-func-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
                       <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
