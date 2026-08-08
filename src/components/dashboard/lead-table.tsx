@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { LeadInsiderDrawer } from './lead-insider-drawer';
 import { TeamTasksManager } from './team-tasks-manager';
 import { CRMDropdown } from './crm-dropdown';
+import { LeadQuotationModal } from './lead-quotation-modal';
 
 const MotionDiv = motionImport.div;
 const MotionTr = motionImport.tr;
@@ -237,6 +238,7 @@ export function LeadTable({
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [drawerMode, setDrawerMode] = useState<'full' | 'comments'>('full');
   const [timelineLead, setTimelineLead] = useState<Lead | null>(null);
+  const [quotationModalLead, setQuotationModalLead] = useState<Lead | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
 
@@ -2254,7 +2256,7 @@ export function LeadTable({
     </div>
 
     {/* DESKTOP GRID TABLE VIEW (MD AND UP) */}
-    <div className="hidden md:block w-full relative transition-all">
+    <div className="hidden md:block w-full overflow-x-auto relative transition-all">
       <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
         
         <colgroup>
@@ -2281,7 +2283,7 @@ export function LeadTable({
             if (col.type === 'meta_question') return <col key={col.id} className="w-[240px]" />;
             return <col key={col.id} className="w-[210px]" />;
           })}
-          <col className="w-[300px]" />
+          <col className="w-[340px]" />
         </colgroup>
 
         <thead>
@@ -2399,7 +2401,7 @@ export function LeadTable({
             {/* Frozen Column Actions (Sticky Top & Right) */}
             <th 
               style={{ top: `${headerHeight}px` }}
-              className="py-4 px-4 text-center sticky right-0 w-[300px] min-w-[300px] max-w-[300px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)]"
+              className="py-4 px-4 text-center sticky right-0 w-[340px] min-w-[340px] max-w-[340px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)]"
             >
               Actions
             </th>
@@ -2962,13 +2964,27 @@ export function LeadTable({
                         })}
 
                         {/* Sticky Right: Column Actions */}
-                        <td className={`py-2 px-3 text-right sticky right-0 w-[300px] min-w-[300px] max-w-[300px] z-20 border-l border-[#E8E5DF] dark:border-[#2C2926] shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)] transition-colors ${
+                        <td className={`py-2 px-3 text-right sticky right-0 w-[340px] min-w-[340px] max-w-[340px] z-20 border-l border-[#E8E5DF] dark:border-[#2C2926] shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)] transition-colors ${
                           isSelected 
                             ? 'bg-[#EAE8E3] dark:bg-[#1F1C1A]' 
                             : 'bg-[#FAF8F5] dark:bg-[#121110] group-hover/row:bg-[#EAE6DF] dark:group-hover/row:bg-[#1C1A18]'
                         }`} onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1 w-full">
                             
+                            {/* Lead Quotations Management Action */}
+                            <PremiumTooltip content="Quotations">
+                              <MotionButton 
+                                whileHover={{ scale: 1.1 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setQuotationModalLead(lead);
+                                }}
+                                className="p-1.5 rounded-lg border border-amber-300/80 dark:border-amber-700/60 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-400 transition-all cursor-pointer shadow-2xs"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                              </MotionButton>
+                            </PremiumTooltip>
+
                             {/* WA Welcome Msg Quick Action */}
                             <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
                               <button
@@ -3954,6 +3970,13 @@ export function LeadTable({
         </div>
       )}
 
+
+      {/* Lead Quotation History & Versioning Modal */}
+      <LeadQuotationModal 
+        isOpen={!!quotationModalLead} 
+        onClose={() => setQuotationModalLead(null)} 
+        lead={quotationModalLead} 
+      />
 
       </div>
     </div>
