@@ -15,8 +15,6 @@ import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manag
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 
 import { getThemeFromKey } from '@/lib/quotation-theme';
-
-import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
 
 interface SavedQuotation {
