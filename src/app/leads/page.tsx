@@ -493,7 +493,7 @@ export default function LeadsPage() {
 
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-slate-50 dark:bg-[#070708] text-slate-900 dark:text-white selection:bg-slate-100 dark:selection:bg-zinc-850 transition-colors duration-200">
-      <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col overflow-hidden">
+      <div className="flex-1 h-full min-h-0 min-w-0 w-full flex flex-col overflow-hidden">
         
         {/* Lead Table Container */}
         {loading ? (
