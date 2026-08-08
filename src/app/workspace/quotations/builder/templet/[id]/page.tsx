@@ -23,6 +23,7 @@ import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/li
 import { toPng, toJpeg } from 'html-to-image';
 import { PDFDocument } from 'pdf-lib';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
+import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
@@ -4399,7 +4400,9 @@ function StudioCoreAiryBuilderContent() {
                       )}
 
                       {pageItem.type === 'functionsPage' && (() => {
-                        const funcChunks = chunkArray(data.functionsPage?.items, 3);
+                        const hasPhoto = !!(data.functionsPage?.photo && data.functionsPage?.frameShape !== 'background');
+                        const photoHeight = data.functionsPage?.photoHeight || 200;
+                        const funcChunks = paginateFunctionsPageItems(data.functionsPage?.items || [], hasPhoto, photoHeight);
                         return funcChunks.map((funcChunk, chunkIdx) => (
                           <section 
                             key={`func-chunk-${chunkIdx}`}
@@ -4476,7 +4479,8 @@ function StudioCoreAiryBuilderContent() {
 
                                 <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
                                   {funcChunk.map((func: any, index: number) => {
-                                    const globalIdx = chunkIdx * 3 + index;
+                                    const previousCardsCount = funcChunks.slice(0, chunkIdx).reduce((sum, chunk) => sum + chunk.length, 0);
+                                    const globalIdx = previousCardsCount + index;
                                     return (
                                       <div 
                                         key={func.id || globalIdx} 
@@ -4541,7 +4545,16 @@ function StudioCoreAiryBuilderContent() {
 
                                         {/* Custom Notes */}
                                         {func.notes && (
-                                          <p className="text-xs italic leading-relaxed opacity-85 pt-1 border-t" style={{ color: textColor, borderColor: borderColor || 'rgba(0,0,0,0.08)' }}>
+                                          <p 
+                                            className="text-xs italic leading-relaxed opacity-85 pt-1 border-t whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" 
+                                            style={{ 
+                                              color: textColor, 
+                                              borderColor: borderColor || 'rgba(0,0,0,0.08)',
+                                              whiteSpace: 'pre-wrap',
+                                              overflowWrap: 'anywhere',
+                                              wordBreak: 'break-word'
+                                            }}
+                                          >
                                             "{func.notes}"
                                           </p>
                                         )}
