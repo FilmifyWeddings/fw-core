@@ -1199,6 +1199,64 @@ Approx. 50 High Resolution Edited Images
           </div>
         </section>
       `;
+    } else if (pageType === 'custom' || pageType.startsWith('custom') || pageItem.customId) {
+      const cKey = pageItem.customId || pageItem.id;
+      const customObj = (documentData.customPages || {})[cKey] || {};
+
+      const photoHTML = customObj.photo ? renderSectionImage(
+        customObj.photo,
+        customObj.frameShape || 'rounded',
+        customObj.photoHeight || 380,
+        customObj.photoWidth || 75,
+        customObj.photoFocalY || 50,
+        customObj.bgOpacity || 40,
+        theme.background,
+        customObj.imagePosition === 'bottom'
+      ) : '';
+
+      pagesHTML += `
+        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          ${customObj.photo && customObj.frameShape === 'background' ? photoHTML : ''}
+
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;margin:auto;">
+              ${customObj.photo && customObj.frameShape !== 'background' && customObj.imagePosition === 'top' ? photoHTML : ''}
+
+              <div style="text-align:center;margin:0 0 16px 0;max-width:600px;">
+                ${customObj.kicker ? `
+                  <p style="font-size:12px;letter-spacing:0.25em;text-transform:uppercase;font-weight:700;color:${theme.kicker};margin:0 0 8px 0;">
+                    ${customObj.kicker}
+                  </p>
+                ` : ''}
+                
+                <h2 style="font-family:${primaryFont};font-size:32px;letter-spacing:0.18em;text-transform:uppercase;font-weight:900;color:${theme.text};margin:0 0 8px 0;">
+                  ${customObj.heading || 'CUSTOM PAGE'}
+                </h2>
+
+                ${customObj.subtitle ? `
+                  <p style="font-size:13px;letter-spacing:0.15em;text-transform:uppercase;font-weight:600;color:${theme.kicker};margin:0 0 12px 0;">
+                    ${customObj.subtitle}
+                  </p>
+                ` : ''}
+              </div>
+
+              ${customObj.photo && customObj.frameShape !== 'background' && customObj.imagePosition === 'center' ? photoHTML : ''}
+
+              ${customObj.text ? `
+                <div style="padding:12px 0;max-width:600px;margin:0 auto;text-align:center;">
+                  <p style="font-size:13px;line-height:1.65;font-weight:500;white-space:pre-line;color:${theme.text};margin:0;">
+                    ${customObj.text}
+                  </p>
+                </div>
+              ` : ''}
+
+              ${customObj.photo && customObj.frameShape !== 'background' && (customObj.imagePosition === 'bottom' || !customObj.imagePosition) ? photoHTML : ''}
+            </div>
+
+            ${footerHTML}
+          </div>
+        </section>
+      `;
     }
   });
 

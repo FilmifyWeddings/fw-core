@@ -2258,28 +2258,41 @@ function StudioCoreAiryBuilderContent() {
         }
 
         const json = await res.json();
+        let loadedData: any = null;
+
         if (json.document?.content_json) {
-          const loadedData = normalizeQuotationData(json.document.content_json);
-          if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
-            loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
-          }
+          loadedData = normalizeQuotationData(json.document.content_json);
           currentVersionRef.current = json.document.version || 1;
-          cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
-          setData(loadedData);
         } else {
           // Try local IndexedDB cache before initializing fresh preset
           const cachedLocal = await getCachedDocumentLocal(routeId);
           if (cachedLocal) {
             currentVersionRef.current = cachedLocal.version || 1;
-            setData(normalizeQuotationData(cachedLocal.documentJson));
-          } else {
-            const freshData = { ...DEFAULT_AIRY_PROPOSAL };
-            if (userStudioName) {
-              freshData.cover = { ...freshData.cover, brandName: userStudioName };
-            }
-            setData(freshData);
+            loadedData = normalizeQuotationData(cachedLocal.documentJson);
           }
         }
+
+        // Check if there is a more recent instant local draft saved in localStorage
+        const draftStr = localStorage.getItem(`wg_proposal_draft_${currentUserId}`);
+        if (draftStr) {
+          try {
+            const parsedDraft = normalizeQuotationData(JSON.parse(draftStr));
+            if (parsedDraft && parsedDraft.cover) {
+              loadedData = parsedDraft;
+            }
+          } catch (e) {}
+        }
+
+        if (!loadedData) {
+          loadedData = { ...DEFAULT_AIRY_PROPOSAL };
+        }
+
+        if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
+          loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
+        }
+
+        cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
+        setData(loadedData);
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
       } finally {
@@ -2291,6 +2304,27 @@ function StudioCoreAiryBuilderContent() {
     }
     initUserAndLoadData();
   }, [params]);
+
+  // Synchronous Instant Local Draft Storage Sync (0ms delay)
+  useEffect(() => {
+    if (!userId || !isInitialLoadedRef.current) return;
+    try {
+      localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
+    } catch (e) {}
+  }, [data, userId]);
+
+  // Flush state to localStorage on tab unload/refresh
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (userId && data) {
+        try {
+          localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
+        } catch (e) {}
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [data, userId]);
 
   // ── SUPABASE REALTIME WEBSOCKET SUBSCRIPTION FOR INSTANT MULTI-DEVICE SYNC ──
   useEffect(() => {

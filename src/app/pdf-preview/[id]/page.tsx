@@ -839,6 +839,36 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                   );
                 })()}
 
+                {/* 12. CUSTOM PAGE */}
+                {(pageType === 'custom' || pageType.startsWith('custom') || pageItem.customId) && (() => {
+                  const cKey = pageItem.customId || pageItem.id;
+                  const customObj = (documentData.customPages || {})[cKey] || {};
+                  return (
+                    <section className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                        {customObj.kicker && (
+                          <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                            {customObj.kicker}
+                          </span>
+                        )}
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                          {customObj.heading || 'CUSTOM PAGE'}
+                        </h2>
+                        {customObj.subtitle && (
+                          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: theme.kicker }}>
+                            {customObj.subtitle}
+                          </p>
+                        )}
+                        {customObj.text && (
+                          <p className="text-xs leading-relaxed opacity-90 font-normal whitespace-pre-line text-center">
+                            {customObj.text}
+                          </p>
+                        )}
+                      </div>
+                    </section>
+                  );
+                })()}
+
               </React.Fragment>
             );
           })}
