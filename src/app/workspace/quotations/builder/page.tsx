@@ -4796,7 +4796,7 @@ function StudioCoreAiryBuilderContent() {
                       {pageItem.type === 'termsPage' && (() => {
                         const termsRaw = data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text || '';
                         const termLines = termsRaw.split('\n').filter(Boolean);
-                        const termsChunks = chunkArray(termLines, 11);
+                        const termsChunks = chunkArray(termLines, 15);
                         return termsChunks.map((termsChunk, chunkIdx) => (
                           <section 
                             key={`terms-chunk-${chunkIdx}`}

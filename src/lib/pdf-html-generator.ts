@@ -1086,7 +1086,7 @@ Approx. 50 High Resolution Edited Images
 
       const termsRaw = termsPage.text || '';
       const termLines = termsRaw.split('\n').filter(Boolean);
-      const TERMS_PER_PAGE = 11;
+      const TERMS_PER_PAGE = 15;
       const termsChunks: string[][] = [];
       if (termLines.length === 0) {
         termsChunks.push([]);
