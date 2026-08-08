@@ -1772,6 +1772,8 @@ function StudioCoreAiryBuilderContent() {
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Auto-saved to cloud');
   const isInitialLoadedRef = useRef<boolean>(false);
   const currentVersionRef = useRef<number>(1);
+  const clientTabIdRef = useRef<string>(`tab_${Math.random().toString(36).substring(2, 9)}`);
+  const realtimeChannelRef = useRef<any>(null);
   const [openCard, setOpenCard] = useState<string | null>('cover');
   // ── DYNAMIC PAGE SEQUENCE & CUSTOM PAGE CONTROLS ──
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
@@ -2305,11 +2307,23 @@ function StudioCoreAiryBuilderContent() {
     initUserAndLoadData();
   }, [params]);
 
-  // Synchronous Instant Local Draft Storage Sync (0ms delay)
+  // Synchronous Instant Local Draft Storage & Realtime WebSocket Broadcast Sync (0ms delay)
   useEffect(() => {
     if (!userId || !isInitialLoadedRef.current) return;
     try {
       localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
+      // Broadcast instant live update to all other devices (PC -> Mobile)
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'doc_update',
+          payload: {
+            data: data,
+            version: currentVersionRef.current,
+            senderId: clientTabIdRef.current
+          }
+        }).catch(() => {});
+      }
     } catch (e) {}
   }, [data, userId]);
 
@@ -2326,31 +2340,63 @@ function StudioCoreAiryBuilderContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [data, userId]);
 
-  // ── SUPABASE REALTIME WEBSOCKET SUBSCRIPTION FOR INSTANT MULTI-DEVICE SYNC ──
+  // ── SUPABASE REALTIME WEBSOCKET SUBSCRIPTION FOR INSTANT MULTI-DEVICE SYNC (PC <-> MOBILE) ──
   useEffect(() => {
     const routeId = params?.id ? String(params.id) : 'FW-2026-001';
     
-    // Subscribe to realtime updates on quotation_documents table
+    // Subscribe to realtime updates with broadcast & postgres_changes
     const channel = supabase
-      .channel(`document:${routeId}`)
+      .channel(`doc_sync_${routeId}`, {
+        config: {
+          broadcast: { self: false }
+        }
+      })
+      .on('broadcast', { event: 'doc_update' }, (payload: any) => {
+        if (payload?.payload?.data && payload.payload.senderId !== clientTabIdRef.current) {
+          console.log('[Supabase Realtime Broadcast] Multi-device live sync update received from remote device');
+          const remoteData = normalizeQuotationData(payload.payload.data);
+          if (payload.payload.version) {
+            currentVersionRef.current = payload.payload.version;
+          }
+          setData(remoteData);
+          cacheDocumentLocal(routeId, remoteData, currentVersionRef.current);
+          setAutoSaveStatus('Synced in real-time');
+        }
+      })
       .on('postgres_changes', {
-        event: 'UPDATE',
+        event: '*',
         schema: 'public',
         table: 'quotation_documents',
         filter: `template_id=eq.${routeId}`
       }, (payload: any) => {
         if (payload.new && payload.new.version > currentVersionRef.current) {
-          console.log('[Supabase Realtime] Incoming remote update v' + payload.new.version);
+          console.log('[Supabase Realtime Postgres] Remote update v' + payload.new.version);
           currentVersionRef.current = payload.new.version;
           if (payload.new.content_json) {
             const remoteData = normalizeQuotationData(payload.new.content_json);
             setData(remoteData);
             cacheDocumentLocal(routeId, remoteData, payload.new.version);
-            setAutoSaveStatus('Auto-saved to cloud');
+            setAutoSaveStatus('Synced in real-time');
           }
         }
       })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'quotations',
+        filter: `quotation_number=eq.${routeId}`
+      }, (payload: any) => {
+        if (payload.new && payload.new.content_json) {
+          console.log('[Supabase Realtime Quotations] Remote update received');
+          const remoteData = normalizeQuotationData(payload.new.content_json);
+          setData(remoteData);
+          cacheDocumentLocal(routeId, remoteData, currentVersionRef.current);
+          setAutoSaveStatus('Synced in real-time');
+        }
+      })
       .subscribe();
+
+    realtimeChannelRef.current = channel;
 
     // Listen to online reconnect events to flush IndexedDB outbox queue
     const handleOnline = () => {
@@ -2380,6 +2426,7 @@ function StudioCoreAiryBuilderContent() {
 
     return () => {
       supabase.removeChannel(channel);
+      realtimeChannelRef.current = null;
       window.removeEventListener('online', handleOnline);
     };
   }, [params, userId]);
