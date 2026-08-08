@@ -54,6 +54,16 @@ function calculatePricingTotals(pricing: any) {
   return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
 }
 
+function calculatePaymentTermsSummary(steps: any[], totalProjectAmount: number) {
+  const fixedAmount = Number(totalProjectAmount || 0);
+  const stepList = Array.isArray(steps) ? steps : [];
+  const receivedAmount = stepList
+    .filter(s => s && (s.status === 'Completed' || s.status === 'COMPLETED'))
+    .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
+  const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
+  return { fixedAmount, receivedAmount, pendingAmount };
+}
+
 
 const DEFAULT_PAGE_SEQUENCE = [
   { id: 'cover', type: 'cover', label: 'Cover Page' },
@@ -906,44 +916,99 @@ Approx. 50 High Resolution Edited Images
         </section>
       `;
     } else if (pageType === 'paymentTermsPage') {
+      const calcPricing = calculatePricingTotals(pricingPage);
+      const calcPayment = calculatePaymentTermsSummary(paymentTermsPage.steps, calcPricing.netTotal);
+
       let rowsHTML = '';
       (paymentTermsPage.steps || []).forEach((step: any) => {
+        const isCompleted = step.status === 'Completed' || step.status === 'COMPLETED';
+        const badgeBg = isCompleted ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+        const badgeBorder = isCompleted ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+        const statusText = step.status || 'Pending';
+
+        const statusIconSVG = isCompleted ? `
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        ` : `
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        `;
+
         rowsHTML += `
           <tr style="border-bottom:1px solid ${theme.borderColor};">
-            <td style="padding:14px 16px;font-weight:700;">${step.stepName}</td>
-            <td style="padding:14px 16px;">${step.date}</td>
-            <td style="padding:14px 16px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:700;"><span style="font-family:Arial, sans-serif;">₹</span>${Number(step.amount || 0).toLocaleString('en-IN')}</td>
+            <td style="padding:12px 16px;font-family:system-ui, -apple-system, sans-serif;font-weight:500;text-transform:uppercase;letter-spacing:-0.01em;">${step.date || ''}</td>
+            <td style="padding:12px 16px;font-weight:700;">${step.stepName || ''}</td>
+            <td style="padding:12px 16px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${Number(step.amount || 0).toLocaleString('en-IN')}</td>
+            <td style="padding:12px 16px;text-align:center;">
+              <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:9999px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;border:1px solid ${badgeBorder};background-color:${badgeBg};color:${theme.text};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                ${statusIconSVG}
+                <span>${statusText}</span>
+              </span>
+            </td>
           </tr>
         `;
       });
 
+      const noteHTML = paymentTermsPage.note ? `
+        <p style="font-size:12px;font-style:italic;line-height:1.6;opacity:0.85;margin-top:16px;padding-top:12px;border-top:1px solid ${theme.borderColor};max-width:600px;text-align:center;margin-left:auto;margin-right:auto;color:${theme.text};white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;">
+          "${paymentTermsPage.note}"
+        </p>
+      ` : '';
+
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${paymentTermsPage.kicker || 'PAYMENT SCHEDULE'}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${paymentTermsPage.heading || 'PAYMENT TERMS & SCHEDULE'}
-            </h2>
+        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">
+              <div style="text-align:center;margin:0 0 24px 0;">
+                <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                  ${paymentTermsPage.kicker || 'SCHEDULE'}
+                </span>
+                <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                  ${paymentTermsPage.heading || 'PAYMENT TERMS & SCHEDULE'}
+                </h2>
+              </div>
 
-            <div style="border-radius:16px;overflow:visible;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;">
-              <table style="width:100%;font-size:12px;border-collapse:collapse;">
-                <thead style="font-size:10px;text-transform:uppercase;font-weight:700;border-bottom:1px solid ${theme.borderColor};color:${theme.kicker};">
-                  <tr>
-                    <th style="padding:12px 16px;text-align:left;">Milestone</th>
-                    <th style="padding:12px 16px;text-align:left;">Due Date</th>
-                    <th style="padding:12px 16px;text-align:right;">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${rowsHTML}
-                </tbody>
-              </table>
+              <div style="width:100%;max-width:600px;margin:0 auto 16px auto;">
+                <div style="width:100%;border-radius:16px;overflow:hidden;border:1px solid ${theme.borderColor};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                  <table style="width:100%;border-collapse:collapse;text-align:left;font-size:12px;">
+                    <thead style="background-color:${theme.boxBgColor};border-bottom:1px solid ${theme.borderColor};font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:${theme.kicker};">
+                      <tr>
+                        <th style="padding:14px 16px;width:24%;">DATE</th>
+                        <th style="padding:14px 16px;width:38%;">STEPS</th>
+                        <th style="padding:14px 16px;width:20%;text-align:right;">AMOUNT</th>
+                        <th style="padding:14px 16px;width:18%;text-align:center;">STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody style="color:${theme.text};font-weight:600;">
+                      ${rowsHTML}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;width:100%;margin-top:16px;text-align:center;box-sizing:border-box;">
+                  <div style="padding:14px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                    <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;color:${theme.kicker};">FIXED AMOUNT</span>
+                    <span style="font-size:16px;font-weight:900;font-family:system-ui, -apple-system, sans-serif;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calcPayment.fixedAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div style="padding:14px;border-radius:16px;border:1px solid rgba(16, 185, 129, 0.3);background-color:rgba(16, 185, 129, 0.1);color:${theme.text};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                    <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;color:${theme.kicker};">RECEIVED AMOUNT</span>
+                    <span style="font-size:16px;font-weight:900;font-family:system-ui, -apple-system, sans-serif;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calcPayment.receivedAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div style="padding:14px;border-radius:16px;border:1px solid rgba(245, 158, 11, 0.3);background-color:rgba(245, 158, 11, 0.1);color:${theme.text};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                    <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;color:${theme.kicker};">PENDING AMOUNT</span>
+                    <span style="font-size:16px;font-weight:900;font-family:system-ui, -apple-system, sans-serif;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calcPayment.pendingAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                ${noteHTML}
+              </div>
             </div>
-          </div>
 
-          ${footerHTML}
+            ${footerHTML}
+          </div>
         </section>
       `;
     } else if (pageType === 'addOnsPage') {

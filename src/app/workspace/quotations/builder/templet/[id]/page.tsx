@@ -3206,31 +3206,8 @@ function StudioCoreAiryBuilderContent() {
                   placeholder="Add optional note at bottom of page..."
                 />
               </div>
-
-              <UnifiedPhotoControls
-                photoUrl={data.paymentTermsPage?.photo}
-                frameShape={data.paymentTermsPage?.frameShape}
-                photoHeight={data.paymentTermsPage?.photoHeight}
-                photoWidth={data.paymentTermsPage?.photoWidth}
-                photoFocalY={data.paymentTermsPage?.photoFocalY}
-                bgOpacity={data.paymentTermsPage?.bgOpacity}
-                imagePosition={data.paymentTermsPage?.imagePosition}
-                onOpenAddModal={() => openAddImageModal('paymentTermsPhoto')}
-                onDeletePhoto={() => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photo: '' } })}
-                onChangeShape={(shape) => {
-                  const currentH = data.paymentTermsPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 380 : currentH);
-                  setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), frameShape: shape, photoHeight: newH } });
-                }}
-                onChangePosition={(pos) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, paymentTermsPage: { ...(data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage), photoWidth: w } })}
-              />
-            
-                    </div>
-                  )}
+            </div>
+          )}
 
                   {pageItem.type === 'addOnsPage' && (
                     <div className="space-y-3">
@@ -4710,50 +4687,12 @@ function StudioCoreAiryBuilderContent() {
                 minWidth: '794px',
                 maxWidth: '794px',
                 height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                margin: '0 auto',
-                boxShadow: '0 20px 30px -10px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)',
-                backgroundColor: pageBgColor || '#FFFFFF',
                 color: textColor,
                 fontFamily: data.secondaryFont,
               }}
             >
-              {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.paymentTermsPage.photo}
-                  frameShape="background"
-                  photoHeight={data.paymentTermsPage.photoHeight}
-                  photoWidth={data.paymentTermsPage.photoWidth}
-                  photoFocalY={data.paymentTermsPage.photoFocalY}
-                  bgOpacity={data.paymentTermsPage.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Payment Terms Background"
-                />
-              )}
-
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
-                data.paymentTermsPage?.frameShape === 'full-width' || (data.paymentTermsPage?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.paymentTermsPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.paymentTermsPage?.frameShape === 'full-width' || (data.paymentTermsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && data.paymentTermsPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.paymentTermsPage.photo}
-                      frameShape={data.paymentTermsPage.frameShape}
-                      photoHeight={data.paymentTermsPage.photoHeight}
-                      photoWidth={data.paymentTermsPage.photoWidth}
-                      photoFocalY={data.paymentTermsPage.photoFocalY}
-                      altText="Payment Terms Photo"
-                    />
-                  )}
-
+              <div className="relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 px-12 justify-between">
+                <div className="flex flex-col items-center justify-start w-full px-12">
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.paymentTermsPage?.kicker || 'SCHEDULE'}
                   </span>
@@ -4761,19 +4700,7 @@ function StudioCoreAiryBuilderContent() {
                     {data.paymentTermsPage?.heading || 'PAYMENT TERMS & SCHEDULE'}
                   </h2>
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && data.paymentTermsPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.paymentTermsPage.photo}
-                      frameShape={data.paymentTermsPage.frameShape}
-                      photoHeight={data.paymentTermsPage.photoHeight}
-                      photoWidth={data.paymentTermsPage.photoWidth}
-                      photoFocalY={data.paymentTermsPage.photoFocalY}
-                      altText="Payment Terms Photo"
-                    />
-                  )}
-
-                  <div className="w-full max-w-xl mx-auto space-y-4 my-3">
+                  <div className="w-full max-w-xl mx-auto space-y-4 my-0">
                     {/* Structured Table matching reference design */}
                     <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
                       <table className="w-full text-left border-collapse">
@@ -4827,25 +4754,12 @@ function StudioCoreAiryBuilderContent() {
                     </div>
 
                     {data.paymentTermsPage?.note && (
-                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: textColor, borderColor }}>
                         "{data.paymentTermsPage.note}"
                       </p>
                     )}
                   </div>
                 </div>
-
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.paymentTermsPage?.photo && data.paymentTermsPage?.frameShape !== 'background' && (data.paymentTermsPage?.imagePosition === 'bottom' || !data.paymentTermsPage?.imagePosition) && (
-                  <SectionImageRenderer
-                    photo={data.paymentTermsPage.photo}
-                    frameShape={data.paymentTermsPage.frameShape}
-                    photoHeight={data.paymentTermsPage.photoHeight}
-                    photoWidth={data.paymentTermsPage.photoWidth}
-                    photoFocalY={data.paymentTermsPage.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Payment Terms Photo"
-                  />
-                )}
 
                 {/* CANVAS FOOTER WATERMARK */}
                 {isLastPage && (
@@ -4855,7 +4769,7 @@ function StudioCoreAiryBuilderContent() {
                 )}
               </div>
             </section>
-                      )}
+          )}
 
                       {pageItem.type === 'addOnsPage' && (
                         <section 

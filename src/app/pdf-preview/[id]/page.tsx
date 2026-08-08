@@ -553,39 +553,96 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 })()}
 
                 {/* 8. PAYMENT TERMS */}
-                {pageType === 'paymentTermsPage' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center">
-                    <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                      <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
-                        {paymentTermsPage.kicker || 'PAYMENT SCHEDULE'}
-                      </span>
-                      <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
-                        {paymentTermsPage.heading || 'PAYMENT TERMS & SCHEDULE'}
-                      </h2>
+                {pageType === 'paymentTermsPage' && (() => {
+                  const base = Number(pricingPage?.basePrice ?? pricingPage?.base ?? 0);
+                  const disc = Number(pricingPage?.discountAmount ?? pricingPage?.discount ?? 0);
+                  const accom = Number(pricingPage?.accommodationCharges ?? pricingPage?.accommodation ?? 0);
+                  const travel = Number(pricingPage?.travelCharges ?? pricingPage?.travel ?? 0);
+                  const addl = Number(pricingPage?.additionalCharges ?? pricingPage?.additional ?? 0);
+                  const gross = Math.max(0, base - disc + accom + travel + addl);
+                  const gstPct = Number(pricingPage?.gstPct ?? pricingPage?.gstPercent ?? 18);
+                  const gstAmount = Math.round(gross * (gstPct / 100));
+                  const netTotal = gross + gstAmount;
 
-                      <div className="rounded-2xl overflow-hidden border text-left shadow-xs" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                        <table className="w-full text-xs border-collapse">
-                          <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.kicker }}>
-                            <tr>
-                              <th className="py-3 px-4">Milestone</th>
-                              <th className="py-3 px-4">Due Date</th>
-                              <th className="py-3 px-4 text-right">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y font-semibold" style={{ borderColor: theme.borderColor }}>
-                            {(paymentTermsPage.steps || []).map((step: any, stIdx: number) => (
-                              <tr key={step.id || stIdx} style={{ borderColor: theme.borderColor }}>
-                                <td className="py-3.5 px-4 font-bold">{step.stepName}</td>
-                                <td className="py-3.5 px-4">{step.date}</td>
-                                <td className="py-3.5 px-4 text-right font-sans font-bold">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                  const steps = Array.isArray(paymentTermsPage?.steps) ? paymentTermsPage.steps : [];
+                  const received = steps
+                    .filter((s: any) => s && (s.status === 'Completed' || s.status === 'COMPLETED'))
+                    .reduce((sum: number, s: any) => sum + Number(s?.amount || 0), 0);
+                  const pending = Math.max(0, netTotal - received);
+
+                  return (
+                    <section className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
+                        <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                          {paymentTermsPage.kicker || 'SCHEDULE'}
+                        </span>
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                          {paymentTermsPage.heading || 'PAYMENT TERMS & SCHEDULE'}
+                        </h2>
+
+                        <div className="w-full max-w-xl mx-auto space-y-4 my-0">
+                          <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor: theme.borderColor }}>
+                            <table className="w-full text-left border-collapse">
+                              <thead className="text-[11px] uppercase tracking-wider font-extrabold border-b" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.kicker }}>
+                                <tr>
+                                  <th className="py-3.5 px-4 w-[24%]">DATE</th>
+                                  <th className="py-3.5 px-4 w-[38%]">STEPS</th>
+                                  <th className="py-3.5 px-4 w-[20%] text-right">AMOUNT</th>
+                                  <th className="py-3.5 px-4 w-[18%] text-center">STATUS</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y text-xs font-semibold" style={{ borderColor: theme.borderColor, color: theme.text }}>
+                                {steps.map((step: any, stIdx: number) => {
+                                  const isCompleted = step.status === 'Completed' || step.status === 'COMPLETED';
+                                  return (
+                                    <tr key={step.id || stIdx} style={{ borderColor: theme.borderColor }}>
+                                      <td className="py-3 px-4 font-sans font-medium tracking-tight uppercase">{step.date}</td>
+                                      <td className="py-3 px-4 font-bold">{step.stepName}</td>
+                                      <td className="py-3 px-4 text-right font-sans font-medium tracking-tight">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>
+                                      <td className="py-3 px-4 text-center">
+                                        <span 
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide border"
+                                          style={{
+                                            backgroundColor: isCompleted ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                            borderColor: isCompleted ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)',
+                                            color: theme.text
+                                          }}
+                                        >
+                                          <span>{step.status || 'Pending'}</span>
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3 w-full text-center pt-1">
+                            <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: theme.kicker }}>FIXED AMOUNT</span>
+                              <span className="text-base font-black font-sans tracking-tight">₹{netTotal.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.3)', color: theme.text }}>
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: theme.kicker }}>RECEIVED AMOUNT</span>
+                              <span className="text-base font-black font-sans tracking-tight">₹{received.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="p-3.5 rounded-2xl border shadow-2xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)', color: theme.text }}>
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: theme.kicker }}>PENDING AMOUNT</span>
+                              <span className="text-base font-black font-sans tracking-tight">₹{pending.toLocaleString('en-IN')}</span>
+                            </div>
+                          </div>
+
+                          {paymentTermsPage?.note && (
+                            <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: theme.text, borderColor: theme.borderColor }}>
+                              "{paymentTermsPage.note}"
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  );
+                })()}
 
                 {/* 9. ADD-ONS */}
                 {pageType === 'addOnsPage' && (
