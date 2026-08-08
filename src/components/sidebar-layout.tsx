@@ -221,7 +221,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/terms') ||
     pathname.startsWith('/privacy-policy')
   ) {
-    return <div className="min-h-screen w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
+    return <div className="h-screen w-full overflow-hidden bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
   }
   
   // For sub-app routes, render the context-aware sidebar

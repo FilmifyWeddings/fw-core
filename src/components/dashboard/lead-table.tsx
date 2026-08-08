@@ -2096,7 +2096,7 @@ export function LeadTable({
     </div>
 
       {/* Scrollable Main Viewport Container */}
-      <div className="flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-auto relative" ref={tableContainerRef}>
+      <div className="flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-auto relative" style={{ maxHeight: 'calc(100vh - 180px)' }} ref={tableContainerRef}>
         {/* Main View Mode rendering */}
         {viewMode === 'table' ? (
           <>
