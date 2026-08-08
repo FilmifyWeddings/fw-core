@@ -2104,8 +2104,17 @@ function StudioCoreAiryBuilderContent() {
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             if (!ctx) return resolve(dataUrl);
+
+            const isPng = dataUrl.startsWith('data:image/png');
+            if (isPng) {
+              ctx.clearRect(0, 0, width, height);
+            } else {
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, width, height);
+            }
+
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', quality));
+            resolve(canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', isPng ? undefined : quality));
           };
           img.onerror = () => resolve(dataUrl);
           img.src = dataUrl;
@@ -2391,12 +2400,30 @@ function StudioCoreAiryBuilderContent() {
           return;
         }
 
-        const resJson = await saveRes.json();
-        if (resJson.version) {
-          currentVersionRef.current = resJson.version;
+        if (saveRes.ok) {
+          const resJson = await saveRes.json();
+          if (resJson.version) {
+            currentVersionRef.current = resJson.version;
+          }
+          cacheDocumentLocal(routeId, data, currentVersionRef.current);
         }
 
-        cacheDocumentLocal(routeId, data, currentVersionRef.current);
+        await fetch(`/api/quotations/${routeId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userAccessToken || ''}`
+          },
+          body: JSON.stringify({
+            workspace_id: userId || 'demo_user',
+            title: data.designName || 'Wedding - Design 1',
+            client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
+            content_json: data,
+            financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
+            status: 'draft'
+          })
+        });
+
         setHasUnsavedChanges(false);
         setAutoSaveStatus('Auto-saved to cloud');
       } catch (err) {
@@ -2891,9 +2918,9 @@ function StudioCoreAiryBuilderContent() {
                 onAddCustomOption={(newItem) => setAvailableDeliverables(prev => Array.from(new Set([...prev, newItem])))}
               />
 
-              {/* Exclusions Note Control Checkbox */}
-              <div className="space-y-2 pt-2 border-t border-zinc-100">
-                <div className="flex items-center gap-2">
+              {/* Yellow Theme Exclusions Note Control Box */}
+              <div className="p-3 rounded-xl border border-amber-400/80 bg-amber-50 shadow-2xs space-y-2.5 my-2">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     id="shootDetailsExclusionsBuilder"
@@ -2909,15 +2936,16 @@ function StudioCoreAiryBuilderContent() {
                         }
                       });
                     }}
-                    className="w-4 h-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    className="w-4 h-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 accent-amber-600 cursor-pointer shrink-0"
                   />
-                  <label htmlFor="shootDetailsExclusionsBuilder" className="text-xs font-bold text-zinc-700 cursor-pointer">
+                  <span className="text-xs font-black uppercase text-amber-950 tracking-wider">
                     Show Exclusions Note
-                  </label>
-                </div>
+                  </span>
+                </label>
 
                 {data.shootDetails?.showExclusionsNote && (
-                  <div className="space-y-1 pl-6">
+                  <div className="space-y-1 pt-1">
+                    <label className="block text-[9px] uppercase font-extrabold text-amber-800 tracking-wider">Exclusions Note Text</label>
                     <textarea
                       rows={2}
                       value={data.shootDetails?.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
@@ -2925,7 +2953,7 @@ function StudioCoreAiryBuilderContent() {
                         const currentObj = data.shootDetails || {};
                         setData({ ...data, shootDetails: { ...currentObj, exclusionsNote: e.target.value } });
                       }}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                      className="w-full p-2 rounded-lg bg-white border border-amber-300 text-zinc-900 font-medium text-xs focus:ring-2 focus:ring-amber-400 focus:outline-none"
                       placeholder="Exclusions note text..."
                     />
                   </div>
@@ -3186,9 +3214,9 @@ function StudioCoreAiryBuilderContent() {
                 </div>
               </div>
 
-              {/* Exclusions Note Control Checkbox */}
-              <div className="space-y-2 pt-2 border-t border-zinc-100">
-                <div className="flex items-center gap-2">
+              {/* Yellow Theme Exclusions Note Control Box */}
+              <div className="p-3 rounded-xl border border-amber-400/80 bg-amber-50 shadow-2xs space-y-2.5 my-2">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     id="pricingExclusionsBuilder"
@@ -3204,15 +3232,16 @@ function StudioCoreAiryBuilderContent() {
                         }
                       });
                     }}
-                    className="w-4 h-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    className="w-4 h-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 accent-amber-600 cursor-pointer shrink-0"
                   />
-                  <label htmlFor="pricingExclusionsBuilder" className="text-xs font-bold text-zinc-700 cursor-pointer">
+                  <span className="text-xs font-black uppercase text-amber-950 tracking-wider">
                     Show Exclusions Note
-                  </label>
-                </div>
+                  </span>
+                </label>
 
                 {data.pricingPage?.showExclusionsNote && (
-                  <div className="space-y-1 pl-6">
+                  <div className="space-y-1 pt-1">
+                    <label className="block text-[9px] uppercase font-extrabold text-amber-800 tracking-wider">Exclusions Note Text</label>
                     <textarea
                       rows={2}
                       value={data.pricingPage?.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
@@ -3220,7 +3249,7 @@ function StudioCoreAiryBuilderContent() {
                         const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
                         setData({ ...data, pricingPage: { ...currentObj, exclusionsNote: e.target.value } });
                       }}
-                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                      className="w-full p-2 rounded-lg bg-white border border-amber-300 text-zinc-900 font-medium text-xs focus:ring-2 focus:ring-amber-400 focus:outline-none"
                       placeholder="Exclusions note text..."
                     />
                   </div>
