@@ -728,54 +728,83 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 })()}
 
                 {/* 11. THANK YOU PAGE */}
-                {pageType === 'thankYouPage' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center py-14">
-                    <div className="space-y-4 max-w-xl mx-auto my-auto">
-                      <h1 className="primary-font text-5xl uppercase tracking-[0.2em] font-black leading-tight" style={{ color: theme.text }}>
-                        {thankYouPage.heading || 'THANK YOU'}
-                      </h1>
-                      <h3 className="text-xs uppercase tracking-[0.25em] font-bold" style={{ color: theme.kicker }}>
-                        {thankYouPage.subHeading || 'LOOKING FORWARD TO CREATING MAGIC'}
-                      </h3>
+                {pageType === 'thankYouPage' && (() => {
+                  const thankYouPhoto = thankYouPage.photo || thankYouPage.photoUrl;
+                  const message = thankYouPage.message || thankYouPage.closingMessage;
+                  const logoUrl = thankYouPage.brandLogoUrl || brandLogoUrl;
 
-                      {thankYouPage.message && (
-                        <p className="text-sm leading-relaxed opacity-90 pt-3 max-w-md mx-auto" style={{ color: theme.text }}>
-                          "{thankYouPage.message}"
-                        </p>
-                      )}
-                    </div>
+                  return (
+                    <section className="pdf-page flex flex-col justify-between items-center text-center py-10 px-12">
+                      <div className="flex flex-col items-center justify-center w-full my-auto">
+                        <div className="space-y-3 max-w-xl mx-auto text-center mb-4">
+                          <h1 className="primary-font text-4xl uppercase tracking-[0.2em] font-black leading-tight" style={{ color: theme.text }}>
+                            {thankYouPage.heading || 'THANK YOU'}
+                          </h1>
+                          <h3 className="text-xs uppercase tracking-[0.25em] font-bold" style={{ color: theme.kicker }}>
+                            {thankYouPage.subHeading || 'LOOKING FORWARD TO CREATING MAGIC'}
+                          </h3>
 
-                    <div className="w-full pt-6 border-t" style={{ borderColor: theme.borderColor }}>
-                      <div className="flex flex-row items-center justify-between gap-4 text-xs font-semibold">
-                        <div className="flex items-center gap-3">
-                          {(thankYouPage.brandLogoUrl || brandLogoUrl) && (
-                            <img 
-                              src={thankYouPage.brandLogoUrl || brandLogoUrl} 
-                              alt="Brand Logo" 
-                              crossOrigin="anonymous"
-                              className="h-10 w-auto object-contain bg-transparent"
-                            />
+                          {message && (
+                            <p className="text-xs leading-relaxed opacity-90 pt-1 max-w-md mx-auto" style={{ color: theme.text }}>
+                              "{message}"
+                            </p>
                           )}
-                          <span className="primary-font font-extrabold uppercase tracking-widest text-sm" style={{ color: theme.text }}>
-                            {thankYouPage.brandName || brandName || 'FILMIFY WEDDINGS'}
-                          </span>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
-                          {thankYouPage.contactNumber && (
-                            <span className="font-sans font-medium" style={{ color: theme.text }}>{thankYouPage.contactNumber}</span>
-                          )}
-                          {thankYouPage.email && (
-                            <span className="font-sans font-medium" style={{ color: theme.text }}>{thankYouPage.email}</span>
-                          )}
-                          {thankYouPage.website && (
-                            <span className="font-sans font-medium" style={{ color: theme.text }}>{thankYouPage.website}</span>
-                          )}
+                        {thankYouPhoto && (
+                          <div className="w-full flex justify-center my-2">
+                            <div 
+                              className="overflow-hidden shadow-xs" 
+                              style={{ 
+                                width: `${thankYouPage.photoWidth || 70}%`, 
+                                height: `${thankYouPage.photoHeight || 360}px`,
+                                borderRadius: (thankYouPage.frameShape === 'arch' || !thankYouPage.frameShape) ? '999px 999px 0 0' : '16px'
+                              }}
+                            >
+                              <img 
+                                src={thankYouPhoto} 
+                                alt="Thank You Photo" 
+                                crossOrigin="anonymous"
+                                className="w-full h-full object-cover"
+                                style={{ objectPosition: `50% ${thankYouPage.photoFocalY || 50}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-full pt-4 border-t" style={{ borderColor: theme.borderColor }}>
+                        <div className="flex flex-row items-center justify-between gap-4 text-xs font-semibold">
+                          <div className="flex items-center gap-3">
+                            {logoUrl && (
+                              <img 
+                                src={logoUrl} 
+                                alt="Brand Logo" 
+                                crossOrigin="anonymous"
+                                className="h-9 w-auto object-contain bg-transparent"
+                              />
+                            )}
+                            <span className="primary-font font-extrabold uppercase tracking-widest text-sm" style={{ color: theme.text }}>
+                              {thankYouPage.brandName || brandName || 'FILMIFY WEDDINGS'}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
+                            {thankYouPage.contactNumber && (
+                              <span className="font-sans font-medium" style={{ color: theme.text }}>📞 {thankYouPage.contactNumber}</span>
+                            )}
+                            {thankYouPage.email && (
+                              <span className="font-sans font-medium" style={{ color: theme.text }}>✉️ {thankYouPage.email}</span>
+                            )}
+                            {thankYouPage.website && (
+                              <span className="font-sans font-medium" style={{ color: theme.text }}>🌐 {thankYouPage.website}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  );
+                })()}
 
               </React.Fragment>
             );

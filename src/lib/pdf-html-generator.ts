@@ -1129,30 +1129,58 @@ Approx. 50 High Resolution Edited Images
         `;
       });
     } else if (pageType === 'thankYouPage') {
+      const thankYouPhoto = thankYouPage.photo || thankYouPage.photoUrl;
+      const photoHTML = thankYouPhoto ? renderSectionImage(
+        thankYouPhoto,
+        thankYouPage.frameShape || 'arch',
+        thankYouPage.photoHeight || 360,
+        thankYouPage.photoWidth || 70,
+        thankYouPage.photoFocalY || 50,
+        thankYouPage.bgOpacity || 40,
+        theme.background,
+        thankYouPage.imagePosition === 'bottom'
+      ) : '';
+
+      const logoUrl = thankYouPage.brandLogoUrl || brandLogoUrl;
+      const logoHTML = logoUrl ? `<img src="${logoUrl}" alt="Brand Logo" style="height:36px;width:auto;object-fit:contain;background-color:transparent;display:block;" />` : '';
+
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;margin:auto;">
-            <h1 style="font-family:${primaryFont};font-size:48px;text-transform:uppercase;letter-spacing:0.2em;font-weight:900;line-height:1.2;color:${theme.text};margin:0 0 16px 0;">
-              ${thankYouPage.heading || 'THANK YOU'}
-            </h1>
-            <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.25em;font-weight:700;color:${theme.kicker};margin:0 0 24px 0;">
-              ${thankYouPage.subHeading || 'LOOKING FORWARD TO CREATING MAGIC'}
-            </h3>
-            ${thankYouPage.message ? `<p style="font-size:14px;line-height:1.6;opacity:0.9;color:${theme.text};margin:0;">"${thankYouPage.message}"</p>` : ''}
-          </div>
+        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          ${thankYouPhoto && thankYouPage.frameShape === 'background' ? photoHTML : ''}
 
-          <div style="width:100%;padding-top:24px;border-top:1px solid ${theme.borderColor};display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;">
-            <span style="font-family:${primaryFont};font-weight:800;text-transform:uppercase;letter-spacing:0.1em;font-size:14px;color:${theme.text};">
-              ${thankYouPage.brandName || brandName || 'FILMIFY WEDDINGS'}
-            </span>
-            <div style="display:flex;gap:16px;font-size:11px;font-family:sans-serif;">
-              ${thankYouPage.contactNumber ? `<span>${thankYouPage.contactNumber}</span>` : ''}
-              ${thankYouPage.email ? `<span>${thankYouPage.email}</span>` : ''}
-              ${thankYouPage.website ? `<span>${thankYouPage.website}</span>` : ''}
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;margin:auto;">
+              ${thankYouPhoto && thankYouPage.frameShape !== 'background' && thankYouPage.imagePosition === 'top' ? photoHTML : ''}
+
+              <div style="text-align:center;margin:0 0 16px 0;max-width:600px;">
+                <h1 style="font-family:${primaryFont};font-size:44px;text-transform:uppercase;letter-spacing:0.2em;font-weight:900;line-height:1.2;color:${theme.text};margin:0 0 12px 0;">
+                  ${thankYouPage.heading || 'THANK YOU'}
+                </h1>
+                <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.25em;font-weight:700;color:${theme.kicker};margin:0 0 16px 0;">
+                  ${thankYouPage.subHeading || 'LOOKING FORWARD TO CREATING MAGIC'}
+                </h3>
+                ${(thankYouPage.message || thankYouPage.closingMessage) ? `<p style="font-size:13px;line-height:1.6;opacity:0.9;color:${theme.text};margin:0 auto;max-width:480px;">"${thankYouPage.message || thankYouPage.closingMessage}"</p>` : ''}
+              </div>
+
+              ${thankYouPhoto && thankYouPage.frameShape !== 'background' && (thankYouPage.imagePosition === 'center' || thankYouPage.imagePosition === 'bottom' || !thankYouPage.imagePosition) ? photoHTML : ''}
             </div>
-          </div>
 
-          ${footerHTML}
+            <div style="width:100%;padding-top:16px;border-top:1px solid ${theme.borderColor};display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                ${logoHTML}
+                <span style="font-family:${primaryFont};font-weight:800;text-transform:uppercase;letter-spacing:0.1em;font-size:14px;color:${theme.text};">
+                  ${thankYouPage.brandName || brandName || 'FILMIFY WEDDINGS'}
+                </span>
+              </div>
+              <div style="display:flex;gap:16px;font-size:11px;font-family:sans-serif;color:${theme.text};">
+                ${thankYouPage.contactNumber ? `<span>📞 ${thankYouPage.contactNumber}</span>` : ''}
+                ${thankYouPage.email ? `<span>✉️ ${thankYouPage.email}</span>` : ''}
+                ${thankYouPage.website ? `<span>🌐 ${thankYouPage.website}</span>` : ''}
+              </div>
+            </div>
+
+            ${footerHTML}
+          </div>
         </section>
       `;
     }

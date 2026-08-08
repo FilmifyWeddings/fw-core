@@ -2078,11 +2078,68 @@ function StudioCoreAiryBuilderContent() {
     }, 150);
 
     try {
-      // Construct lightweight JSON payload (< 50KB instead of 35MB Base64 image payload)
+      setExportStatusText('Optimizing image payload...');
+      
+      // Inline helper to compress large base64 data URLs to prevent HTTP 413 Payload Too Large
+      const compressDataUrlForPDF = async (dataUrl: string, maxDim = 1200, quality = 0.82): Promise<string> => {
+        if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image') || dataUrl.length < 200000) {
+          return dataUrl;
+        }
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return resolve(dataUrl);
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.onerror = () => resolve(dataUrl);
+          img.src = dataUrl;
+        });
+      };
+
+      const optimizeObjectForPDF = async (obj: any): Promise<any> => {
+        if (!obj) return obj;
+        if (typeof obj === 'string') {
+          if (obj.startsWith('data:image') && obj.length > 200000) {
+            return await compressDataUrlForPDF(obj);
+          }
+          return obj;
+        }
+        if (Array.isArray(obj)) {
+          return await Promise.all(obj.map(item => optimizeObjectForPDF(item)));
+        }
+        if (typeof obj === 'object') {
+          const result: any = {};
+          for (const key of Object.keys(obj)) {
+            result[key] = await optimizeObjectForPDF(obj[key]);
+          }
+          return result;
+        }
+        return obj;
+      };
+
+      const sanitizedData = await optimizeObjectForPDF(data);
+
+      // Construct lightweight JSON payload (< 500KB)
       const payload = {
         quotationId: routeId,
         templateId: routeId,
-        content_json: data,
+        content_json: sanitizedData,
         filename: `Quotation-${routeId || 'document'}.pdf`
       };
 
