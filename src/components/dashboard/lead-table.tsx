@@ -2096,7 +2096,7 @@ export function LeadTable({
     </div>
 
       {/* Scrollable Main Viewport Container */}
-      <div className="flex-1 overflow-auto w-full max-w-full relative select-none" ref={tableContainerRef}>
+      <div className="flex-1 min-h-0 overflow-auto w-full max-w-full relative" ref={tableContainerRef}>
         {/* Main View Mode rendering */}
         {viewMode === 'table' ? (
           <>
@@ -2257,7 +2257,7 @@ export function LeadTable({
     </div>
 
     {/* DESKTOP GRID TABLE VIEW (MD AND UP) */}
-    <div className="hidden md:block w-full overflow-x-auto relative transition-all">
+    <div className="hidden md:block w-full relative transition-all">
       <table className="w-full text-left border-collapse text-slate-700 dark:text-zinc-350 table-fixed min-w-[1000px]">
         
         <colgroup>
