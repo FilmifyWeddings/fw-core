@@ -761,21 +761,7 @@ export function LeadTable({
     };
   }, [viewMode, columns, leads]);
 
-  // Infinite Scroll scroll listener
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollHeight = document.documentElement.scrollHeight;
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const clientHeight = window.innerHeight;
-
-      if (scrollHeight - scrollTop - clientHeight < 300) {
-        setVisibleCount(prev => prev + 100);
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  // Infinite Scroll scroll listener (window listener removed; handled on table container scroll)
 
   // Reset infinite scroll count when any filter changes
   useEffect(() => {
@@ -814,6 +800,7 @@ export function LeadTable({
   // Ingest Meta Columns & sync initial leads
   useEffect(() => {
     setLeads(initialLeads);
+    setVisibleCount(prev => Math.max(prev, initialLeads.length));
     
     // Auto-discover raw_payload keys to create Meta Ingested columns
     const discoveredKeys = new Set<string>();
@@ -902,15 +889,18 @@ export function LeadTable({
     }
   }, [mounted]);
 
-  // Infinite scroll threshold listener (triggers onLoadMore near bottom)
+  // Infinite scroll threshold listener (triggers onLoadMore near bottom and expands visibleCount)
   useEffect(() => {
     const container = tableContainerRef.current;
-    if (!container || !onLoadMore || loadingMore || !hasMore) return;
+    if (!container) return;
 
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       if (scrollTop + clientHeight >= scrollHeight - 350) {
-        onLoadMore();
+        setVisibleCount(prev => prev + 100);
+        if (onLoadMore && !loadingMore && hasMore) {
+          onLoadMore();
+        }
       }
     };
 
@@ -1702,18 +1692,7 @@ export function LeadTable({
 
           <div ref={headerRef} className="px-4 md:px-6 pb-2 pt-2">
             
-            {/* Primary Actions Row */}
-            <div className="flex items-center justify-end pb-4">
 
-          {/* Primary Manual lead creation */}
-          <button
-            onClick={() => setCreateModalOpen(true)}
-            className="px-4 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] flex items-center gap-1.5 hover:scale-105"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            Add New Lead
-          </button>
-        </div>
 
         {/* Advanced In-Header Filters Row */}
         <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-white dark:bg-[#0c0c0e] py-1">
@@ -2113,6 +2092,15 @@ export function LeadTable({
         )}
       </AnimatePresenceComponent>
           </div>
+
+          {/* Primary Manual lead creation */}
+          <button
+            onClick={() => setCreateModalOpen(true)}
+            className="shrink-0 px-3.5 py-1.5 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] flex items-center gap-1.5 hover:scale-105 font-sans"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            Add New Lead
+          </button>
         </div>
       </div>
     </div>

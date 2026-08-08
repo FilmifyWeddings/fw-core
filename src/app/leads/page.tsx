@@ -150,6 +150,8 @@ export default function LeadsPage() {
     };
   }, [showNotifications]);
 
+  const loadingMoreRef = useRef<boolean>(false);
+
   // Authenticate user & load leads
   useEffect(() => {
     const checkAuth = async () => {
@@ -174,6 +176,43 @@ export default function LeadsPage() {
 
     checkAuth();
   }, [router]);
+
+  // Realtime subscription for leads (INSERT, UPDATE, DELETE)
+  useEffect(() => {
+    if (!userId || isDemoMode) return;
+
+    const channel = supabase
+      .channel(`realtime-leads-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'leads',
+          filter: `workspace_id=eq.${userId}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newLead = payload.new as Lead;
+            setLeads(prev => {
+              if (prev.some(l => l.id === newLead.id)) return prev;
+              return [newLead, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedLead = payload.new as Lead;
+            setLeads(prev => prev.map(l => l.id === updatedLead.id ? { ...l, ...updatedLead } : l));
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any).id;
+            setLeads(prev => prev.filter(l => l.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, isDemoMode]);
 
   // Request browser Notification permissions and load already notified IDs from localStorage
   useEffect(() => {
@@ -257,20 +296,23 @@ export default function LeadsPage() {
   const loadLeadsAndPreferences = async (targetUserId: string, pageNum = 0) => {
     if (pageNum === 0) {
       setLoading(true);
+      setPage(0);
     } else {
       setLoadingMore(true);
+      loadingMoreRef.current = true;
     }
 
     try {
       const from = pageNum * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      // Load Leads batch of 100
+      // Load Leads batch of 100 with deterministic ordering
       const { data: dbLeads, error: leadsErr } = await supabase
         .from('leads')
         .select('*')
         .eq('workspace_id', targetUserId)
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .range(from, to);
 
       if (!leadsErr && dbLeads) {
@@ -332,11 +374,13 @@ export default function LeadsPage() {
     } finally {
       setLoading(false);
       setLoadingMore(false);
+      loadingMoreRef.current = false;
     }
   };
 
   const handleLoadMore = () => {
-    if (loading || loadingMore || !hasMore || isDemoMode) return;
+    if (loading || loadingMore || loadingMoreRef.current || !hasMore || isDemoMode) return;
+    loadingMoreRef.current = true;
     const nextPage = page + 1;
     setPage(nextPage);
     loadLeadsAndPreferences(userId, nextPage);
