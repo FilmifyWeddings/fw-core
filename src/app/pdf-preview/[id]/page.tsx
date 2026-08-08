@@ -432,37 +432,99 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 })()}
 
                 {/* 7. PRICING DETAILS */}
-                {pageType === 'pricingPage' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center">
-                    <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                      <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
-                        {pricingPage.kicker || 'INVESTMENT SUMMARY'}
-                      </span>
-                      <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
-                        {pricingPage.heading || 'PRICING DETAILS'}
-                      </h2>
+                {pageType === 'pricingPage' && (() => {
+                  const base = Number(pricingPage?.basePrice ?? pricingPage?.base ?? 0);
+                  const disc = Number(pricingPage?.discountAmount ?? pricingPage?.discount ?? 0);
+                  const accom = Number(pricingPage?.accommodationCharges ?? pricingPage?.accommodation ?? 0);
+                  const travel = Number(pricingPage?.travelCharges ?? pricingPage?.travel ?? 0);
+                  const addl = Number(pricingPage?.additionalCharges ?? pricingPage?.additional ?? 0);
+                  const gross = Math.max(0, base - disc + accom + travel + addl);
+                  const gstPct = Number(pricingPage?.gstPct ?? pricingPage?.gstPercent ?? 18);
+                  const gstAmount = Math.round(gross * (gstPct / 100));
+                  const netTotal = gross + gstAmount;
 
-                      <div className="p-6 rounded-2xl border space-y-4 text-left shadow-xs" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                        <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: theme.borderColor }}>
-                          <span className="text-xs font-bold uppercase">Package Base Quote</span>
-                          <span className="text-sm font-extrabold font-sans">₹{Number(pricingPage.basePrice || 0).toLocaleString('en-IN')}</span>
-                        </div>
+                  return (
+                    <section className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
+                        <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                          {pricingPage.kicker || 'INVESTMENT & BREAKDOWN'}
+                        </span>
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                          {pricingPage.heading || 'PRICING DETAILS'}
+                        </h2>
 
-                        {Number(pricingPage.discountAmount || 0) > 0 && (
-                          <div className="flex items-center justify-between text-emerald-600 font-bold text-xs border-b pb-3" style={{ borderColor: theme.borderColor }}>
-                            <span>Special Discount ({pricingPage.discountPercent || 0}%)</span>
-                            <span className="font-sans">- ₹{Number(pricingPage.discountAmount).toLocaleString('en-IN')}</span>
+                        <div className="w-full max-w-xl mx-auto space-y-4 my-0">
+                          <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor: theme.borderColor }}>
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.kicker }}>
+                                <tr>
+                                  <th className="py-3.5 px-5">Financial Item / Particulars</th>
+                                  <th className="py-3.5 px-5 text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y font-semibold" style={{ color: theme.text, borderColor: theme.borderColor }}>
+                                <tr style={{ borderColor: theme.borderColor }}>
+                                  <td className="py-3 px-5">Base Package Price</td>
+                                  <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{base.toLocaleString('en-IN')}</td>
+                                </tr>
+                                {disc > 0 && (
+                                  <tr style={{ borderColor: theme.borderColor, backgroundColor: 'rgba(16, 185, 129, 0.08)' }}>
+                                    <td className="py-3 px-5 font-bold" style={{ color: theme.text }}>Discount (Complimentary)</td>
+                                    <td className="py-3 px-5 text-right font-sans font-bold tracking-tight">-₹{disc.toLocaleString('en-IN')}</td>
+                                  </tr>
+                                )}
+                                {accom > 0 && (
+                                  <tr style={{ borderColor: theme.borderColor }}>
+                                    <td className="py-3 px-5">Accommodation Charges</td>
+                                    <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{accom.toLocaleString('en-IN')}</td>
+                                  </tr>
+                                )}
+                                {travel > 0 && (
+                                  <tr style={{ borderColor: theme.borderColor }}>
+                                    <td className="py-3 px-5">Travel Charges</td>
+                                    <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{travel.toLocaleString('en-IN')}</td>
+                                  </tr>
+                                )}
+                                {addl > 0 && (
+                                  <tr style={{ borderColor: theme.borderColor }}>
+                                    <td className="py-3 px-5">Additional Charges</td>
+                                    <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{addl.toLocaleString('en-IN')}</td>
+                                  </tr>
+                                )}
+                                <tr className="border-t font-bold" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor }}>
+                                  <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
+                                  <td className="py-3 px-5 text-right font-sans font-black tracking-tight">₹{gross.toLocaleString('en-IN')}</td>
+                                </tr>
+                                {gstPct > 0 && (
+                                  <tr style={{ borderColor: theme.borderColor }}>
+                                    <td className="py-3 px-5">GST ({gstPct}%)</td>
+                                    <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{gstAmount.toLocaleString('en-IN')}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
                           </div>
-                        )}
 
-                        <div className="flex items-center justify-between pt-2">
-                          <span className="text-sm font-extrabold uppercase" style={{ color: theme.kicker }}>Net Total Investment</span>
-                          <span className="text-2xl font-black text-amber-700 font-sans">₹{Number((pricingPage.basePrice || 0) - (pricingPage.discountAmount || 0)).toLocaleString('en-IN')}</span>
+                          <div className="w-full p-5 rounded-2xl border flex items-center justify-between shadow-md" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor }}>
+                            <div className="text-left">
+                              <span className="text-[10px] font-extrabold uppercase tracking-widest block" style={{ color: theme.kicker }}>FINAL NET INVESTMENT</span>
+                              <span className="text-xs font-medium opacity-80" style={{ color: theme.text }}>Inclusive of all Taxes &amp; Fees</span>
+                            </div>
+                            <div className="text-3xl font-black font-sans tracking-tight" style={{ color: theme.text }}>
+                              ₹{netTotal.toLocaleString('en-IN')}
+                            </div>
+                          </div>
+
+                          {pricingPage?.note && (
+                            <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: theme.text, borderColor: theme.borderColor }}>
+                              "{pricingPage.note}"
+                            </p>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  );
+                })()}
 
                 {/* 8. PAYMENT TERMS */}
                 {pageType === 'paymentTermsPage' && (

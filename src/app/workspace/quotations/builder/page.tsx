@@ -3051,32 +3051,11 @@ function StudioCoreAiryBuilderContent() {
                 />
               </div>
 
-              <UnifiedPhotoControls
-                photoUrl={data.pricingPage?.photo}
-                frameShape={data.pricingPage?.frameShape}
-                photoHeight={data.pricingPage?.photoHeight}
-                photoWidth={data.pricingPage?.photoWidth}
-                photoFocalY={data.pricingPage?.photoFocalY}
-                bgOpacity={data.pricingPage?.bgOpacity}
-                imagePosition={data.pricingPage?.imagePosition}
-                onOpenAddModal={() => openAddImageModal('pricingPhoto')}
-                onDeletePhoto={() => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photo: '' } })}
-                onChangeShape={(shape) => {
-                  const currentH = data.pricingPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
-                  setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), frameShape: shape, photoHeight: newH } });
-                }}
-                onChangePosition={(pos) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, pricingPage: { ...(data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage), photoWidth: w } })}
-              />
-            
-                    </div>
-                  )}
+              {/* Photo controls removed for Pricing Details - purely text/table based */}
+            </div>
+          )}
 
-                  {pageItem.type === 'paymentTermsPage' && (
+          {pageItem.type === 'paymentTermsPage' && (
                     <div className="space-y-3">
                       
               <div className="space-y-2">
@@ -4581,142 +4560,111 @@ function StudioCoreAiryBuilderContent() {
 
                       {pageItem.type === 'pricingPage' && (
                         <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
-              style={{
-                width: '794px',
-                minWidth: '794px',
-                maxWidth: '794px',
-                height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                margin: '0 auto',
-                boxShadow: '0 20px 30px -10px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)',
-                backgroundColor: pageBgColor || '#FFFFFF',
-                color: textColor,
-                fontFamily: data.secondaryFont,
-              }}
-            >
-              {data.pricingPage?.photo && data.pricingPage?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.pricingPage.photo}
-                  frameShape="background"
-                  photoHeight={data.pricingPage.photoHeight}
-                  photoWidth={data.pricingPage.photoWidth}
-                  photoFocalY={data.pricingPage.photoFocalY}
-                  bgOpacity={data.pricingPage.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Pricing Details Background"
-                />
-              )}
+                          className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
+                          style={{
+                            width: '794px',
+                            minWidth: '794px',
+                            maxWidth: '794px',
+                            height: '1123px',
+                            minHeight: '1123px',
+                            maxHeight: '1123px',
+                            boxSizing: 'border-box',
+                            position: 'relative',
+                            overflow: 'hidden',
+                            margin: '0 auto',
+                            boxShadow: '0 20px 30px -10px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)',
+                            backgroundColor: pageBgColor || '#FFFFFF',
+                            color: textColor,
+                            fontFamily: data.secondaryFont,
+                          }}
+                        >
+                          <div className="relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 px-12 justify-between">
+                            <div className="flex flex-col items-center justify-start w-full px-12">
+                              <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
+                                {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
+                              </span>
+                              <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                {data.pricingPage?.heading || 'PRICING DETAILS'}
+                              </h2>
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
-                data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.pricingPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
-                    {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
-                  </span>
-                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.pricingPage?.heading || 'PRICING DETAILS'}
-                  </h2>
+                              <div className="w-full max-w-xl mx-auto space-y-4 my-0">
+                                <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
+                                  <table className="w-full text-left text-xs border-collapse">
+                                    <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
+                                      <tr>
+                                        <th className="py-3.5 px-5">Financial Item / Particulars</th>
+                                        <th className="py-3.5 px-5 text-right">Amount</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y font-semibold" style={{ color: textColor, borderColor }}>
+                                      <tr style={{ borderColor }}>
+                                        <td className="py-3 px-5">Base Package Price</td>
+                                        <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.base.toLocaleString('en-IN')}</td>
+                                      </tr>
+                                      {pricingCalculated.disc > 0 && (
+                                        <tr style={{ borderColor, backgroundColor: 'rgba(16, 185, 129, 0.08)' }}>
+                                          <td className="py-3 px-5 font-bold" style={{ color: textColor }}>Discount (Complimentary)</td>
+                                          <td className="py-3 px-5 text-right font-sans font-bold tracking-tight">-₹{pricingCalculated.disc.toLocaleString('en-IN')}</td>
+                                        </tr>
+                                      )}
+                                      {pricingCalculated.accom > 0 && (
+                                        <tr style={{ borderColor }}>
+                                          <td className="py-3 px-5">Accommodation Charges</td>
+                                          <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.accom.toLocaleString('en-IN')}</td>
+                                        </tr>
+                                      )}
+                                      {pricingCalculated.travel > 0 && (
+                                        <tr style={{ borderColor }}>
+                                          <td className="py-3 px-5">Travel Charges</td>
+                                          <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.travel.toLocaleString('en-IN')}</td>
+                                        </tr>
+                                      )}
+                                      {pricingCalculated.addl > 0 && (
+                                        <tr style={{ borderColor }}>
+                                          <td className="py-3 px-5">Additional Charges</td>
+                                          <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
+                                        </tr>
+                                      )}
+                                      <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor, borderColor }}>
+                                        <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
+                                        <td className="py-3 px-5 text-right font-sans font-black tracking-tight">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>
+                                      </tr>
+                                      {pricingCalculated.gstPct > 0 && (
+                                        <tr style={{ borderColor }}>
+                                          <td className="py-3 px-5">GST ({pricingCalculated.gstPct}%)</td>
+                                          <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.gstAmount.toLocaleString('en-IN')}</td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
 
-                  <div className="w-full max-w-xl mx-auto space-y-4 my-3">
-                    <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
-                          <tr>
-                            <th className="py-3.5 px-5">Financial Item / Particulars</th>
-                            <th className="py-3.5 px-5 text-right">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y font-semibold" style={{ color: textColor, borderColor }}>
-                          <tr style={{ borderColor }}>
-                            <td className="py-3 px-5">Base Package Price</td>
-                            <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.base.toLocaleString('en-IN')}</td>
-                          </tr>
-                          {pricingCalculated.disc > 0 && (
-                            <tr style={{ borderColor, backgroundColor: 'rgba(16, 185, 129, 0.08)' }}>
-                              <td className="py-3 px-5 font-bold" style={{ color: textColor }}>Discount (Complimentary)</td>
-                              <td className="py-3 px-5 text-right font-sans font-bold tracking-tight">-₹{pricingCalculated.disc.toLocaleString('en-IN')}</td>
-                            </tr>
-                          )}
-                          {pricingCalculated.accom > 0 && (
-                            <tr style={{ borderColor }}>
-                              <td className="py-3 px-5">Accommodation Charges</td>
-                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.accom.toLocaleString('en-IN')}</td>
-                            </tr>
-                          )}
-                          {pricingCalculated.travel > 0 && (
-                            <tr style={{ borderColor }}>
-                              <td className="py-3 px-5">Travel Charges</td>
-                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.travel.toLocaleString('en-IN')}</td>
-                            </tr>
-                          )}
-                          {pricingCalculated.addl > 0 && (
-                            <tr style={{ borderColor }}>
-                              <td className="py-3 px-5">Additional Charges</td>
-                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
-                            </tr>
-                          )}
-                          <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor, borderColor }}>
-                            <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
-                            <td className="py-3 px-5 text-right font-sans font-black tracking-tight">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>
-                          </tr>
-                          {pricingCalculated.gstPct > 0 && (
-                            <tr style={{ borderColor }}>
-                              <td className="py-3 px-5">GST ({pricingCalculated.gstPct}%)</td>
-                              <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.gstAmount.toLocaleString('en-IN')}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                                <div className="w-full p-5 rounded-2xl border flex items-center justify-between shadow-md" style={{ backgroundColor: boxBgColor, borderColor }}>
+                                  <div className="text-left">
+                                    <span className="text-[10px] font-extrabold uppercase tracking-widest block" style={{ color: kickerColor }}>FINAL NET INVESTMENT</span>
+                                    <span className="text-xs font-medium opacity-80" style={{ color: textColor }}>Inclusive of all Taxes &amp; Fees</span>
+                                  </div>
+                                  <div className="text-3xl font-black font-sans tracking-tight" style={{ color: textColor }}>
+                                    ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
+                                  </div>
+                                </div>
 
-                    <div className="w-full p-5 rounded-2xl border flex items-center justify-between shadow-md" style={{ backgroundColor: boxBgColor, borderColor }}>
-                      <div className="text-left">
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest block" style={{ color: kickerColor }}>FINAL NET INVESTMENT</span>
-                        <span className="text-xs font-medium opacity-80" style={{ color: textColor }}>Inclusive of all Taxes &amp; Fees</span>
-                      </div>
-                      <div className="text-3xl font-black font-sans tracking-tight" style={{ color: textColor }}>
-                        ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
-                      </div>
-                    </div>
+                                {data.pricingPage?.note && (
+                                  <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: textColor, borderColor }}>
+                                    "{data.pricingPage.note}"
+                                  </p>
+                                )}
+                              </div>
+                            </div>
 
-                    {data.pricingPage?.note && (
-                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
-                        "{data.pricingPage.note}"
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && (
-                  <SectionImageRenderer
-                    photo={data.pricingPage.photo}
-                    frameShape={data.pricingPage.frameShape}
-                    photoHeight={data.pricingPage.photoHeight}
-                    photoWidth={data.pricingPage.photoWidth}
-                    photoFocalY={data.pricingPage.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Pricing Details Photo"
-                  />
-                )}
-
-                {/* CANVAS FOOTER WATERMARK */}
-                {isLastPage && (
-                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                    Created by StudioCore.in
-                  </div>
-                )}
-              </div>
-            </section>
+                            {/* CANVAS FOOTER WATERMARK */}
+                            {isLastPage && (
+                              <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                                Created by StudioCore.in
+                              </div>
+                            )}
+                          </div>
+                        </section>
                       )}
 
                       {pageItem.type === 'paymentTermsPage' && (

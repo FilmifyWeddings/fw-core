@@ -40,6 +40,20 @@ function getThemeFromKey(key: any) {
   return COLOR_THEMES['cyprus-sand-dune'];
 }
 
+function calculatePricingTotals(pricing: any) {
+  const p = pricing || {};
+  const base = Number(p?.basePrice ?? p?.base ?? 0);
+  const disc = Number(p?.discountAmount ?? p?.discount ?? 0);
+  const accom = Number(p?.accommodationCharges ?? p?.accommodation ?? 0);
+  const travel = Number(p?.travelCharges ?? p?.travel ?? 0);
+  const addl = Number(p?.additionalCharges ?? p?.additional ?? 0);
+  const gross = Math.max(0, base - disc + accom + travel + addl);
+  const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 18);
+  const gstAmount = Math.round(gross * (gstPct / 100));
+  const netTotal = gross + gstAmount;
+  return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
+}
+
 
 const DEFAULT_PAGE_SEQUENCE = [
   { id: 'cover', type: 'cover', label: 'Cover Page' },
@@ -765,36 +779,117 @@ Approx. 50 High Resolution Edited Images
         `;
       });
     } else if (pageType === 'pricingPage') {
-      const netTotal = (pricingPage.basePrice || 0) - (pricingPage.discountAmount || 0);
+      const calc = calculatePricingTotals(pricingPage);
+
+      let rowsHTML = `
+        <tr style="border-bottom:1px solid ${theme.borderColor};">
+          <td style="padding:12px 20px;">Base Package Price</td>
+          <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calc.base.toLocaleString('en-IN')}</td>
+        </tr>
+      `;
+
+      if (calc.disc > 0) {
+        rowsHTML += `
+          <tr style="border-bottom:1px solid ${theme.borderColor};background-color:rgba(16, 185, 129, 0.08);">
+            <td style="padding:12px 20px;font-weight:700;color:${theme.text};">Discount (Complimentary)</td>
+            <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:700;letter-spacing:-0.02em;">-<span style="font-family:Arial, sans-serif;">₹</span>${calc.disc.toLocaleString('en-IN')}</td>
+          </tr>
+        `;
+      }
+
+      if (calc.accom > 0) {
+        rowsHTML += `
+          <tr style="border-bottom:1px solid ${theme.borderColor};">
+            <td style="padding:12px 20px;">Accommodation Charges</td>
+            <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calc.accom.toLocaleString('en-IN')}</td>
+          </tr>
+        `;
+      }
+
+      if (calc.travel > 0) {
+        rowsHTML += `
+          <tr style="border-bottom:1px solid ${theme.borderColor};">
+            <td style="padding:12px 20px;">Travel Charges</td>
+            <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calc.travel.toLocaleString('en-IN')}</td>
+          </tr>
+        `;
+      }
+
+      if (calc.addl > 0) {
+        rowsHTML += `
+          <tr style="border-bottom:1px solid ${theme.borderColor};">
+            <td style="padding:12px 20px;">Additional Charges</td>
+            <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calc.addl.toLocaleString('en-IN')}</td>
+          </tr>
+        `;
+      }
+
+      rowsHTML += `
+        <tr style="border-bottom:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};">
+          <td style="padding:12px 20px;font-size:11px;font-weight:900;text-transform:uppercase;">Subtotal (Gross Total)</td>
+          <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:900;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calc.gross.toLocaleString('en-IN')}</td>
+        </tr>
+      `;
+
+      if (calc.gstPct > 0) {
+        rowsHTML += `
+          <tr style="border-bottom:1px solid ${theme.borderColor};">
+            <td style="padding:12px 20px;">GST (${calc.gstPct}%)</td>
+            <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calc.gstAmount.toLocaleString('en-IN')}</td>
+          </tr>
+        `;
+      }
+
+      const noteHTML = pricingPage.note ? `
+        <p style="font-size:12px;font-style:italic;line-height:1.6;opacity:0.85;margin-top:16px;padding-top:12px;border-top:1px solid ${theme.borderColor};max-width:600px;text-align:center;margin-left:auto;margin-right:auto;color:${theme.text};white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;">
+          "${pricingPage.note}"
+        </p>
+      ` : '';
+
       pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${pricingPage.kicker || 'INVESTMENT SUMMARY'}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${pricingPage.heading || 'PRICING DETAILS'}
-            </h2>
-
-            <div style="padding:24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;">
-              <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${theme.borderColor};padding-bottom:12px;">
-                <span style="font-size:12px;font-weight:700;text-transform:uppercase;">Package Base Quote</span>
-                <span style="font-size:14px;font-weight:800;font-family:system-ui, -apple-system, sans-serif;"><span style="font-family:Arial, sans-serif;">₹</span>${Number(pricingPage.basePrice || 0).toLocaleString('en-IN')}</span>
+        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+          <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">
+              <div style="text-align:center;margin:0 0 24px 0;">
+                <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                  ${pricingPage.kicker || 'INVESTMENT & BREAKDOWN'}
+                </span>
+                <h2 style="font-family:${primaryFont};font-size:36px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0;">
+                  ${pricingPage.heading || 'PRICING DETAILS'}
+                </h2>
               </div>
-              ${Number(pricingPage.discountAmount || 0) > 0 ? `
-                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${theme.borderColor};padding:12px 0;color:#059669;font-weight:700;font-size:12px;">
-                  <span>Special Discount (${pricingPage.discountPercent || 0}%)</span>
-                  <span style="font-family:system-ui, -apple-system, sans-serif;">- <span style="font-family:Arial, sans-serif;">₹</span>${Number(pricingPage.discountAmount).toLocaleString('en-IN')}</span>
+
+              <div style="width:100%;max-width:600px;margin:0 auto 16px auto;">
+                <div style="width:100%;border-radius:16px;overflow:hidden;border:1px solid ${theme.borderColor};-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                  <table style="width:100%;border-collapse:collapse;text-align:left;font-size:12px;">
+                    <thead style="background-color:${theme.boxBgColor};border-bottom:1px solid ${theme.borderColor};font-size:10px;font-weight:700;text-transform:uppercase;color:${theme.kicker};">
+                      <tr>
+                        <th style="padding:14px 20px;text-align:left;">Financial Item / Particulars</th>
+                        <th style="padding:14px 20px;text-align:right;">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody style="color:${theme.text};font-weight:600;">
+                      ${rowsHTML}
+                    </tbody>
+                  </table>
                 </div>
-              ` : ''}
-              <div style="display:flex;justify-content:space-between;align-items:center;padding-top:16px;">
-                <span style="font-size:14px;font-weight:800;text-transform:uppercase;color:${theme.kicker};">Net Total Investment</span>
-                <span style="font-size:24px;font-weight:900;color:#b45309;font-family:system-ui, -apple-system, sans-serif;"><span style="font-family:Arial, sans-serif;">₹</span>${Number(netTotal).toLocaleString('en-IN')}</span>
               </div>
-            </div>
-          </div>
 
-          ${footerHTML}
+              <div style="width:100%;max-width:600px;margin:0 auto;padding:20px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                <div style="text-align:left;">
+                  <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;display:block;color:${theme.kicker};">FINAL NET INVESTMENT</span>
+                  <span style="font-size:12px;font-weight:500;opacity:0.8;color:${theme.text};">Inclusive of all Taxes &amp; Fees</span>
+                </div>
+                <div style="font-size:30px;font-weight:900;font-family:system-ui, -apple-system, sans-serif;letter-spacing:-0.02em;color:${theme.text};">
+                  <span style="font-family:Arial, sans-serif;">₹</span>${calc.netTotal.toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              ${noteHTML}
+            </div>
+
+            ${footerHTML}
+          </div>
         </section>
       `;
     } else if (pageType === 'paymentTermsPage') {

@@ -2175,38 +2175,8 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                 fontFamily: data.secondaryFont,
               }}
             >
-              {data.pricingPage?.photo && data.pricingPage?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.pricingPage.photo}
-                  frameShape="background"
-                  photoHeight={data.pricingPage.photoHeight}
-                  photoWidth={data.pricingPage.photoWidth}
-                  photoFocalY={data.pricingPage.photoFocalY}
-                  bgOpacity={data.pricingPage.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Pricing Details Background"
-                />
-              )}
-
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
-                data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.pricingPage?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.pricingPage?.frameShape === 'full-width' || (data.pricingPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  {/* TOP IMAGE POSITION */}
-                  {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && data.pricingPage?.imagePosition === 'top' && (
-                    <SectionImageRenderer
-                      photo={data.pricingPage.photo}
-                      frameShape={data.pricingPage.frameShape}
-                      photoHeight={data.pricingPage.photoHeight}
-                      photoWidth={data.pricingPage.photoWidth}
-                      photoFocalY={data.pricingPage.photoFocalY}
-                      altText="Pricing Details Photo"
-                    />
-                  )}
-
+              <div className="relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 px-12 justify-between">
+                <div className="flex flex-col items-center justify-start w-full px-12">
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.pricingPage?.kicker || 'INVESTMENT & BREAKDOWN'}
                   </span>
@@ -2214,19 +2184,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                     {data.pricingPage?.heading || 'PRICING DETAILS'}
                   </h2>
 
-                  {/* CENTER IMAGE POSITION */}
-                  {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && data.pricingPage?.imagePosition === 'center' && (
-                    <SectionImageRenderer
-                      photo={data.pricingPage.photo}
-                      frameShape={data.pricingPage.frameShape}
-                      photoHeight={data.pricingPage.photoHeight}
-                      photoWidth={data.pricingPage.photoWidth}
-                      photoFocalY={data.pricingPage.photoFocalY}
-                      altText="Pricing Details Photo"
-                    />
-                  )}
-
-                  <div className="w-full max-w-xl mx-auto space-y-4 my-3">
+                  <div className="w-full max-w-xl mx-auto space-y-4 my-0">
                     <div className="w-full rounded-2xl overflow-hidden border shadow-xs" style={{ borderColor }}>
                       <table className="w-full text-left text-xs border-collapse">
                         <thead className="text-[10px] uppercase font-bold border-b" style={{ backgroundColor: boxBgColor, borderColor, color: kickerColor }}>
@@ -2289,25 +2247,12 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                     </div>
 
                     {data.pricingPage?.note && (
-                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: textColor, borderColor }}>
                         "{data.pricingPage.note}"
                       </p>
                     )}
                   </div>
                 </div>
-
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.pricingPage?.photo && data.pricingPage?.frameShape !== 'background' && (data.pricingPage?.imagePosition === 'bottom' || !data.pricingPage?.imagePosition) && (
-                  <SectionImageRenderer
-                    photo={data.pricingPage.photo}
-                    frameShape={data.pricingPage.frameShape}
-                    photoHeight={data.pricingPage.photoHeight}
-                    photoWidth={data.pricingPage.photoWidth}
-                    photoFocalY={data.pricingPage.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Pricing Details Photo"
-                  />
-                )}
 
                 {/* CANVAS FOOTER WATERMARK */}
                 {isLastPage && (
@@ -2317,7 +2262,7 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                 )}
               </div>
             </section>
-                      )}
+          )}
 
                       {pageItem.type === 'paymentTermsPage' && (
                         <section 
