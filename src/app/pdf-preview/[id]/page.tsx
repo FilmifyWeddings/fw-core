@@ -1,5 +1,6 @@
 import React from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { Phone, Mail, Globe } from 'lucide-react';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 
@@ -696,10 +697,11 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 })()}
 
                 {/* 10. TERMS & CONDITIONS */}
+                {/* 10. TERMS & CONDITIONS */}
                 {pageType === 'termsPage' && (() => {
                   const termsRaw = termsPage.text || '';
                   const termLines = termsRaw.split('\n').filter(Boolean);
-                  const TERMS_PER_PAGE = 15;
+                  const TERMS_PER_PAGE = 11;
                   const termsChunks: string[][] = [];
                   if (termLines.length === 0) termsChunks.push([]);
                   else {
@@ -717,7 +719,7 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                           {termsPage.heading || 'TERMS & CONDITIONS'}
                         </h2>
 
-                        <div className="p-6 rounded-2xl border shadow-xs leading-relaxed text-left space-y-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
+                        <div className="p-5 rounded-2xl border shadow-xs leading-relaxed text-left space-y-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
                           <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
                             {chunkLines.join('\n\n')}
                           </p>
@@ -791,13 +793,22 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
 
                           <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
                             {thankYouPage.contactNumber && (
-                              <span className="font-sans font-medium" style={{ color: theme.text }}>📞 {thankYouPage.contactNumber}</span>
+                              <div className="flex items-center gap-1.5" style={{ color: theme.text }}>
+                                <Phone className="w-3.5 h-3.5" style={{ color: theme.kicker }} />
+                                <span className="font-sans font-medium">{thankYouPage.contactNumber}</span>
+                              </div>
                             )}
                             {thankYouPage.email && (
-                              <span className="font-sans font-medium" style={{ color: theme.text }}>✉️ {thankYouPage.email}</span>
+                              <div className="flex items-center gap-1.5" style={{ color: theme.text }}>
+                                <Mail className="w-3.5 h-3.5" style={{ color: theme.kicker }} />
+                                <span className="font-sans font-medium">{thankYouPage.email}</span>
+                              </div>
                             )}
                             {thankYouPage.website && (
-                              <span className="font-sans font-medium" style={{ color: theme.text }}>🌐 {thankYouPage.website}</span>
+                              <div className="flex items-center gap-1.5" style={{ color: theme.text }}>
+                                <Globe className="w-3.5 h-3.5" style={{ color: theme.kicker }} />
+                                <span className="font-sans font-medium">{thankYouPage.website}</span>
+                              </div>
                             )}
                           </div>
                         </div>

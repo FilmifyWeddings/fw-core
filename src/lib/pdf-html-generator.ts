@@ -1086,7 +1086,7 @@ Approx. 50 High Resolution Edited Images
 
       const termsRaw = termsPage.text || '';
       const termLines = termsRaw.split('\n').filter(Boolean);
-      const TERMS_PER_PAGE = 15;
+      const TERMS_PER_PAGE = 11;
       const termsChunks: string[][] = [];
       if (termLines.length === 0) {
         termsChunks.push([]);
@@ -1114,8 +1114,8 @@ Approx. 50 High Resolution Edited Images
                   </h2>
                 </div>
 
-                <div style="padding:24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;width:100%;max-width:600px;margin:0 auto 16px auto;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-                  <p style="font-size:12px;line-height:1.7;white-space:pre-line;font-weight:500;margin:0;">
+                <div style="padding:20px 24px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};text-align:left;width:100%;max-width:600px;margin:0 auto 16px auto;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                  <p style="font-size:12px;line-height:1.65;white-space:pre-line;font-weight:500;margin:0;">
                     ${chunkLines.join('\n\n')}
                   </p>
                 </div>
@@ -1143,6 +1143,10 @@ Approx. 50 High Resolution Edited Images
 
       const logoUrl = thankYouPage.brandLogoUrl || brandLogoUrl;
       const logoHTML = logoUrl ? `<img src="${logoUrl}" alt="Brand Logo" style="height:36px;width:auto;object-fit:contain;background-color:transparent;display:block;" />` : '';
+
+      const phoneIconSVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker || theme.text}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`;
+      const mailIconSVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker || theme.text}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>`;
+      const globeIconSVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker || theme.text}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>`;
 
       pagesHTML += `
         <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
@@ -1172,10 +1176,10 @@ Approx. 50 High Resolution Edited Images
                   ${thankYouPage.brandName || brandName || 'FILMIFY WEDDINGS'}
                 </span>
               </div>
-              <div style="display:flex;gap:16px;font-size:11px;font-family:sans-serif;color:${theme.text};">
-                ${thankYouPage.contactNumber ? `<span>📞 ${thankYouPage.contactNumber}</span>` : ''}
-                ${thankYouPage.email ? `<span>✉️ ${thankYouPage.email}</span>` : ''}
-                ${thankYouPage.website ? `<span>🌐 ${thankYouPage.website}</span>` : ''}
+              <div style="display:flex;align-items:center;gap:16px;font-size:11px;font-family:sans-serif;color:${theme.text};">
+                ${thankYouPage.contactNumber ? `<span style="display:inline-flex;align-items:center;">${phoneIconSVG}${thankYouPage.contactNumber}</span>` : ''}
+                ${thankYouPage.email ? `<span style="display:inline-flex;align-items:center;">${mailIconSVG}${thankYouPage.email}</span>` : ''}
+                ${thankYouPage.website ? `<span style="display:inline-flex;align-items:center;">${globeIconSVG}${thankYouPage.website}</span>` : ''}
               </div>
             </div>
 
