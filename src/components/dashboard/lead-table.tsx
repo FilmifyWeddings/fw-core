@@ -1668,21 +1668,20 @@ export function LeadTable({
       </aside>
 
       {/* Main Table viewport container */}
-      <div className="flex-1 flex flex-col min-h-0 w-full relative">
-        <div className="flex-1 overflow-auto w-full relative select-none" ref={tableContainerRef}>
-        
-        {/* Pinned/Sticky Left Header block */}
-        {renderHeader && (
-          <div className="sticky left-0 w-full z-[100] bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-6 pb-2">
-            {renderHeader()}
-          </div>
-        )}
+      <div className="flex-1 flex flex-col min-h-0 w-full max-w-full overflow-hidden relative">
 
-      {/* Sticky Header Anchor Stack */}
-      <div ref={headerRef} className="sticky top-0 left-0 w-full z-50 bg-white dark:bg-[#0c0c0e] px-4 md:px-6 pb-2 pt-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
-        
-        {/* Primary Actions Row */}
-        <div className="flex items-center justify-end pb-4">
+        {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
+        <div className="shrink-0 w-full max-w-full overflow-hidden border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
+          {renderHeader && (
+            <div className="bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-4 pb-2">
+              {renderHeader()}
+            </div>
+          )}
+
+          <div ref={headerRef} className="px-4 md:px-6 pb-2 pt-2">
+            
+            {/* Primary Actions Row */}
+            <div className="flex items-center justify-end pb-4">
 
           {/* Primary Manual lead creation */}
           <button
@@ -2091,14 +2090,16 @@ export function LeadTable({
           </MotionDiv>
         )}
       </AnimatePresenceComponent>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
-</div>
-</div>
 
-  {/* Main View Mode rendering */}
-  {viewMode === 'table' ? (
-    <>
+      {/* Scrollable Main Viewport Container */}
+      <div className="flex-1 overflow-auto w-full max-w-full relative select-none" ref={tableContainerRef}>
+        {/* Main View Mode rendering */}
+        {viewMode === 'table' ? (
+          <>
       {/* ───────────────────────────────────────────────────────────── */}
       {/* MOBILE / TABLET RESPONSIVE 3D CARD GRID (< 768px)             */}
       {/* ───────────────────────────────────────────────────────────── */}
@@ -2289,8 +2290,7 @@ export function LeadTable({
         <thead>
           <tr className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-zinc-200 bg-[#EAE6DF] dark:bg-[#1C1A18] border-b border-[#E8E5DF] dark:border-[#2C2926]">
             <th 
-              style={{ top: `${headerHeight}px` }}
-              className="py-4 pl-6 pr-4 text-center sticky left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40"
+              className="py-4 pl-6 pr-4 text-center sticky top-0 left-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40"
             >
               <button onClick={handleSelectAll} className="text-[#706E6A] dark:text-[#A09E9A] hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-colors">
                 {selectedLeadIds.length === paginatedLeads.length && paginatedLeads.length > 0 ? (
@@ -2303,8 +2303,7 @@ export function LeadTable({
             
             {/* Frozen Column Name (Sticky Top & Left) */}
             <th 
-              style={{ top: `${headerHeight}px` }}
-              className="py-4 pl-6 pr-4 text-xs font-black sticky left-[50px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none"
+              className="py-4 pl-6 pr-4 text-xs font-black sticky top-0 left-[50px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-r border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 relative group/header select-none"
             >
               <div className="flex items-center justify-between gap-1.5">
                 <span>Lead Name</span>
@@ -2328,8 +2327,7 @@ export function LeadTable({
               return (
                 <th
                 key={col.id}
-                style={{ top: `${headerHeight}px` }}
-                className={`py-4 px-4 text-xs font-black sticky bg-[#EAE6DF] dark:bg-[#1C1A18] z-30 relative group/header cursor-grab active:cursor-grabbing transition-all select-none text-slate-800 dark:text-zinc-200 ${
+                className={`py-4 px-4 text-xs font-black sticky top-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-30 relative group/header cursor-grab active:cursor-grabbing transition-all select-none text-slate-800 dark:text-zinc-200 ${
                   draggedColIdx === idx ? 'opacity-40 bg-[#EAE6DF]/80 dark:bg-[#1C1A18]/80 border-dashed border border-[#D4AF37]' : ''
                 } ${
                   dragOverColIdx === idx ? 'border-l-2 border-l-[#D4AF37]' : ''
@@ -2400,8 +2398,7 @@ export function LeadTable({
 
             {/* Frozen Column Actions (Sticky Top & Right) */}
             <th 
-              style={{ top: `${headerHeight}px` }}
-              className="py-4 px-4 text-center sticky right-0 w-[340px] min-w-[340px] max-w-[340px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)]"
+              className="py-4 px-4 text-center sticky top-0 right-0 w-[340px] min-w-[340px] max-w-[340px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)]"
             >
               Actions
             </th>
@@ -3978,6 +3975,7 @@ export function LeadTable({
         lead={quotationModalLead} 
       />
 
+        </div>
       </div>
     </div>
   );
