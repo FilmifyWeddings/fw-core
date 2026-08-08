@@ -1,4 +1,4 @@
-import { paginateDeliverablesPageItems } from './deliverables-paginator';
+import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from './deliverables-paginator';
 
 // Exact Registered Color Palettes with Inverted Counterparts matching canvas builder
 const COLOR_THEMES: Record<string, any> = {
@@ -678,27 +678,10 @@ Approx. 50 High Resolution Edited Images
       });
     
     } else if (pageType === 'deliverablesPage') {
-      const delivPhoto = deliverablesPage.photo || deliverablesPage.photoUrl;
-      const bannerImgHTML = renderSectionImage(
-        delivPhoto,
-        deliverablesPage.frameShape || 'arch',
-        Math.min(deliverablesPage.photoHeight || 200, 200),
-        deliverablesPage.photoWidth || 75,
-        deliverablesPage.photoFocalY || 50,
-        deliverablesPage.bgOpacity || 40,
-        theme.background,
-        true
-      );
-
       const checkCircleIconSVG = `<div style="width:24px;height:24px;border-radius:50%;background-color:rgba(0,0,0,0.05);border:1px solid ${theme.borderColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>`;
 
       const allDelivs = deliverablesPage.selectedItems || deliverablesPage.items || [];
-      const delivChunks = paginateDeliverablesPageItems(
-        allDelivs,
-        delivPhoto,
-        deliverablesPage.frameShape || 'arch',
-        deliverablesPage.photoHeight || 200
-      );
+      const delivChunks = paginateDeliverablesPageItems(allDelivs);
 
       delivChunks.forEach((chunkItems: any[], chunkIdx: number) => {
         let delivHTML = '';
@@ -712,13 +695,8 @@ Approx. 50 High Resolution Edited Images
           `;
         });
 
-        const isLastChunk = chunkIdx === delivChunks.length - 1;
-        const showBgImage = deliverablesPage.frameShape === 'background';
-
         pagesHTML += `
           <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
-            ${delivPhoto && showBgImage ? bannerImgHTML : ''}
-
             <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
               <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">
                 <div style="text-align:center;margin:0 0 20px 0;">
@@ -735,49 +713,57 @@ Approx. 50 High Resolution Edited Images
                 </div>
               </div>
 
-              ${isLastChunk && delivPhoto && !showBgImage ? bannerImgHTML : ''}
-
               ${footerHTML}
             </div>
           </section>
         `;
       });
     } else if (pageType === 'specialValueAdditions') {
-      let addValHTML = '';
-      (specialValueAdditions.items || []).forEach((item: any) => {
-        const title = typeof item === 'string' ? item : (item.title || item.name || item.text || '');
-        if (!title) return;
-        addValHTML += `
-          <div style="padding:14px 18px;border-radius:12px;border:1px solid rgba(16, 185, 129, 0.35);background-color:rgba(16, 185, 129, 0.08);color:${theme.text};display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;display:inline-block;vertical-align:middle;flex-shrink:0;">
-                <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.41 0l6.59-6.59c.94-.94.94-2.48 0-3.41L12 2z"></path>
-                <line x1="7" y1="7" x2="7.01" y2="7"></line>
-              </svg>
-              <span style="font-size:12px;font-weight:700;color:${theme.text};">${title}</span>
+      const allAddVals = specialValueAdditions.selectedItems || specialValueAdditions.items || [];
+      const addValChunks = paginateSpecialValueAdditionsPageItems(allAddVals);
+
+      addValChunks.forEach((chunkItems: any[], chunkIdx: number) => {
+        let addValHTML = '';
+        chunkItems.forEach((item: any) => {
+          const title = typeof item === 'string' ? item : (item.title || item.name || item.text || '');
+          if (!title) return;
+          addValHTML += `
+            <div style="padding:14px 18px;border-radius:12px;border:1px solid rgba(16, 185, 129, 0.35);background-color:rgba(16, 185, 129, 0.08);color:${theme.text};display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;display:inline-block;vertical-align:middle;flex-shrink:0;">
+                  <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.41 0l6.59-6.59c.94-.94.94-2.48 0-3.41L12 2z"></path>
+                  <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                </svg>
+                <span style="font-size:12px;font-weight:700;color:${theme.text};white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;">${title}</span>
+              </div>
+              <span style="font-size:10px;font-weight:900;text-transform:uppercase;padding:3px 10px;border-radius:6px;border:1px solid #10b981;background-color:#10b981;color:#ffffff;-webkit-print-color-adjust:exact;print-color-adjust:exact;flex-shrink:0;">FREE</span>
             </div>
-            <span style="font-size:10px;font-weight:900;text-transform:uppercase;padding:3px 10px;border-radius:6px;border:1px solid #10b981;background-color:#10b981;color:#ffffff;-webkit-print-color-adjust:exact;print-color-adjust:exact;">FREE</span>
-          </div>
+          `;
+        });
+
+        pagesHTML += `
+          <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
+            <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">
+                <div style="text-align:center;margin:0 0 20px 0;">
+                  <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
+                    ${specialValueAdditions.kicker || 'COMPLIMENTARY'} ${addValChunks.length > 1 ? `(${chunkIdx + 1}/${addValChunks.length})` : ''}
+                  </span>
+                  <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0;">
+                    ${specialValueAdditions.heading || 'SPECIAL VALUE ADDITIONS'}
+                  </h2>
+                </div>
+
+                <div style="width:100%;max-width:600px;margin:0 auto;text-align:left;">
+                  ${addValHTML}
+                </div>
+              </div>
+
+              ${footerHTML}
+            </div>
+          </section>
         `;
       });
-
-      pagesHTML += `
-        <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;">
-          <div style="max-width:600px;width:100%;margin:auto;">
-            <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:12px;">
-              ${specialValueAdditions.kicker || 'COMPLIMENTARY'}
-            </span>
-            <h2 style="font-family:${primaryFont};font-size:32px;text-transform:uppercase;letter-spacing:0.1em;font-weight:400;color:${theme.text};margin:0 0 24px 0;">
-              ${specialValueAdditions.heading || 'SPECIAL VALUE ADDITIONS'}
-            </h2>
-            <div style="text-align:left;">
-              ${addValHTML}
-            </div>
-          </div>
-
-          ${footerHTML}
-        </section>
-      `;
     } else if (pageType === 'pricingPage') {
       const netTotal = (pricingPage.basePrice || 0) - (pricingPage.discountAmount || 0);
       pagesHTML += `

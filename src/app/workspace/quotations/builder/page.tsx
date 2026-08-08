@@ -24,7 +24,7 @@ import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
-import { paginateDeliverablesPageItems } from '@/lib/deliverables-paginator';
+import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
@@ -2903,34 +2903,13 @@ function StudioCoreAiryBuilderContent() {
                 }}
               />
 
-              <UnifiedPhotoControls
-                photoUrl={data.deliverablesPage?.photo}
-                frameShape={data.deliverablesPage?.frameShape}
-                photoHeight={data.deliverablesPage?.photoHeight}
-                photoWidth={data.deliverablesPage?.photoWidth}
-                photoFocalY={data.deliverablesPage?.photoFocalY}
-                bgOpacity={data.deliverablesPage?.bgOpacity}
-                imagePosition={data.deliverablesPage?.imagePosition}
-                onOpenAddModal={() => openAddImageModal('deliverablesPhoto')}
-                onDeletePhoto={() => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photo: '' } })}
-                onChangeShape={(shape) => {
-                  const currentH = data.deliverablesPage?.photoHeight || 360;
-                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
-                  setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), frameShape: shape, photoHeight: newH } });
-                }}
-                onChangePosition={(pos) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, deliverablesPage: { ...(data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage), photoWidth: w } })}
-              />
-            
-                    </div>
-                  )}
+              {/* Photo controls removed for Deliverables - purely content/card based */}
+            </div>
+          )}
 
-                  {pageItem.type === 'specialValueAdditions' && (
-                    <div className="space-y-3">
-                      
+          {pageItem.type === 'specialValueAdditions' && (
+            <div className="space-y-3">
+              
               <ThreeDCurvedMultiSelect
                 title="Complimentary Value Additions"
                 availableOptions={data.specialValueAdditions?.availableOptions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.availableOptions}
@@ -2969,32 +2948,11 @@ function StudioCoreAiryBuilderContent() {
                 />
               </div>
 
-              <UnifiedPhotoControls
-                photoUrl={data.specialValueAdditions?.photo}
-                frameShape={data.specialValueAdditions?.frameShape}
-                photoHeight={data.specialValueAdditions?.photoHeight}
-                photoWidth={data.specialValueAdditions?.photoWidth}
-                photoFocalY={data.specialValueAdditions?.photoFocalY}
-                bgOpacity={data.specialValueAdditions?.bgOpacity}
-                imagePosition={data.specialValueAdditions?.imagePosition}
-                onOpenAddModal={() => openAddImageModal('specialValuePhoto')}
-                onDeletePhoto={() => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photo: '' } })}
-                onChangeShape={(shape) => {
-                  const currentH = data.specialValueAdditions?.photoHeight || 360;
-                  const newH = shape === 'background' ? Math.max(1123, currentH) : (currentH > 800 ? 360 : currentH);
-                  setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), frameShape: shape, photoHeight: newH } });
-                }}
-                onChangePosition={(pos) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), imagePosition: pos } })}
-                onChangeFocalY={(focalY) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoFocalY: focalY } })}
-                onChangeBgOpacity={(op) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), bgOpacity: op } })}
-                onChangeHeight={(h) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoHeight: h } })}
-                onChangeWidth={(w) => setData({ ...data, specialValueAdditions: { ...(data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions), photoWidth: w } })}
-              />
-            
-                    </div>
-                  )}
+              {/* Photo controls removed for Special Value Additions - purely content/card based */}
+            </div>
+          )}
 
-                  {pageItem.type === 'pricingPage' && (
+          {pageItem.type === 'pricingPage' && (
                     <div className="space-y-3">
                       
               <div className="space-y-1">
@@ -4548,102 +4506,78 @@ function StudioCoreAiryBuilderContent() {
                         });
                       })()}
 
-                      {pageItem.type === 'specialValueAdditions' && (
-                        <section 
-              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
-              style={{
-                width: '794px',
-                minWidth: '794px',
-                maxWidth: '794px',
-                height: '1123px',
-                minHeight: '1123px',
-                maxHeight: '1123px',
-                boxSizing: 'border-box',
-                position: 'relative',
-                overflow: 'hidden',
-                margin: '0 auto',
-                boxShadow: '0 20px 30px -10px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)',
-                backgroundColor: pageBgColor || '#FFFFFF',
-                color: textColor,
-                fontFamily: data.secondaryFont,
-              }}
-            >
-              {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape === 'background' && (
-                <SectionImageRenderer
-                  photo={data.specialValueAdditions.photo}
-                  frameShape="background"
-                  photoHeight={data.specialValueAdditions.photoHeight}
-                  photoWidth={data.specialValueAdditions.photoWidth}
-                  photoFocalY={data.specialValueAdditions.photoFocalY}
-                  bgOpacity={data.specialValueAdditions.bgOpacity}
-                  pageBgColor={pageBgColor}
-                  altText="Special Value Additions Background"
-                />
-              )}
+                      {pageItem.type === 'specialValueAdditions' && (() => {
+                        const addValChunks = paginateSpecialValueAdditionsPageItems(data.specialValueAdditions?.selectedItems);
+                        return addValChunks.map((addValChunk, chunkIdx) => {
+                          const isLastChunk = chunkIdx === addValChunks.length - 1;
+                          return (
+                            <section 
+                              key={`addval-chunk-${chunkIdx}`}
+                              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
+                              style={{
+                                width: '794px',
+                                minWidth: '794px',
+                                maxWidth: '794px',
+                                height: '1123px',
+                                minHeight: '1123px',
+                                maxHeight: '1123px',
+                                boxSizing: 'border-box',
+                                position: 'relative',
+                                overflow: 'hidden',
+                                margin: '0 auto',
+                                boxShadow: '0 20px 30px -10px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)',
+                                backgroundColor: pageBgColor || '#FFFFFF',
+                                color: textColor,
+                                fontFamily: data.secondaryFont,
+                              }}
+                            >
+                              <div className="relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 px-12 justify-between">
+                                <div className="flex flex-col items-center justify-start w-full px-12">
+                                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
+                                    {data.specialValueAdditions?.kicker || 'COMPLIMENTARY GIFTS & BONUSES'} {addValChunks.length > 1 ? `(${chunkIdx + 1}/${addValChunks.length})` : ''}
+                                  </span>
+                                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                    {data.specialValueAdditions?.heading || 'SPECIAL VALUE ADDITIONS'}
+                                  </h2>
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
-                data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' 
-                  ? 'px-0' 
-                  : 'px-12'
-              } ${!data.specialValueAdditions?.photo ? 'justify-center items-center' : 'justify-between'}`}>
-                
-                <div className={`flex flex-col items-center justify-center w-full ${data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
-                    {data.specialValueAdditions?.kicker || 'COMPLIMENTARY GIFTS & BONUSES'}
-                  </span>
-                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                    {data.specialValueAdditions?.heading || 'SPECIAL VALUE ADDITIONS'}
-                  </h2>
+                                  <div className="w-full max-w-xl mx-auto space-y-3 text-left my-0">
+                                    {addValChunk.map((item, idx) => (
+                                      <div 
+                                        key={idx}
+                                        className="p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all"
+                                        style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <div className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                                            <Gift className="w-4 h-4" style={{ color: kickerColor }} />
+                                          </div>
+                                          <span className="text-xs font-bold leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]">{item}</span>
+                                        </div>
+                                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)', color: textColor }}>
+                                          FREE
+                                        </span>
+                                      </div>
+                                    ))}
 
-                  <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
-                    {(data.specialValueAdditions?.selectedItems || []).map((item, idx) => (
-                      <div 
-                        key={idx}
-                        className="p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all"
-                        style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
-                            <Gift className="w-4 h-4" style={{ color: kickerColor }} />
-                          </div>
-                          <span className="text-xs font-bold leading-relaxed">{item}</span>
-                        </div>
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)', color: textColor }}>
-                          FREE
-                        </span>
-                      </div>
-                    ))}
+                                    {isLastChunk && data.specialValueAdditions?.note && (
+                                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
+                                        "{data.specialValueAdditions.note}"
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
 
-                    {data.specialValueAdditions?.note && (
-                      <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto" style={{ color: textColor, borderColor }}>
-                        "{data.specialValueAdditions.note}"
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* BOTTOM FLUSH IMAGE POSITION */}
-                {data.specialValueAdditions?.photo && data.specialValueAdditions?.frameShape !== 'background' && (
-                  <SectionImageRenderer
-                    photo={data.specialValueAdditions.photo}
-                    frameShape={data.specialValueAdditions.frameShape}
-                    photoHeight={data.specialValueAdditions.photoHeight}
-                    photoWidth={data.specialValueAdditions.photoWidth}
-                    photoFocalY={data.specialValueAdditions.photoFocalY}
-                    isBottomFlush={true}
-                    altText="Special Value Additions Photo"
-                  />
-                )}
-
-                {/* CANVAS FOOTER WATERMARK */}
-                {isLastPage && (
-                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                    Created by StudioCore.in
-                  </div>
-                )}
-              </div>
-            </section>
-                      )}
+                                {/* CANVAS FOOTER WATERMARK */}
+                                {isLastPage && isLastChunk && (
+                                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                                    Created by StudioCore.in
+                                  </div>
+                                )}
+                              </div>
+                            </section>
+                          );
+                        });
+                      })()}
 
                       {pageItem.type === 'pricingPage' && (
                         <section 

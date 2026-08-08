@@ -1,7 +1,7 @@
 import React from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
-import { paginateDeliverablesPageItems } from '@/lib/deliverables-paginator';
+import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -405,27 +405,31 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 })()}
 
                 {/* 6. SPECIAL VALUE ADDITIONS */}
-                {pageType === 'specialValueAdditions' && (
-                  <section className="pdf-page flex flex-col justify-between items-center text-center">
-                    <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
-                      <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
-                        {specialValueAdditions.kicker || 'COMPLIMENTARY'}
-                      </span>
-                      <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
-                        {specialValueAdditions.heading || 'SPECIAL VALUE ADDITIONS'}
-                      </h2>
+                {pageType === 'specialValueAdditions' && (() => {
+                  const addValItems = specialValueAdditions.selectedItems || specialValueAdditions.items || [];
+                  const addValChunks = paginateSpecialValueAdditionsPageItems(addValItems);
+                  return addValChunks.map((chunkItems, chunkIdx) => (
+                    <section key={`pdf-addval-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
+                      <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
+                        <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
+                          {specialValueAdditions.kicker || 'COMPLIMENTARY'} {addValChunks.length > 1 ? `(${chunkIdx + 1}/${addValChunks.length})` : ''}
+                        </span>
+                        <h2 className="primary-font text-3xl uppercase tracking-widest font-normal" style={{ color: theme.text }}>
+                          {specialValueAdditions.heading || 'SPECIAL VALUE ADDITIONS'}
+                        </h2>
 
-                      <div className="space-y-2 text-left pt-2">
-                        {(specialValueAdditions.items || []).map((item: any, sIdx: number) => (
-                          <div key={item.id || sIdx} className="p-3.5 rounded-xl border flex items-center justify-between" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
-                            <span className="text-xs font-bold">{item.title || item.name}</span>
-                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded border" style={{ borderColor: theme.kicker, color: theme.kicker }}>FREE</span>
-                          </div>
-                        ))}
+                        <div className="space-y-2 text-left pt-2">
+                          {chunkItems.map((item: any, sIdx: number) => (
+                            <div key={sIdx} className="p-3.5 rounded-xl border flex items-center justify-between gap-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
+                              <span className="text-xs font-bold whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]">{typeof item === 'string' ? item : item.title || item.name || item.text}</span>
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded border shrink-0" style={{ borderColor: theme.kicker, color: theme.kicker }}>FREE</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </section>
-                )}
+                    </section>
+                  ));
+                })()}
 
                 {/* 7. PRICING DETAILS */}
                 {pageType === 'pricingPage' && (
