@@ -24,6 +24,7 @@ import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
+import { paginateDeliverablesPageItems } from '@/lib/deliverables-paginator';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
@@ -4449,93 +4450,102 @@ function StudioCoreAiryBuilderContent() {
                       })()}
 
                       {pageItem.type === 'deliverablesPage' && (() => {
-                        const delivChunks = chunkArray(data.deliverablesPage?.selectedItems, 5);
-                        return delivChunks.map((delivChunk, chunkIdx) => (
-                          <section 
-                            key={`deliv-chunk-${chunkIdx}`}
-                            className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
-                            style={{
-                              width: '794px',
-                              minWidth: '794px',
-                              maxWidth: '794px',
-                              height: '1123px',
-                              minHeight: '1123px',
-                              maxHeight: '1123px',
-                              boxSizing: 'border-box',
-                              position: 'relative',
-                              overflow: 'hidden',
-                              margin: '0 auto',
-                              boxShadow: '0 20px 30px -10px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)',
-                              backgroundColor: pageBgColor || '#FFFFFF',
-                              color: textColor,
-                              fontFamily: data.secondaryFont,
-                            }}
-                          >
-                            {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape === 'background' && (
-                              <SectionImageRenderer
-                                photo={data.deliverablesPage.photo}
-                                frameShape="background"
-                                photoHeight={data.deliverablesPage.photoHeight}
-                                photoWidth={data.deliverablesPage.photoWidth}
-                                photoFocalY={data.deliverablesPage.photoFocalY}
-                                bgOpacity={data.deliverablesPage.bgOpacity}
-                                pageBgColor={pageBgColor}
-                                altText="Deliverables Background"
-                              />
-                            )}
-
-                            <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 ${
-                              data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' 
-                                ? 'px-0' 
-                                : 'px-12'
-                            } justify-between`}>
-                              
-                              <div className={`flex flex-col items-center justify-center w-full ${data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
-                                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
-                                  {data.deliverablesPage?.kicker || 'WHAT WE DELIVER'} {delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
-                                </span>
-                                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                                  {data.deliverablesPage?.heading || 'DELIVERABLES'}
-                                </h2>
-
-                                <div className="w-full max-w-xl mx-auto space-y-3 text-left my-3">
-                                  {delivChunk.map((item, idx) => (
-                                    <div 
-                                      key={idx}
-                                      className="p-3.5 rounded-2xl border flex items-center gap-3 shadow-xs"
-                                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
-                                    >
-                                      <div className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
-                                        <CheckCircle2 className="w-4 h-4 text-amber-700" style={{ color: kickerColor }} />
-                                      </div>
-                                      <span className="text-xs font-bold leading-snug">{item}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* BOTTOM FLUSH IMAGE POSITION - Only on 1st Page */}
-                              {chunkIdx === 0 && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && (
+                        const delivPhoto = data.deliverablesPage?.photo;
+                        const delivChunks = paginateDeliverablesPageItems(
+                          data.deliverablesPage?.selectedItems,
+                          delivPhoto,
+                          data.deliverablesPage?.frameShape || 'arch',
+                          data.deliverablesPage?.photoHeight || 200
+                        );
+                        return delivChunks.map((delivChunk, chunkIdx) => {
+                          const isLastChunk = chunkIdx === delivChunks.length - 1;
+                          return (
+                            <section 
+                              key={`deliv-chunk-${chunkIdx}`}
+                              className="quotation-page relative w-[794px] overflow-hidden transition-none mx-auto select-none flex flex-col"
+                              style={{
+                                width: '794px',
+                                minWidth: '794px',
+                                maxWidth: '794px',
+                                height: '1123px',
+                                minHeight: '1123px',
+                                maxHeight: '1123px',
+                                boxSizing: 'border-box',
+                                position: 'relative',
+                                overflow: 'hidden',
+                                margin: '0 auto',
+                                boxShadow: '0 20px 30px -10px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)',
+                                backgroundColor: pageBgColor || '#FFFFFF',
+                                color: textColor,
+                                fontFamily: data.secondaryFont,
+                              }}
+                            >
+                              {data.deliverablesPage?.photo && data.deliverablesPage?.frameShape === 'background' && (
                                 <SectionImageRenderer
                                   photo={data.deliverablesPage.photo}
-                                  frameShape={data.deliverablesPage.frameShape}
+                                  frameShape="background"
                                   photoHeight={data.deliverablesPage.photoHeight}
                                   photoWidth={data.deliverablesPage.photoWidth}
                                   photoFocalY={data.deliverablesPage.photoFocalY}
-                                  isBottomFlush={true}
-                                  altText="Deliverables Photo"
+                                  bgOpacity={data.deliverablesPage.bgOpacity}
+                                  pageBgColor={pageBgColor}
+                                  altText="Deliverables Background"
                                 />
                               )}
 
-                              {/* CANVAS FOOTER WATERMARK */}
-                              {isLastPage && chunkIdx === delivChunks.length - 1 && (
-                                <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                                  Created by StudioCore.in
+                              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 ${
+                                data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' 
+                                  ? 'px-0' 
+                                  : 'px-12'
+                              } justify-between`}>
+                                
+                                <div className={`flex flex-col items-center justify-start w-full ${data.deliverablesPage?.frameShape === 'full-width' || (data.deliverablesPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                                  <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
+                                    {data.deliverablesPage?.kicker || 'WHAT WE DELIVER'} {delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
+                                  </span>
+                                  <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                    {data.deliverablesPage?.heading || 'DELIVERABLES'}
+                                  </h2>
+
+                                  <div className="w-full max-w-xl mx-auto space-y-3 text-left my-0">
+                                    {delivChunk.map((item, idx) => (
+                                      <div 
+                                        key={idx}
+                                        className="p-3.5 rounded-2xl border flex items-center gap-3 shadow-xs"
+                                        style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                                      >
+                                        <div className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                                          <CheckCircle2 className="w-4 h-4 text-amber-700" style={{ color: kickerColor }} />
+                                        </div>
+                                        <span className="text-xs font-bold leading-snug whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]">{item}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          </section>
-                        ));
+
+                                {/* BOTTOM FLUSH IMAGE POSITION - ONLY ON FINAL DELIVERABLES PAGE */}
+                                {isLastChunk && data.deliverablesPage?.photo && data.deliverablesPage?.frameShape !== 'background' && (
+                                  <SectionImageRenderer
+                                    photo={data.deliverablesPage.photo}
+                                    frameShape={data.deliverablesPage.frameShape}
+                                    photoHeight={data.deliverablesPage.photoHeight}
+                                    photoWidth={data.deliverablesPage.photoWidth}
+                                    photoFocalY={data.deliverablesPage.photoFocalY}
+                                    isBottomFlush={true}
+                                    altText="Deliverables Photo"
+                                  />
+                                )}
+
+                                {/* CANVAS FOOTER WATERMARK */}
+                                {isLastPage && isLastChunk && (
+                                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
+                                    Created by StudioCore.in
+                                  </div>
+                                )}
+                              </div>
+                            </section>
+                          );
+                        });
                       })()}
 
                       {pageItem.type === 'specialValueAdditions' && (

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
+import { paginateDeliverablesPageItems } from '@/lib/deliverables-paginator';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -374,16 +375,15 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                 {/* 5. DELIVERABLES */}
                 {pageType === 'deliverablesPage' && (() => {
                   const delivItems = deliverablesPage.selectedItems || deliverablesPage.items || [];
-                  const delivChunks: any[][] = [];
-                  if (delivItems.length === 0) delivChunks.push([]);
-                  else {
-                    for (let i = 0; i < delivItems.length; i += 5) {
-                      delivChunks.push(delivItems.slice(i, i + 5));
-                    }
-                  }
+                  const delivChunks = paginateDeliverablesPageItems(
+                    delivItems,
+                    deliverablesPage.photo,
+                    deliverablesPage.frameShape || 'arch',
+                    deliverablesPage.photoHeight || 200
+                  );
                   return delivChunks.map((chunkItems, chunkIdx) => (
                     <section key={`pdf-deliv-${chunkIdx}`} className="pdf-page flex flex-col justify-between items-center text-center">
-                      <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                      <div className="w-full max-w-xl mx-auto space-y-4 pt-4">
                         <span className="text-xs tracking-[0.25em] font-bold uppercase block" style={{ color: theme.kicker }}>
                           {deliverablesPage.kicker || 'WHAT WE DELIVER'} {delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
                         </span>
@@ -395,7 +395,7 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                           {chunkItems.map((item: any, dIdx: number) => (
                             <div key={dIdx} className="p-3.5 rounded-xl border flex items-center gap-3" style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}>
                               <div className="w-4 h-4 rounded-full border flex items-center justify-center text-[10px] font-bold" style={{ borderColor: theme.kicker, color: theme.kicker }}>✓</div>
-                              <span className="text-xs font-bold">{typeof item === 'string' ? item : item.title || item.name}</span>
+                              <span className="text-xs font-bold whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]">{typeof item === 'string' ? item : item.title || item.name}</span>
                             </div>
                           ))}
                         </div>

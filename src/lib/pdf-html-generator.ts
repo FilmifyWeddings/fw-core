@@ -1,3 +1,5 @@
+import { paginateDeliverablesPageItems } from './deliverables-paginator';
+
 // Exact Registered Color Palettes with Inverted Counterparts matching canvas builder
 const COLOR_THEMES: Record<string, any> = {
   'cherry-red-cream': { id: 'cherry-red-cream', name: 'Cherry Red & Cream', primary: '#750505', background: '#FBFCEB', text: '#750505', kicker: '#750505', borderColor: 'rgba(117, 5, 5, 0.2)', boxBgColor: 'rgba(117, 5, 5, 0.06)' },
@@ -691,14 +693,12 @@ Approx. 50 High Resolution Edited Images
       const checkCircleIconSVG = `<div style="width:24px;height:24px;border-radius:50%;background-color:rgba(0,0,0,0.05);border:1px solid ${theme.borderColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>`;
 
       const allDelivs = deliverablesPage.selectedItems || deliverablesPage.items || [];
-      const delivChunks: any[][] = [];
-      if (allDelivs.length === 0) {
-        delivChunks.push([]);
-      } else {
-        for (let i = 0; i < allDelivs.length; i += 4) {
-          delivChunks.push(allDelivs.slice(i, i + 4));
-        }
-      }
+      const delivChunks = paginateDeliverablesPageItems(
+        allDelivs,
+        delivPhoto,
+        deliverablesPage.frameShape || 'arch',
+        deliverablesPage.photoHeight || 200
+      );
 
       delivChunks.forEach((chunkItems: any[], chunkIdx: number) => {
         let delivHTML = '';
@@ -707,20 +707,21 @@ Approx. 50 High Resolution Edited Images
           delivHTML += `
             <div style="padding:14px 18px;border-radius:16px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};display:flex;align-items:center;gap:14px;margin-bottom:10px;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
               ${checkCircleIconSVG}
-              <span style="font-size:14px;font-weight:700;line-height:1.3;">${itemText}</span>
+              <span style="font-size:14px;font-weight:700;line-height:1.3;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;">${itemText}</span>
             </div>
           `;
         });
 
-        const showImage = chunkIdx === 0;
+        const isLastChunk = chunkIdx === delivChunks.length - 1;
+        const showBgImage = deliverablesPage.frameShape === 'background';
 
         pagesHTML += `
           <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:56px 48px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
-            ${showImage && delivPhoto && deliverablesPage.frameShape === 'background' ? bannerImgHTML : ''}
+            ${delivPhoto && showBgImage ? bannerImgHTML : ''}
 
             <div style="position:relative;z-index:10;width:100%;display:flex;flex-direction:column;justify-content:space-between;height:100%;">
-              <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin:auto;">
-                <div style="text-align:center;margin:12px 0;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">
+                <div style="text-align:center;margin:0 0 20px 0;">
                   <span style="font-size:12px;letter-spacing:0.25em;font-weight:700;text-transform:uppercase;color:${theme.kicker};display:block;margin-bottom:8px;">
                     ${deliverablesPage.kicker || 'WHAT WE DELIVER'} ${delivChunks.length > 1 ? `(${chunkIdx + 1}/${delivChunks.length})` : ''}
                   </span>
@@ -729,12 +730,12 @@ Approx. 50 High Resolution Edited Images
                   </h2>
                 </div>
 
-                <div style="width:100%;max-width:640px;margin:12px auto;">
+                <div style="width:100%;max-width:640px;margin:0 auto;">
                   ${delivHTML}
                 </div>
-
-                ${showImage && delivPhoto && deliverablesPage.frameShape !== 'background' ? bannerImgHTML : ''}
               </div>
+
+              ${isLastChunk && delivPhoto && !showBgImage ? bannerImgHTML : ''}
 
               ${footerHTML}
             </div>
