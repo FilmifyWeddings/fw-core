@@ -382,6 +382,8 @@ const DEFAULT_AIRY_PROPOSAL = {
     bgOpacity: 40,
     frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
+    showExclusionsNote: false,
+    exclusionsNote: 'This excludes travel, accommodation, food & any add-on services.',
   },
 
   // 4. Functions Page Module State
@@ -508,6 +510,8 @@ const DEFAULT_AIRY_PROPOSAL = {
     bgOpacity: 40,
     frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
+    showExclusionsNote: false,
+    exclusionsNote: 'This excludes travel, accommodation, food & any add-on services.',
   },
 
   // 8. Payment Terms & Schedule
@@ -2887,6 +2891,47 @@ function StudioCoreAiryBuilderContent() {
                 onAddCustomOption={(newItem) => setAvailableDeliverables(prev => Array.from(new Set([...prev, newItem])))}
               />
 
+              {/* Exclusions Note Control Checkbox */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="shootDetailsExclusionsBuilder"
+                    checked={!!data.shootDetails?.showExclusionsNote}
+                    onChange={(e) => {
+                      const currentObj = data.shootDetails || {};
+                      setData({
+                        ...data,
+                        shootDetails: {
+                          ...currentObj,
+                          showExclusionsNote: e.target.checked,
+                          exclusionsNote: currentObj.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'
+                        }
+                      });
+                    }}
+                    className="w-4 h-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="shootDetailsExclusionsBuilder" className="text-xs font-bold text-zinc-700 cursor-pointer">
+                    Show Exclusions Note
+                  </label>
+                </div>
+
+                {data.shootDetails?.showExclusionsNote && (
+                  <div className="space-y-1 pl-6">
+                    <textarea
+                      rows={2}
+                      value={data.shootDetails?.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                      onChange={(e) => {
+                        const currentObj = data.shootDetails || {};
+                        setData({ ...data, shootDetails: { ...currentObj, exclusionsNote: e.target.value } });
+                      }}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                      placeholder="Exclusions note text..."
+                    />
+                  </div>
+                )}
+              </div>
+
               <UnifiedPhotoControls
                 photoUrl={data.shootDetails.photo}
                 frameShape={data.shootDetails.frameShape}
@@ -3139,6 +3184,47 @@ function StudioCoreAiryBuilderContent() {
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
                 </div>
+              </div>
+
+              {/* Exclusions Note Control Checkbox */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="pricingExclusionsBuilder"
+                    checked={!!data.pricingPage?.showExclusionsNote}
+                    onChange={(e) => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      setData({
+                        ...data,
+                        pricingPage: {
+                          ...currentObj,
+                          showExclusionsNote: e.target.checked,
+                          exclusionsNote: currentObj.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'
+                        }
+                      });
+                    }}
+                    className="w-4 h-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="pricingExclusionsBuilder" className="text-xs font-bold text-zinc-700 cursor-pointer">
+                    Show Exclusions Note
+                  </label>
+                </div>
+
+                {data.pricingPage?.showExclusionsNote && (
+                  <div className="space-y-1 pl-6">
+                    <textarea
+                      rows={2}
+                      value={data.pricingPage?.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                      onChange={(e) => {
+                        const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                        setData({ ...data, pricingPage: { ...currentObj, exclusionsNote: e.target.value } });
+                      }}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs"
+                      placeholder="Exclusions note text..."
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1 pt-1">
@@ -4254,6 +4340,18 @@ function StudioCoreAiryBuilderContent() {
                         ))}
                     </div>
                   </div>
+
+                  {/* EXCLUSIONS CALLOUT BOX (BEFORE PHOTO) */}
+                  {data.shootDetails?.showExclusionsNote && (
+                    <div 
+                      className="w-full max-w-lg mx-auto my-3 p-3 rounded-xl border text-center text-xs font-semibold shadow-2xs transition-all"
+                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                    >
+                      <span className="opacity-90 font-medium">
+                        {data.shootDetails.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
@@ -4706,6 +4804,17 @@ function StudioCoreAiryBuilderContent() {
                                     ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
                                   </div>
                                 </div>
+
+                                {data.pricingPage?.showExclusionsNote && (
+                                  <div 
+                                    className="w-full max-w-xl mx-auto my-3 p-3 rounded-xl border text-center text-xs font-semibold shadow-2xs transition-all"
+                                    style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                                  >
+                                    <span className="opacity-90 font-medium">
+                                      {data.pricingPage.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                                    </span>
+                                  </div>
+                                )}
 
                                 {data.pricingPage?.note && (
                                   <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: textColor, borderColor }}>

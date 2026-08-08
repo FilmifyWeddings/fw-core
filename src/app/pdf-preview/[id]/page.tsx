@@ -334,6 +334,17 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                           <p className="text-xs font-bold whitespace-pre-line">{shootDetails.crewText}</p>
                         </div>
                       </div>
+
+                      {shootDetails.showExclusionsNote && (
+                        <div 
+                          className="w-full p-3 rounded-xl border text-center text-xs font-semibold shadow-2xs"
+                          style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}
+                        >
+                          <span className="opacity-90 font-medium">
+                            {shootDetails.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </section>
                 )}
@@ -541,6 +552,17 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
                               ₹{netTotal.toLocaleString('en-IN')}
                             </div>
                           </div>
+
+                          {pricingPage?.showExclusionsNote && (
+                            <div 
+                              className="w-full p-3 rounded-xl border text-center text-xs font-semibold shadow-2xs"
+                              style={{ backgroundColor: theme.boxBgColor, borderColor: theme.borderColor, color: theme.text }}
+                            >
+                              <span className="opacity-90 font-medium">
+                                {pricingPage.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                              </span>
+                            </div>
+                          )}
 
                           {pricingPage?.note && (
                             <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: theme.text, borderColor: theme.borderColor }}>

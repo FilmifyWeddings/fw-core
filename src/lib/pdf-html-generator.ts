@@ -582,6 +582,12 @@ Approx. 50 High Resolution Edited Images
                 </div>
               </div>
 
+              ${shootDetails.showExclusionsNote ? `
+                <div style="width:100%;max-width:520px;margin:12px auto;padding:10px 16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};font-size:11px;font-weight:600;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                  ${shootDetails.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                </div>
+              ` : ''}
+
               ${shootPhoto && shootDetails.frameShape !== 'background' ? bannerImgHTML : ''}
             </div>
 
@@ -907,6 +913,12 @@ Approx. 50 High Resolution Edited Images
                   <span style="font-family:Arial, sans-serif;">₹</span>${calc.netTotal.toLocaleString('en-IN')}
                 </div>
               </div>
+
+              ${pricingPage.showExclusionsNote ? `
+                <div style="width:100%;max-width:600px;margin:12px auto 0 auto;padding:10px 16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};font-size:11px;font-weight:600;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+                  ${pricingPage.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                </div>
+              ` : ''}
 
               ${noteHTML}
             </div>

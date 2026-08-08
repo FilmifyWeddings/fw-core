@@ -1707,6 +1707,18 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                         ))}
                     </div>
                   </div>
+
+                  {/* EXCLUSIONS CALLOUT BOX (BEFORE PHOTO) */}
+                  {data.shootDetails?.showExclusionsNote && (
+                    <div 
+                      className="w-full max-w-lg mx-auto my-3 p-3 rounded-xl border text-center text-xs font-semibold shadow-2xs transition-all"
+                      style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                    >
+                      <span className="opacity-90 font-medium">
+                        {data.shootDetails.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* BOTTOM FLUSH IMAGE POSITION */}
@@ -2246,6 +2258,17 @@ export default function QuotationDocumentCanvas({ documentData }: { documentData
                         ₹{pricingCalculated.netTotal.toLocaleString('en-IN')}
                       </div>
                     </div>
+
+                    {data.pricingPage?.showExclusionsNote && (
+                      <div 
+                        className="w-full max-w-xl mx-auto my-3 p-3 rounded-xl border text-center text-xs font-semibold shadow-2xs transition-all"
+                        style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
+                      >
+                        <span className="opacity-90 font-medium">
+                          {data.pricingPage.exclusionsNote || 'This excludes travel, accommodation, food & any add-on services.'}
+                        </span>
+                      </div>
+                    )}
 
                     {data.pricingPage?.note && (
                       <p className="text-xs italic leading-relaxed opacity-85 mt-4 pt-3 border-t max-w-xl text-center mx-auto whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" style={{ color: textColor, borderColor }}>
