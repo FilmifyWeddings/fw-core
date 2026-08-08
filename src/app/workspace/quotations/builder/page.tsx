@@ -4575,7 +4575,9 @@ function StudioCoreAiryBuilderContent() {
                 data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' 
                   ? 'px-0' 
                   : 'px-12'
-              } ${!data.specialValueAdditions?.ph                <div className={`flex flex-col items-center justify-center w-full ${data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+              } ${!data.specialValueAdditions?.photo ? 'justify-center items-center' : 'justify-between'}`}>
+                
+                <div className={`flex flex-col items-center justify-center w-full ${data.specialValueAdditions?.frameShape === 'full-width' || (data.specialValueAdditions?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                   <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
                     {data.specialValueAdditions?.kicker || 'COMPLIMENTARY GIFTS & BONUSES'}
                   </span>
@@ -5075,7 +5077,6 @@ function StudioCoreAiryBuilderContent() {
                               {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && (
                                 <SectionImageRenderer
                                   photo={data.termsPage.photo}
-                                  frameShape={data.termsPage.frameShape}     photo={data.termsPage.photo}
                                   frameShape={data.termsPage.frameShape}
                                   photoHeight={data.termsPage.photoHeight}
                                   photoWidth={data.termsPage.photoWidth}
