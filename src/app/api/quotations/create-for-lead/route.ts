@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Lead not found in database' }, { status: 404 });
     }
 
-    let sourceTemplateId = GLOBAL_SYSTEM_TEMPLATE_ID;
+    let sourceTemplateId = '';
     let templateDoc: any = null;
     let isSystemTemplate = false;
 
@@ -78,18 +78,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // If no explicit document found or no explicitTemplateId provided, resolve user default template
+    // REQUIREMENT 8: If no explicit document found or no explicitTemplateId provided, resolve user default template
     if (!templateDoc) {
-      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);
+      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId);
       sourceTemplateId = resolved.templateId;
       templateDoc = resolved.document || DEFAULT_AIRY_PROPOSAL;
       isSystemTemplate = resolved.isSystemTemplate;
     }
 
-    console.log('[LEAD QUOTATION] Resolved Source Template:', {
+    // REQUIREMENT 10: Temporary Runtime Debug Logging
+    console.log('[LEAD QUOTATION SOURCE]', {
       sourceTemplateId,
-      isSystemTemplate,
-      workspaceId
+      leadId,
+      workspaceId,
+      isSystemTemplate
     });
 
     // Deep clone document JSON and regenerate unique page IDs
@@ -131,6 +133,7 @@ export async function POST(req: NextRequest) {
         lead_id: leadId,
         workspace_id: workspaceId,
         user_id: userId,
+        source_template_id: sourceTemplateId,
         title,
         client_name: leadName,
         status: 'draft',

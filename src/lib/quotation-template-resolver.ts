@@ -28,7 +28,7 @@ export async function resolveUserDefaultQuotationTemplate(
   const targetWorkspace = workspaceId || userId || 'demo_user';
   const targetUser = userId || workspaceId || 'demo_user';
 
-  // 1. Rule A: If explicit requestedTemplateId is provided
+  // Rule A: If explicit requestedTemplateId is provided
   if (requestedTemplateId) {
     try {
       const { data: tmpl } = await supabaseAdmin
@@ -60,137 +60,86 @@ export async function resolveUserDefaultQuotationTemplate(
     }
   }
 
-  // 2. Rule B: Check active default_template_id stored in profiles or user_metadata
-  if (targetUser && targetUser !== 'demo_user') {
-    try {
-      let activeDefaultId: string | null = null;
+  // REQUIREMENT 5 & 6: STEP 1 — Find current user's personal default directly using identity without querying all defaults.
+  try {
+    const { data: personalDefault } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('*')
+      .or(`workspace_id.eq.${targetWorkspace},user_id.eq.${targetUser}`)
+      .eq('is_default', true)
+      .eq('is_system_template', false)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      // First check profiles table
-      const { data: prof } = await supabaseAdmin
-        .from('profiles')
-        .select('default_template_id')
-        .eq('id', targetUser)
+    if (personalDefault?.id) {
+      const { data: doc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('*')
+        .eq('template_id', personalDefault.id)
         .maybeSingle();
 
-      if (prof?.default_template_id) {
-        activeDefaultId = prof.default_template_id;
-      }
+      const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
 
-      // If not in profiles, check Auth user_metadata
-      if (!activeDefaultId) {
-        const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(targetUser);
-        activeDefaultId = userRec?.user?.user_metadata?.default_template_id || null;
-      }
+      // REQUIREMENT 10: Temporary Runtime Debug Logging
+      console.log('[LEAD DEFAULT RESOLUTION]', {
+        userId: targetUser,
+        workspaceId: targetWorkspace,
+        personalDefaultTemplateId: personalDefault.id,
+        personalDefaultTemplateUserId: personalDefault.user_id,
+        personalDefaultTemplateWorkspaceId: personalDefault.workspace_id,
+        isSystemTemplate: false,
+        resolutionReason: 'PERSONAL_WORKSPACE_DEFAULT'
+      });
 
-      if (activeDefaultId) {
-        const { data: tmpl } = await supabaseAdmin
-          .from('quotation_templates')
-          .select('*')
-          .eq('id', activeDefaultId)
-          .maybeSingle();
-
-        const { data: doc } = await supabaseAdmin
-          .from('quotation_documents')
-          .select('*')
-          .eq('template_id', activeDefaultId)
-          .maybeSingle();
-
-        const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
-
-        console.log('[Template Resolver] Resolved Active Default Template from Supabase DB/Metadata:', {
-          targetUser,
-          templateId: activeDefaultId,
-          title: tmpl?.title
-        });
-
-        return {
-          templateId: activeDefaultId,
-          template: tmpl || { id: activeDefaultId, title: 'Default Quotation Template', is_system_template: false, is_default: true },
-          document: docJson,
-          isSystemTemplate: !!tmpl?.is_system_template,
-          isDefault: true,
-          resolutionReason: 'ACTIVE_EXPLICIT_DEFAULT',
-        };
-      }
-    } catch (err) {
-      console.warn('[Template Resolver Warning] profiles/user_metadata lookup failed:', err);
-    }
-  }
-
-  // 3. Rule C: Query Supabase directly for templates where is_default = true
-  try {
-    const { data: defaultCandidates } = await supabaseAdmin
-      .from('quotation_templates')
-      .select('*')
-      .eq('is_default', true)
-      .order('updated_at', { ascending: false });
-
-    if (defaultCandidates && defaultCandidates.length > 0) {
-      // Find template matching target workspace or user
-      let matchedTmpl = defaultCandidates.find((t: any) =>
-        t.workspace_id === targetWorkspace || t.user_id === targetWorkspace || t.user_id === targetUser
-      );
-
-      // If no workspace-specific default found, fallback to any active system default template
-      if (!matchedTmpl) {
-        matchedTmpl = defaultCandidates.find((t: any) => t.is_system_template || t.user_id === 'SYSTEM');
-      }
-
-      if (!matchedTmpl) {
-        matchedTmpl = defaultCandidates[0];
-      }
-
-      if (matchedTmpl) {
-        const { data: doc } = await supabaseAdmin
-          .from('quotation_documents')
-          .select('*')
-          .eq('template_id', matchedTmpl.id)
-          .maybeSingle();
-
-        const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
-
-        console.log('[Template Resolver] Resolved Default Template from DB Candidates:', {
-          templateId: matchedTmpl.id,
-          title: matchedTmpl.title,
-          isSystem: matchedTmpl.is_system_template
-        });
-
-        return {
-          templateId: matchedTmpl.id,
-          template: matchedTmpl,
-          document: docJson,
-          isSystemTemplate: !!matchedTmpl.is_system_template,
-          isDefault: true,
-          resolutionReason: 'DB_CANDIDATE_DEFAULT',
-        };
-      }
+      return {
+        templateId: personalDefault.id,
+        template: personalDefault,
+        document: docJson,
+        isSystemTemplate: false,
+        isDefault: true,
+        resolutionReason: 'PERSONAL_WORKSPACE_DEFAULT',
+      };
     }
   } catch (err) {
-    console.error('[Template Resolver Error]: Failed to query default candidates:', err);
+    console.error('[Template Resolver Error] Personal default lookup failed:', err);
   }
 
-  // 4. Rule D: Fallback to System Default Template (FW-2WT85Y0)
+  // REQUIREMENT 7: STEP 2 — System Fallback ONLY when personal default does NOT exist.
   try {
-    const { data: sysTmpl } = await supabaseAdmin
+    // Attempt 1: Fetch marked active global system default template
+    const { data: sysCandidates } = await supabaseAdmin
       .from('quotation_templates')
       .select('*')
-      .eq('id', GLOBAL_SYSTEM_TEMPLATE_ID)
-      .maybeSingle();
+      .eq('is_system_template', true)
+      .order('is_default', { ascending: false })
+      .order('updated_at', { ascending: false });
+
+    const sysTmpl = (sysCandidates && sysCandidates.length > 0) ? sysCandidates[0] : null;
+    const sysId = sysTmpl?.id || GLOBAL_SYSTEM_TEMPLATE_ID;
 
     const { data: sysDoc } = await supabaseAdmin
       .from('quotation_documents')
       .select('*')
-      .eq('template_id', GLOBAL_SYSTEM_TEMPLATE_ID)
+      .eq('template_id', sysId)
       .maybeSingle();
 
     const docJson = sysDoc?.content_json || sysDoc?.document_json || DEFAULT_AIRY_PROPOSAL;
 
-    console.log('[Template Resolver] Fallback to Global System Template:', GLOBAL_SYSTEM_TEMPLATE_ID);
+    console.log('[LEAD DEFAULT RESOLUTION]', {
+      userId: targetUser,
+      workspaceId: targetWorkspace,
+      personalDefaultTemplateId: null,
+      personalDefaultTemplateUserId: null,
+      personalDefaultTemplateWorkspaceId: null,
+      isSystemTemplate: true,
+      resolutionReason: 'GLOBAL_SYSTEM_FALLBACK'
+    });
 
     return {
-      templateId: GLOBAL_SYSTEM_TEMPLATE_ID,
+      templateId: sysId,
       template: sysTmpl || {
-        id: GLOBAL_SYSTEM_TEMPLATE_ID,
+        id: sysId,
         title: 'System Default Wedding Template',
         is_system_template: true,
         is_default: false,
@@ -198,17 +147,17 @@ export async function resolveUserDefaultQuotationTemplate(
       document: docJson,
       isSystemTemplate: true,
       isDefault: false,
-      resolutionReason: 'SYSTEM_FALLBACK',
+      resolutionReason: 'GLOBAL_SYSTEM_FALLBACK',
     };
   } catch (err) {
-    console.error('[Template Resolver Error]: Failed to query system template:', err);
+    console.error('[Template Resolver Error] Global system fallback failed:', err);
     return {
       templateId: GLOBAL_SYSTEM_TEMPLATE_ID,
       template: { id: GLOBAL_SYSTEM_TEMPLATE_ID, title: 'System Default Wedding Template', is_system_template: true, is_default: false },
       document: DEFAULT_AIRY_PROPOSAL,
       isSystemTemplate: true,
       isDefault: false,
-      resolutionReason: 'SYSTEM_FALLBACK',
+      resolutionReason: 'GLOBAL_SYSTEM_FALLBACK',
     };
   }
 }
