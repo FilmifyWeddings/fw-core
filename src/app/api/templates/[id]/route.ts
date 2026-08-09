@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 });
 
-// GET /api/templates/[id] - Fetch single cloud document JSON
+// GET /api/templates/[id] - Fetch single cloud document JSON with Multi-Tenant Security & System Template Support
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -33,7 +33,18 @@ export async function GET(
       return NextResponse.json({ error: 'Template ID is required' }, { status: 400 });
     }
 
-    // 1. Check quotation_documents table first
+    const isSystemId = id === 'FW-37C63A54D4' || id === 'SYSTEM_DEFAULT_WEDDING' || id === 'SYSTEM_DEFAULT';
+
+    // 1. Check quotation_templates first to verify system template status
+    const { data: tmpl } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('id, user_id, is_system_template, is_default')
+      .eq('id', id)
+      .maybeSingle();
+
+    const isSystemTemplate = isSystemId || tmpl?.is_system_template || tmpl?.user_id === 'SYSTEM';
+
+    // 2. Query quotation_documents table
     let { data: doc, error: docErr } = await supabaseAdmin
       .from('quotation_documents')
       .select('*')
@@ -54,7 +65,7 @@ export async function GET(
       }
     }
 
-    // 2. Legacy fallback to quotations table if quotation_documents is not populated yet
+    // 3. Legacy fallback to quotations table if quotation_documents is not populated yet
     if (!doc) {
       const { data: legacy } = await supabaseAdmin
         .from('quotations')
@@ -63,7 +74,6 @@ export async function GET(
         .maybeSingle();
 
       if (legacy) {
-        // Hydrate doc format from legacy table
         doc = {
           id: legacy.id || id,
           template_id: legacy.quotation_number || id,
@@ -76,8 +86,11 @@ export async function GET(
     }
 
     if (doc) {
-      // Security User Isolation Check
-      if (userId && doc.user_id && doc.user_id !== userId && doc.user_id !== 'demo_user') {
+      // Security User Isolation Check: System templates are public-read; private user templates require ownership
+      const isOwner = userId && doc.user_id && (doc.user_id === userId || doc.user_id === 'demo_user');
+      const isSystemDoc = isSystemTemplate || doc.user_id === 'SYSTEM';
+
+      if (!isSystemDoc && !isOwner) {
         return NextResponse.json(
           { error: 'Access denied: You do not own this quotation template.', isForbidden: true },
           { status: 403 }
@@ -88,6 +101,7 @@ export async function GET(
         success: true,
         document: doc,
         version: doc.version || 1,
+        isSystemTemplate: isSystemDoc,
         userStudioName
       });
     }
@@ -95,6 +109,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       document: null,
+      isSystemTemplate: isSystemTemplate,
       message: 'Template not found, initialize fresh document.',
       userStudioName
     });
@@ -104,7 +119,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/templates/[id] - Save / Autosave cloud document JSON with Optimistic Locking & Versioning
+// PATCH /api/templates/[id] - Save cloud document JSON with System Template Auto-Cloning Guard
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -126,74 +141,96 @@ export async function PATCH(
       }
     }
 
-    // 1. Fetch current document to check optimistic concurrency lock
-    const { data: currentDoc } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('id, version, user_id')
-      .eq('template_id', id)
+    // 1. Fetch target template record to check ownership & system status
+    const { data: targetTmpl } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('id, user_id, is_system_template')
+      .eq('id', id)
       .maybeSingle();
 
-    if (currentDoc && currentDoc.user_id && currentDoc.user_id !== currentUserId && currentDoc.user_id !== 'demo_user') {
+    const isSystemTemplate = id === 'FW-37C63A54D4' || id === 'SYSTEM_DEFAULT_WEDDING' || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM';
+
+    let targetTemplateId = id;
+    let isAutoCloned = false;
+
+    // SYSTEM TEMPLATE MUTATION GUARD: Normal users editing system templates get an auto-cloned user-owned template
+    if (isSystemTemplate) {
+      targetTemplateId = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+      isAutoCloned = true;
+    } else if (targetTmpl && targetTmpl.user_id && targetTmpl.user_id !== currentUserId && targetTmpl.user_id !== 'demo_user') {
+      // User Isolation Guard for non-system templates
       return NextResponse.json(
         { error: 'Access denied: You cannot modify another user\'s template.', isForbidden: true },
         { status: 403 }
       );
     }
 
+    // 2. Fetch current document for optimistic concurrency locking
+    const { data: currentDoc } = await supabaseAdmin
+      .from('quotation_documents')
+      .select('id, version, user_id')
+      .eq('template_id', targetTemplateId)
+      .maybeSingle();
+
     const nextVersion = Math.max(currentDoc?.version || 0, expectedVersion || 0) + 1;
     const now = new Date().toISOString();
 
-    // 2. Ensure template record exists
+    const updatedContentJson = { ...content_json, id: targetTemplateId };
+
+    // 3. Upsert quotation_templates
     await supabaseAdmin
       .from('quotation_templates')
       .upsert({
-        id: id,
+        id: targetTemplateId,
         user_id: currentUserId,
-        title: content_json?.designName || 'Wedding - Design 1',
+        title: updatedContentJson?.designName || 'Wedding - Design 1',
+        is_system_template: false,
         updated_at: now
       }, { onConflict: 'id' });
 
-    // 3. Upsert quotation_documents
+    // 4. Upsert quotation_documents
     const docPayload = {
-      template_id: id,
+      template_id: targetTemplateId,
       user_id: currentUserId,
       version: nextVersion,
-      content_json: content_json,
+      content_json: updatedContentJson,
       updated_at: now
     };
 
-    const { data: savedDoc, error: docErr } = await supabaseAdmin
+    const { data: savedDoc } = await supabaseAdmin
       .from('quotation_documents')
       .upsert(docPayload, { onConflict: 'template_id' })
       .select()
       .maybeSingle();
 
-    // 4. Append row to quotation_versions audit table for undo / history
+    // 5. Append row to quotation_versions history
     if (savedDoc?.id) {
       await supabaseAdmin.from('quotation_versions').insert({
         document_id: savedDoc.id,
-        template_id: id,
+        template_id: targetTemplateId,
         user_id: currentUserId,
         version: nextVersion,
-        content_json: content_json,
+        content_json: updatedContentJson,
         created_at: now
       });
     }
 
-    // Also sync to legacy quotations table for full backwards compatibility
+    // 6. Also sync to legacy quotations table for full backwards compatibility
     await supabaseAdmin.from('quotations').upsert({
       workspace_id: currentUserId,
-      quotation_number: id,
-      title: content_json?.designName || 'Wedding - Design 1',
-      client_name: `${content_json?.cover?.groomName || 'Rahul'} & ${content_json?.cover?.brideName || 'Neha'}`,
-      content_json: content_json,
+      quotation_number: targetTemplateId,
+      title: updatedContentJson?.designName || 'Wedding - Design 1',
+      client_name: `${updatedContentJson?.cover?.groomName || 'Rahul'} & ${updatedContentJson?.cover?.brideName || 'Neha'}`,
+      content_json: updatedContentJson,
       status: 'draft',
       updated_at: now
     }, { onConflict: 'workspace_id,quotation_number' });
 
     return NextResponse.json({
       success: true,
-      message: 'Cloud document autosaved successfully.',
+      message: isAutoCloned ? 'System template cloned to personal workspace.' : 'Cloud document autosaved successfully.',
+      isAutoCloned,
+      newTemplateId: targetTemplateId,
       version: nextVersion,
       document: savedDoc || docPayload
     });
@@ -203,7 +240,7 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/templates/[id] - Delete template & document
+// DELETE /api/templates/[id] - Delete template & document with system template protection
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -213,16 +250,40 @@ export async function DELETE(
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
-    if (token) {
-      const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-      if (user) {
-        await supabaseAdmin
-          .from('quotation_templates')
-          .delete()
-          .eq('id', id)
-          .eq('user_id', user.id);
-      }
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: targetTmpl } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('id, user_id, is_system_template')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === 'FW-37C63A54D4') {
+      return NextResponse.json({ error: 'System templates cannot be deleted.' }, { status: 403 });
+    }
+
+    if (targetTmpl && targetTmpl.user_id !== user.id) {
+      return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+    }
+
+    await supabaseAdmin
+      .from('quotation_templates')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    await supabaseAdmin
+      .from('quotation_documents')
+      .delete()
+      .eq('template_id', id)
+      .eq('user_id', user.id);
 
     return NextResponse.json({ success: true, message: 'Template deleted successfully.' });
   } catch (err: any) {

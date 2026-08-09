@@ -26,6 +26,8 @@ interface SavedQuotation {
   status: string;
   updated_at: string;
   content_json?: any;
+  is_default?: boolean;
+  is_system_template?: boolean;
 }
 
 interface UserGalleryImage {
@@ -123,7 +125,43 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [activeCoverPhoto, setActiveCoverPhoto] = useState<string>('https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80');
   const [activeCoupleName, setActiveCoupleName] = useState<string>('Rahul & Neha');
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleSetAsDefault = async (targetQuote: SavedQuotation) => {
+    const targetId = targetQuote.quotation_number || targetQuote.id;
+    setSettingDefaultId(targetId);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/templates/${targetId}/set-default`, {
+        method: 'POST',
+        headers
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Failed to set default template');
+
+      setQuotations(prev => prev.map(q => {
+        const qId = q.quotation_number || q.id;
+        return {
+          ...q,
+          is_default: qId === targetId
+        };
+      }));
+
+      setToastMessage('Default quotation template updated');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err: any) {
+      console.error('[Set Default Error]:', err);
+      alert('Failed to set default: ' + (err.message || 'Unknown error'));
+    } finally {
+      setSettingDefaultId(null);
+    }
+  };
 
   const [userImages, setUserImages] = useState<UserGalleryImage[]>(() => {
     if (typeof window !== 'undefined') {
@@ -382,22 +420,17 @@ export default function WorkspaceQuotationsGalleryPage() {
           } catch {}
         }
 
-        // 1. Fetch user quotations metadata matching EXACT DB schema
-        const { data: qData, error: qErr } = await supabase
-          .from('quotations')
-          .select('id, title, client_name, quotation_number, financials, status, updated_at')
-          .eq('workspace_id', currentUserId)
+        // 1. Fetch user & system quotation templates from quotation_templates
+        const { data: tmplData } = await supabase
+          .from('quotation_templates')
+          .select('id, user_id, title, category, is_default, is_system_template, updated_at')
+          .or(`user_id.eq.${currentUserId},is_system_template.eq.true,user_id.eq.SYSTEM`)
           .order('updated_at', { ascending: false });
-
-        if (qErr) {
-          console.warn('[Quotations Fetch Warning]:', qErr.message);
-        }
 
         // 2. Fetch associated document content_json from quotation_documents (authoritative source)
         const { data: docsData } = await supabase
           .from('quotation_documents')
-          .select('template_id, content_json')
-          .eq('user_id', currentUserId);
+          .select('template_id, content_json, user_id');
 
         const docsMap: Record<string, any> = {};
         if (docsData) {
@@ -408,45 +441,73 @@ export default function WorkspaceQuotationsGalleryPage() {
           });
         }
 
+        // 3. Fetch user quotations from quotations table
+        const { data: qData } = await supabase
+          .from('quotations')
+          .select('id, title, client_name, quotation_number, financials, status, updated_at')
+          .eq('workspace_id', currentUserId)
+          .order('updated_at', { ascending: false });
+
+        const templateMap: Record<string, any> = {};
+        if (tmplData) {
+          tmplData.forEach(t => {
+            templateMap[t.id] = t;
+          });
+        }
+
+        let combined: SavedQuotation[] = [];
+
+        // Global System Default Wedding Template definition
+        const globalSystemTemplate: SavedQuotation = {
+          id: 'FW-37C63A54D4',
+          quotation_number: 'FW-37C63A54D4',
+          title: 'Default Wedding Template',
+          client_name: 'Rahul & Neha',
+          financials: {},
+          status: 'published',
+          is_system_template: true,
+          is_default: false,
+          updated_at: new Date().toISOString()
+        };
+
         if (qData && qData.length > 0) {
-          const hydratedQuotations: SavedQuotation[] = qData.map((q: any) => {
+          combined = qData.map((q: any) => {
             const qNum = q.quotation_number || q.id;
+            const tmplMeta = templateMap[qNum] || templateMap[q.id];
             return {
               ...q,
-              content_json: docsMap[qNum] || docsMap[q.id] || null
+              content_json: docsMap[qNum] || docsMap[q.id] || null,
+              is_default: tmplMeta?.is_default || false,
+              is_system_template: tmplMeta?.is_system_template || qNum === 'FW-37C63A54D4'
             };
           });
-          setQuotations(hydratedQuotations);
-          const primary = hydratedQuotations[0];
-          const primaryId = primary.quotation_number || primary.id;
-          setActiveQuotationId(primaryId);
+        }
 
-          if (primary.client_name) {
-            setActiveCoupleName(primary.client_name);
-          }
+        // Ensure Global System Default is included
+        if (!combined.some(q => (q.quotation_number || q.id) === 'FW-37C63A54D4')) {
+          combined.unshift(globalSystemTemplate);
+        }
 
-          if (primary.content_json?.cover?.photoUrl) {
-            setActiveCoverPhoto(primary.content_json.cover.photoUrl);
-          }
-        } else if (currentUserId && currentUserId !== 'demo_user') {
-          // DETERMINISTIC USER SINGLE ID: Prevents PC vs Mobile UUID mismatch
-          const userPrimaryId = `FW-${currentUserId.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10).toUpperCase()}`;
-          
-          const { data: newRow } = await supabase
-            .from('quotations')
-            .upsert({
-              workspace_id: currentUserId,
-              quotation_number: userPrimaryId,
-              title: 'Wedding - Design 1',
-              client_name: 'Rahul & Neha',
-              status: 'draft',
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'workspace_id,quotation_number' })
-            .select('id, quotation_number')
-            .maybeSingle();
+        // Check if any template has is_default = true; if none, default to global system template
+        const hasUserDefault = combined.some(q => q.is_default && !q.is_system_template);
+        if (!hasUserDefault) {
+          combined = combined.map(q => ({
+            ...q,
+            is_default: (q.quotation_number || q.id) === 'FW-37C63A54D4' || q.is_default
+          }));
+        }
 
-          const createdId = newRow?.quotation_number || newRow?.id || userPrimaryId;
-          setActiveQuotationId(createdId);
+        setQuotations(combined);
+        const primary = combined[0];
+        const primaryId = primary.quotation_number || primary.id;
+        setActiveQuotationId(primaryId);
+
+        if (primary.client_name) {
+          setActiveCoupleName(primary.client_name);
+        }
+
+        if (primary.content_json?.cover?.photoUrl) {
+          setActiveCoverPhoto(primary.content_json.cover.photoUrl);
         }
 
         const { data: imgData } = await supabase
@@ -710,9 +771,19 @@ export default function WorkspaceQuotationsGalleryPage() {
                       title={customTitle}
                       coupleName={clientName}
                     />
-                    <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm z-30">
-                      {idx === 0 ? 'Active' : 'Saved'}
+                    <span className={`absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm z-30 ${
+                      quote.is_system_template ? 'bg-amber-600/90' : 'bg-emerald-600/90'
+                    }`}>
+                      {quote.is_system_template ? 'System Preset' : (quote.is_default ? 'User Default' : (idx === 0 ? 'Active' : 'Saved'))}
                     </span>
+
+                    {/* Top-Right DEFAULT Badge */}
+                    {quote.is_default && (
+                      <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider shadow-md z-30 flex items-center gap-1 border border-amber-300">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        <span>DEFAULT</span>
+                      </span>
+                    )}
                   </div>
 
                   {/* Dynamic Custom Title & Base Preset Subtitle */}
@@ -721,7 +792,7 @@ export default function WorkspaceQuotationsGalleryPage() {
                       {customTitle}
                     </h4>
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium truncate">
-                      Royale • Wedding ({clientName})
+                      {quote.is_system_template ? 'Global Default Wedding' : `Royale • Wedding (${clientName})`}
                     </p>
                   </div>
                 </div>
@@ -758,12 +829,23 @@ export default function WorkspaceQuotationsGalleryPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-1.5">
+                    {/* Set as Default Button */}
                     <button 
                       type="button"
-                      onClick={() => router.push('/workspace/clients')}
-                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                      disabled={quote.is_default || settingDefaultId === quoteId}
+                      onClick={() => handleSetAsDefault(quote)}
+                      className={`px-2.5 py-1.5 rounded-xl border text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 ${
+                        quote.is_default
+                          ? 'border-amber-300 bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 font-extrabold cursor-default'
+                          : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-amber-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200'
+                      }`}
                     >
-                      Use for Lead
+                      {settingDefaultId === quoteId ? (
+                        <RefreshCw className="w-3 h-3 animate-spin text-amber-600" />
+                      ) : quote.is_default ? (
+                        <Check className="w-3 h-3 text-amber-600 stroke-[3]" />
+                      ) : null}
+                      <span>{quote.is_default ? 'Default' : 'Set Default'}</span>
                     </button>
 
                     <Link

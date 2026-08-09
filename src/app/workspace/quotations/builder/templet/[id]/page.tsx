@@ -2525,6 +2525,9 @@ function StudioCoreAiryBuilderContent() {
         if (resJson.version) {
           currentVersionRef.current = resJson.version;
         }
+        if (resJson.isAutoCloned && resJson.newTemplateId) {
+          window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
+        }
         cacheDocumentLocal(routeId, snapshotData, currentVersionRef.current);
       }
 
