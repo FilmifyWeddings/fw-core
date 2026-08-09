@@ -86,7 +86,11 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
     ...baseData,
     cover: {
       ...coverObj,
-      coupleName: displayCoupleName
+      coupleName: displayCoupleName,
+      photoUrl: coverObj.photoUrl || coverObj.photo || coverObj.imageUrl || '',
+      photo: coverObj.photo || coverObj.photoUrl || coverObj.imageUrl || '',
+      frameShape: coverObj.frameShape || ((coverObj.photo || coverObj.photoUrl || coverObj.imageUrl) ? 'background' : 'arch'),
+      bgOpacity: typeof coverObj.bgOpacity === 'number' ? coverObj.bgOpacity : 40
     }
   };
 

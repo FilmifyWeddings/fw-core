@@ -1229,7 +1229,14 @@ function normalizeQuotationData(loaded: any) {
   return {
     ...d,
     ...loaded,
-    cover: { ...(d?.cover || {}), ...(loaded.cover || {}) },
+    cover: {
+      ...(d?.cover || {}),
+      ...(loaded.cover || {}),
+      photoUrl: loaded.cover?.photoUrl || loaded.cover?.photo || loaded.cover?.imageUrl || d?.cover?.photoUrl || d?.cover?.photo || '',
+      photo: loaded.cover?.photo || loaded.cover?.photoUrl || loaded.cover?.imageUrl || d?.cover?.photo || d?.cover?.photoUrl || '',
+      frameShape: loaded.cover?.frameShape || ((loaded.cover?.photo || loaded.cover?.photoUrl || loaded.cover?.imageUrl) ? 'background' : 'arch'),
+      bgOpacity: typeof loaded.cover?.bgOpacity === 'number' ? loaded.cover.bgOpacity : (d?.cover?.bgOpacity ?? 40),
+    },
     aboutUs: { ...(d?.aboutUs || {}), ...(loaded.aboutUs || {}) },
     shootDetails: { ...(d?.shootDetails || {}), ...(loaded.shootDetails || {}) },
     functionsPage: {
@@ -1405,9 +1412,9 @@ export default function QuotationDocumentCanvas({
                     fontFamily: data.secondaryFont,
                   }}
                 >
-              {data.cover.photoUrl && data.cover.frameShape === 'background' && (
+              {(data.cover.photoUrl || data.cover.photo) && data.cover.frameShape === 'background' && (
                 <SectionImageRenderer
-                  photo={data.cover.photoUrl}
+                  photo={data.cover.photoUrl || data.cover.photo}
                   frameShape="background"
                   photoHeight={data.cover.photoHeight}
                   photoWidth={data.cover.photoWidth}
