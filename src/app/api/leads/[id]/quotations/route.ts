@@ -254,31 +254,47 @@ export async function GET(
     }
 
     // 2. Fetch all quotation documents linked to this lead_id
-    // Check top-level lead_id column or inside content_json->>'lead_id'
-    let { data: docs, error: docsErr } = await supabaseAdmin
+    const { data: allDocs } = await supabaseAdmin
       .from('quotation_documents')
-      .select('*')
-      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadId}%`);
+      .select('*');
 
-    if (!docs || docs.length === 0) {
-      // Fallback search by content_json JSON query
-      const { data: jsonDocs } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('*');
-      
-      if (jsonDocs) {
-        docs = jsonDocs.filter((d: any) => 
-          d.lead_id === leadId || 
-          d.content_json?.lead_id === leadId ||
-          (d.template_id && d.template_id.includes(leadId))
-        );
-      }
-    }
+    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-    const formattedQuotations = (docs || []).map((doc: any, idx: number) => {
+    const docs = (allDocs || []).filter((d: any) =>
+      d.lead_id === leadId ||
+      d.content_json?.lead_id === leadId ||
+      (d.template_id && (d.template_id.includes(leadId) || d.template_id.includes(leadShortId)))
+    );
+
+    const sortedByAge = [...(docs || [])].sort((a: any, b: any) =>
+      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+    );
+
+    const formattedQuotations = await Promise.all(sortedByAge.map(async (doc: any, idx: number) => {
       const content = doc.content_json || {};
-      const leadVer = doc.lead_version || content.lead_version || (docs!.length - idx);
-      const title = content.designName || `Wedding - Design 1`;
+      const explicitVer = doc.lead_version || content.lead_version || (doc.version > 1 ? doc.version : null);
+      const leadVer = (explicitVer && typeof explicitVer === 'number' && explicitVer > 0)
+        ? explicitVer
+        : (idx + 1);
+
+      let title = content.designName;
+
+      if (!title || title === 'Wedding - Design 1') {
+        const { data: qRec } = await supabaseAdmin
+          .from('quotations')
+          .select('title')
+          .or(`id.eq.${doc.template_id},quotation_number.eq.${doc.template_id}`)
+          .maybeSingle();
+
+        if (qRec?.title) {
+          title = qRec.title;
+        }
+      }
+
+      if (!title) {
+        title = lead.name || 'Wedding Quotation';
+      }
+
       return {
         id: doc.id,
         template_id: doc.template_id,
@@ -290,9 +306,9 @@ export async function GET(
         created_at: doc.created_at || new Date().toISOString(),
         content_json: content
       };
-    });
+    }));
 
-    // Sort versions descending: V3, V2, V1
+    // Sort versions descending for modal display: V3, V2, V1
     formattedQuotations.sort((a, b) => b.version - a.version);
 
     return NextResponse.json({

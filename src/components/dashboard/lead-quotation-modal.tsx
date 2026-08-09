@@ -171,9 +171,16 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
             ) : (
               <div className="space-y-2.5">
                 {quotations.map((q) => {
-                  const updatedDateStr = q.updated_at 
-                    ? new Date(q.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                    : 'Recent';
+                  const formatDateTime = (dateStr?: string) => {
+                    if (!dateStr) return 'Recent';
+                    const d = new Date(dateStr);
+                    if (isNaN(d.getTime())) return 'Recent';
+                    const datePart = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                    const timePart = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                    return `${datePart} • ${timePart}`;
+                  };
+
+                  const updatedDateStr = formatDateTime(q.updated_at || q.created_at);
 
                   return (
                     <div
@@ -186,11 +193,11 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                         </span>
                         <div className="min-w-0">
                           <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate">
-                            {q.title || 'Wedding - Design 1'}
+                            {q.title || 'Wedding Quotation'}
                           </h4>
                           <p className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1 mt-0.5">
                             <Calendar className="w-3 h-3 text-zinc-400" />
-                            <span>Updated: {updatedDateStr}</span>
+                            <span>{updatedDateStr}</span>
                           </p>
                         </div>
                       </div>
