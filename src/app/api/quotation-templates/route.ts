@@ -58,6 +58,27 @@ export async function GET(req: NextRequest) {
           }
         });
       }
+
+      // Fallback query to quotations table for missing content_json
+      const missingIds = templateIds.filter(id => !docsMap[id]);
+      if (missingIds.length > 0) {
+        try {
+          const { data: quoteDocs } = await supabaseAdmin
+            .from('quotations')
+            .select('id, quotation_number, content_json, canvas_data');
+
+          if (quoteDocs) {
+            quoteDocs.forEach((q: any) => {
+              const key = q.quotation_number || q.id;
+              if (key && missingIds.includes(key) && !docsMap[key]) {
+                docsMap[key] = q.content_json || q.canvas_data || null;
+              }
+            });
+          }
+        } catch (e) {
+          console.warn('[Fallback Quotation Docs Notice]:', e);
+        }
+      }
     }
 
     const hasAnyDefaultInDb = validTemplates.some(t => t.is_default);

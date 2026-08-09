@@ -40,7 +40,7 @@ interface UserGalleryImage {
   created_at: string;
 }
 
-// 1:1 ACTUAL FIRST PAGE DESIGN CARD THUMBNAIL PREVIEW
+// 1:1 ACTUAL FIRST PAGE DESIGN CARD THUMBNAIL PREVIEW (DYNAMIC FOR EACH TEMPLATE ID)
 function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJson?: any; title?: string; coupleName?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState<number>(0.28);
@@ -59,17 +59,34 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
     return () => window.removeEventListener('resize', updateScale);
   }, []);
 
-  const data = contentJson || {
+  const baseData = contentJson ? { ...contentJson } : {
+    look: 'cyprus-sand-dune',
     theme: 'cyprus-sand-dune',
     primaryFont: 'Cormorant Garamond',
     secondaryFont: 'Plus Jakarta Sans',
     designName: title || 'Wedding - Design 1',
     cover: {
-      coupleName: coupleName || 'RAHUL & NEHA',
+      coupleName: title || coupleName || 'RAHUL & NEHA',
       eventType: 'WEDDING',
       eventDate: 'DECEMBER 2026',
       location: 'MUMBAI',
       brandName: 'FILMIFY WEDDINGS'
+    }
+  };
+
+  const coverObj = baseData.cover || {};
+  const currentCoupleName = coverObj.coupleName;
+  const isGenericName = !currentCoupleName || currentCoupleName === 'RAHUL & NEHA' || currentCoupleName === 'Rahul & Neha';
+
+  const displayCoupleName = (isGenericName && title && title !== 'Wedding - Design 1' && title !== 'System Default Wedding Template')
+    ? title.toUpperCase()
+    : (currentCoupleName || title || coupleName || 'RAHUL & NEHA');
+
+  const data = {
+    ...baseData,
+    cover: {
+      ...coverObj,
+      coupleName: displayCoupleName
     }
   };
 
