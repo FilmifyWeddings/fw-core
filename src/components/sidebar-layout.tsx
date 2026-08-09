@@ -204,6 +204,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/team-manager') || 
     pathname.startsWith('/leads') ||
     pathname.startsWith('/workspace/quotations/builder') ||
+    pathname.startsWith('/admin/workspace/quotations/builder') ||
     pathname.startsWith('/p/quotation') ||
     pathname.startsWith('/pdf-preview') ||
     pathname.startsWith('/features') ||
