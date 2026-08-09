@@ -103,7 +103,25 @@ export async function POST(req: NextRequest) {
         .eq('id', quote.id);
     }
 
-    const origin = req.nextUrl?.origin || req.headers?.get('origin') || 'http://localhost:3000';
+    // Canonical Application Domain Resolution
+    const envAppUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || '').trim();
+    const xForwardedHost = req.headers?.get('x-forwarded-host');
+    const xForwardedProto = req.headers?.get('x-forwarded-proto');
+    const rawHost = xForwardedHost || req.headers?.get('host') || '';
+
+    let origin = 'https://test.studiocore.in';
+
+    if (envAppUrl && !envAppUrl.includes('localhost') && !envAppUrl.includes('ngrok')) {
+      origin = envAppUrl.replace(/\/$/, '');
+    } else if (rawHost && !rawHost.includes('localhost') && !rawHost.includes('127.0.0.1')) {
+      const proto = xForwardedProto || (rawHost.includes('localhost') ? 'http' : 'https');
+      origin = `${proto}://${rawHost.replace(/\/$/, '')}`;
+    } else if (envAppUrl) {
+      origin = envAppUrl.replace(/\/$/, '');
+    } else if (req.nextUrl?.origin) {
+      origin = req.nextUrl.origin;
+    }
+
     const publicUrl = `${origin}/p/quotation/${publicToken}`;
 
     console.log('[QUOTATION SEND LINK TRACE]', {

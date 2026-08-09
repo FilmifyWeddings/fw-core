@@ -156,15 +156,49 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   };
 
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportStatusText, setExportStatusText] = useState('');
 
   const handleDownloadPDF = async (q: QuotationVersionItem) => {
     const templateId = q.template_id;
     if (downloadingPdf === templateId) return;
 
     setDownloadingPdf(templateId);
+    setIsExportingPdf(true);
+    setExportProgress(15);
+    setExportStatusText('Fetching document snapshot...');
     setErrorMsg(null);
 
+    const progressTimer = setInterval(() => {
+      setExportProgress(prev => (prev < 90 ? prev + 15 : prev));
+    }, 200);
+
     try {
+      // 1. Fetch exact document snapshot if content_json is missing
+      let fullContent = q.content_json;
+      if (!fullContent) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const userAccessToken = session?.access_token;
+          const templateRes = await fetch(`/api/templates/${templateId}`, {
+            headers: {
+              'Authorization': `Bearer ${userAccessToken || ''}`
+            }
+          });
+          if (templateRes.ok) {
+            const templateJson = await templateRes.json();
+            fullContent = templateJson.document?.content_json || templateJson.document?.document_json || templateJson.document;
+          }
+        } catch (e) {
+          console.warn('[Snapshot fetch notice]:', e);
+        }
+      }
+
+      setExportProgress(45);
+      setExportStatusText('Generating Server-Side Vector PDF...');
+
+      // 2. Execute POST export-pdf with complete document snapshot payload
       const res = await fetch('/api/quotations/export-pdf', {
         method: 'POST',
         headers: {
@@ -173,9 +207,11 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
         body: JSON.stringify({
           templateId,
           filename: `${q.title || 'Quotation'}-${q.version_label || `V${q.version}`}.pdf`,
-          content_json: q.content_json
+          content_json: fullContent
         })
       });
+
+      clearInterval(progressTimer);
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
@@ -183,6 +219,9 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       }
 
       const blob = await res.blob();
+      setExportProgress(100);
+      setExportStatusText('100% Complete! Downloading PDF...');
+
       const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
@@ -190,12 +229,20 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
+
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 15000);
     } catch (err: any) {
+      clearInterval(progressTimer);
       console.error('[Download PDF Error]:', err);
       setErrorMsg(err.message || 'Network error while exporting PDF.');
     } finally {
-      setDownloadingPdf(null);
+      setTimeout(() => {
+        setIsExportingPdf(false);
+        setExportProgress(0);
+        setDownloadingPdf(null);
+      }, 1500);
     }
   };
 
@@ -446,6 +493,59 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                 </div>
               </motion.div>
             </div>
+          )}
+        </AnimatePresence>
+
+        {/* ── BUILDER-IDENTICAL PDF PROGRESS OVERLAY MODAL ── */}
+        <AnimatePresence>
+          {isExportingPdf && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[20000] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 10 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 10 }}
+                className="w-full max-w-sm bg-white dark:bg-[#141210] rounded-3xl p-6 border border-amber-500/30 shadow-[0_20px_60px_rgba(245,158,11,0.2)] text-center space-y-5"
+              >
+                <div className="flex items-center justify-center gap-2 text-amber-500 font-black text-xs uppercase tracking-widest">
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-500" />
+                  <span>Generating StudioCore Vector PDF...</span>
+                </div>
+
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium h-5">
+                  {exportStatusText}
+                </p>
+
+                {/* 4-Pill Segmented Progress Bar */}
+                <div className="flex items-center justify-center gap-2">
+                  {[1, 2, 3, 4].map((segmentIndex) => {
+                    const segmentProgress = Math.min(100, Math.max(0, (exportProgress - (segmentIndex - 1) * 25) * 4));
+                    return (
+                      <div
+                        key={segmentIndex}
+                        className="flex-1 h-3 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden relative border border-zinc-300/40 dark:border-zinc-700/40 shadow-inner"
+                      >
+                        <motion.div
+                          className="h-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.6)]"
+                          initial={{ width: '0%' }}
+                          animate={{ width: `${segmentProgress}%` }}
+                          transition={{ duration: 0.25, ease: 'easeInOut' }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
+                  <span>Progress</span>
+                  <span className="text-amber-500 font-extrabold text-sm">{exportProgress}%</span>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
 
