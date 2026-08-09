@@ -2060,7 +2060,7 @@ function StudioCoreAiryBuilderContent() {
   // Initialize device-specific zoom default & load saved preference
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+      const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
       const isMobile = window.innerWidth < 768;
       const key = isMobile ? `quotationZoom_mobile_${routeId}` : `quotationZoom_desktop_${routeId}`;
       const saved = localStorage.getItem(key);
@@ -2081,7 +2081,7 @@ function StudioCoreAiryBuilderContent() {
       const targetVal = typeof newScaleVal === 'function' ? newScaleVal(prev) : newScaleVal;
       const clamped = Number(Math.max(0.25, Math.min(1.5, targetVal)).toFixed(2));
       if (typeof window !== 'undefined') {
-        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+        const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
         const isMobile = window.innerWidth < 768;
         const key = isMobile ? `quotationZoom_mobile_${routeId}` : `quotationZoom_desktop_${routeId}`;
         try {
@@ -2310,7 +2310,7 @@ function StudioCoreAiryBuilderContent() {
         setUserId(currentUserId);
 
         // 1. Fetch via SaaS Template API with User Isolation Lock
-        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+        const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
         const res = await fetch(`/api/templates/${routeId}`, {
           headers: {
             'Authorization': `Bearer ${userAccessToken || ''}`
@@ -2384,7 +2384,7 @@ function StudioCoreAiryBuilderContent() {
 
   // ── 2. REALTIME WEBSOCKET SUBSCRIPTION & LOOP-FREE MULTI-DEVICE SYNC ──
   useEffect(() => {
-    const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+    const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
 
     const handleRemoteData = (remoteContent: any, remoteVersion?: number, senderId?: string, clientId?: string) => {
       // 1. Ignore self-broadcasts or self-changes
@@ -2503,7 +2503,7 @@ function StudioCoreAiryBuilderContent() {
 
       const { data: { session } } = await supabase.auth.getSession();
       const userAccessToken = session?.access_token;
-      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+      const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
 
       const saveRes = await fetch(`/api/templates/${routeId}`, {
         method: 'PATCH',

@@ -2282,60 +2282,10 @@ function StudioCoreAiryBuilderContent() {
         }
 
         setUserId(currentUserId);
-
-        // 1. Fetch via SaaS Template API with User Isolation Lock
-        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
-        const res = await fetch(`/api/templates/${routeId}`, {
-          headers: {
-            'Authorization': `Bearer ${userAccessToken || ''}`
-          }
-        });
-
-        if (res.status === 403) {
-          alert('Access Denied: You do not have permission to view or edit this quotation template.');
-          router.push('/workspace/quotations');
-          return;
-        }
-
-        const json = await res.json();
-        let loadedData: any = null;
-
-        if (json.document?.content_json) {
-          // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
-          loadedData = normalizeQuotationData(json.document.content_json);
-          currentVersionRef.current = json.document.version || 1;
-        } else {
-          // Fallback to local IndexedDB cache only if document does not exist on DB
-          const cachedLocal = await getCachedDocumentLocal(routeId);
-          if (cachedLocal) {
-            currentVersionRef.current = cachedLocal.version || 1;
-            loadedData = normalizeQuotationData(cachedLocal.documentJson);
-          }
-        }
-
-        if (!loadedData) {
-          loadedData = { ...DEFAULT_AIRY_PROPOSAL };
-        }
-
-        if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
-          loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
-        }
-
-        // Cache canonical state locally and hydrate editor
-        cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
-        try {
-          localStorage.setItem(`wg_proposal_draft_${currentUserId}`, JSON.stringify(loadedData));
-        } catch (e) {}
-
-        isRemoteUpdateRef.current = true;
-        setData(loadedData);
+        router.replace('/workspace/quotations/builder/templet/FW-2WT85Y0');
+        return;
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
-      } finally {
-        setTimeout(() => {
-          isInitialLoadedRef.current = true;
-          setAutoSaveStatus('Auto-saved to cloud');
-        }, 100);
       }
     }
     initUserAndLoadData();

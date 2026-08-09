@@ -3,42 +3,79 @@ import { supabase } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 
 /**
- * Authoritative Single Template Route (GET, PUT, DELETE)
+ * Authoritative Single Template Route (GET, PUT, PATCH, DELETE)
+ * Handles security checks, RLS workspace isolation, and system template auto-forking.
  */
-export async function GET(
+
+async function handleGet(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params;
 
-    // Fetch template metadata
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id || 'demo_user';
+
+    let workspaceId = userId;
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+    if (profile?.id) workspaceId = profile.id;
+
+    // 1. System Template (FW-2WT85Y0) is readable by all authenticated users
+    if (id === GLOBAL_SYSTEM_TEMPLATE_ID) {
+      const { data: sysTmpl } = await supabase
+        .from('quotation_templates')
+        .select('*')
+        .eq('id', GLOBAL_SYSTEM_TEMPLATE_ID)
+        .maybeSingle();
+
+      const { data: sysDoc } = await supabase
+        .from('quotation_documents')
+        .select('*')
+        .eq('template_id', GLOBAL_SYSTEM_TEMPLATE_ID)
+        .maybeSingle();
+
+      return NextResponse.json({
+        template: sysTmpl || { id: GLOBAL_SYSTEM_TEMPLATE_ID, title: 'System Default Wedding Template', is_system_template: true, is_default: false },
+        document: sysDoc?.document_json || { meta: { title: 'System Default Wedding Template', currency: 'INR' }, pages: [] }
+      });
+    }
+
+    // 2. Fetch User Template Metadata
     const { data: tmpl } = await supabase
       .from('quotation_templates')
       .select('*')
       .eq('id', id)
       .maybeSingle();
 
-    // Fetch template document
+    if (!tmpl) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
+    }
+
+    // 3. User Isolation Check — User A cannot view User B's private template
+    const isOwner = tmpl.is_system_template ||
+      tmpl.workspace_id === workspaceId ||
+      tmpl.user_id === userId ||
+      tmpl.user_id === 'SYSTEM' ||
+      tmpl.user_id === 'demo_user';
+
+    if (!isOwner) {
+      return NextResponse.json({ error: 'Access Denied: You do not have permission to view this quotation template.' }, { status: 403 });
+    }
+
+    // 4. Fetch Template Document
     const { data: doc } = await supabase
       .from('quotation_documents')
       .select('*')
       .eq('template_id', id)
       .maybeSingle();
 
-    if (!doc && !tmpl) {
-      // Return system default structure if FW-2WT85Y0 requested and not yet seeded
-      if (id === GLOBAL_SYSTEM_TEMPLATE_ID) {
-        return NextResponse.json({
-          template: { id: GLOBAL_SYSTEM_TEMPLATE_ID, title: 'System Default Wedding Template', is_system_template: true },
-          document: { meta: { title: 'System Default Wedding Template', currency: 'INR' }, pages: [] }
-        });
-      }
-      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
-    }
-
     return NextResponse.json({
-      template: tmpl || { id, title: 'Quotation Template', is_system_template: false },
+      template: tmpl,
       document: doc?.document_json || { meta: {}, pages: [] }
     });
   } catch (error: any) {
@@ -47,7 +84,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function handleUpdate(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -72,7 +109,9 @@ export async function PUT(
     if (profile?.id) workspaceId = profile.id;
 
     const body = await req.json().catch(() => ({}));
-    const { document, title, category } = body;
+    const document = body.content_json || body.document;
+    const title = body.title;
+    const category = body.category;
 
     // Check if target template is System Template (FW-2WT85Y0 or is_system_template)
     const { data: targetTmpl } = await supabase
@@ -85,7 +124,7 @@ export async function PUT(
 
     if (isSystemTemplate) {
       // RULE: User editing system template -> DO NOT update FW-2WT85Y0. Fork new user template and set as default!
-      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
       const newTemplateId = `FW-USER-${randomSuffix}`;
 
       // Reset is_default = false on user's existing templates
@@ -142,10 +181,16 @@ export async function PUT(
 
       return NextResponse.json({
         success: true,
+        isAutoCloned: true,
         redirected: true,
         newTemplateId,
         message: 'System template customized into your workspace default template.'
       });
+    }
+
+    // Security Check for user-owned template — verify ownership
+    if (targetTmpl && targetTmpl.workspace_id !== workspaceId && targetTmpl.user_id !== userId && targetTmpl.user_id !== 'demo_user') {
+      return NextResponse.json({ error: 'Access Denied: You cannot modify another user\'s template.' }, { status: 403 });
     }
 
     // Save directly to user-owned template
@@ -182,12 +227,15 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
+async function handleDelete(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id || 'demo_user';
 
     const { data: targetTmpl } = await supabase
       .from('quotation_templates')
@@ -198,6 +246,11 @@ export async function DELETE(
     // RULE: System template cannot be deleted
     if (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === GLOBAL_SYSTEM_TEMPLATE_ID) {
       return NextResponse.json({ error: 'System templates cannot be deleted.' }, { status: 400 });
+    }
+
+    // RULE: User A cannot delete User B's template
+    if (targetTmpl && targetTmpl.workspace_id !== userId && targetTmpl.user_id !== userId && targetTmpl.user_id !== 'demo_user') {
+      return NextResponse.json({ error: 'Access Denied: You cannot delete another user\'s template.' }, { status: 403 });
     }
 
     // RULE: Cannot delete current default template
@@ -217,3 +270,8 @@ export async function DELETE(
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
   }
 }
+
+export const GET = handleGet;
+export const PUT = handleUpdate;
+export const PATCH = handleUpdate;
+export const DELETE = handleDelete;
