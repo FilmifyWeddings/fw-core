@@ -1827,18 +1827,20 @@ function StudioCoreAiryBuilderContent() {
   const triggerInstantConfetti = () => {
     setShowConfetti(true);
     try {
+      const launchConfetti = () => {
+        if ((window as any).confetti) {
+          (window as any).confetti({ zIndex: 999999, particleCount: 100, spread: 80, origin: { x: 0.2, y: 0.5 } });
+          (window as any).confetti({ zIndex: 999999, particleCount: 100, spread: 80, origin: { x: 0.8, y: 0.5 } });
+          (window as any).confetti({ zIndex: 999999, particleCount: 120, spread: 100, origin: { x: 0.5, y: 0.4 } });
+        }
+      };
+
       if ((window as any).confetti) {
-        (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.2, y: 0.65 } });
-        (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.8, y: 0.65 } });
+        launchConfetti();
       } else {
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js';
-        script.onload = () => {
-          if ((window as any).confetti) {
-            (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.2, y: 0.65 } });
-            (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.8, y: 0.65 } });
-          }
-        };
+        script.onload = launchConfetti;
         document.body.appendChild(script);
       }
     } catch (e) {
@@ -6000,10 +6002,10 @@ function StudioCoreAiryBuilderContent() {
         </div>
       )}
 
-      {/* ── CELEBRATION CONFETTI ANIMATION (INSTANT DUAL CANNON BLAST) ── */}
+      {/* ── CELEBRATION CONFETTI ANIMATION (INSTANT DUAL CANNON BLAST OVERLAY) ── */}
       <AnimatePresence>
         {showConfetti && (
-          <div className="fixed inset-0 z-[25000] pointer-events-none overflow-hidden no-print">
+          <div className="fixed inset-0 z-[999999] pointer-events-none overflow-hidden no-print">
             {/* Left Cannon Blast */}
             {Array.from({ length: 45 }).map((_, i) => {
               const colors = ['#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#F43F5E', '#EAB308'];

@@ -198,16 +198,15 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       setExportProgress(45);
       setExportStatusText('Generating Server-Side Vector PDF...');
 
-      // 2. Execute POST export-pdf with complete document snapshot payload
-      const res = await fetch('/api/quotations/export-pdf', {
+      // 2. Execute POST /api/quotations/pdf (exact working builder pipeline)
+      const res = await fetch('/api/quotations/pdf', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           templateId,
-          filename: `${q.title || 'Quotation'}-${q.version_label || `V${q.version}`}.pdf`,
-          content_json: fullContent
+          documentJson: fullContent
         })
       });
 
