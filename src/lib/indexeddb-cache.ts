@@ -68,6 +68,17 @@ export async function getCachedDocumentLocal(templateId: string): Promise<{ docu
   }
 }
 
+export async function removeCachedDocumentLocal(templateId: string): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_DOCUMENTS, 'readwrite');
+    const store = tx.objectStore(STORE_DOCUMENTS);
+    store.delete(templateId);
+  } catch (err) {
+    console.warn('[IndexedDB] Failed to delete cached document:', err);
+  }
+}
+
 export async function queueOfflineMutation(templateId: string, payload: any): Promise<void> {
   try {
     const db = await openDB();

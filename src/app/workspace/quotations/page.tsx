@@ -13,6 +13,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
+import { removeCachedDocumentLocal } from '@/lib/indexeddb-cache';
 
 import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
@@ -331,6 +332,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       const token = session?.access_token;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (userEmail) headers['x-user-email'] = userEmail;
 
       const res = await fetch(`/api/templates/${targetId}`, {
         method: 'DELETE',
@@ -339,6 +341,11 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete template');
+
+      removeCachedDocumentLocal(targetId);
+      try {
+        localStorage.removeItem(`wg_proposal_draft_${targetId}`);
+      } catch (e) {}
 
       setQuotations(prev => {
         const next = prev.filter(q => (q.quotation_number || q.id) !== targetId);
