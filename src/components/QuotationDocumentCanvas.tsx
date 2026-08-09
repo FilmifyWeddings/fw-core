@@ -26,6 +26,17 @@ export interface PaymentTermStep {
   status: 'PENDING' | 'PAID';
 }
 
+export function resolveFunctionTitle(rawName?: string | null): string {
+  if (!rawName || typeof rawName !== 'string') return 'EVENT';
+  const parts = rawName
+    .split(' + ')
+    .map(s => s.trim())
+    .filter(s => Boolean(s) && s.toLowerCase() !== 'event');
+  
+  if (parts.length === 0) return 'EVENT';
+  return parts.join(' + ').toUpperCase();
+}
+
 export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = [
   { id: 'cover-std', type: 'cover', label: 'Cover Page' },
   { id: 'about-std', type: 'aboutUs', label: 'About Us' },
@@ -1842,7 +1853,7 @@ export default function QuotationDocumentCanvas({
                                         {/* Function Name & Timing Header */}
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-2" style={{ borderColor: borderColor || 'rgba(0,0,0,0.1)' }}>
                                           <h3 className="text-xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                                            {func.name || `Function ${globalIdx + 1}`}
+                                            {resolveFunctionTitle(func.name)}
                                           </h3>
                                           <div className="text-[10px] tracking-widest uppercase font-bold font-sans px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
                                             <Calendar className="w-3 h-3" />

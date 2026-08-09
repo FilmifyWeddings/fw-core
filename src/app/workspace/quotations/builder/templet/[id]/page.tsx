@@ -25,6 +25,7 @@ import { PDFDocument } from 'pdf-lib';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
+import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
@@ -1358,7 +1359,10 @@ function ThreeDCurvedFunctionEditor({
   onAddCustomDuration: (dur: string) => void;
   onAddCustomRequirement: (req: string) => void;
 }) {
-  const selectedEventNames = (func.name || '').split(' + ').map((s: any) => s.trim()).filter(Boolean);
+  const selectedEventNames = (func.name || '')
+    .split(' + ')
+    .map((s: any) => s.trim())
+    .filter((s: string) => Boolean(s) && s.toLowerCase() !== 'event');
 
   const toggleEventName = (evtName: string) => {
     let updated: string[];
@@ -1428,7 +1432,7 @@ function ThreeDCurvedFunctionEditor({
             {index + 1}
           </span>
           <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 drop-shadow-2xs">
-            Function #{index + 1} ({func.name || 'Event'})
+            Function #{index + 1} ({resolveFunctionTitle(func.name)})
           </h4>
         </div>
         <button
@@ -2030,6 +2034,15 @@ function StudioCoreAiryBuilderContent() {
     'Teaser Video (1-2 Min)',
     'Main Highlight Film (15-20 Min)',
   ]);
+
+  // Dynamically derived Deliverables options list (Single Source of Truth)
+  const dynamicDeliverablesMenu = (
+    Array.isArray(data?.deliverablesPage?.selectedItems) && data.deliverablesPage.selectedItems.length > 0
+      ? data.deliverablesPage.selectedItems
+      : (Array.isArray(data?.deliverablesPage?.availableOptions) && data.deliverablesPage.availableOptions.length > 0
+          ? data.deliverablesPage.availableOptions
+          : availableDeliverables)
+  ).filter(Boolean);
 
   // Functions Page Module Available Dropdown States
   const [availableFunctionNames, setAvailableFunctionNames] = useState<string[]>([
@@ -3024,10 +3037,24 @@ function StudioCoreAiryBuilderContent() {
               {/* 3D Curved UI Multi-Select Dropdown: Deliverables */}
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
-                availableOptions={availableDeliverables}
-                selectedText={data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 Countdown Reel\n1 Video Reel'}
+                availableOptions={dynamicDeliverablesMenu}
+                selectedText={data.shootDetails.deliverablesText || dynamicDeliverablesMenu.join('\n')}
                 onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: newText } })}
-                onAddCustomOption={(newItem) => setAvailableDeliverables(prev => Array.from(new Set([...prev, newItem])))}
+                onAddCustomOption={(newItem) => {
+                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
+                  const currentItems = currentObj.selectedItems || [];
+                  const currentOpts = currentObj.availableOptions || [];
+                  const updatedItems = currentItems.includes(newItem) ? currentItems : [...currentItems, newItem];
+                  const updatedOpts = currentOpts.includes(newItem) ? currentOpts : [...currentOpts, newItem];
+                  setData({
+                    ...data,
+                    deliverablesPage: {
+                      ...currentObj,
+                      selectedItems: updatedItems,
+                      availableOptions: updatedOpts
+                    }
+                  });
+                }}
               />
 
               {/* Yellow Theme Exclusions Note Control Box */}
@@ -3170,7 +3197,7 @@ function StudioCoreAiryBuilderContent() {
                       
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
-                availableOptions={data.deliverablesPage?.availableOptions || DEFAULT_AIRY_PROPOSAL.deliverablesPage.availableOptions}
+                availableOptions={dynamicDeliverablesMenu}
                 selectedText={(data.deliverablesPage?.selectedItems || DEFAULT_AIRY_PROPOSAL.deliverablesPage.selectedItems).join('\n')}
                 onChangeSelectedText={(newText) => {
                   const arr = newText.split('\n').map((s: any) => s.trim()).filter(Boolean);
@@ -3179,16 +3206,18 @@ function StudioCoreAiryBuilderContent() {
                 }}
                 onAddCustomOption={(newItem) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
-                  const opts = currentObj.availableOptions || [];
-                  if (!opts.includes(newItem)) {
-                    setData({
-                      ...data,
-                      deliverablesPage: {
-                        ...currentObj,
-                        availableOptions: [...opts, newItem]
-                      }
-                    });
-                  }
+                  const currentItems = currentObj.selectedItems || [];
+                  const currentOpts = currentObj.availableOptions || [];
+                  const updatedItems = currentItems.includes(newItem) ? currentItems : [...currentItems, newItem];
+                  const updatedOpts = currentOpts.includes(newItem) ? currentOpts : [...currentOpts, newItem];
+                  setData({
+                    ...data,
+                    deliverablesPage: {
+                      ...currentObj,
+                      selectedItems: updatedItems,
+                      availableOptions: updatedOpts
+                    }
+                  });
                 }}
               />
 
@@ -4598,7 +4627,7 @@ function StudioCoreAiryBuilderContent() {
                                         {/* Function Name & Timing Header */}
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-2" style={{ borderColor: borderColor || 'rgba(0,0,0,0.1)' }}>
                                           <h3 className="text-xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                                            {func.name || `Function ${globalIdx + 1}`}
+                                            {resolveFunctionTitle(func.name)}
                                           </h3>
                                           <div className="text-[10px] tracking-widest uppercase font-bold font-sans px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
                                             <Calendar className="w-3 h-3" />
