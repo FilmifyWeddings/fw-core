@@ -126,6 +126,9 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [activeCoupleName, setActiveCoupleName] = useState<string>('Rahul & Neha');
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
+  const [cloningGlobalId, setCloningGlobalId] = useState<string | null>(null);
+  const [deletingQuote, setDeletingQuote] = useState<SavedQuotation | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleSetAsDefault = async (targetQuote: SavedQuotation) => {
@@ -163,6 +166,82 @@ export default function WorkspaceQuotationsGalleryPage() {
     }
   };
 
+  const handleEditTemplate = async (quote: SavedQuotation) => {
+    const quoteId = quote.quotation_number || quote.id;
+
+    if (quote.is_system_template || quoteId === 'FW-37C63A54D4' || quoteId === 'SYSTEM_DEFAULT_WEDDING') {
+      setCloningGlobalId(quoteId);
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/templates/duplicate', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ sourceTemplateId: quoteId })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to initialize user template');
+
+        const newId = data.newTemplateId;
+        router.push(`/workspace/quotations/builder/templet/${newId}`);
+      } catch (err: any) {
+        console.error('[Edit Global Template Error]:', err);
+        alert('Could not prepare template: ' + (err.message || 'Unknown error'));
+      } finally {
+        setCloningGlobalId(null);
+      }
+    } else {
+      router.push(`/workspace/quotations/builder/templet/${quoteId}`);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingQuote) return;
+    const targetId = deletingQuote.quotation_number || deletingQuote.id;
+    setIsDeleting(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/templates/${targetId}`, {
+        method: 'DELETE',
+        headers
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete template');
+
+      setQuotations(prev => {
+        const next = prev.filter(q => (q.quotation_number || q.id) !== targetId);
+        const hasUserDefault = next.some(q => q.is_default && !q.is_system_template);
+        if (!hasUserDefault) {
+          return next.map(q => ({
+            ...q,
+            is_default: (q.quotation_number || q.id) === 'FW-37C63A54D4' || q.is_default
+          }));
+        }
+        return next;
+      });
+
+      setToastMessage('Template deleted successfully');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err: any) {
+      console.error('[Delete Error]:', err);
+      alert('Delete failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsDeleting(false);
+      setDeletingQuote(null);
+    }
+  };
+
   const [userImages, setUserImages] = useState<UserGalleryImage[]>(() => {
     if (typeof window !== 'undefined') {
       for (let i = 0; i < localStorage.length; i++) {
@@ -193,135 +272,30 @@ export default function WorkspaceQuotationsGalleryPage() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const currentUserId = session?.user?.id || userId || 'demo_user';
+      const token = session?.access_token;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      // 1. Fetch full source document content_json from quotation_documents
-      let sourceContentJson = sourceQuote.content_json;
-      if (!sourceContentJson) {
-        const { data: docData } = await supabase
-          .from('quotation_documents')
-          .select('content_json')
-          .eq('template_id', sourceId)
-          .maybeSingle();
-        sourceContentJson = docData?.content_json;
-      }
-      if (!sourceContentJson) {
-        const { data: qDoc } = await supabase
-          .from('quotation_documents')
-          .select('content_json')
-          .eq('user_id', currentUserId)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        sourceContentJson = qDoc?.content_json;
-      }
-      if (!sourceContentJson) {
-        sourceContentJson = {
-          theme: 'cyprus-sand-dune',
-          primaryFont: 'Cormorant Garamond',
-          secondaryFont: 'Plus Jakarta Sans',
-          designName: sourceQuote.title || 'Wedding - Design 1',
-          cover: {
-            coupleName: sourceQuote.client_name || 'Rahul & Neha',
-            eventType: 'WEDDING',
-            eventDate: 'DECEMBER 2026',
-            location: 'MUMBAI',
-            brandName: 'FILMIFY WEDDINGS'
-          }
-        };
-      }
-
-      // 2. COMPLETE DEEP CLONE (Structured clone, no shared mutable references)
-      const clonedJson = typeof structuredClone === 'function' 
-        ? structuredClone(sourceContentJson) 
-        : JSON.parse(JSON.stringify(sourceContentJson));
-
-      // 3. Generate NEW Unique Design ID & NEW Page IDs
-      const newDesignId = 'FW-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-      clonedJson.id = newDesignId;
-
-      if (Array.isArray(clonedJson.pageSequence)) {
-        clonedJson.pageSequence = clonedJson.pageSequence.map((p: any) => ({
-          ...p,
-          id: 'page_' + Math.random().toString(36).substring(2, 9)
-        }));
-      }
-
-      if (Array.isArray(clonedJson.customPages)) {
-        clonedJson.customPages = clonedJson.customPages.map((cp: any) => ({
-          ...cp,
-          id: 'cpage_' + Math.random().toString(36).substring(2, 9)
-        }));
-      }
-
-      // 4. Generate Unique Title
-      const existingNames = quotations.map(q => q.title).filter(Boolean);
-      const uniqueTitle = generateUniqueCopyName(sourceQuote.title || clonedJson.designName || 'Wedding - Design 1', existingNames);
-      clonedJson.designName = uniqueTitle;
-
-      const now = new Date().toISOString();
-
-      // 5. Persist independent database records in Supabase matching CURRENT SCHEMA
-      // Note: quotations table does NOT have content_json column
-      const { data: newQuote, error: insertErr } = await supabase
-        .from('quotations')
-        .insert({
-          workspace_id: currentUserId,
-          quotation_number: newDesignId,
-          title: uniqueTitle,
-          client_name: sourceQuote.client_name || `${clonedJson?.cover?.coupleName || 'Rahul & Neha'}`,
-          financials: sourceQuote.financials || {},
-          status: 'draft',
-          created_at: now,
-          updated_at: now
-        })
-        .select()
-        .single();
-
-      if (insertErr) throw insertErr;
-
-      // Save template metadata into quotation_templates
-      await supabase.from('quotation_templates').insert({
-        id: newDesignId,
-        user_id: currentUserId,
-        title: uniqueTitle,
-        category: clonedJson?.eventGroup || 'Wedding',
-        created_at: now,
-        updated_at: now
+      const res = await fetch('/api/templates/duplicate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ sourceTemplateId: sourceId })
       });
 
-      // Save document JSON into quotation_documents (authoritative source for content_json)
-      const { data: newDoc } = await supabase.from('quotation_documents').insert({
-        template_id: newDesignId,
-        user_id: currentUserId,
-        version: 1,
-        content_json: clonedJson,
-        created_at: now,
-        updated_at: now
-      }).select().single();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Duplication failed');
 
-      // Save initial version into quotation_versions
-      if (newDoc?.id) {
-        await supabase.from('quotation_versions').insert({
-          document_id: newDoc.id,
-          template_id: newDesignId,
-          user_id: currentUserId,
-          version: 1,
-          content_json: clonedJson,
-          created_at: now
-        });
-      }
-
-      // 6. Insert new design card IMMEDIATELY AFTER the original in the array
       const duplicatedRecord: SavedQuotation = {
-        id: newQuote?.id || newDesignId,
-        quotation_number: newDesignId,
-        title: uniqueTitle,
-        client_name: sourceQuote.client_name || 'Rahul & Neha',
+        id: data.newTemplateId,
+        quotation_number: data.newTemplateId,
+        title: data.quotation?.title || `${sourceQuote.title} Copy`,
+        client_name: data.quotation?.client_name || sourceQuote.client_name || 'Rahul & Neha',
         financials: sourceQuote.financials || {},
-        content_json: clonedJson,
+        content_json: data.document?.content_json || data.quotation?.content_json,
         status: 'draft',
-        updated_at: now
+        is_default: false,
+        is_system_template: false,
+        updated_at: new Date().toISOString()
       };
 
       setQuotations(prev => {
@@ -334,13 +308,11 @@ export default function WorkspaceQuotationsGalleryPage() {
         return [duplicatedRecord, ...prev];
       });
 
-      // Toast notification
       setToastMessage('Design duplicated successfully');
       setTimeout(() => setToastMessage(null), 3000);
-
     } catch (err: any) {
       console.error('[Duplicate Error]:', err);
-      alert('Duplication failed: ' + (err?.message || 'Unknown database error'));
+      alert('Duplication failed: ' + (err?.message || 'Unknown error'));
     } finally {
       setDuplicatingId(null);
     }
@@ -779,10 +751,22 @@ export default function WorkspaceQuotationsGalleryPage() {
 
                     {/* Top-Right DEFAULT Badge */}
                     {quote.is_default && (
-                      <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider shadow-md z-30 flex items-center gap-1 border border-amber-300">
+                      <span className={`absolute top-2.5 ${!quote.is_system_template && quoteId !== 'FW-37C63A54D4' ? 'right-9' : 'right-2.5'} px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider shadow-md z-30 flex items-center gap-1 border border-amber-300`}>
                         <Sparkles className="w-2.5 h-2.5" />
                         <span>DEFAULT</span>
                       </span>
+                    )}
+
+                    {/* Top-Right Delete Button for User-Owned Templates ONLY */}
+                    {!quote.is_system_template && quoteId !== 'FW-37C63A54D4' && (
+                      <button
+                        type="button"
+                        title="Delete Template"
+                        onClick={() => setDeletingQuote(quote)}
+                        className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-white/90 dark:bg-zinc-800/90 text-slate-500 hover:text-red-600 dark:hover:text-red-400 shadow-md backdrop-blur-xs transition-colors z-30 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
 
@@ -801,10 +785,14 @@ export default function WorkspaceQuotationsGalleryPage() {
                   <div className="grid grid-cols-2 gap-1.5">
                     <button 
                       type="button"
-                      onClick={() => router.push(`/workspace/quotations/builder/templet/${quoteId}`)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
+                      disabled={cloningGlobalId === quoteId}
+                      onClick={() => handleEditTemplate(quote)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1"
                     >
-                      Preview
+                      {cloningGlobalId === quoteId ? (
+                        <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
+                      ) : null}
+                      <span>Preview</span>
                     </button>
                     
                     {/* Instant Duplication placed immediately after original design */}
@@ -848,12 +836,17 @@ export default function WorkspaceQuotationsGalleryPage() {
                       <span>{quote.is_default ? 'Default' : 'Set Default'}</span>
                     </button>
 
-                    <Link
-                      href={`/workspace/quotations/builder/templet/${quoteId}`}
-                      className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center block shadow-sm hover:brightness-105 transition-all"
+                    <button
+                      type="button"
+                      disabled={cloningGlobalId === quoteId}
+                      onClick={() => handleEditTemplate(quote)}
+                      className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center flex items-center justify-center gap-1 shadow-sm hover:brightness-105 transition-all cursor-pointer"
                     >
-                      Edit
-                    </Link>
+                      {cloningGlobalId === quoteId ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : null}
+                      <span>Edit</span>
+                    </button>
                   </div>
                 </div>
               </motion.div>
@@ -1152,6 +1145,57 @@ export default function WorkspaceQuotationsGalleryPage() {
         onClose={() => setShowGalleryModal(false)} 
         userId={userId} 
       />
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deletingQuote && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4"
+            >
+              <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
+                <div className="p-2.5 rounded-full bg-red-50 dark:bg-red-950/50">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Delete Template?</h3>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
+                Are you sure you want to delete <span className="font-extrabold text-slate-900 dark:text-white">"{deletingQuote.title}"</span>? This template will be permanently removed from your workspace. Existing client quotations created from it will remain intact.
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setDeletingQuote(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Delete Template</span>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Floating Toast Notification */}
       <AnimatePresence>

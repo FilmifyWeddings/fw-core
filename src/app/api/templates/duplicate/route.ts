@@ -93,7 +93,28 @@ export async function POST(req: NextRequest) {
         .select('content_json, title')
         .or(`id.eq.${sourceTemplateId},quotation_number.eq.${sourceTemplateId}`)
         .maybeSingle();
-      sourceJson = legacy?.content_json || {};
+      sourceJson = legacy?.content_json || null;
+    }
+
+    if (!sourceJson || Object.keys(sourceJson).length === 0) {
+      const { data: globalDoc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('content_json')
+        .eq('template_id', 'FW-37C63A54D4')
+        .maybeSingle();
+      sourceJson = globalDoc?.content_json || {
+        theme: 'cyprus-sand-dune',
+        primaryFont: 'Cormorant Garamond',
+        secondaryFont: 'Plus Jakarta Sans',
+        designName: sourceTmpl?.title || 'Wedding - Design 1',
+        cover: {
+          coupleName: 'Rahul & Neha',
+          eventType: 'WEDDING',
+          eventDate: 'DECEMBER 2026',
+          location: 'MUMBAI',
+          brandName: 'FILMIFY WEDDINGS'
+        }
+      };
     }
 
     const baseTitle = sourceTmpl?.title || sourceJson?.designName || 'Wedding - Design 1';
