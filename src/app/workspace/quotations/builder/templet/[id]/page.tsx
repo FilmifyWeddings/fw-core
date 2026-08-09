@@ -1123,8 +1123,6 @@ function ThreeDCurvedDatePicker({
   disabled: boolean;
   onChange: (val: string) => void;
 }) {
-  const hiddenDateInputRef = useRef<HTMLInputElement>(null);
-
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
     if (!rawVal) return;
@@ -1139,43 +1137,20 @@ function ThreeDCurvedDatePicker({
   };
 
   return (
-    <div className="relative">
-      <input
-        type="text"
-        disabled={disabled}
-        value={disabled ? 'DATE NOT FIXED' : value}
-        placeholder="e.g. 4 MAR 26"
-        onChange={(e) => onChange(e.target.value)}
-        className={`w-full p-2.5 pr-10 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs transition-all ${
-          disabled ? 'opacity-60 bg-zinc-100 cursor-not-allowed' : ''
-        }`}
-      />
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => {
-          if (hiddenDateInputRef.current) {
-            if ('showPicker' in hiddenDateInputRef.current && typeof (hiddenDateInputRef.current as any).showPicker === 'function') {
-              (hiddenDateInputRef.current as any).showPicker();
-            } else {
-              hiddenDateInputRef.current.click();
-            }
-          }
-        }}
-        className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-amber-600 hover:bg-amber-100 transition-colors ${
-          disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
-        }`}
-        title="Open 3D Calendar Date Picker"
-      >
-        <Calendar className="w-4 h-4 text-amber-600" />
-      </button>
+    <div className={`relative w-full rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 shadow-2xs transition-all overflow-hidden flex items-center justify-between p-2.5 ${disabled ? 'opacity-60 bg-zinc-100 cursor-not-allowed' : 'cursor-pointer hover:border-amber-300'}`}>
+      <span className="text-xs font-bold uppercase truncate select-none">
+        {disabled ? 'DATE NOT FIXED' : (value || 'Select Date...')}
+      </span>
+      <Calendar className="w-4 h-4 text-amber-600 shrink-0 ml-2 select-none" />
 
-      <input
-        ref={hiddenDateInputRef}
-        type="date"
-        className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none"
-        onChange={handleDateInputChange}
-      />
+      {!disabled && (
+        <input
+          type="date"
+          onChange={handleDateInputChange}
+          className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer"
+          style={{ fontSize: '16px' }}
+        />
+      )}
     </div>
   );
 }
@@ -1189,8 +1164,6 @@ function ThreeDCurvedTimePicker({
   value: string;
   onChange: (val: string) => void;
 }) {
-  const hiddenTimeRef = useRef<HTMLInputElement>(null);
-
   const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawTime = e.target.value;
     if (!rawTime) return;
@@ -1205,37 +1178,20 @@ function ThreeDCurvedTimePicker({
 
   return (
     <div className="space-y-1">
-      <label className="block text-[10px] uppercase font-bold text-zinc-500">{label}</label>
-      <div className="relative flex items-center">
-        <button
-          type="button"
-          onClick={() => {
-            if (hiddenTimeRef.current) {
-              if ('showPicker' in hiddenTimeRef.current && typeof (hiddenTimeRef.current as any).showPicker === 'function') {
-                (hiddenTimeRef.current as any).showPicker();
-              } else {
-                hiddenTimeRef.current.click();
-              }
-            }
-          }}
-          className="absolute left-2.5 p-1 rounded-md text-amber-600 hover:bg-amber-100 transition-colors cursor-pointer z-10"
-          title="Open 24-Hour Clock Picker"
-        >
-          <Clock className="w-3.5 h-3.5 text-amber-600" />
-        </button>
+      {label && <label className="block text-[10px] uppercase font-bold text-zinc-500">{label}</label>}
+      <div className="relative w-full rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 shadow-2xs transition-all overflow-hidden flex items-center justify-between p-2.5 cursor-pointer hover:border-amber-300">
+        <div className="flex items-center gap-1.5 truncate">
+          <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 select-none" />
+          <span className="text-xs font-bold uppercase truncate select-none">
+            {value || 'Select Time...'}
+          </span>
+        </div>
         <input
-          type="text"
-          value={value}
-          placeholder="10:00 AM"
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full p-2 pl-9 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs"
-        />
-        <input
-          ref={hiddenTimeRef}
           type="time"
           step="900"
-          className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none"
           onChange={handleTimeChange}
+          className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer"
+          style={{ fontSize: '16px' }}
         />
       </div>
     </div>
@@ -1245,18 +1201,18 @@ function ThreeDCurvedTimePicker({
 function ThreeDCurvedMultiSelect({
   title,
   availableOptions,
-  selectedText,
-  onChangeSelectedText,
+  selectedItems,
+  onChangeSelectedItems,
   onAddCustomOption,
+  onDeleteOption,
 }: {
   title: string;
   availableOptions: string[];
-  selectedText: string;
-  onChangeSelectedText: (newText: string) => void;
+  selectedItems: string[];
+  onChangeSelectedItems: (newSelectedItems: string[]) => void;
   onAddCustomOption: (newItem: string) => void;
+  onDeleteOption?: (itemToDelete: string) => void;
 }) {
-  const selectedItems = (selectedText || '').split('\n').map((s: any) => s.trim()).filter(Boolean);
-
   const toggleItem = (item: string) => {
     let newSelected: string[];
     if (selectedItems.includes(item)) {
@@ -1264,7 +1220,7 @@ function ThreeDCurvedMultiSelect({
     } else {
       newSelected = [...selectedItems, item];
     }
-    onChangeSelectedText(newSelected.join('\n'));
+    onChangeSelectedItems(newSelected);
   };
 
   const handleAdd = () => {
@@ -1272,7 +1228,6 @@ function ThreeDCurvedMultiSelect({
     if (newItem && newItem.trim()) {
       const trimmed = newItem.trim();
       onAddCustomOption(trimmed);
-      toggleItem(trimmed);
     }
   };
 
@@ -1293,31 +1248,53 @@ function ThreeDCurvedMultiSelect({
       </div>
 
       <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-        {availableOptions.map((item: any) => {
-          const isSelected = selectedItems.includes(item);
-          return (
-            <div
-              key={item}
-              onClick={() => toggleItem(item)}
-              className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                isSelected
-                  ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
-                  : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100/80'
-              }`}
-            >
-              <span className="leading-tight select-none pr-2">{item}</span>
+        {availableOptions.length === 0 ? (
+          <div className="text-[11px] text-zinc-400 italic p-2 text-center">No options available. Click + Add to create one.</div>
+        ) : (
+          availableOptions.map((item: any) => {
+            const isSelected = selectedItems.includes(item);
+            return (
               <div
-                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                key={item}
+                className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold transition-all group ${
                   isSelected
-                    ? 'border-amber-600 bg-amber-600 text-white'
-                    : 'border-zinc-300 bg-white'
+                    ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                    : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100/80'
                 }`}
               >
-                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                <div 
+                  onClick={() => toggleItem(item)}
+                  className="flex-1 flex items-center justify-between cursor-pointer pr-2"
+                >
+                  <span className="leading-tight select-none">{item}</span>
+                  <div
+                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                      isSelected
+                        ? 'border-amber-600 bg-amber-600 text-white'
+                        : 'border-zinc-300 bg-white'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                </div>
+
+                {onDeleteOption && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteOption(item);
+                    }}
+                    className="opacity-40 hover:opacity-100 p-1 text-rose-500 hover:text-rose-700 transition-opacity ml-1 rounded-md cursor-pointer"
+                    title={`Delete ${item}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -3029,17 +3006,24 @@ function StudioCoreAiryBuilderContent() {
               <ThreeDCurvedMultiSelect
                 title="Requirements"
                 availableOptions={availableRequirements}
-                selectedText={data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room'}
-                onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, crewText: newText } })}
+                selectedItems={(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room').split('\n').map((s: string) => s.trim()).filter(Boolean)}
+                onChangeSelectedItems={(newSelected) => setData({ ...data, shootDetails: { ...data.shootDetails, crewText: newSelected.join('\n') } })}
                 onAddCustomOption={(newItem) => setAvailableRequirements(prev => Array.from(new Set([...prev, newItem])))}
               />
 
               {/* 3D Curved UI Multi-Select Dropdown: Deliverables */}
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
-                availableOptions={dynamicDeliverablesMenu}
-                selectedText={data.shootDetails.deliverablesText || dynamicDeliverablesMenu.join('\n')}
-                onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: newText } })}
+                availableOptions={Array.from(new Set([
+                  ...(data.deliverablesPage?.availableOptions || DEFAULT_AIRY_PROPOSAL.deliverablesPage.availableOptions),
+                  ...(data.deliverablesPage?.selectedItems || [])
+                ])).filter(Boolean)}
+                selectedItems={
+                  data.shootDetails.deliverablesText
+                    ? data.shootDetails.deliverablesText.split('\n').map((s: string) => s.trim()).filter(Boolean)
+                    : (data.deliverablesPage?.selectedItems || [])
+                }
+                onChangeSelectedItems={(newSelectedArr) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: newSelectedArr.join('\n') } })}
                 onAddCustomOption={(newItem) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
                   const currentItems = currentObj.selectedItems || [];
@@ -3052,6 +3036,19 @@ function StudioCoreAiryBuilderContent() {
                       ...currentObj,
                       selectedItems: updatedItems,
                       availableOptions: updatedOpts
+                    }
+                  });
+                }}
+                onDeleteOption={(itemToDelete) => {
+                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
+                  const currentItems = (currentObj.selectedItems || []).filter((i: string) => i !== itemToDelete);
+                  const currentOpts = (currentObj.availableOptions || []).filter((i: string) => i !== itemToDelete);
+                  setData({
+                    ...data,
+                    deliverablesPage: {
+                      ...currentObj,
+                      selectedItems: currentItems,
+                      availableOptions: currentOpts
                     }
                   });
                 }}
@@ -3197,12 +3194,14 @@ function StudioCoreAiryBuilderContent() {
                       
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
-                availableOptions={dynamicDeliverablesMenu}
-                selectedText={(data.deliverablesPage?.selectedItems || DEFAULT_AIRY_PROPOSAL.deliverablesPage.selectedItems).join('\n')}
-                onChangeSelectedText={(newText) => {
-                  const arr = newText.split('\n').map((s: any) => s.trim()).filter(Boolean);
+                availableOptions={Array.from(new Set([
+                  ...(data.deliverablesPage?.availableOptions || DEFAULT_AIRY_PROPOSAL.deliverablesPage.availableOptions),
+                  ...(data.deliverablesPage?.selectedItems || [])
+                ])).filter(Boolean)}
+                selectedItems={data.deliverablesPage?.selectedItems || DEFAULT_AIRY_PROPOSAL.deliverablesPage.selectedItems}
+                onChangeSelectedItems={(newSelected) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
-                  setData({ ...data, deliverablesPage: { ...currentObj, selectedItems: arr } });
+                  setData({ ...data, deliverablesPage: { ...currentObj, selectedItems: newSelected } });
                 }}
                 onAddCustomOption={(newItem) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
@@ -3219,6 +3218,19 @@ function StudioCoreAiryBuilderContent() {
                     }
                   });
                 }}
+                onDeleteOption={(itemToDelete) => {
+                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
+                  const currentItems = (currentObj.selectedItems || []).filter((i: string) => i !== itemToDelete);
+                  const currentOpts = (currentObj.availableOptions || []).filter((i: string) => i !== itemToDelete);
+                  setData({
+                    ...data,
+                    deliverablesPage: {
+                      ...currentObj,
+                      selectedItems: currentItems,
+                      availableOptions: currentOpts
+                    }
+                  });
+                }}
               />
 
               {/* Photo controls removed for Deliverables - purely content/card based */}
@@ -3230,25 +3242,42 @@ function StudioCoreAiryBuilderContent() {
               
               <ThreeDCurvedMultiSelect
                 title="Complimentary Value Additions"
-                availableOptions={data.specialValueAdditions?.availableOptions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.availableOptions}
-                selectedText={(data.specialValueAdditions?.selectedItems || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.selectedItems).join('\n')}
-                onChangeSelectedText={(newText) => {
-                  const arr = newText.split('\n').map((s: any) => s.trim()).filter(Boolean);
+                availableOptions={Array.from(new Set([
+                  ...(data.specialValueAdditions?.availableOptions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.availableOptions),
+                  ...(data.specialValueAdditions?.selectedItems || [])
+                ])).filter(Boolean)}
+                selectedItems={data.specialValueAdditions?.selectedItems || DEFAULT_AIRY_PROPOSAL.specialValueAdditions.selectedItems}
+                onChangeSelectedItems={(newSelected) => {
                   const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
-                  setData({ ...data, specialValueAdditions: { ...currentObj, selectedItems: arr } });
+                  setData({ ...data, specialValueAdditions: { ...currentObj, selectedItems: newSelected } });
                 }}
                 onAddCustomOption={(newItem) => {
                   const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
-                  const opts = currentObj.availableOptions || [];
-                  if (!opts.includes(newItem)) {
-                    setData({
-                      ...data,
-                      specialValueAdditions: {
-                        ...currentObj,
-                        availableOptions: [...opts, newItem]
-                      }
-                    });
-                  }
+                  const currentItems = currentObj.selectedItems || [];
+                  const currentOpts = currentObj.availableOptions || [];
+                  const updatedItems = currentItems.includes(newItem) ? currentItems : [...currentItems, newItem];
+                  const updatedOpts = currentOpts.includes(newItem) ? currentOpts : [...currentOpts, newItem];
+                  setData({
+                    ...data,
+                    specialValueAdditions: {
+                      ...currentObj,
+                      selectedItems: updatedItems,
+                      availableOptions: updatedOpts
+                    }
+                  });
+                }}
+                onDeleteOption={(itemToDelete) => {
+                  const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
+                  const currentItems = (currentObj.selectedItems || []).filter((i: string) => i !== itemToDelete);
+                  const currentOpts = (currentObj.availableOptions || []).filter((i: string) => i !== itemToDelete);
+                  setData({
+                    ...data,
+                    specialValueAdditions: {
+                      ...currentObj,
+                      selectedItems: currentItems,
+                      availableOptions: currentOpts
+                    }
+                  });
                 }}
               />
 
