@@ -83,16 +83,19 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      sourceTemplateId = explicitTemplateId;
     } else {
       // FLOW A: Triggered from /leads -> Quotation Icon
-      // Must use CURRENT USER'S ACTIVE DEFAULT TEMPLATE
-      const { data: userDefaultTmpl } = await supabaseAdmin
+      // Must use CURRENT USER'S ACTIVE DEFAULT TEMPLATE dynamically from DB
+      const { data: defaultCandidates } = await supabaseAdmin
         .from('quotation_templates')
-        .select('id, is_default, is_system_template')
-        .eq('user_id', currentUserId)
+        .select('id, user_id, is_default, is_system_template, updated_at')
         .eq('is_default', true)
-        .maybeSingle();
+        .order('updated_at', { ascending: false });
+
+      // Find the user's active custom default template (excluding lead quotation IDs FW-Q-, FW-L- and system templates)
+      const userDefaultTmpl = (defaultCandidates || []).find(
+        (t: any) => !t.id.startsWith('FW-Q-') && !t.id.startsWith('FW-L-') && !t.is_system_template && t.id !== 'FW-37C63A54D4'
+      );
 
       if (userDefaultTmpl?.id) {
         sourceTemplateId = userDefaultTmpl.id;

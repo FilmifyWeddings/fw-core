@@ -48,20 +48,23 @@ export async function POST(
       );
     }
 
-    // 2. Unset default flag for all existing templates belonging to current user (silently catch if column missing)
+    // 2. Unset default flag for all existing templates belonging to current user / demo_user
     try {
       await supabaseAdmin
         .from('quotation_templates')
         .update({ is_default: false })
-        .eq('user_id', currentUserId);
+        .or(`user_id.eq.${currentUserId},user_id.eq.demo_user,user_id.is.null`);
 
-      // 3. If target template is owned by user, set its is_default = true
+      // 3. Set target template is_default = true
       if (targetTemplate && !isSystem) {
         await supabaseAdmin
           .from('quotation_templates')
-          .update({ is_default: true, updated_at: new Date().toISOString() })
-          .eq('id', id)
-          .eq('user_id', currentUserId);
+          .update({
+            is_default: true,
+            user_id: currentUserId !== 'demo_user' ? currentUserId : (targetTemplate.user_id || 'demo_user'),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
       }
     } catch (e: any) {
       console.warn('[Set Default Warning] Schema cache updated column fallback:', e?.message);
