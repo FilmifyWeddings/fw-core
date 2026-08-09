@@ -229,12 +229,14 @@ export default function WorkspaceQuotationsGalleryPage() {
       const token = session?.access_token;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (userEmail) headers['x-user-email'] = userEmail;
 
       const res = await fetch('/api/quotations/create-for-lead', {
         method: 'POST',
         headers,
         body: JSON.stringify({
           leadId: selectedLeadId,
+          explicitTemplateId: templateId,
           templateId: templateId
         })
       });
