@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
+import { verifySuperAdminRequest } from '@/lib/auth/admin-guard';
 
 /**
  * Authoritative Single Template & Lead Quotation Document Route (GET, PUT, PATCH, DELETE)
@@ -298,9 +299,8 @@ async function handleDelete(
   try {
     const { id } = await context.params;
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const userEmail = session?.user?.email;
-    const isAdmin = userEmail?.toLowerCase() === 'sushantnawale700@gmail.com';
+    const auth = await verifySuperAdminRequest(req);
+    const isAdmin = auth.authorized || auth.email?.toLowerCase() === 'sushantnawale700@gmail.com';
 
     const { data: targetTmpl } = await supabaseAdmin
       .from('quotation_templates')
