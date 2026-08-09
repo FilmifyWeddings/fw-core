@@ -4,9 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle2, Sparkles, Film, Video, Camera, BookOpen, Calendar, 
-  MapPin, Users, Download, Printer, Check, MessageSquare, AlertTriangle, 
-  Phone, Mail, X, ShieldCheck, DollarSign
+  CheckCircle2, Sparkles, Film, Camera, MapPin, Users, Download, Printer, 
+  Check, MessageSquare, AlertTriangle, X, ShieldCheck, DollarSign, RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { QuotationProposal } from '@/types';
@@ -18,11 +17,17 @@ export default function PublicProposalPage() {
   const [proposal, setProposal] = useState<QuotationProposal | null>(null);
   const [loading, setLoading] = useState(true);
   const [accepted, setAccepted] = useState(false);
+  const [budgetRequested, setBudgetRequested] = useState<number | null>(null);
 
-  // Modal State
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  // Modal States
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+
+  // Form Inputs
+  const [submitting, setSubmitting] = useState(false);
+  const [budgetValue, setBudgetValue] = useState('');
+  const [budgetNotes, setBudgetNotes] = useState('');
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPublicProposal();
@@ -49,15 +54,15 @@ export default function PublicProposalPage() {
       console.error('Error fetching public proposal:', e);
     }
 
-    // StudioCore Demo Proposal Fallback
+    // Demo Fallback Proposal
     const demoProposal: QuotationProposal = {
       id: 'prop_demo',
       workspace_id: 'ws_demo',
       quotation_number: 'FW-2026-001',
       title: 'PRE WEDDING & WEDDING GOLD QUOTATION',
-      client_name: 'Vinu Bhad & Neha',
+      client_name: 'Rahul & Neha',
       client_phone: '+91 9876543210',
-      client_email: 'vinu.wedding@gmail.com',
+      client_email: 'rahul.wedding@gmail.com',
       event_date: '2026-11-18',
       theme_config: {
         accent_color: '#D4AF37',
@@ -109,17 +114,64 @@ export default function PublicProposalPage() {
     setLoading(false);
   };
 
-  const handleAcceptProposal = async () => {
-    if (!proposal) return;
-    setAccepted(true);
+  const handleConfirmAccept = async () => {
+    if (!token && !proposal) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/quotations/response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: token || proposal?.public_token || 'demo_token',
+          responseType: 'accepted',
+          clientName: proposal?.client_name
+        })
+      });
+
+      const json = await res.json();
+      if (json.success || res.ok) {
+        setAccepted(true);
+        setActionSuccessMsg('Proposal Accepted! Dates & crew blocked for your event.');
+      }
+    } catch (e) {
+      console.error('Error submitting acceptance:', e);
+      setAccepted(true);
+    } finally {
+      setSubmitting(false);
+      setShowAcceptModal(false);
+    }
+  };
+
+  const handleConfirmBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!budgetValue || (!token && !proposal)) return;
+    setSubmitting(true);
+    const numAmount = parseFloat(budgetValue.replace(/[^0-9.]/g, '')) || 0;
 
     try {
-      await supabase
-        .from('quotations')
-        .update({ status: 'accepted', updated_at: new Date().toISOString() })
-        .eq('id', proposal.id);
+      const res = await fetch('/api/quotations/response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: token || proposal?.public_token || 'demo_token',
+          responseType: 'budget_discussion',
+          budgetAmount: numAmount,
+          clientName: proposal?.client_name,
+          clientNotes: budgetNotes
+        })
+      });
+
+      const json = await res.json();
+      if (json.success || res.ok) {
+        setBudgetRequested(numAmount);
+        setActionSuccessMsg(`Budget request sent (₹${numAmount.toLocaleString('en-IN')}). Our manager will contact you.`);
+      }
     } catch (e) {
-      console.error('Error updating proposal status:', e);
+      console.error('Error submitting budget request:', e);
+      setBudgetRequested(numAmount);
+    } finally {
+      setSubmitting(false);
+      setShowBudgetModal(false);
     }
   };
 
@@ -127,33 +179,12 @@ export default function PublicProposalPage() {
     window.print();
   };
 
-  const handleSendFeedback = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!feedbackText.trim() || !proposal) return;
-
-    try {
-      await supabase
-        .from('quotations')
-        .update({ client_notes: feedbackText, updated_at: new Date().toISOString() })
-        .eq('id', proposal.id);
-    } catch (e) {
-      /* ignore */
-    }
-
-    setFeedbackSubmitted(true);
-    setTimeout(() => {
-      setShowFeedbackModal(false);
-      setFeedbackSubmitted(false);
-      setFeedbackText('');
-    }, 2000);
-  };
-
   if (loading) {
     return (
       <div className="h-screen w-screen bg-[#141622] text-white flex items-center justify-center p-4">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-bold text-zinc-400">Loading StudioCore Proposal...</p>
+          <p className="text-xs font-bold text-zinc-400">Loading Quotation Proposal...</p>
         </div>
       </div>
     );
@@ -174,9 +205,9 @@ export default function PublicProposalPage() {
   const accentColor = proposal.theme_config.accent_color || '#D4AF37';
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] text-[#F3F4F6] font-sans selection:bg-[#D4AF37]/30 selection:text-[#E5C365]">
+    <div className="min-h-screen bg-[#0B0C10] text-[#F3F4F6] font-sans selection:bg-[#D4AF37]/30 selection:text-[#E5C365] pb-24 sm:pb-12">
       
-      {/* ── Top Floating Action Bar for Client ── */}
+      {/* ── Top Header Action Bar ── */}
       <header className="print:hidden sticky top-0 z-40 bg-[#161822]/90 backdrop-blur-md border-b border-[#232634] px-4 sm:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#E5C365] via-[#D4AF37] to-[#B8860B] flex items-center justify-center font-black text-black text-xs shadow-md">
@@ -184,48 +215,63 @@ export default function PublicProposalPage() {
           </div>
           <div>
             <h1 className="text-xs font-bold text-white uppercase">{proposal.title}</h1>
-            <p className="text-[10px] text-zinc-400 font-mono">Quotation Ref: {proposal.quotation_number}</p>
+            <p className="text-[10px] text-zinc-400 font-mono">Ref: {proposal.quotation_number}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+        <div className="hidden sm:flex items-center gap-2.5">
           <button
             onClick={handlePrintPDF}
             className="px-4 py-2 rounded-full bg-[#232634] hover:bg-[#2A2E3F] text-zinc-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
           >
-            <Printer className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Print / PDF</span>
+            <Download className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Download PDF</span>
           </button>
 
           <button
-            onClick={() => setShowFeedbackModal(true)}
-            className="px-4 py-2 rounded-full bg-[#232634] hover:bg-[#2A2E3F] text-zinc-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+            onClick={() => setShowBudgetModal(true)}
+            className="px-4 py-2 rounded-full bg-[#232634] hover:bg-[#2A2E3F] text-amber-400 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md border border-amber-500/20"
           >
-            <MessageSquare className="w-3.5 h-3.5 text-purple-400" />
-            <span>Request Changes</span>
+            <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+            <span>Discuss the budget</span>
           </button>
 
           {accepted ? (
-            <div className="px-5 py-2 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-black flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Proposal Accepted ✓</span>
+            <div className="px-5 py-2 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-black flex items-center gap-1.5 shadow-lg">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>✓ Proposal Accepted</span>
             </div>
           ) : (
             <button
-              onClick={handleAcceptProposal}
-              className="px-6 py-2 rounded-full bg-gradient-to-r from-[#E5C365] via-[#D4AF37] to-[#B8860B] hover:opacity-90 text-black font-black text-xs transition-all shadow-xl shadow-[#D4AF37]/25 flex items-center gap-1.5 cursor-pointer"
+              onClick={() => setShowAcceptModal(true)}
+              className="px-6 py-2 rounded-full bg-gradient-to-r from-[#E5C365] via-[#D4AF37] to-[#B8860B] hover:opacity-90 text-black font-black text-xs transition-all shadow-xl shadow-[#D4AF37]/25 flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <Check className="w-4 h-4 stroke-[3]" />
-              <span>Accept Proposal</span>
+              <span>Accept this quotation</span>
             </button>
           )}
         </div>
       </header>
 
-      {/* ── Main WedGrapher Proposal Document View ── */}
+      {/* Action Notification Banner */}
+      {actionSuccessMsg && (
+        <div className="max-w-4xl mx-auto mt-4 px-4">
+          <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center justify-between gap-2 shadow-xl">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{actionSuccessMsg}</span>
+            </div>
+            <button onClick={() => setActionSuccessMsg(null)} className="text-emerald-300 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Document View ── */}
       <main className="max-w-4xl mx-auto p-4 sm:p-8 space-y-10 my-6">
         
-        {/* HERO COVER BLOCK (WEDGRAPHER ARCH DESIGN) */}
+        {/* HERO COVER BLOCK */}
         <div 
           className="p-8 sm:p-12 rounded-3xl bg-[#141622] border border-[#232634] text-center relative overflow-hidden space-y-6 shadow-2xl"
           style={{ fontFamily: proposal.theme_config.primary_font }}
@@ -241,7 +287,6 @@ export default function PublicProposalPage() {
             {proposal.title}
           </h1>
 
-          {/* WedGrapher Signature Arch Image Container (`.arch`) */}
           <div className="w-[75%] mx-auto mt-6 rounded-t-[999px] rounded-b-2xl overflow-hidden border border-[#232634] bg-[#0F1017] shadow-2xl relative aspect-[4/3]">
             <img 
               src={proposal.theme_config.logo_url || 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80'} 
@@ -384,57 +429,174 @@ export default function PublicProposalPage() {
 
       </main>
 
-      {/* ── Request Changes Modal ── */}
+      {/* ── Floating Bottom Action Bar (Mobile & Sticky Footer) ── */}
+      <div className="print:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#161822]/95 backdrop-blur-md border-t border-[#232634] p-3 shadow-2xl flex items-center justify-around gap-2">
+        <button
+          onClick={handlePrintPDF}
+          className="flex-1 py-2.5 px-3 rounded-2xl bg-[#232634] hover:bg-[#2A2E3F] text-zinc-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+        >
+          <Download className="w-4 h-4 text-cyan-400" />
+          <span>Download PDF</span>
+        </button>
+
+        <button
+          onClick={() => setShowBudgetModal(true)}
+          className="flex-1 py-2.5 px-3 rounded-2xl bg-[#232634] hover:bg-[#2A2E3F] text-amber-400 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md border border-amber-500/20"
+        >
+          <DollarSign className="w-4 h-4 text-amber-400" />
+          <span>Discuss Budget</span>
+        </button>
+
+        {accepted ? (
+          <div className="flex-1 py-2.5 px-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-black flex items-center justify-center gap-1.5 shadow-lg">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>✓ Accepted</span>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAcceptModal(true)}
+            className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-[#E5C365] via-[#D4AF37] to-[#B8860B] text-black font-black text-xs transition-all shadow-xl flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+          >
+            <Check className="w-4 h-4 stroke-[3]" />
+            <span>Accept Quotation</span>
+          </button>
+        )}
+      </div>
+
+      {/* ── ACCEPT CONFIRMATION MODAL ── */}
       <AnimatePresence>
-        {showFeedbackModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+        {showAcceptModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-[#141622] rounded-3xl border border-[#232634] p-6 shadow-2xl space-y-4 text-white"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-md bg-[#141622] rounded-3xl border border-[#232634] p-6 shadow-2xl space-y-5 text-white"
             >
               <div className="flex items-center justify-between border-b border-[#232634] pb-3">
-                <h3 className="text-base font-black">Request Changes to Proposal</h3>
-                <button onClick={() => setShowFeedbackModal(false)} className="text-zinc-400 hover:text-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-black">Accept this quotation?</h3>
+                </div>
+                <button onClick={() => setShowAcceptModal(false)} className="text-zinc-400 hover:text-white">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {feedbackSubmitted ? (
-                <div className="py-8 text-center text-emerald-400 space-y-2">
-                  <CheckCircle2 className="w-10 h-10 mx-auto" />
-                  <p className="font-bold text-sm">Feedback Sent To Studio!</p>
-                  <p className="text-xs text-zinc-400">The studio manager will update your proposal shortly.</p>
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Confirm your details — we block your dates for you, and your confirmation arrives by email.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAcceptModal(false)}
+                  disabled={submitting}
+                  className="px-4 py-2.5 rounded-xl bg-[#232634] hover:bg-[#2A2E3F] text-zinc-300 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Not yet
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmAccept}
+                  disabled={submitting}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Confirming...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>Yes, accept</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── DISCUSS BUDGET MODAL ── */}
+      <AnimatePresence>
+        {showBudgetModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-md bg-[#141622] rounded-3xl border border-[#232634] p-6 shadow-2xl space-y-4 text-white"
+            >
+              <div className="flex items-center justify-between border-b border-[#232634] pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                    <DollarSign className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black">Tell us your budget</h3>
+                    <p className="text-[11px] text-amber-400">We will see what we can do.</p>
+                  </div>
                 </div>
-              ) : (
-                <form onSubmit={handleSendFeedback} className="space-y-3 text-xs">
-                  <p className="text-zinc-400">Specify any custom deliverable, date, or pricing modifications you would like to request:</p>
-                  <textarea
-                    rows={4}
+                <button onClick={() => setShowBudgetModal(false)} className="text-zinc-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleConfirmBudget} className="space-y-4 text-xs">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase text-zinc-400 block">Proposed Budget Amount (₹)</label>
+                  <input
+                    type="text"
                     required
-                    placeholder="e.g. Please add 2 extra photobooks and confirm crew travel..."
-                    value={feedbackText}
-                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder="e.g. 1,25,000"
+                    value={budgetValue}
+                    onChange={(e) => setBudgetValue(e.target.value)}
+                    className="w-full p-3 rounded-2xl bg-[#0F1017] border border-[#232634] text-white font-mono text-sm font-bold focus:outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase text-zinc-400 block">Additional Notes (Optional)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="e.g. We would like to adjust the crew size to fit our budget..."
+                    value={budgetNotes}
+                    onChange={(e) => setBudgetNotes(e.target.value)}
                     className="w-full p-3 rounded-2xl bg-[#0F1017] border border-[#232634] text-white font-medium focus:outline-none resize-none"
                   />
-                  <div className="flex items-center justify-end gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowFeedbackModal(false)}
-                      className="px-4 py-2 rounded-xl bg-[#232634] text-zinc-300 font-bold"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl bg-[#D4AF37] text-black font-bold"
-                    >
-                      Send Request
-                    </button>
-                  </div>
-                </form>
-              )}
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowBudgetModal(false)}
+                    disabled={submitting}
+                    className="px-4 py-2.5 rounded-xl bg-[#232634] text-zinc-300 font-bold text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || !budgetValue.trim()}
+                    className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    {submitting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      <span>Send</span>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

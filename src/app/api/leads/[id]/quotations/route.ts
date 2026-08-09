@@ -258,6 +258,17 @@ export async function GET(
       .from('quotation_documents')
       .select('*');
 
+    // 3. Fetch client response metadata from quotation_responses & quotations
+    const { data: allResponses } = await supabaseAdmin
+      .from('quotation_responses')
+      .select('*')
+      .eq('lead_id', leadId);
+
+    const { data: allQuotes } = await supabaseAdmin
+      .from('quotations')
+      .select('id, quotation_number, title, status, client_notes, public_token')
+      .or(`client_id.eq.${leadId}`);
+
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
     const docs = (allDocs || []).filter((d: any) =>
@@ -279,20 +290,48 @@ export async function GET(
 
       let title = content.designName;
 
-      if (!title || title === 'Wedding - Design 1') {
-        const { data: qRec } = await supabaseAdmin
-          .from('quotations')
-          .select('title')
-          .or(`id.eq.${doc.template_id},quotation_number.eq.${doc.template_id}`)
-          .maybeSingle();
+      const matchingQuote = (allQuotes || []).find((q: any) =>
+        q.id === doc.template_id || q.quotation_number === doc.template_id
+      );
 
-        if (qRec?.title) {
-          title = qRec.title;
+      if (!title || title === 'Wedding - Design 1') {
+        if (matchingQuote?.title) {
+          title = matchingQuote.title;
+        } else {
+          const { data: qRec } = await supabaseAdmin
+            .from('quotations')
+            .select('title')
+            .or(`id.eq.${doc.template_id},quotation_number.eq.${doc.template_id}`)
+            .maybeSingle();
+
+          if (qRec?.title) title = qRec.title;
         }
       }
 
       if (!title) {
         title = lead.name || 'Wedding Quotation';
+      }
+
+      // Determine response badge status
+      let responseBadge: any = null;
+      const explicitResp = (allResponses || []).find((r: any) =>
+        r.quotation_id === doc.template_id || r.lead_version === leadVer
+      );
+
+      if (explicitResp) {
+        if (explicitResp.response_type === 'accepted') {
+          responseBadge = { type: 'accepted', label: '✓ Accepted' };
+        } else if (explicitResp.response_type === 'budget_discussion') {
+          responseBadge = {
+            type: 'budget_discussion',
+            label: 'Budget Discussion',
+            budgetAmount: explicitResp.budget_amount
+          };
+        }
+      } else if (matchingQuote?.status === 'accepted') {
+        responseBadge = { type: 'accepted', label: '✓ Accepted' };
+      } else if (matchingQuote?.client_notes && matchingQuote.client_notes.includes('Budget')) {
+        responseBadge = { type: 'budget_discussion', label: 'Budget Discussion', notes: matchingQuote.client_notes };
       }
 
       return {
@@ -304,6 +343,8 @@ export async function GET(
         title,
         updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
         created_at: doc.created_at || new Date().toISOString(),
+        public_token: matchingQuote?.public_token || null,
+        responseBadge,
         content_json: content
       };
     }));
