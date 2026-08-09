@@ -531,26 +531,22 @@ export default function WorkspaceQuotationsGalleryPage() {
           } catch {}
         }
 
-        // 1. Fetch user & system quotation templates from quotation_templates
-        const { data: tmplData } = await supabase
-          .from('quotation_templates')
-          .select('id, user_id, workspace_id, title, category, is_default, is_system_template, updated_at')
-          .or(`user_id.eq.${currentUserId},workspace_id.eq.${currentUserId},is_system_template.eq.true,user_id.eq.SYSTEM`)
-          .order('updated_at', { ascending: false });
+        // 1. Fetch user & system quotation templates & content_json from authoritative API (bypasses RLS locks)
+        const token = session?.access_token;
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (session?.user?.email) headers['x-user-email'] = session.user.email;
 
-        // 2. Fetch associated document content_json from quotation_documents (authoritative source)
-        const { data: docsData } = await supabase
-          .from('quotation_documents')
-          .select('template_id, content_json, user_id');
+        const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
+        const apiData = await res.json();
+        const tmplData = apiData.templates || [];
 
         const docsMap: Record<string, any> = {};
-        if (docsData) {
-          docsData.forEach(d => {
-            if (d.template_id && d.content_json) {
-              docsMap[d.template_id] = d.content_json;
-            }
-          });
-        }
+        tmplData.forEach((t: any) => {
+          if (t.id && t.content_json) {
+            docsMap[t.id] = t.content_json;
+          }
+        });
 
         // 3. Fetch user quotations from quotations table
         const { data: qData } = await supabase
@@ -570,7 +566,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         const validTemplateIds = new Set<string>();
 
         if (filteredTmplData.length > 0) {
-          filteredTmplData.forEach(t => {
+          filteredTmplData.forEach((t: any) => {
             templateMap[t.id] = t;
             validTemplateIds.add(t.id);
           });

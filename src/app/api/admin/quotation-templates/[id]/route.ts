@@ -96,7 +96,6 @@ async function handleUpdate(
           template_id: id,
           workspace_id: null,
           user_id: 'SYSTEM',
-          document_json: document,
           content_json: document,
           updated_at: new Date().toISOString()
         }, { onConflict: 'template_id' });

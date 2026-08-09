@@ -153,7 +153,6 @@ export async function POST(req: NextRequest) {
         template_id: quotationId,
         workspace_id: workspaceId,
         user_id: userId,
-        document_json: clonedDoc,
         content_json: clonedDoc,
         version: 1,
         created_at: new Date().toISOString(),

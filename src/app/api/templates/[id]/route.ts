@@ -167,7 +167,6 @@ async function handleUpdate(
             template_id: id,
             user_id: 'SYSTEM',
             workspace_id: null,
-            document_json: document,
             content_json: document,
             updated_at: new Date().toISOString()
           }, { onConflict: 'template_id' });
@@ -239,7 +238,6 @@ async function handleUpdate(
           template_id: newTemplateId,
           workspace_id: workspaceId,
           user_id: userId,
-          document_json: clonedDoc,
           content_json: clonedDoc,
           version: 1,
           created_at: new Date().toISOString(),
@@ -273,7 +271,6 @@ async function handleUpdate(
           template_id: id,
           workspace_id: workspaceId,
           user_id: userId,
-          document_json: document,
           content_json: document,
           updated_at: new Date().toISOString()
         }, { onConflict: 'template_id' });

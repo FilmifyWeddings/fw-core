@@ -173,7 +173,8 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
 
         const res = await fetch(fetchUrl, {
           headers: {
-            'Authorization': `Bearer ${userAccessToken || ''}`
+            'Authorization': `Bearer ${userAccessToken || ''}`,
+            'x-user-email': session?.user?.email || ''
           }
         });
 
@@ -291,7 +292,8 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userAccessToken || ''}`
+          'Authorization': `Bearer ${userAccessToken || ''}`,
+          'x-user-email': session?.user?.email || ''
         },
         body: JSON.stringify({
           user_id: userId,

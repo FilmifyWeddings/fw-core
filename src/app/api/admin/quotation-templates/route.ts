@@ -71,7 +71,6 @@ export async function POST(req: NextRequest) {
         template_id: newSystemId,
         workspace_id: null,
         user_id: 'SYSTEM',
-        document_json: initialDoc,
         content_json: initialDoc,
         version: 1,
         created_at: new Date().toISOString(),

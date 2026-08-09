@@ -82,7 +82,6 @@ export async function POST(
         template_id: newSystemId,
         workspace_id: null,
         user_id: 'SYSTEM',
-        document_json: clonedDoc,
         content_json: clonedDoc,
         version: 1,
         created_at: new Date().toISOString(),
