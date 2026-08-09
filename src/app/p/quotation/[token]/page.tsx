@@ -37,15 +37,89 @@ export default function PublicProposalPage() {
     setLoading(true);
     try {
       if (token) {
-        const { data, error } = await supabase
+        // 1. Fetch quotation metadata row by public_token
+        const { data: quoteRow, error: quoteErr } = await supabase
           .from('quotations')
           .select('*')
           .eq('public_token', token)
           .maybeSingle();
 
-        if (!error && data) {
-          setProposal(data);
-          if (data.status === 'accepted') setAccepted(true);
+        if (!quoteErr && quoteRow) {
+          const qNum = quoteRow.quotation_number || quoteRow.id;
+
+          // 2. Fetch authoritative document content_json snapshot from quotation_documents
+          const { data: docRow } = await supabase
+            .from('quotation_documents')
+            .select('content_json')
+            .eq('template_id', qNum)
+            .maybeSingle();
+
+          const content = docRow?.content_json || quoteRow.canvas_data || {};
+          const cover = content.cover || {};
+          const coupleName = cover.coupleName || (cover.groomName ? `${cover.groomName} & ${cover.brideName}` : quoteRow.client_name || quoteRow.title || 'Rahul & Neha');
+
+          const formattedProposal: QuotationProposal = {
+            id: quoteRow.id || qNum,
+            workspace_id: quoteRow.workspace_id,
+            quotation_number: qNum,
+            title: quoteRow.title || content.designName || `${coupleName} QUOTATION`,
+            client_name: coupleName,
+            client_phone: quoteRow.client_phone || '+91 9876543210',
+            client_email: quoteRow.client_email || 'client@studiocore.in',
+            event_date: quoteRow.event_date || '2026-11-18',
+            theme_config: {
+              accent_color: content.look || '#D4AF37',
+              primary_font: content.primaryFont || 'Playfair Display',
+              cover_style: 'cinematic_dark',
+              logo_url: cover.brandLogoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80'
+            },
+            sections_config: [
+              { id: 'cover', title: 'Cover Page', enabled: true },
+              { id: 'about', title: 'About Our Studio', enabled: true },
+              { id: 'pre_wedding', title: 'Pre-Wedding Shoot', enabled: true },
+              { id: 'wedding_gold', title: 'Functions & Coverage', enabled: true },
+              { id: 'deliverables', title: 'Deliverables', enabled: true },
+              { id: 'add_ons', title: 'Add-On Extras', enabled: true },
+              { id: 'payment', title: 'Payment Schedule', enabled: true },
+              { id: 'terms', title: 'Terms & Conditions', enabled: true }
+            ],
+            events: content.functionsPage?.items?.map((item: any, i: number) => ({
+              id: item.id || `f_${i}`,
+              title: item.title || item.name || 'EVENT',
+              days: 1,
+              venue: item.venue || 'MUMBAI',
+              crew: item.team || 'Full Team',
+              deliverables: [item.dateTime].filter(Boolean),
+              rate: 0
+            })) || [],
+            add_ons: content.addOnsPage?.items?.map((item: any, i: number) => ({
+              id: item.id || `a_${i}`,
+              title: item.title || item.name,
+              rate: item.price || 0,
+              selected: item.selected !== false
+            })) || [],
+            financials: {
+              subtotal: content.pricingPage?.basePrice || 0,
+              discount_type: 'flat',
+              discount_value: content.pricingPage?.discountAmount || 0,
+              gst_rate: content.pricingPage?.gstPct || 18,
+              total_amount: (content.pricingPage?.basePrice || 0) - (content.pricingPage?.discountAmount || 0)
+            },
+            payment_milestones: content.paymentTermsPage?.steps?.map((step: any) => ({
+              label: step.stepName,
+              percentage: 0,
+              amount: step.amount,
+              due_description: `${step.date} (${step.status})`
+            })) || [],
+            terms: content.termsPage?.text || 'Standard studio terms apply.',
+            status: quoteRow.status || 'draft',
+            public_token: token,
+            created_at: quoteRow.created_at || new Date().toISOString(),
+            updated_at: quoteRow.updated_at || new Date().toISOString()
+          };
+
+          setProposal(formattedProposal);
+          if (quoteRow.status === 'accepted') setAccepted(true);
           setLoading(false);
           return;
         }

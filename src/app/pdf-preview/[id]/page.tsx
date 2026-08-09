@@ -59,6 +59,8 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
   // 1. Fetch document directly from Supabase DB
   let documentData: any = null;
 
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
   const { data: doc } = await supabaseAdmin
     .from('quotation_documents')
     .select('content_json')
@@ -68,12 +70,14 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
   if (doc?.content_json) {
     documentData = doc.content_json;
   } else {
-    const { data: legacy } = await supabaseAdmin
-      .from('quotations')
-      .select('content_json')
-      .or(`id.eq.${id},quotation_number.eq.${id}`)
-      .maybeSingle();
-    documentData = legacy?.content_json || {};
+    let legacyQuery = supabaseAdmin.from('quotations').select('content_json, canvas_data');
+    if (isUuid) {
+      legacyQuery = legacyQuery.or(`id.eq.${id},quotation_number.eq.${id}`);
+    } else {
+      legacyQuery = legacyQuery.eq('quotation_number', id);
+    }
+    const { data: legacy } = await legacyQuery.maybeSingle();
+    documentData = legacy?.content_json || legacy?.canvas_data || {};
   }
 
   const themeKey = documentData?.look || documentData?.theme || 'cyprus-sand-dune';

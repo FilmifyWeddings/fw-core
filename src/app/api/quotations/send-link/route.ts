@@ -111,15 +111,15 @@ export async function POST(req: NextRequest) {
 
     let origin = 'https://test.studiocore.in';
 
-    if (envAppUrl && !envAppUrl.includes('localhost') && !envAppUrl.includes('ngrok')) {
+    const isIpOrNip = (h: string) => h.includes('nip.io') || /^\d+\.\d+\.\d+\.\d+/.test(h);
+
+    if (envAppUrl && !envAppUrl.includes('localhost') && !envAppUrl.includes('ngrok') && !isIpOrNip(envAppUrl)) {
       origin = envAppUrl.replace(/\/$/, '');
-    } else if (rawHost && !rawHost.includes('localhost') && !rawHost.includes('127.0.0.1')) {
+    } else if (rawHost && !rawHost.includes('localhost') && !rawHost.includes('127.0.0.1') && !isIpOrNip(rawHost)) {
       const proto = xForwardedProto || (rawHost.includes('localhost') ? 'http' : 'https');
       origin = `${proto}://${rawHost.replace(/\/$/, '')}`;
-    } else if (envAppUrl) {
-      origin = envAppUrl.replace(/\/$/, '');
-    } else if (req.nextUrl?.origin) {
-      origin = req.nextUrl.origin;
+    } else {
+      origin = 'https://test.studiocore.in';
     }
 
     const publicUrl = `${origin}/p/quotation/${publicToken}`;
