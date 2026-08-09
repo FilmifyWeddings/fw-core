@@ -44,33 +44,41 @@ export async function POST(
       }
     }
 
-    // 2. Clear is_default = false on all user's workspace templates in DB
+    // 2. Clear is_default = false on all workspace and user templates in DB
     const isUuid = /^[0-9a-fA-F-]{36}$/.test(workspaceId);
     if (isUuid) {
       await supabaseAdmin
         .from('quotation_templates')
         .update({ is_default: false, updated_at: new Date().toISOString() })
-        .or(`workspace_id.eq.${workspaceId},user_id.eq.${userId}`);
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${userId},is_system_template.eq.true,user_id.eq.SYSTEM`);
     } else {
       await supabaseAdmin
         .from('quotation_templates')
         .update({ is_default: false, updated_at: new Date().toISOString() })
-        .eq('user_id', userId);
+        .or(`user_id.eq.${userId},is_system_template.eq.true,user_id.eq.SYSTEM`);
     }
 
-    // 3. Mark selected target template as is_default = true in DB if record exists
-    await supabaseAdmin
+    // 3. Mark selected target template as is_default = true in DB
+    const { data: updatedTmpl, error: updateErr } = await supabaseAdmin
       .from('quotation_templates')
       .update({
         is_default: true,
         updated_at: new Date().toISOString()
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (updateErr) {
+      console.error('Error setting template as default in Supabase:', updateErr);
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
       defaultTemplateId: id,
-      message: `Template ${id} set as active default template`
+      template: updatedTmpl,
+      message: `Template ${id} is now set as active default template`
     });
   } catch (error: any) {
     console.error('Error in set-default template API:', error);

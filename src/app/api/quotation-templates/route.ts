@@ -28,10 +28,8 @@ export async function GET(req: NextRequest) {
       .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at');
 
     if (isSuperAdmin) {
-      // Super Admin sees all templates created by SYSTEM / Super Admin AND user workspace templates
       query = query.or(`workspace_id.eq.${workspaceIdParam},user_id.eq.${userId},is_system_template.eq.true,user_id.eq.SYSTEM`);
     } else {
-      // Normal Users ONLY see PUBLISHED system templates (is_system_template = true AND status = 'published') OR their own workspace templates!
       query = query.or(`and(is_system_template.eq.true,status.eq.published),workspace_id.eq.${workspaceIdParam},user_id.eq.${userId}`);
     }
 
@@ -62,14 +60,16 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const hasUserDefaultInDb = validTemplates.some(t => t.is_default && !t.is_system_template);
+    const hasAnyDefaultInDb = validTemplates.some(t => t.is_default);
 
     const results = validTemplates.map(t => {
-      let isDefault = t.is_default;
+      let isDefault = false;
       if (activeDefaultId) {
         isDefault = t.id === activeDefaultId;
-      } else if (!hasUserDefaultInDb) {
-        isDefault = t.id === 'FW-2WT85Y0';
+      } else if (t.is_default) {
+        isDefault = true;
+      } else if (!hasAnyDefaultInDb && t.id === 'FW-2WT85Y0') {
+        isDefault = true;
       }
 
       return {

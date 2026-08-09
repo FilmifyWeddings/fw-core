@@ -17,8 +17,8 @@ export interface ResolvedTemplateResult {
  * Rules:
  * A. If requestedTemplateId is provided, fetch that exact template & document.
  * B. If user has active default_template_id in user_metadata, fetch THAT EXACT template & document.
- * C. Otherwise, query Supabase for user's workspace template with is_default = true.
- * D. If no user default set, fallback to Global System Default Template (FW-2WT85Y0).
+ * C. Query Supabase for ANY template where is_default = true (matching workspace/user or active system default).
+ * D. If no default marked, fallback to Global System Default Template (FW-2WT85Y0).
  */
 export async function resolveUserDefaultQuotationTemplate(
   workspaceId: string,
@@ -101,76 +101,59 @@ export async function resolveUserDefaultQuotationTemplate(
     }
   }
 
-  // 3. Rule C: Query user's active DEFAULT template from DB (is_default = true)
+  // 3. Rule C: Query Supabase directly for templates where is_default = true
   try {
-    const isUuid = /^[0-9a-fA-F-]{36}$/.test(targetWorkspace);
-    let userTmpls: any[] = [];
+    const { data: defaultCandidates } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('*')
+      .eq('is_default', true)
+      .order('updated_at', { ascending: false });
 
-    if (isUuid) {
-      const [resWs, resUser] = await Promise.all([
-        supabaseAdmin.from('quotation_templates').select('*').eq('workspace_id', targetWorkspace).order('updated_at', { ascending: false }),
-        supabaseAdmin.from('quotation_templates').select('*').eq('user_id', targetUser).order('updated_at', { ascending: false })
-      ]);
-      userTmpls = [...(resWs.data || []), ...(resUser.data || [])];
-    } else {
-      const { data } = await supabaseAdmin.from('quotation_templates').select('*').eq('user_id', targetUser).order('updated_at', { ascending: false });
-      userTmpls = data || [];
-    }
+    if (defaultCandidates && defaultCandidates.length > 0) {
+      // Find template matching target workspace or user
+      let matchedTmpl = defaultCandidates.find((t: any) =>
+        t.workspace_id === targetWorkspace || t.user_id === targetWorkspace || t.user_id === targetUser
+      );
 
-    let userDefaultTmpl = userTmpls.find((t: any) => t.is_default === true);
+      // If no workspace-specific default found, fallback to any active system default template
+      if (!matchedTmpl) {
+        matchedTmpl = defaultCandidates.find((t: any) => t.is_system_template || t.user_id === 'SYSTEM');
+      }
 
-    if (!userDefaultTmpl && targetUser && targetUser !== targetWorkspace) {
-      const { data: fallbackUserTmpls } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('*')
-        .eq('user_id', targetUser)
-        .order('updated_at', { ascending: false });
+      if (!matchedTmpl) {
+        matchedTmpl = defaultCandidates[0];
+      }
 
-      userDefaultTmpl = (fallbackUserTmpls || []).find((t: any) => t.is_default === true);
-    }
+      if (matchedTmpl) {
+        const { data: doc } = await supabaseAdmin
+          .from('quotation_documents')
+          .select('*')
+          .eq('template_id', matchedTmpl.id)
+          .maybeSingle();
 
-    if (!userDefaultTmpl) {
-      const { data: sysDefaultTmpl } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('*')
-        .eq('is_system_template', true)
-        .eq('is_default', true)
-        .maybeSingle();
+        const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
 
-      if (sysDefaultTmpl) {
-        userDefaultTmpl = sysDefaultTmpl;
+        console.log('[Template Resolver] Resolved Default Template from DB Candidates:', {
+          templateId: matchedTmpl.id,
+          title: matchedTmpl.title,
+          isSystem: matchedTmpl.is_system_template
+        });
+
+        return {
+          templateId: matchedTmpl.id,
+          template: matchedTmpl,
+          document: docJson,
+          isSystemTemplate: !!matchedTmpl.is_system_template,
+          isDefault: true,
+          resolutionReason: 'DB_CANDIDATE_DEFAULT',
+        };
       }
     }
-
-    if (userDefaultTmpl) {
-      const { data: doc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('*')
-        .eq('template_id', userDefaultTmpl.id)
-        .maybeSingle();
-
-      const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
-
-      console.log('[Template Resolver] Resolved Workspace Default Template:', {
-        workspaceId: targetWorkspace,
-        templateId: userDefaultTmpl.id,
-        title: userDefaultTmpl.title
-      });
-
-      return {
-        templateId: userDefaultTmpl.id,
-        template: userDefaultTmpl,
-        document: docJson,
-        isSystemTemplate: !!userDefaultTmpl.is_system_template,
-        isDefault: true,
-        resolutionReason: 'WORKSPACE_DEFAULT',
-      };
-    }
   } catch (err) {
-    console.error('[Template Resolver Error]: Failed to query user default template:', err);
+    console.error('[Template Resolver Error]: Failed to query default candidates:', err);
   }
 
-  // 4. Rule D: Fallback to System Default Template (FW-2WT85Y0 or published system default)
+  // 4. Rule D: Fallback to System Default Template (FW-2WT85Y0)
   try {
     const { data: sysTmpl } = await supabaseAdmin
       .from('quotation_templates')
