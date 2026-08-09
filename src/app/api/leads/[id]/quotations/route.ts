@@ -480,12 +480,11 @@ export async function POST(
         quotation_number: newTemplateId,
         title: `Wedding - Design 1 (V${nextLeadVersion})`,
         client_name: leadName,
-        lead_id: leadId,
+        client_id: leadId,
         status: 'draft',
-        content_json: newQuotationJson,
         created_at: now,
         updated_at: now
-      }, { onConflict: 'workspace_id,quotation_number' });
+      });
     } catch (_) {}
 
     return NextResponse.json({

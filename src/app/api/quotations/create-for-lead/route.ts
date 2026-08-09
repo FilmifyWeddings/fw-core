@@ -190,28 +190,21 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString();
     const resolvedTitle = customTitle || clonedJson.designName || 'Wedding Proposal';
 
-    // 5. Save independent quotation record in quotations table
-    const { data: newQuote, error: qErr } = await supabaseAdmin
-      .from('quotations')
-      .insert({
-        workspace_id: currentUserId,
-        client_id: leadId || null,
-        quotation_number: newQuotationId,
-        title: resolvedTitle,
-        client_name: resolvedClientName,
-        client_phone: clientPhone || targetLead?.phone || null,
-        client_email: clientEmail || targetLead?.email || null,
-        content_json: clonedJson,
-        status: 'draft',
-        created_at: now,
-        updated_at: now
-      })
-      .select()
-      .single();
+    // 5. Register new quotation in quotation_templates table
+    try {
+      await supabaseAdmin
+        .from('quotation_templates')
+        .insert({
+          id: newQuotationId,
+          user_id: currentUserId,
+          title: resolvedTitle,
+          category: 'Wedding',
+          created_at: now,
+          updated_at: now
+        });
+    } catch (_) {}
 
-    if (qErr) throw qErr;
-
-    // 6. Save document JSON copy in quotation_documents table
+    // 6. Save document JSON in quotation_documents table (Authoritative Document Storage)
     const docPayload: any = {
       template_id: newQuotationId,
       user_id: currentUserId,
@@ -222,13 +215,50 @@ export async function POST(req: NextRequest) {
     };
     if (leadId) docPayload.lead_id = leadId;
 
-    const { data: savedDoc } = await supabaseAdmin
+    let savedDoc: any = null;
+    const { data: dData, error: dErr } = await supabaseAdmin
       .from('quotation_documents')
       .insert(docPayload)
       .select()
       .maybeSingle();
 
-    // 7. Save initial version in quotation_versions
+    if (dErr) {
+      console.warn('[Create For Lead Warning] quotation_documents insert warning:', dErr.message);
+      // Fallback without top-level lead_id column if schema cache misses it
+      delete docPayload.lead_id;
+      const { data: fbDoc } = await supabaseAdmin
+        .from('quotation_documents')
+        .insert(docPayload)
+        .select()
+        .maybeSingle();
+      savedDoc = fbDoc;
+    } else {
+      savedDoc = dData;
+    }
+
+    // 7. Save row in quotations table (without content_json to prevent schema cache errors)
+    let newQuote: any = null;
+    try {
+      const { data: qData } = await supabaseAdmin
+        .from('quotations')
+        .insert({
+          workspace_id: currentUserId,
+          client_id: leadId || null,
+          quotation_number: newQuotationId,
+          title: resolvedTitle,
+          client_name: resolvedClientName,
+          client_phone: clientPhone || targetLead?.phone || null,
+          client_email: clientEmail || targetLead?.email || null,
+          status: 'draft',
+          created_at: now,
+          updated_at: now
+        })
+        .select()
+        .maybeSingle();
+      newQuote = qData;
+    } catch (_) {}
+
+    // 8. Save initial audit version in quotation_versions
     if (savedDoc?.id) {
       try {
         await supabaseAdmin.from('quotation_versions').insert({
