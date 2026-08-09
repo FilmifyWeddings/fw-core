@@ -230,7 +230,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Insert Quotation Document Snapshot into quotation_documents using supabaseAdmin
-    const docPayload: any = {
+    let docPayload: any = {
       template_id: quotationId,
       workspace_id: workspaceId,
       user_id: userId,
@@ -242,9 +242,28 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString()
     };
 
-    const { error: docInsErr } = await supabaseAdmin
+    let { error: docInsErr } = await supabaseAdmin
       .from('quotation_documents')
       .insert(docPayload);
+
+    if (docInsErr && (docInsErr.code === '23505' || docInsErr.message?.includes('unique'))) {
+      console.warn('[CONCURRENCY RETRY] Unique version collision detected, retrying version calculation...');
+      const retryVersion = nextVersion + 1;
+      clonedDoc.lead_version = retryVersion;
+      const retryQuotationId = `FW-Q-${leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}-V${retryVersion}-${randomSuffix}`;
+      docPayload.template_id = retryQuotationId;
+      docPayload.lead_version = retryVersion;
+      docPayload.version = retryVersion;
+      docPayload.content_json = clonedDoc;
+
+      const { error: retryErr } = await supabaseAdmin
+        .from('quotation_documents')
+        .insert(docPayload);
+
+      if (!retryErr) {
+        docInsErr = null;
+      }
+    }
 
     if (docInsErr) {
       console.error('Error inserting quotation document:', docInsErr);
