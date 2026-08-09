@@ -190,21 +190,7 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString();
     const resolvedTitle = customTitle || clonedJson.designName || 'Wedding Proposal';
 
-    // 5. Register new quotation in quotation_templates table
-    try {
-      await supabaseAdmin
-        .from('quotation_templates')
-        .insert({
-          id: newQuotationId,
-          user_id: currentUserId,
-          title: resolvedTitle,
-          category: 'Wedding',
-          created_at: now,
-          updated_at: now
-        });
-    } catch (_) {}
-
-    // 6. Save document JSON in quotation_documents table (Authoritative Document Storage)
+    // 5. Save document JSON in quotation_documents table (Authoritative Document Storage for Lead Quotation)
     const docPayload: any = {
       template_id: newQuotationId,
       user_id: currentUserId,

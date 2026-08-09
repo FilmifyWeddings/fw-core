@@ -499,11 +499,18 @@ export default function WorkspaceQuotationsGalleryPage() {
           .eq('workspace_id', currentUserId)
           .order('updated_at', { ascending: false });
 
+        const filteredTmplData = (tmplData || []).filter((t: any) => {
+          if (!t.id) return false;
+          // Exclude lead quotation instances from Your Designs gallery
+          if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
+          return true;
+        });
+
         const templateMap: Record<string, any> = {};
         const validTemplateIds = new Set<string>();
 
-        if (tmplData && tmplData.length > 0) {
-          tmplData.forEach(t => {
+        if (filteredTmplData.length > 0) {
+          filteredTmplData.forEach(t => {
             templateMap[t.id] = t;
             validTemplateIds.add(t.id);
           });
@@ -525,8 +532,8 @@ export default function WorkspaceQuotationsGalleryPage() {
           updated_at: new Date().toISOString()
         };
 
-        if (tmplData && tmplData.length > 0) {
-          combined = tmplData.map((t: any) => ({
+        if (filteredTmplData.length > 0) {
+          combined = filteredTmplData.map((t: any) => ({
             id: t.id,
             quotation_number: t.id,
             title: t.title || 'Wedding - Design 1',

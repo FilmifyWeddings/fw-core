@@ -419,19 +419,7 @@ export async function POST(
       }));
     }
 
-    // 4. Save to quotation_templates
-    await supabaseAdmin
-      .from('quotation_templates')
-      .upsert({
-        id: newTemplateId,
-        user_id: currentUserId,
-        title: `Wedding - Design 1 (V${nextLeadVersion})`,
-        category: 'Wedding',
-        created_at: now,
-        updated_at: now
-      }, { onConflict: 'id' });
-
-    // 5. Save to quotation_documents with lead_id & lead_version
+    // 4. Save to quotation_documents with lead_id & lead_version
     const docPayload: any = {
       template_id: newTemplateId,
       user_id: currentUserId,
