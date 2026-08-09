@@ -14,7 +14,6 @@ import {
   Gift, CreditCard, PackageCheck, Heart, Phone, Mail, Globe, GripVertical, CopyPlus, PlusCircle, Tag, Crown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { isSuperAdmin } from '@/lib/auth/admin-guard';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
@@ -29,34 +28,60 @@ import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems }
 import QuotationDocumentCanvas, { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
 import { DEFAULT_AIRY_PROPOSAL, calculatePricingTotals, normalizeQuotationData } from '@/lib/quotation-defaults';
 
-interface CustomPageItem {
+interface FunctionRequirement {
+  name: string;
+  qty: number;
+}
+
+interface FunctionItem {
+  id: string;
+  name: string;
+  date: string;
+  dateNotFixed?: boolean;
+  startTime?: string;
+  endTime?: string;
+  durationSlot?: string;
+  location: string;
+  requirements: FunctionRequirement[];
+  notes?: string;
+}
+
+interface PaymentTermStep {
+  id: string;
+  date: string;
+  stepName: string;
+  amount: number;
+  status: 'Completed' | 'Pending';
+}
+
+interface AddOnItem {
   id: string;
   title: string;
-  photoUrl?: string;
+  price: number;
+  selected: boolean;
+}
+
+interface PageSequenceItem {
+  id: string;
+  type: string;
+  label: string;
+  isStandard?: boolean;
+  customId?: string;
+}
+
+interface CustomPageItem {
+  id: string;
+  heading: string;
+  kicker?: string;
+  subtitle?: string;
+  text?: string;
+  photo?: string;
   photoHeight?: number;
   photoWidth?: number;
   photoFocalY?: number;
   bgOpacity?: number;
   frameShape?: 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background';
-  imagePosition?: 'top' | 'center' | 'bottom';
-  content?: string;
-}
-
-interface PaymentTermStep {
-  name: string;
-  pct: string;
-  amount: number;
-  status: 'Completed' | 'Pending';
-}
-
-function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmount: number) {
-  const fixedAmount = Number(totalProjectAmount || 0);
-  const stepList = Array.isArray(steps) ? steps : [];
-  const receivedAmount = stepList
-    .filter((s: any) => s && s.status === 'Completed')
-    .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
-  const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
-  return { fixedAmount, receivedAmount, pendingAmount };
+  imagePosition?: 'top' | 'center' | 'bottom' | 'full';
 }
 
 export interface StudioCoreAiryBuilderContentProps {
@@ -367,27 +392,62 @@ export function StudioCoreAiryBuilderContent({ mode = 'user-template' }: StudioC
         </div>
       )}
 
-      {/* Main Full-Featured Builder UI */}
+      {/* Main Full-Featured Builder UI with Left Sidebar & Center A4 Canvas */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Render Canvas & Controls */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#181716] relative">
-          <div className="p-4 border-b border-zinc-800 bg-[#141312] flex items-center justify-between">
+        {/* Left Sidebar Controls Panel */}
+        <aside className="w-96 border-r border-zinc-800 bg-[#141312] flex flex-col h-full overflow-hidden">
+          <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Link href={isAdminMode ? "/admin/quotation-templates" : "/workspace/quotations"} className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
-              <h2 className="text-sm font-black text-white">{data.designName || 'System Default Wedding Template'}</h2>
+              <h2 className="text-sm font-black text-white">{data.designName || 'Wedding - Design 1'}</h2>
             </div>
-            <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{autoSaveStatus}</span>
-            </div>
+            <span className="text-xs text-emerald-400 font-bold">{autoSaveStatus}</span>
           </div>
 
+          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            {/* Design Name */}
+            <div>
+              <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Design Name</label>
+              <input
+                type="text"
+                value={data.designName || ''}
+                onChange={(e) => setData({ ...data, designName: e.target.value })}
+                className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white font-bold text-xs"
+              />
+            </div>
+
+            {/* Couple Names */}
+            <div>
+              <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Couple Names</label>
+              <input
+                type="text"
+                value={data.cover?.coupleName || ''}
+                onChange={(e) => setData({ ...data, cover: { ...data.cover, coupleName: e.target.value } })}
+                className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white font-bold text-xs"
+              />
+            </div>
+
+            {/* Brand Name */}
+            <div>
+              <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Brand Name</label>
+              <input
+                type="text"
+                value={data.cover?.brandName || ''}
+                onChange={(e) => setData({ ...data, cover: { ...data.cover, brandName: e.target.value } })}
+                className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white font-bold text-xs"
+              />
+            </div>
+          </div>
+        </aside>
+
+        {/* Central A4 Canvas Preview Viewport */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-[#181716] relative">
           <div className="flex-1 overflow-auto p-6 flex justify-center items-start">
             <QuotationDocumentCanvas documentData={data} onlyFirstPage={false} />
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );
