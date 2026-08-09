@@ -910,13 +910,13 @@ export default function WorkspaceQuotationsGalleryPage() {
                       </span>
                     )}
 
-                    {/* Top-Right Delete Button for User-Owned Templates ONLY */}
-                    {!quote.is_system_template && quoteId !== 'FW-2WT85Y0' && (
+                    {/* Top-Right Delete Button (Enabled for User-Owned Templates AND Super Admin) */}
+                    {(!quote.is_system_template || isSuperAdminUser) && (
                       <button
                         type="button"
                         title="Delete Template"
                         onClick={() => setDeletingQuote(quote)}
-                        className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-white/90 dark:bg-zinc-800/90 text-slate-500 hover:text-red-600 dark:hover:text-red-400 shadow-md backdrop-blur-xs transition-colors z-30 cursor-pointer"
+                        className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-red-600/90 hover:bg-red-700 text-white shadow-md backdrop-blur-xs transition-colors z-30 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

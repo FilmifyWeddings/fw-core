@@ -299,30 +299,32 @@ async function handleDelete(
     const { id } = await context.params;
 
     const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user?.id || 'demo_user';
+    const userEmail = session?.user?.email;
+    const isAdmin = userEmail?.toLowerCase() === 'sushantnawale700@gmail.com';
 
-    const { data: targetTmpl } = await supabase
+    const { data: targetTmpl } = await supabaseAdmin
       .from('quotation_templates')
       .select('*')
       .eq('id', id)
       .maybeSingle();
 
-    // RULE: System template cannot be deleted
-    if (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === GLOBAL_SYSTEM_TEMPLATE_ID) {
+    // RULE: System template cannot be deleted by normal users, but CAN be deleted by Super Admin!
+    if (!isAdmin && (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === GLOBAL_SYSTEM_TEMPLATE_ID)) {
       return NextResponse.json({ error: 'System templates cannot be deleted.' }, { status: 400 });
     }
 
-    // RULE: Cannot delete current default template
-    if (targetTmpl?.is_default) {
+    // RULE: Cannot delete current default template for non-admin
+    if (!isAdmin && targetTmpl?.is_default) {
       return NextResponse.json({
         error: 'Cannot delete your current Default Template. Please set another template as Default first.'
       }, { status: 400 });
     }
 
-    // Delete user template & document from Supabase
-    await supabase.from('quotation_documents').delete().eq('template_id', id);
-    await supabase.from('quotation_templates').delete().eq('id', id);
-    await supabase.from('quotations').delete().or(`id.eq.${id},quotation_number.eq.${id}`);
+    // Delete template & document from Supabase (using supabaseAdmin for Super Admin)
+    const client = isAdmin ? supabaseAdmin : supabase;
+    await client.from('quotation_documents').delete().eq('template_id', id);
+    await client.from('quotation_templates').delete().eq('id', id);
+    await client.from('quotations').delete().or(`id.eq.${id},quotation_number.eq.${id}`);
 
     return NextResponse.json({ success: true, deletedId: id });
   } catch (error: any) {
