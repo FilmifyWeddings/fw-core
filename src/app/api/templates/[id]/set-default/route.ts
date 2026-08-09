@@ -55,16 +55,19 @@ export async function POST(
         .update({ is_default: false })
         .or(`user_id.eq.${currentUserId},user_id.eq.demo_user,user_id.is.null`);
 
-      // 3. Set target template is_default = true
-      if (targetTemplate && !isSystem) {
+      // 3. Upsert target template is_default = true
+      if (!isSystem) {
         await supabaseAdmin
           .from('quotation_templates')
-          .update({
+          .upsert({
+            id: id,
+            user_id: currentUserId,
+            title: targetTemplate?.title || 'Wedding Template',
+            category: 'Wedding',
             is_default: true,
-            user_id: currentUserId !== 'demo_user' ? currentUserId : (targetTemplate.user_id || 'demo_user'),
+            is_system_template: false,
             updated_at: new Date().toISOString()
-          })
-          .eq('id', id);
+          }, { onConflict: 'id' });
       }
     } catch (e: any) {
       console.warn('[Set Default Warning] Schema cache updated column fallback:', e?.message);

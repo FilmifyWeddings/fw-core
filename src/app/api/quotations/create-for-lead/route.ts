@@ -86,13 +86,14 @@ export async function POST(req: NextRequest) {
     } else {
       // FLOW A: Triggered from /leads -> Quotation Icon
       // Must use CURRENT USER'S ACTIVE DEFAULT TEMPLATE dynamically from DB
+
+      // LEVEL 1: Query quotation_templates for explicit is_default = true
       const { data: defaultCandidates } = await supabaseAdmin
         .from('quotation_templates')
         .select('id, user_id, is_default, is_system_template, updated_at')
         .eq('is_default', true)
         .order('updated_at', { ascending: false });
 
-      // Find the user's active custom default template (excluding lead quotation IDs FW-Q-, FW-L- and system templates)
       const userDefaultTmpl = (defaultCandidates || []).find(
         (t: any) => !t.id.startsWith('FW-Q-') && !t.id.startsWith('FW-L-') && !t.is_system_template && t.id !== 'FW-37C63A54D4'
       );
@@ -100,8 +101,38 @@ export async function POST(req: NextRequest) {
       if (userDefaultTmpl?.id) {
         sourceTemplateId = userDefaultTmpl.id;
       } else {
-        // Fallback to Global System Default Wedding Template
-        sourceTemplateId = 'FW-37C63A54D4';
+        // LEVEL 2: Find user's most recent user-owned template in quotation_templates
+        const { data: userTemplates } = await supabaseAdmin
+          .from('quotation_templates')
+          .select('id, user_id, is_system_template, updated_at')
+          .or(`user_id.eq.${currentUserId},user_id.eq.demo_user`)
+          .order('updated_at', { ascending: false });
+
+        const latestUserTmpl = (userTemplates || []).find(
+          (t: any) => !t.id.startsWith('FW-Q-') && !t.id.startsWith('FW-L-') && !t.is_system_template && t.id !== 'FW-37C63A54D4'
+        );
+
+        if (latestUserTmpl?.id) {
+          sourceTemplateId = latestUserTmpl.id;
+        } else {
+          // LEVEL 3: Search quotation_documents for user's custom template
+          const { data: userDocs } = await supabaseAdmin
+            .from('quotation_documents')
+            .select('template_id, updated_at')
+            .or(`user_id.eq.${currentUserId},user_id.eq.demo_user`)
+            .order('updated_at', { ascending: false });
+
+          const latestDocTmpl = (userDocs || []).find(
+            (d: any) => d.template_id && !d.template_id.startsWith('FW-Q-') && !d.template_id.startsWith('FW-L-') && d.template_id !== 'FW-37C63A54D4'
+          );
+
+          if (latestDocTmpl?.template_id) {
+            sourceTemplateId = latestDocTmpl.template_id;
+          } else {
+            // LEVEL 4: Global System Default Wedding Template fallback
+            sourceTemplateId = 'FW-37C63A54D4';
+          }
+        }
       }
     }
 
