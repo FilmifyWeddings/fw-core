@@ -57,18 +57,20 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
   const { id } = await params;
 
   // 1. Fetch document directly from Supabase DB
+  // 1. Fetch document directly from Supabase DB with multi-tier fallback
   let documentData: any = null;
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   const { data: doc } = await supabaseAdmin
     .from('quotation_documents')
-    .select('content_json')
+    .select('content_json, document_json')
     .eq('template_id', id)
     .maybeSingle();
 
-  if (doc?.content_json) {
-    documentData = doc.content_json;
+  const docContent = doc?.content_json || doc?.document_json;
+  if (docContent && typeof docContent === 'object' && Object.keys(docContent).length > 0) {
+    documentData = docContent;
   } else {
     let legacyQuery = supabaseAdmin.from('quotations').select('content_json, canvas_data');
     if (isUuid) {

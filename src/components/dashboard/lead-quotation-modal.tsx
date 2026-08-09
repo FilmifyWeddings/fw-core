@@ -343,48 +343,60 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                               <span>{updatedDateStr}</span>
                             </p>
 
-                            {/* Detailed Response Card under Date & Time */}
-                            {q.responseBadge && (
-                              <div className="mt-2.5 text-xs">
-                                {q.responseBadge.type === 'accepted' ? (
-                                  <div className="p-3 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200 space-y-1 shadow-2xs">
-                                    <div className="flex items-center gap-1.5 font-extrabold text-emerald-800 dark:text-emerald-400">
-                                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                      <span>✓ Proposal Accepted by Client</span>
-                                    </div>
-                                    {(q.responseBadge as any).clientName && (
-                                      <p className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200">
-                                        Client: {(q.responseBadge as any).clientName}
-                                      </p>
-                                    )}
-                                    {(q.responseBadge as any).clientNotes && (
-                                      <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 bg-emerald-100/60 dark:bg-emerald-900/30 p-2 rounded-xl border border-emerald-200/60 mt-1 whitespace-pre-wrap">
-                                        {(q.responseBadge as any).clientNotes}
-                                      </p>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="p-3 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-200 space-y-1 shadow-2xs">
-                                    <div className="flex items-center justify-between font-extrabold text-amber-900 dark:text-amber-300">
-                                      <div className="flex items-center gap-1.5">
-                                        <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                                        <span>Budget Discussion Requested</span>
-                                      </div>
-                                      {q.responseBadge.budgetAmount && (
-                                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black font-black text-[11px]">
-                                          ₹{q.responseBadge.budgetAmount.toLocaleString('en-IN')}
-                                        </span>
+                            {/* Detailed Response Cards under Date & Time (Renders both Accepted & Budget Discussion if both exist) */}
+                            {(() => {
+                              const responsesList = (q as any).responses && (q as any).responses.length > 0 
+                                ? (q as any).responses 
+                                : (q.responseBadge ? [q.responseBadge] : []);
+
+                              if (responsesList.length === 0) return null;
+
+                              return (
+                                <div className="mt-2.5 space-y-2 text-xs">
+                                  {responsesList.map((resp: any, idx: number) => (
+                                    <React.Fragment key={idx}>
+                                      {resp.type === 'accepted' ? (
+                                        <div className="p-3 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200 space-y-1 shadow-2xs">
+                                          <div className="flex items-center gap-1.5 font-extrabold text-emerald-800 dark:text-emerald-400">
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                            <span>✓ Proposal Accepted by Client</span>
+                                          </div>
+                                          {resp.clientName && (
+                                            <p className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200">
+                                              Client: {resp.clientName}
+                                            </p>
+                                          )}
+                                          {resp.clientNotes && (
+                                            <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 bg-emerald-100/60 dark:bg-emerald-900/30 p-2 rounded-xl border border-emerald-200/60 mt-1 whitespace-pre-wrap">
+                                              {resp.clientNotes}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="p-3 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-200 space-y-1 shadow-2xs">
+                                          <div className="flex items-center justify-between font-extrabold text-amber-900 dark:text-amber-300">
+                                            <div className="flex items-center gap-1.5">
+                                              <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                                              <span>Budget Discussion Requested</span>
+                                            </div>
+                                            {resp.budgetAmount && (
+                                              <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black font-black text-[11px]">
+                                                ₹{Number(resp.budgetAmount).toLocaleString('en-IN')}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {resp.clientNotes && (
+                                            <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 bg-amber-100/60 dark:bg-amber-900/30 p-2 rounded-xl border border-amber-200/60 mt-1 whitespace-pre-wrap">
+                                              {resp.clientNotes}
+                                            </p>
+                                          )}
+                                        </div>
                                       )}
-                                    </div>
-                                    {(q.responseBadge as any).clientNotes && (
-                                      <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 bg-amber-100/60 dark:bg-amber-900/30 p-2 rounded-xl border border-amber-200/60 mt-1 whitespace-pre-wrap">
-                                        {(q.responseBadge as any).clientNotes}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                                    </React.Fragment>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>

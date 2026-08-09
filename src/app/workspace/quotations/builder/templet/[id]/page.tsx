@@ -1824,6 +1824,28 @@ function StudioCoreAiryBuilderContent() {
   const [budgetNotes, setBudgetNotes] = useState('');
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
+  const triggerInstantConfetti = () => {
+    setShowConfetti(true);
+    try {
+      if ((window as any).confetti) {
+        (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.2, y: 0.65 } });
+        (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.8, y: 0.65 } });
+      } else {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js';
+        script.onload = () => {
+          if ((window as any).confetti) {
+            (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.2, y: 0.65 } });
+            (window as any).confetti({ particleCount: 90, spread: 85, origin: { x: 0.8, y: 0.65 } });
+          }
+        };
+        document.body.appendChild(script);
+      }
+    } catch (e) {
+      console.warn('Confetti notice:', e);
+    }
+  };
+
   const handleAcceptSubmit = async () => {
     if (!tokenParam) return;
     setAcceptValidationError(null);
@@ -1855,9 +1877,9 @@ function StudioCoreAiryBuilderContent() {
       if (json.success) {
         setAccepted(true);
         setShowAcceptModal(false);
-        setShowConfetti(true);
+        triggerInstantConfetti();
         setShowSuccessModal(true);
-        setTimeout(() => setShowConfetti(false), 5000);
+        setTimeout(() => setShowConfetti(false), 6000);
       } else {
         alert(json.error || 'Failed to accept quotation.');
       }

@@ -312,32 +312,33 @@ export async function GET(
         title = lead.name || 'Wedding Quotation';
       }
 
-      // Determine response badge status (Strict Version Isolation)
-      let responseBadge: any = null;
-      const explicitResp = (allResponses || []).find((r: any) =>
+      // Determine response badges for this version (Strict Version Isolation - Multi-Response Supported)
+      const versionResponsesList = (allResponses || []).filter((r: any) =>
         r.quotation_id === doc.template_id || Number(r.lead_version) === Number(leadVer)
       );
 
-      if (explicitResp) {
-        if (explicitResp.response_type === 'accepted') {
-          responseBadge = {
+      const versionResponses = versionResponsesList.map((r: any) => {
+        if (r.response_type === 'accepted') {
+          return {
             type: 'accepted',
             label: '✓ Accepted',
-            clientName: explicitResp.client_name,
-            clientNotes: explicitResp.client_notes,
-            created_at: explicitResp.created_at
+            clientName: r.client_name,
+            clientNotes: r.client_notes,
+            created_at: r.created_at
           };
-        } else if (explicitResp.response_type === 'budget_discussion') {
-          responseBadge = {
+        } else {
+          return {
             type: 'budget_discussion',
             label: 'Budget Discussion',
-            budgetAmount: explicitResp.budget_amount,
-            clientName: explicitResp.client_name,
-            clientNotes: explicitResp.client_notes,
-            created_at: explicitResp.created_at
+            budgetAmount: r.budget_amount,
+            clientName: r.client_name,
+            clientNotes: r.client_notes,
+            created_at: r.created_at
           };
         }
-      }
+      });
+
+      const responseBadge = versionResponses[0] || null;
 
       return {
         id: doc.id,
@@ -350,6 +351,7 @@ export async function GET(
         created_at: doc.created_at || new Date().toISOString(),
         public_token: matchingQuote?.public_token || null,
         responseBadge,
+        responses: versionResponses,
         content_json: content
       };
     }));
