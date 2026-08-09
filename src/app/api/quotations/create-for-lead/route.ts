@@ -38,6 +38,12 @@ export async function POST(req: NextRequest) {
       workspaceId = profile.id;
     }
 
+    console.log('[LEAD QUOTATION] requested', {
+      leadId,
+      workspaceId,
+      explicitTemplateId: explicitTemplateId || 'NONE'
+    });
+
     // 1. Fetch Lead
     const { data: lead, error: leadErr } = await supabase
       .from('leads')
@@ -79,11 +85,17 @@ export async function POST(req: NextRequest) {
 
     // If no explicit document found or no explicitTemplateId provided, resolve user default from Supabase
     if (!templateDoc) {
-      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId);
+      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);
       sourceTemplateId = resolved.templateId;
       templateDoc = resolved.document;
       isSystemTemplate = resolved.isSystemTemplate;
     }
+
+    console.log('[LEAD QUOTATION] resolved template', {
+      sourceTemplateId,
+      isSystemTemplate,
+      workspaceId
+    });
 
     // Deep clone document JSON and regenerate unique page IDs
     const clonedDoc = JSON.parse(JSON.stringify(templateDoc || { meta: {}, pages: [] }));
@@ -108,6 +120,12 @@ export async function POST(req: NextRequest) {
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const quotationId = `Q-${randomSuffix}`;
 
+    console.log('[LEAD QUOTATION] created quotation', {
+      quotationId,
+      sourceTemplateId,
+      leadId
+    });
+
     // Insert new Quotation Record
     const { error: quoteInsErr } = await supabase
       .from('quotations')
@@ -119,6 +137,7 @@ export async function POST(req: NextRequest) {
         user_id: userId,
         status: 'draft',
         source_template_id: sourceTemplateId,
+        content_json: clonedDoc,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -127,7 +146,7 @@ export async function POST(req: NextRequest) {
       console.error('Error inserting quotation record:', quoteInsErr);
     }
 
-    // Insert Quotation Document Snapshot
+    // Insert Quotation Document Snapshot (with both document_json and content_json populated)
     const { error: docInsErr } = await supabase
       .from('quotation_documents')
       .insert({
@@ -135,6 +154,7 @@ export async function POST(req: NextRequest) {
         workspace_id: workspaceId,
         user_id: userId,
         document_json: clonedDoc,
+        content_json: clonedDoc,
         version: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -143,6 +163,10 @@ export async function POST(req: NextRequest) {
     if (docInsErr) {
       console.error('Error inserting quotation document snapshot:', docInsErr);
     }
+
+    console.log('[LEAD QUOTATION] redirect', {
+      redirectRoute: `/workspace/quotations/builder/templet/${quotationId}`
+    });
 
     return NextResponse.json({
       success: true,

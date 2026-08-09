@@ -404,6 +404,7 @@ export async function POST(
       lead_id: leadId,
       lead_version: nextLeadVersion,
       content_json: newQuotationJson,
+      document_json: newQuotationJson,
       created_at: now,
       updated_at: now
     };

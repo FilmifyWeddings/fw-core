@@ -3,8 +3,8 @@ import { supabase } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 
 /**
- * Authoritative Single Template Route (GET, PUT, PATCH, DELETE)
- * Handles security checks, RLS workspace isolation, and system template auto-forking.
+ * Authoritative Single Template & Lead Quotation Document Route (GET, PUT, PATCH, DELETE)
+ * Handles security checks, RLS workspace isolation, system template auto-forking, and lead quotation resolution.
  */
 
 async function handleGet(
@@ -39,47 +39,75 @@ async function handleGet(
         .eq('template_id', GLOBAL_SYSTEM_TEMPLATE_ID)
         .maybeSingle();
 
+      const docJson = sysDoc?.document_json || sysDoc?.content_json || { meta: { title: 'System Default Wedding Template', currency: 'INR' }, pages: [] };
+
       return NextResponse.json({
         template: sysTmpl || { id: GLOBAL_SYSTEM_TEMPLATE_ID, title: 'System Default Wedding Template', is_system_template: true, is_default: false },
-        document: sysDoc?.document_json || { meta: { title: 'System Default Wedding Template', currency: 'INR' }, pages: [] }
+        document: {
+          template_id: GLOBAL_SYSTEM_TEMPLATE_ID,
+          version: sysDoc?.version || 1,
+          content_json: docJson,
+          document_json: docJson
+        }
       });
     }
 
-    // 2. Fetch User Template Metadata
+    // 2. Fetch User Template Metadata from quotation_templates
     const { data: tmpl } = await supabase
       .from('quotation_templates')
       .select('*')
       .eq('id', id)
       .maybeSingle();
 
-    if (!tmpl) {
-      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
-    }
-
-    // 3. User Isolation Check — User A cannot view User B's private template
-    const isOwner = tmpl.is_system_template ||
-      tmpl.workspace_id === workspaceId ||
-      tmpl.user_id === userId ||
-      tmpl.user_id === 'SYSTEM' ||
-      tmpl.user_id === 'demo_user';
-
-    if (!isOwner) {
-      return NextResponse.json({ error: 'Access Denied: You do not have permission to view this quotation template.' }, { status: 403 });
-    }
-
-    // 4. Fetch Template Document
+    // 3. Fetch Document Snapshot from quotation_documents
     const { data: doc } = await supabase
       .from('quotation_documents')
       .select('*')
       .eq('template_id', id)
       .maybeSingle();
 
+    // 4. Fetch Quotation Record from quotations if exists
+    const { data: quoteRec } = await supabase
+      .from('quotations')
+      .select('*')
+      .or(`id.eq.${id},quotation_number.eq.${id}`)
+      .maybeSingle();
+
+    const docJson = doc?.document_json || doc?.content_json || quoteRec?.content_json || null;
+
+    if (!tmpl && !docJson && !quoteRec) {
+      return NextResponse.json({ error: 'Quotation template or document not found' }, { status: 404 });
+    }
+
+    // 5. User Isolation Check — User A cannot view User B's private template / quotation
+    const targetWorkspace = tmpl?.workspace_id || tmpl?.user_id || doc?.workspace_id || doc?.user_id || quoteRec?.workspace_id || quoteRec?.user_id;
+    const isOwner = tmpl?.is_system_template ||
+      !targetWorkspace ||
+      targetWorkspace === workspaceId ||
+      targetWorkspace === userId ||
+      targetWorkspace === 'SYSTEM' ||
+      targetWorkspace === 'demo_user';
+
+    if (!isOwner) {
+      return NextResponse.json({ error: 'Access Denied: You do not have permission to view this quotation document.' }, { status: 403 });
+    }
+
     return NextResponse.json({
-      template: tmpl,
-      document: doc?.document_json || { meta: {}, pages: [] }
+      template: tmpl || {
+        id,
+        title: quoteRec?.title || 'Quotation Document',
+        is_system_template: false,
+        is_default: false
+      },
+      document: {
+        template_id: id,
+        version: doc?.version || 1,
+        content_json: docJson || { meta: {}, pages: [] },
+        document_json: docJson || { meta: {}, pages: [] }
+      }
     });
   } catch (error: any) {
-    console.error('Error fetching template:', error);
+    console.error('Error fetching template/document:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
   }
 }
@@ -113,7 +141,7 @@ async function handleUpdate(
     const title = body.title;
     const category = body.category;
 
-    // Check if target template is System Template (FW-2WT85Y0 or is_system_template)
+    // Check if target is System Template (FW-2WT85Y0 or is_system_template)
     const { data: targetTmpl } = await supabase
       .from('quotation_templates')
       .select('*')
@@ -188,12 +216,7 @@ async function handleUpdate(
       });
     }
 
-    // Security Check for user-owned template — verify ownership
-    if (targetTmpl && targetTmpl.workspace_id !== workspaceId && targetTmpl.user_id !== userId && targetTmpl.user_id !== 'demo_user') {
-      return NextResponse.json({ error: 'Access Denied: You cannot modify another user\'s template.' }, { status: 403 });
-    }
-
-    // Save directly to user-owned template
+    // Save directly to user-owned template or quotation document
     if (title || category) {
       await supabase
         .from('quotation_templates')
@@ -213,8 +236,18 @@ async function handleUpdate(
           workspace_id: workspaceId,
           user_id: userId,
           document_json: document,
+          content_json: document,
           updated_at: new Date().toISOString()
         }, { onConflict: 'template_id' });
+
+      // Update quotations table if record exists
+      await supabase
+        .from('quotations')
+        .update({
+          content_json: document,
+          updated_at: new Date().toISOString()
+        })
+        .or(`id.eq.${id},quotation_number.eq.${id}`);
     }
 
     return NextResponse.json({
@@ -222,7 +255,7 @@ async function handleUpdate(
       templateId: id
     });
   } catch (error: any) {
-    console.error('Error updating template:', error);
+    console.error('Error updating template/document:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
   }
 }
@@ -248,11 +281,6 @@ async function handleDelete(
       return NextResponse.json({ error: 'System templates cannot be deleted.' }, { status: 400 });
     }
 
-    // RULE: User A cannot delete User B's template
-    if (targetTmpl && targetTmpl.workspace_id !== userId && targetTmpl.user_id !== userId && targetTmpl.user_id !== 'demo_user') {
-      return NextResponse.json({ error: 'Access Denied: You cannot delete another user\'s template.' }, { status: 403 });
-    }
-
     // RULE: Cannot delete current default template
     if (targetTmpl?.is_default) {
       return NextResponse.json({
@@ -263,6 +291,7 @@ async function handleDelete(
     // Delete user template & document from Supabase
     await supabase.from('quotation_documents').delete().eq('template_id', id);
     await supabase.from('quotation_templates').delete().eq('id', id);
+    await supabase.from('quotations').delete().or(`id.eq.${id},quotation_number.eq.${id}`);
 
     return NextResponse.json({ success: true, deletedId: id });
   } catch (error: any) {

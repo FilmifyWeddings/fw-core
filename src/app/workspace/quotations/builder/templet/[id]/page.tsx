@@ -2326,14 +2326,16 @@ function StudioCoreAiryBuilderContent() {
         const json = await res.json();
         let loadedData: any = null;
 
-        if (json.document?.content_json) {
+        const docContent = json.document?.content_json || json.document?.document_json || (json.document?.pages ? json.document : null);
+
+        if (docContent) {
           // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
-          loadedData = normalizeQuotationData(json.document.content_json);
-          currentVersionRef.current = json.document.version || 1;
+          loadedData = normalizeQuotationData(docContent);
+          currentVersionRef.current = json.document?.version || 1;
         } else {
           // Fallback to local IndexedDB cache only if document does not exist on DB
           const cachedLocal = await getCachedDocumentLocal(routeId);
-          if (cachedLocal) {
+          if (cachedLocal?.documentJson) {
             currentVersionRef.current = cachedLocal.version || 1;
             loadedData = normalizeQuotationData(cachedLocal.documentJson);
           }
