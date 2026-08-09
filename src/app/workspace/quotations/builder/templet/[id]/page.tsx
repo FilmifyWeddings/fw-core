@@ -1766,7 +1766,7 @@ function StudioCoreAiryBuilderContent() {
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   
-  const [data, setData] = useState<any>(DEFAULT_AIRY_PROPOSAL);
+  const [data, rawSetData] = useState<any>(DEFAULT_AIRY_PROPOSAL);
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1776,6 +1776,50 @@ function StudioCoreAiryBuilderContent() {
   const clientTabIdRef = useRef<string>(`tab_${Math.random().toString(36).substring(2, 9)}`);
   const realtimeChannelRef = useRef<any>(null);
   const isRemoteUpdateRef = useRef<boolean>(false);
+
+  // ── REVISION-SAFE AUTOSAVE & REALTIME CONCURRENCY CONTROL ──
+  const localRevisionRef = useRef<number>(1);
+  const lastSavedRevisionRef = useRef<number>(1);
+  const latestDataRef = useRef<any>(data);
+  const isDirtyRef = useRef<boolean>(false);
+  const isSaveInFlightRef = useRef<boolean>(false);
+  const pendingSaveTimeoutRef = useRef<any>(null);
+
+  // Synchronously sync latestDataRef on every React state update
+  useEffect(() => {
+    latestDataRef.current = data;
+  }, [data]);
+
+  // setRawData updates React state without scheduling autosave or marking local edits dirty
+  const setRawData = useCallback((updater: any) => {
+    rawSetData((prevData: any) => {
+      const nextData = typeof updater === 'function' ? updater(prevData) : updater;
+      latestDataRef.current = nextData;
+      return nextData;
+    });
+  }, []);
+
+  // setData wrapper for user edits: updates state, increments revision, marks dirty, and schedules debounced autosave
+  const setData = useCallback((updater: any) => {
+    rawSetData((prevData: any) => {
+      const nextData = typeof updater === 'function' ? updater(prevData) : updater;
+      latestDataRef.current = nextData;
+      localRevisionRef.current += 1;
+      isDirtyRef.current = true;
+      setHasUnsavedChanges(true);
+      setAutoSaveStatus('Editing...');
+
+      if (pendingSaveTimeoutRef.current) {
+        clearTimeout(pendingSaveTimeoutRef.current);
+      }
+      pendingSaveTimeoutRef.current = setTimeout(() => {
+        triggerRevisionSave();
+      }, 750);
+
+      return nextData;
+    });
+  }, [userId]);
+
   const [openCard, setOpenCard] = useState<string | null>('cover');
   // ── DYNAMIC PAGE SEQUENCE & CUSTOM PAGE CONTROLS ──
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
@@ -1784,8 +1828,7 @@ function StudioCoreAiryBuilderContent() {
   const pageSequence: PageSequenceItem[] = data?.pageSequence || DEFAULT_PAGE_SEQUENCE;
 
   const updatePageSequence = (newSeq: PageSequenceItem[]) => {
-    setData((prev: any) => ({ ...prev, pageSequence: newSeq }));
-    setHasUnsavedChanges(true);
+    updateData((prev: any) => ({ ...prev, pageSequence: newSeq }));
   };
 
   const movePageUp = (index: number) => {
@@ -2321,7 +2364,7 @@ function StudioCoreAiryBuilderContent() {
         } catch (e) {}
 
         isRemoteUpdateRef.current = true;
-        setData(loadedData);
+        setRawData(loadedData);
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
         setIsDataReady(true);
@@ -2353,12 +2396,19 @@ function StudioCoreAiryBuilderContent() {
   useEffect(() => {
     const routeId = params?.id ? String(params.id) : 'FW-2026-001';
 
-    const handleRemoteData = (remoteContent: any, remoteVersion?: number, senderId?: string) => {
-      if (senderId && senderId === clientTabIdRef.current) {
-        // Ignore self-broadcasts
+    const handleRemoteData = (remoteContent: any, remoteVersion?: number, senderId?: string, clientId?: string) => {
+      // 1. Ignore self-broadcasts or self-changes
+      if ((senderId && senderId === clientTabIdRef.current) || (clientId && clientId === clientTabIdRef.current)) {
         return;
       }
 
+      // 2. Ignore remote updates if user is actively typing / editing locally (isDirtyRef is true)
+      if (isDirtyRef.current || localRevisionRef.current > lastSavedRevisionRef.current) {
+        console.log('[Realtime Sync] Suppressed remote overwrite: active local user edits present');
+        return;
+      }
+
+      // 3. Ignore outdated versions
       if (remoteVersion && remoteVersion <= currentVersionRef.current) {
         console.log(`[Realtime Sync] Ignored outdated update v${remoteVersion} <= current v${currentVersionRef.current}`);
         return;
@@ -2370,8 +2420,9 @@ function StudioCoreAiryBuilderContent() {
       }
 
       const normalized = normalizeQuotationData(remoteContent);
+      latestDataRef.current = normalized;
       isRemoteUpdateRef.current = true;
-      setData(normalized);
+      setRawData(normalized);
       try {
         localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(normalized));
       } catch (e) {}
@@ -2387,7 +2438,7 @@ function StudioCoreAiryBuilderContent() {
       })
       .on('broadcast', { event: 'doc_update' }, (payload: any) => {
         if (payload?.payload?.data) {
-          handleRemoteData(payload.payload.data, payload.payload.version, payload.payload.senderId);
+          handleRemoteData(payload.payload.data, payload.payload.version, payload.payload.senderId, payload.payload.clientId);
         }
       })
       .on('postgres_changes', {
@@ -2397,7 +2448,8 @@ function StudioCoreAiryBuilderContent() {
         filter: `template_id=eq.${routeId}`
       }, (payload: any) => {
         if (payload.new && payload.new.content_json) {
-          handleRemoteData(payload.new.content_json, payload.new.version);
+          if (payload.new.client_id === clientTabIdRef.current) return;
+          handleRemoteData(payload.new.content_json, payload.new.version, undefined, payload.new.client_id);
         }
       })
       .on('postgres_changes', {
@@ -2414,28 +2466,8 @@ function StudioCoreAiryBuilderContent() {
 
     realtimeChannelRef.current = channel;
 
-    // Listen to online reconnect events to flush IndexedDB outbox queue
     const handleOnline = () => {
-      flushOfflineOutbox(async (item: any) => {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`/api/templates/${item.templateId}`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session?.access_token || ''}`
-            },
-            body: JSON.stringify({
-              user_id: userId,
-              version: currentVersionRef.current,
-              content_json: item.payload
-            })
-          });
-          return res.ok;
-        } catch {
-          return false;
-        }
-      });
+      flushSaveImmediately();
     };
 
     window.addEventListener('online', handleOnline);
@@ -2447,119 +2479,123 @@ function StudioCoreAiryBuilderContent() {
     };
   }, [params, userId]);
 
-  // ── 3. CANVA-STYLE DEBOUNCED PERSISTENCE TO SUPABASE DB + BROADCAST ──
-  useEffect(() => {
+  // ── 3. REVISION-SAFE SERIALIZED AUTOSAVE ENGINE ──
+  const triggerRevisionSave = async () => {
     if (!userId || !isInitialLoadedRef.current) return;
 
-    // Skip auto-save if this state change was triggered by an incoming remote update
-    if (isRemoteUpdateRef.current) {
-      isRemoteUpdateRef.current = false;
+    if (isSaveInFlightRef.current) {
+      if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
+      pendingSaveTimeoutRef.current = setTimeout(() => {
+        triggerRevisionSave();
+      }, 350);
       return;
     }
 
+    const targetRevision = localRevisionRef.current;
+    if (targetRevision <= lastSavedRevisionRef.current && !isDirtyRef.current) {
+      setAutoSaveStatus('Auto-saved to cloud');
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    isSaveInFlightRef.current = true;
     setAutoSaveStatus('Saving...');
-    setHasUnsavedChanges(true);
+    setSaving(true);
 
-    const timer = setTimeout(async () => {
-      try {
-        const calc = calculatePricingTotals(data.pricingPage);
-        const grandTotal = calc.netTotal;
-        const subtotal = calc.gross;
+    const snapshotData = typeof structuredClone === 'function'
+      ? structuredClone(latestDataRef.current)
+      : JSON.parse(JSON.stringify(latestDataRef.current));
 
-        const { data: { session } } = await supabase.auth.getSession();
-        const userAccessToken = session?.access_token;
-        const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+    try {
+      const calc = calculatePricingTotals(snapshotData.pricingPage);
+      const grandTotal = calc.netTotal;
+      const subtotal = calc.gross;
 
-        const saveRes = await fetch(`/api/templates/${routeId}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${userAccessToken || ''}`
-          },
-          body: JSON.stringify({
-            user_id: userId,
+      const { data: { session } } = await supabase.auth.getSession();
+      const userAccessToken = session?.access_token;
+      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
+
+      const saveRes = await fetch(`/api/templates/${routeId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userAccessToken || ''}`
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          version: currentVersionRef.current,
+          revision: targetRevision,
+          content_json: snapshotData,
+          client_id: clientTabIdRef.current
+        })
+      });
+
+      if (saveRes.ok) {
+        const resJson = await saveRes.json();
+        if (resJson.version) {
+          currentVersionRef.current = resJson.version;
+        }
+        cacheDocumentLocal(routeId, snapshotData, currentVersionRef.current);
+      }
+
+      await fetch(`/api/quotations/${routeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userAccessToken || ''}`
+        },
+        body: JSON.stringify({
+          workspace_id: userId || 'demo_user',
+          title: snapshotData.designName || 'Wedding - Design 1',
+          client_name: `${snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : 'Rahul & Neha')}`,
+          content_json: snapshotData,
+          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
+          status: 'draft'
+        })
+      });
+
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'doc_update',
+          payload: {
+            data: snapshotData,
             version: currentVersionRef.current,
-            content_json: data
-          })
-        });
-
-        if (saveRes.status === 403) {
-          setAutoSaveStatus('Access Denied');
-          setHasUnsavedChanges(false);
-          return;
-        }
-
-        if (saveRes.status === 409) {
-          console.warn('[Optimistic Lock Conflict]: Fetching canonical DB state...');
-          const conflictData = await saveRes.json();
-          if (conflictData.serverVersion) {
-            currentVersionRef.current = conflictData.serverVersion;
+            revision: targetRevision,
+            senderId: clientTabIdRef.current,
+            clientId: clientTabIdRef.current
           }
-          const freshRes = await fetch(`/api/templates/${routeId}`, {
-            headers: { 'Authorization': `Bearer ${userAccessToken || ''}` }
-          });
-          if (freshRes.ok) {
-            const freshJson = await freshRes.json();
-            if (freshJson.document?.content_json) {
-              isRemoteUpdateRef.current = true;
-              setData(normalizeQuotationData(freshJson.document.content_json));
-            }
-          }
-          setAutoSaveStatus('Version updated from cloud');
-          setHasUnsavedChanges(false);
-          return;
-        }
+        }).catch(() => {});
+      }
 
-        let newVersion = currentVersionRef.current + 1;
-        if (saveRes.ok) {
-          const resJson = await saveRes.json();
-          if (resJson.version) {
-            newVersion = resJson.version;
-            currentVersionRef.current = newVersion;
-          }
-          cacheDocumentLocal(routeId, data, newVersion);
-        }
+      lastSavedRevisionRef.current = Math.max(lastSavedRevisionRef.current, targetRevision);
 
-        // Also sync quotation payload in real-time
-        await fetch(`/api/quotations/${routeId}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${userAccessToken || ''}`
-          },
-          body: JSON.stringify({
-            workspace_id: userId || 'demo_user',
-            title: data.designName || 'Wedding - Design 1',
-            client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
-            content_json: data,
-            financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-            status: 'draft'
-          })
-        });
-
-        // Broadcast confirmed saved revision to all connected devices
-        if (realtimeChannelRef.current) {
-          realtimeChannelRef.current.send({
-            type: 'broadcast',
-            event: 'doc_update',
-            payload: {
-              data: data,
-              version: newVersion,
-              senderId: clientTabIdRef.current
-            }
-          }).catch(() => {});
-        }
-
+      if (localRevisionRef.current === targetRevision) {
+        isDirtyRef.current = false;
         setHasUnsavedChanges(false);
         setAutoSaveStatus('Auto-saved to cloud');
-      } catch (err) {
-        setAutoSaveStatus('Offline / Retrying');
-        setHasUnsavedChanges(false);
+      } else {
+        if (pendingSaveTimeoutRef.current) clearTimeout(pendingSaveTimeoutRef.current);
+        pendingSaveTimeoutRef.current = setTimeout(() => {
+          triggerRevisionSave();
+        }, 500);
       }
-    }, 400);
+    } catch (err) {
+      console.warn('[Autosave Notice]:', err);
+      setAutoSaveStatus('Offline / Retrying');
+    } finally {
+      isSaveInFlightRef.current = false;
+      setSaving(false);
+    }
+  };
 
-    return () => clearTimeout(timer);
-  }, [data, userId]);
+  const flushSaveImmediately = async () => {
+    if (pendingSaveTimeoutRef.current) {
+      clearTimeout(pendingSaveTimeoutRef.current);
+      pendingSaveTimeoutRef.current = null;
+    }
+    await triggerRevisionSave();
+  };
 
   const openAddImageModal = (target: string) => {
     setActiveTargetField(target);
@@ -2630,64 +2666,12 @@ function StudioCoreAiryBuilderContent() {
   const subtotal = calc.gross;
 
   const handleManualSave = async () => {
-    setSaving(true);
-    setAutoSaveStatus('Saving...');
     try {
-      localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(data));
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const userAccessToken = session?.access_token;
-      const routeId = params?.id ? String(params.id) : 'FW-2026-001';
-
-      // 1. Save template payload and sync current version
-      const saveRes = await fetch(`/api/templates/${routeId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userAccessToken || ''}`
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          version: currentVersionRef.current,
-          content_json: data
-        })
-      });
-
-      if (saveRes.ok) {
-        try {
-          const resJson = await saveRes.json();
-          if (resJson.version) {
-            currentVersionRef.current = resJson.version;
-          }
-        } catch (e) {}
-        cacheDocumentLocal(routeId, data, currentVersionRef.current);
-      }
-
-      // 2. Save quotation record
-      await fetch(`/api/quotations/${routeId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userAccessToken || ''}`
-        },
-        body: JSON.stringify({
-          workspace_id: userId || 'demo_user',
-          title: data.designName || 'Wedding - Design 1',
-          client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
-          content_json: data,
-          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-          status: 'draft'
-        })
-      });
-
-      setHasUnsavedChanges(false);
-      setAutoSaveStatus('Auto-saved to cloud');
+      await flushSaveImmediately();
       alert('Quotation proposal saved to your workspace!');
     } catch {
       alert('Saved locally!');
       setAutoSaveStatus('Saved locally');
-    } finally {
-      setSaving(false);
     }
   };
 

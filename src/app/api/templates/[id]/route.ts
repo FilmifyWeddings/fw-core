@@ -140,19 +140,7 @@ export async function PATCH(
       );
     }
 
-    // Optimistic Concurrency Lock Check
-    if (currentDoc && expectedVersion && currentDoc.version > expectedVersion) {
-      return NextResponse.json(
-        {
-          error: 'Version conflict: Outdated write rejected.',
-          isConflict: true,
-          serverVersion: currentDoc.version
-        },
-        { status: 409 }
-      );
-    }
-
-    const nextVersion = (currentDoc?.version || 0) + 1;
+    const nextVersion = Math.max(currentDoc?.version || 0, expectedVersion || 0) + 1;
     const now = new Date().toISOString();
 
     // 2. Ensure template record exists
