@@ -1,308 +1,157 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
+import { resolveUserDefaultQuotationTemplate, GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { persistSession: false }
-});
-
-// POST /api/quotations/create-for-lead
-// Authoritative endpoint for creating an independent lead quotation cloned from:
-// FLOW A: User's Active Default Template (or Global System Default fallback if no personal default)
-// FLOW B: Specifically selected templateId (from /quotations -> FOR LEADS flow)
+/**
+ * Authoritative Backend Route for Lead Quotation Creation
+ * Handles both:
+ * 1. Default template resolution (when no explicitTemplateId passed, e.g. from Leads page action).
+ * 2. Explicit template creation (when explicitTemplateId passed, e.g. from "Use for Lead" on a card).
+ */
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '');
+    const { data: { session } } = await supabase.auth.getSession();
+    let userId = session?.user?.id || 'demo_user';
+    let userEmail = session?.user?.email;
 
-    let currentUserId = 'demo_user';
-    if (token) {
-      const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-      if (user) {
-        currentUserId = user.id;
-      }
+    const body = await req.json().catch(() => ({}));
+    const { leadId, explicitTemplateId } = body;
+
+    if (!leadId) {
+      return NextResponse.json({ error: 'leadId is required' }, { status: 400 });
     }
 
-    const body = await req.json();
-    const { 
-      leadId, 
-      templateId, 
-      sourceTemplateId: inputSourceId,
-      clientName, 
-      clientPhone, 
-      clientEmail, 
-      eventDate, 
-      customTitle 
-    } = body;
-
-    let targetLead: any = null;
-    let resolvedClientName = clientName || 'Valued Client';
-
-    // 1. Verify Lead existence and authorization if leadId is passed
-    if (leadId) {
-      const { data: leadData } = await supabaseAdmin
-        .from('leads')
-        .select('*')
-        .eq('id', leadId)
-        .maybeSingle();
-
-      if (leadData) {
-        // Multi-Tenant Lead Isolation Check
-        if (leadData.workspace_id && leadData.workspace_id !== currentUserId && leadData.workspace_id !== 'demo_user' && currentUserId !== 'demo_user') {
-          return NextResponse.json(
-            { error: 'Access denied: You do not own this lead.', isForbidden: true },
-            { status: 403 }
-          );
-        }
-        targetLead = leadData;
-        resolvedClientName = leadData.name || clientName || 'Valued Client';
-      }
+    // Admin impersonation override
+    if (userEmail === 'sushantnawale700@gmail.com') {
+      const impId = req.headers.get('x-impersonated-tenant-id');
+      if (impId) userId = impId;
     }
 
-    // 2. Resolve Source Template ID
-    const explicitTemplateId = templateId || inputSourceId;
-    let sourceTemplateId = 'FW-37C63A54D4';
+    let workspaceId = userId;
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, workspace_name')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile?.id) {
+      workspaceId = profile.id;
+    }
+
+    // 1. Fetch Lead
+    const { data: lead, error: leadErr } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (leadErr || !lead) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+    }
+
+    let sourceTemplateId = GLOBAL_SYSTEM_TEMPLATE_ID;
+    let templateDoc: any = null;
+    let isSystemTemplate = false;
 
     if (explicitTemplateId) {
-      // FLOW B: User explicitly clicked FOR LEADS on a specific template card
-      // Verify authorization for the explicitly selected template
-      const { data: explicitTmpl } = await supabaseAdmin
+      // User explicitly clicked "Use for Lead" on a specific card
+      const { data: explicitTmpl } = await supabase
         .from('quotation_templates')
-        .select('id, user_id, is_system_template')
+        .select('*')
         .eq('id', explicitTemplateId)
         .maybeSingle();
 
-      const isSystem = explicitTemplateId === 'FW-37C63A54D4' || explicitTemplateId === 'SYSTEM_DEFAULT_WEDDING' || (explicitTmpl as any)?.is_system_template || explicitTmpl?.user_id === 'SYSTEM';
+      if (explicitTmpl) {
+        sourceTemplateId = explicitTmpl.id;
+        isSystemTemplate = !!explicitTmpl.is_system_template;
 
-      if (!isSystem && explicitTmpl && explicitTmpl.user_id && explicitTmpl.user_id !== currentUserId && explicitTmpl.user_id !== 'demo_user' && currentUserId !== 'demo_user') {
-        return NextResponse.json(
-          { error: 'Access denied: You do not own this quotation template.', isForbidden: true },
-          { status: 403 }
-        );
-      }
+        const { data: doc } = await supabase
+          .from('quotation_documents')
+          .select('*')
+          .eq('template_id', explicitTemplateId)
+          .maybeSingle();
 
-    } else {
-      // FLOW A: Triggered from /leads -> Quotation Icon
-      // Must use CURRENT USER'S ACTIVE DEFAULT TEMPLATE dynamically from DB
-
-      // LEVEL 1: Query quotation_templates for explicit is_default = true
-      const { data: defaultCandidates } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('id, user_id, is_default, is_system_template, updated_at')
-        .eq('is_default', true)
-        .order('updated_at', { ascending: false });
-
-      const userDefaultTmpl = (defaultCandidates || []).find(
-        (t: any) => !t.id.startsWith('FW-Q-') && !t.id.startsWith('FW-L-') && !t.is_system_template && t.id !== 'FW-37C63A54D4'
-      );
-
-      if (userDefaultTmpl?.id) {
-        sourceTemplateId = userDefaultTmpl.id;
-      } else {
-        // LEVEL 2: Find user's most recent user-owned template in quotation_templates
-        const { data: userTemplates } = await supabaseAdmin
-          .from('quotation_templates')
-          .select('id, user_id, is_system_template, updated_at')
-          .or(`user_id.eq.${currentUserId},user_id.eq.demo_user`)
-          .order('updated_at', { ascending: false });
-
-        const latestUserTmpl = (userTemplates || []).find(
-          (t: any) => !t.id.startsWith('FW-Q-') && !t.id.startsWith('FW-L-') && !t.is_system_template && t.id !== 'FW-37C63A54D4'
-        );
-
-        if (latestUserTmpl?.id) {
-          sourceTemplateId = latestUserTmpl.id;
-        } else {
-          // LEVEL 3: Search quotation_documents for user's custom template
-          const { data: userDocs } = await supabaseAdmin
-            .from('quotation_documents')
-            .select('template_id, updated_at')
-            .or(`user_id.eq.${currentUserId},user_id.eq.demo_user`)
-            .order('updated_at', { ascending: false });
-
-          const latestDocTmpl = (userDocs || []).find(
-            (d: any) => d.template_id && !d.template_id.startsWith('FW-Q-') && !d.template_id.startsWith('FW-L-') && d.template_id !== 'FW-37C63A54D4'
-          );
-
-          if (latestDocTmpl?.template_id) {
-            sourceTemplateId = latestDocTmpl.template_id;
-          } else {
-            // LEVEL 4: Global System Default Wedding Template fallback
-            sourceTemplateId = 'FW-37C63A54D4';
-          }
+        if (doc?.document_json) {
+          templateDoc = doc.document_json;
         }
       }
     }
 
-    // 3. Fetch source document JSON (Authoritative Source)
-    let sourceJson: any = null;
-    if (sourceTemplateId) {
-      const { data: sourceDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .eq('template_id', sourceTemplateId)
-        .maybeSingle();
-      sourceJson = sourceDoc?.content_json;
+    // If no explicit document found or no explicitTemplateId provided, resolve user default from Supabase
+    if (!templateDoc) {
+      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId);
+      sourceTemplateId = resolved.templateId;
+      templateDoc = resolved.document;
+      isSystemTemplate = resolved.isSystemTemplate;
     }
 
-    if (!sourceJson) {
-      const { data: legacyQuote } = await supabaseAdmin
-        .from('quotations')
-        .select('content_json')
-        .or(`id.eq.${sourceTemplateId},quotation_number.eq.${sourceTemplateId}`)
-        .maybeSingle();
-      sourceJson = legacyQuote?.content_json;
-    }
-
-    if (!sourceJson) {
-      // Global fallback to FW-37C63A54D4 document
-      const { data: globalDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .eq('template_id', 'FW-37C63A54D4')
-        .maybeSingle();
-      sourceJson = globalDoc?.content_json;
-    }
-
-    // 4. 100% COMPLETE DEEP CLONE (No shared mutable references)
-    const clonedJson = sourceJson
-      ? (typeof structuredClone === 'function' ? structuredClone(sourceJson) : JSON.parse(JSON.stringify(sourceJson)))
-      : {
-          theme: 'cyprus-sand-dune',
-          primaryFont: 'Cormorant Garamond',
-          secondaryFont: 'Plus Jakarta Sans',
-          designName: customTitle || 'Wedding Proposal',
-          cover: {
-            coupleName: resolvedClientName,
-            eventType: 'WEDDING',
-            eventDate: eventDate || 'DECEMBER 2026',
-            location: 'MUMBAI',
-            brandName: 'FILMIFY WEDDINGS'
-          }
-        };
-
-    const newQuotationId = 'FW-Q-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-    clonedJson.id = newQuotationId;
-    if (leadId) clonedJson.lead_id = leadId;
-
-    // Apply lead data mapping without overwriting template design, fonts, or pricing structure
-    if (!clonedJson.cover) clonedJson.cover = {};
-    clonedJson.cover.coupleName = resolvedClientName;
-
-    if (resolvedClientName.includes('&')) {
-      clonedJson.cover.groomName = resolvedClientName.split('&')[0].trim();
-      clonedJson.cover.brideName = resolvedClientName.split('&')[1].trim();
-    } else {
-      clonedJson.cover.groomName = resolvedClientName;
-    }
-
-    if (targetLead?.raw_payload?.venue || targetLead?.raw_payload?.location) {
-      clonedJson.cover.locationName = targetLead.raw_payload.venue || targetLead.raw_payload.location;
-    }
-
-    if (targetLead?.raw_payload?.event_date || eventDate) {
-      clonedJson.cover.eventDate = targetLead.raw_payload?.event_date || eventDate;
-    }
-
-    // Regenerate unique page IDs for new independent quotation
-    if (Array.isArray(clonedJson.pageSequence)) {
-      clonedJson.pageSequence = clonedJson.pageSequence.map((p: any) => ({
-        ...p,
-        id: 'page_' + Math.random().toString(36).substring(2, 9)
+    // Deep clone document JSON and regenerate unique page IDs
+    const clonedDoc = JSON.parse(JSON.stringify(templateDoc || { meta: {}, pages: [] }));
+    if (Array.isArray(clonedDoc.pages)) {
+      clonedDoc.pages = clonedDoc.pages.map((page: any, idx: number) => ({
+        ...page,
+        id: `page_${Date.now()}_${idx}_${Math.random().toString(36).substring(7)}`,
       }));
     }
 
-    if (Array.isArray(clonedJson.customPages)) {
-      clonedJson.customPages = clonedJson.customPages.map((cp: any) => ({
-        ...cp,
-        id: 'cpage_' + Math.random().toString(36).substring(2, 9)
-      }));
-    }
-
-    const now = new Date().toISOString();
-    const resolvedTitle = customTitle || clonedJson.designName || 'Wedding Proposal';
-
-    // 5. Save document JSON in quotation_documents table (Authoritative Document Storage for Lead Quotation)
-    const docPayload: any = {
-      template_id: newQuotationId,
-      user_id: currentUserId,
-      version: 1,
-      content_json: clonedJson,
-      created_at: now,
-      updated_at: now
+    // Inject Lead Metadata into Document Meta
+    clonedDoc.meta = {
+      ...(clonedDoc.meta || {}),
+      client_name: lead.name || lead.contact_name || clonedDoc.meta?.client_name || 'Client',
+      client_phone: lead.phone || lead.mobile || clonedDoc.meta?.client_phone || '',
+      client_email: lead.email || clonedDoc.meta?.client_email || '',
+      event_location: lead.raw_payload?.venue || lead.raw_payload?.location || clonedDoc.meta?.event_location || '',
+      event_date: lead.raw_payload?.event_date || clonedDoc.meta?.event_date || '',
     };
-    if (leadId) docPayload.lead_id = leadId;
 
-    let savedDoc: any = null;
-    const { data: dData, error: dErr } = await supabaseAdmin
-      .from('quotation_documents')
-      .insert(docPayload)
-      .select()
-      .maybeSingle();
+    // Generate fresh Quotation ID
+    const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const quotationId = `Q-${randomSuffix}`;
 
-    if (dErr) {
-      console.warn('[Create For Lead Warning] quotation_documents insert warning:', dErr.message);
-      // Fallback without top-level lead_id column if schema cache misses it
-      delete docPayload.lead_id;
-      const { data: fbDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .insert(docPayload)
-        .select()
-        .maybeSingle();
-      savedDoc = fbDoc;
-    } else {
-      savedDoc = dData;
+    // Insert new Quotation Record
+    const { error: quoteInsErr } = await supabase
+      .from('quotations')
+      .insert({
+        id: quotationId,
+        quotation_number: quotationId,
+        lead_id: leadId,
+        workspace_id: workspaceId,
+        user_id: userId,
+        status: 'draft',
+        source_template_id: sourceTemplateId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (quoteInsErr) {
+      console.error('Error inserting quotation record:', quoteInsErr);
     }
 
-    // 7. Save row in quotations table (without content_json to prevent schema cache errors)
-    let newQuote: any = null;
-    try {
-      const { data: qData } = await supabaseAdmin
-        .from('quotations')
-        .insert({
-          workspace_id: currentUserId,
-          client_id: leadId || null,
-          quotation_number: newQuotationId,
-          title: resolvedTitle,
-          client_name: resolvedClientName,
-          client_phone: clientPhone || targetLead?.phone || null,
-          client_email: clientEmail || targetLead?.email || null,
-          status: 'draft',
-          created_at: now,
-          updated_at: now
-        })
-        .select()
-        .maybeSingle();
-      newQuote = qData;
-    } catch (_) {}
+    // Insert Quotation Document Snapshot
+    const { error: docInsErr } = await supabase
+      .from('quotation_documents')
+      .insert({
+        template_id: quotationId,
+        workspace_id: workspaceId,
+        user_id: userId,
+        document_json: clonedDoc,
+        version: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
 
-    // 8. Save initial audit version in quotation_versions
-    if (savedDoc?.id) {
-      try {
-        await supabaseAdmin.from('quotation_versions').insert({
-          document_id: savedDoc.id,
-          template_id: newQuotationId,
-          user_id: currentUserId,
-          version: 1,
-          content_json: clonedJson,
-          created_at: now
-        });
-      } catch (_) {}
+    if (docInsErr) {
+      console.error('Error inserting quotation document snapshot:', docInsErr);
     }
 
     return NextResponse.json({
       success: true,
-      message: `Independent quotation created successfully for ${resolvedClientName}.`,
-      quotationId: newQuotationId,
-      templateId: newQuotationId,
-      quotation: newQuote,
-      document: savedDoc || docPayload,
-      sourceTemplateId
+      quotationId,
+      sourceTemplateId,
+      isSystemTemplate,
     });
-  } catch (err: any) {
-    console.error('[POST /api/quotations/create-for-lead] Error:', err);
-    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
+  } catch (error: any) {
+    console.error('Error in create-for-lead API:', error);
+    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
   }
 }

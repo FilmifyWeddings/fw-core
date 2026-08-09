@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -355,34 +356,10 @@ export async function POST(
     const newTemplateId = `FW-L-${leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}-V${nextLeadVersion}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const now = new Date().toISOString();
 
-    // 3. Find User's Active Default Template (or Global System Default fallback)
-    const { data: userDefaultTmpl } = await supabaseAdmin
-      .from('quotation_templates')
-      .select('id')
-      .eq('user_id', currentUserId)
-      .eq('is_default', true)
-      .maybeSingle();
-
-    const sourceTemplateId = userDefaultTmpl?.id || 'FW-37C63A54D4';
-
-    let sourceJson: any = null;
-    if (sourceTemplateId) {
-      const { data: sourceDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .eq('template_id', sourceTemplateId)
-        .maybeSingle();
-      sourceJson = sourceDoc?.content_json;
-    }
-
-    if (!sourceJson) {
-      const { data: globalDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .eq('template_id', 'FW-37C63A54D4')
-        .maybeSingle();
-      sourceJson = globalDoc?.content_json || DEFAULT_AIRY_PROPOSAL;
-    }
+    // 3. Authoritative Default Template Resolution from Supabase
+    const resolvedDefault = await resolveUserDefaultQuotationTemplate(currentUserId, currentUserId);
+    const sourceTemplateId = resolvedDefault.templateId;
+    let sourceJson = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
 
     // 100% COMPLETE DEEP CLONE of the user's active default template
     const newQuotationJson = typeof structuredClone === 'function' 

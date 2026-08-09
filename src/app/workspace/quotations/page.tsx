@@ -248,7 +248,7 @@ export default function WorkspaceQuotationsGalleryPage() {
   const handleEditTemplate = async (quote: SavedQuotation) => {
     const quoteId = quote.quotation_number || quote.id;
 
-    if (quote.is_system_template || quoteId === 'FW-37C63A54D4' || quoteId === 'SYSTEM_DEFAULT_WEDDING') {
+    if (quote.is_system_template || quoteId === 'FW-2WT85Y0' || quoteId === 'SYSTEM_DEFAULT_WEDDING') {
       setCloningGlobalId(quoteId);
 
       try {
@@ -304,7 +304,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (!hasUserDefault) {
           return next.map(q => ({
             ...q,
-            is_default: (q.quotation_number || q.id) === 'FW-37C63A54D4' || q.is_default
+            is_default: (q.quotation_number || q.id) === 'FW-2WT85Y0' || q.is_default
           }));
         }
         return next;
@@ -515,15 +515,15 @@ export default function WorkspaceQuotationsGalleryPage() {
             validTemplateIds.add(t.id);
           });
         }
-        validTemplateIds.add('FW-37C63A54D4');
+        validTemplateIds.add('FW-2WT85Y0');
 
         let combined: SavedQuotation[] = [];
 
         // Global System Default Wedding Template definition
         const globalSystemTemplate: SavedQuotation = {
-          id: 'FW-37C63A54D4',
-          quotation_number: 'FW-37C63A54D4',
-          title: 'Default Wedding Template',
+          id: 'FW-2WT85Y0',
+          quotation_number: 'FW-2WT85Y0',
+          title: 'System Default Wedding Template',
           client_name: 'Rahul & Neha',
           financials: {},
           status: 'published',
@@ -542,7 +542,7 @@ export default function WorkspaceQuotationsGalleryPage() {
             status: 'draft',
             content_json: docsMap[t.id] || null,
             is_default: t.is_default || false,
-            is_system_template: t.is_system_template || t.id === 'FW-37C63A54D4',
+            is_system_template: t.is_system_template || t.id === 'FW-2WT85Y0',
             updated_at: t.updated_at
           }));
         } else if (qData && qData.length > 0) {
@@ -558,13 +558,13 @@ export default function WorkspaceQuotationsGalleryPage() {
                 ...q,
                 content_json: docsMap[qNum] || docsMap[q.id] || null,
                 is_default: tmplMeta?.is_default || false,
-                is_system_template: tmplMeta?.is_system_template || qNum === 'FW-37C63A54D4'
+                is_system_template: tmplMeta?.is_system_template || qNum === 'FW-2WT85Y0'
               };
             });
         }
 
         // Ensure Global System Default is included
-        if (!combined.some(q => (q.quotation_number || q.id) === 'FW-37C63A54D4')) {
+        if (!combined.some(q => (q.quotation_number || q.id) === 'FW-2WT85Y0')) {
           combined.unshift(globalSystemTemplate);
         }
 
@@ -573,7 +573,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (!hasUserDefault) {
           combined = combined.map(q => ({
             ...q,
-            is_default: (q.quotation_number || q.id) === 'FW-37C63A54D4' || q.is_default
+            is_default: (q.quotation_number || q.id) === 'FW-2WT85Y0' || q.is_default
           }));
         }
 
@@ -859,14 +859,14 @@ export default function WorkspaceQuotationsGalleryPage() {
 
                     {/* Top-Right DEFAULT Badge */}
                     {quote.is_default && (
-                      <span className={`absolute top-2.5 ${!quote.is_system_template && quoteId !== 'FW-37C63A54D4' ? 'right-9' : 'right-2.5'} px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider shadow-md z-30 flex items-center gap-1 border border-amber-300`}>
+                      <span className={`absolute top-2.5 ${!quote.is_system_template && quoteId !== 'FW-2WT85Y0' ? 'right-9' : 'right-2.5'} px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider shadow-md z-30 flex items-center gap-1 border border-amber-300`}>
                         <Sparkles className="w-2.5 h-2.5" />
                         <span>DEFAULT</span>
                       </span>
                     )}
 
                     {/* Top-Right Delete Button for User-Owned Templates ONLY */}
-                    {!quote.is_system_template && quoteId !== 'FW-37C63A54D4' && (
+                    {!quote.is_system_template && quoteId !== 'FW-2WT85Y0' && (
                       <button
                         type="button"
                         title="Delete Template"
