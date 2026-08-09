@@ -12,26 +12,42 @@ export function isUserSuperAdmin(user: { email?: string } | null | undefined): b
   return isSuperAdmin(user?.email);
 }
 
-export async function verifySuperAdminRequest(req: NextRequest): Promise<{ authorized: boolean; email?: string }> {
+export interface RequestUserAuth {
+  userId: string;
+  userEmail: string | null;
+  isSuperAdmin: boolean;
+}
+
+export async function resolveRequestUser(req: NextRequest): Promise<RequestUserAuth> {
   try {
     const authHeader = req.headers.get('Authorization');
+    const customEmailHeader = req.headers.get('x-user-email');
     const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
 
-    if (!token) {
-      return { authorized: false };
+    let userEmail: string | null = customEmailHeader ? customEmailHeader.toLowerCase() : null;
+    let userId = 'demo_user';
+
+    if (token) {
+      const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+      if (user) {
+        userId = user.id;
+        if (user.email) {
+          userEmail = user.email.toLowerCase();
+        }
+      }
     }
 
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user || !user.email) {
-      return { authorized: false };
-    }
-
-    if (isSuperAdmin(user.email)) {
-      return { authorized: true, email: user.email };
-    }
-
-    return { authorized: false, email: user.email };
+    const isSuperAdminUser = isSuperAdmin(userEmail);
+    return { userId, userEmail, isSuperAdmin: isSuperAdminUser };
   } catch (err) {
-    return { authorized: false };
+    return { userId: 'demo_user', userEmail: null, isSuperAdmin: false };
   }
+}
+
+export async function verifySuperAdminRequest(req: NextRequest): Promise<{ authorized: boolean; email?: string }> {
+  const auth = await resolveRequestUser(req);
+  return {
+    authorized: auth.isSuperAdmin,
+    email: auth.userEmail || undefined
+  };
 }

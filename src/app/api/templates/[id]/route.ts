@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
-import { verifySuperAdminRequest } from '@/lib/auth/admin-guard';
+import { resolveRequestUser } from '@/lib/auth/admin-guard';
 
 /**
  * Authoritative Single Template & Lead Quotation Document Route (GET, PUT, PATCH, DELETE)
- * Handles security checks, RLS workspace isolation, system template auto-forking, and lead quotation resolution.
+ * Handles security checks, workspace isolation, system template direct editing for Super Admin, and auto-forking for users.
  */
 
 async function handleGet(
@@ -14,9 +14,7 @@ async function handleGet(
 ) {
   try {
     const { id } = await context.params;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user?.id || 'demo_user';
+    const { userId, isSuperAdmin } = await resolveRequestUser(req);
 
     let workspaceId = userId;
     const { data: profile } = await supabase
@@ -26,15 +24,15 @@ async function handleGet(
       .maybeSingle();
     if (profile?.id) workspaceId = profile.id;
 
-    // 1. System Template (FW-2WT85Y0) is readable by all authenticated users
+    // 1. System Template is readable by all authenticated users
     if (id === GLOBAL_SYSTEM_TEMPLATE_ID) {
-      const { data: sysTmpl } = await supabase
+      const { data: sysTmpl } = await supabaseAdmin
         .from('quotation_templates')
         .select('*')
         .eq('id', GLOBAL_SYSTEM_TEMPLATE_ID)
         .maybeSingle();
 
-      const { data: sysDoc } = await supabase
+      const { data: sysDoc } = await supabaseAdmin
         .from('quotation_documents')
         .select('*')
         .eq('template_id', GLOBAL_SYSTEM_TEMPLATE_ID)
@@ -54,21 +52,21 @@ async function handleGet(
     }
 
     // 2. Fetch User Template Metadata from quotation_templates
-    const { data: tmpl } = await supabase
+    const { data: tmpl } = await supabaseAdmin
       .from('quotation_templates')
       .select('*')
       .eq('id', id)
       .maybeSingle();
 
     // 3. Fetch Document Snapshot from quotation_documents
-    const { data: doc } = await supabase
+    const { data: doc } = await supabaseAdmin
       .from('quotation_documents')
       .select('*')
       .eq('template_id', id)
       .maybeSingle();
 
     // 4. Fetch Quotation Record from quotations if exists
-    const { data: quoteRec } = await supabase
+    const { data: quoteRec } = await supabaseAdmin
       .from('quotations')
       .select('*')
       .or(`id.eq.${id},quotation_number.eq.${id}`)
@@ -80,9 +78,10 @@ async function handleGet(
       return NextResponse.json({ error: 'Quotation template or document not found' }, { status: 404 });
     }
 
-    // 5. User Isolation Check — User A cannot view User B's private template / quotation
+    // 5. User Isolation Check — Super Admin can view all, users can view system templates or their own
     const targetWorkspace = tmpl?.workspace_id || tmpl?.user_id || doc?.workspace_id || doc?.user_id || quoteRec?.workspace_id || quoteRec?.user_id;
-    const isOwner = tmpl?.is_system_template ||
+    const isOwner = isSuperAdmin ||
+      tmpl?.is_system_template ||
       !targetWorkspace ||
       targetWorkspace === workspaceId ||
       targetWorkspace === userId ||
@@ -119,15 +118,7 @@ async function handleUpdate(
 ) {
   try {
     const { id } = await context.params;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    let userId = session?.user?.id || 'demo_user';
-    let userEmail = session?.user?.email;
-
-    if (userEmail === 'sushantnawale700@gmail.com') {
-      const impId = req.headers.get('x-impersonated-tenant-id');
-      if (impId) userId = impId;
-    }
+    const { userId, isSuperAdmin } = await resolveRequestUser(req);
 
     let workspaceId = userId;
     const { data: profile } = await supabase
@@ -142,38 +133,54 @@ async function handleUpdate(
     const title = body.title;
     const category = body.category;
 
-    // Check if target is System Template (FW-2WT85Y0 or is_system_template)
-    const { data: targetTmpl } = await supabase
+    const { data: targetTmpl } = await supabaseAdmin
       .from('quotation_templates')
       .select('*')
       .eq('id', id)
       .maybeSingle();
 
-    const isSystemTemplate = id === GLOBAL_SYSTEM_TEMPLATE_ID || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM';
-    const isAdmin = userEmail === 'sushantnawale700@gmail.com';
+    const isSystemTemplate = id === GLOBAL_SYSTEM_TEMPLATE_ID || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id.startsWith('SYS-');
 
-    if (isSystemTemplate && isAdmin) {
-      // RULE: Super Admin editing system template -> Update directly in Supabase!
+    // ── SUPER ADMIN DIRECT UPDATE ENGINE ──
+    if (isSuperAdmin) {
+      console.log('[SUPER ADMIN DIRECT UPDATE]', { id, isSystemTemplate, title });
+
+      const newTitle = title || document?.designName || targetTmpl?.title || 'System Default Wedding Template';
+
       await supabaseAdmin
         .from('quotation_templates')
-        .update({
-          title: title || targetTmpl?.title || 'System Template',
+        .upsert({
+          id,
+          user_id: 'SYSTEM',
+          workspace_id: null,
+          title: newTitle,
+          category: category || targetTmpl?.category || 'Wedding',
+          is_system_template: true,
+          status: 'published',
           updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
+        }, { onConflict: 'id' });
 
       if (document) {
         await supabaseAdmin
           .from('quotation_documents')
           .upsert({
             template_id: id,
+            user_id: 'SYSTEM',
+            workspace_id: null,
             document_json: document,
             content_json: document,
             updated_at: new Date().toISOString()
           }, { onConflict: 'template_id' });
-      }
 
-      console.log('[Super Admin System Template Saved Directly]:', { templateId: id });
+        await supabaseAdmin
+          .from('quotations')
+          .update({
+            title: newTitle,
+            content_json: document,
+            updated_at: new Date().toISOString()
+          })
+          .or(`id.eq.${id},quotation_number.eq.${id}`);
+      }
 
       return NextResponse.json({
         success: true,
@@ -182,27 +189,25 @@ async function handleUpdate(
       });
     }
 
-    if (isSystemTemplate && !isAdmin) {
-      // RULE: Normal User editing system template -> Fork new user template and set as default!
+    // ── NORMAL USER FORKING ENGINE ──
+    if (isSystemTemplate) {
       const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
       const newTemplateId = `FW-USER-${randomSuffix}`;
 
-      // Reset is_default = false on user's existing templates
       if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-        await supabase
+        await supabaseAdmin
           .from('quotation_templates')
           .update({ is_default: false })
           .eq('workspace_id', workspaceId)
           .not('is_system_template', 'eq', true);
       } else {
-        await supabase
+        await supabaseAdmin
           .from('quotation_templates')
           .update({ is_default: false })
           .eq('user_id', userId)
           .not('is_system_template', 'eq', true);
       }
 
-      // Clone document and generate fresh page IDs
       const clonedDoc = JSON.parse(JSON.stringify(document || { meta: {}, pages: [] }));
       if (Array.isArray(clonedDoc.pages)) {
         clonedDoc.pages = clonedDoc.pages.map((page: any, idx: number) => ({
@@ -211,29 +216,31 @@ async function handleUpdate(
         }));
       }
 
-      // Insert new user template as default
-      await supabase
+      const newTitle = title || clonedDoc.designName || 'Customized Wedding Template';
+
+      await supabaseAdmin
         .from('quotation_templates')
         .insert({
           id: newTemplateId,
           workspace_id: workspaceId,
           user_id: userId,
-          title: title || 'Customized Wedding Template',
-          category: category || 'Wedding',
+          title: newTitle,
+          category: category || targetTmpl?.category || 'Wedding',
           is_system_template: false,
           is_default: true,
+          status: 'draft',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
 
-      // Insert new user template document
-      await supabase
+      await supabaseAdmin
         .from('quotation_documents')
         .insert({
           template_id: newTemplateId,
           workspace_id: workspaceId,
           user_id: userId,
           document_json: clonedDoc,
+          content_json: clonedDoc,
           version: 1,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -242,26 +249,25 @@ async function handleUpdate(
       return NextResponse.json({
         success: true,
         isAutoCloned: true,
-        redirected: true,
-        newTemplateId,
-        message: 'System template customized into your workspace default template.'
+        newTemplateId: newTemplateId,
+        version: 1
       });
     }
 
-    // Save directly to user-owned template or quotation document
-    if (title || category) {
-      await supabase
-        .from('quotation_templates')
-        .update({
-          ...(title ? { title } : {}),
-          ...(category ? { category } : {}),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
-    }
+    // Normal User editing their own template
+    const newTitle = title || document?.designName || targetTmpl?.title || 'Wedding - Design 1';
+
+    await supabaseAdmin
+      .from('quotation_templates')
+      .update({
+        title: newTitle,
+        category: category || targetTmpl?.category || 'Wedding',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
 
     if (document) {
-      await supabase
+      await supabaseAdmin
         .from('quotation_documents')
         .upsert({
           template_id: id,
@@ -272,10 +278,10 @@ async function handleUpdate(
           updated_at: new Date().toISOString()
         }, { onConflict: 'template_id' });
 
-      // Update quotations table if record exists
-      await supabase
+      await supabaseAdmin
         .from('quotations')
         .update({
+          title: newTitle,
           content_json: document,
           updated_at: new Date().toISOString()
         })
@@ -284,7 +290,8 @@ async function handleUpdate(
 
     return NextResponse.json({
       success: true,
-      templateId: id
+      templateId: id,
+      version: body.version || 1
     });
   } catch (error: any) {
     console.error('Error updating template/document:', error);
@@ -298,9 +305,7 @@ async function handleDelete(
 ) {
   try {
     const { id } = await context.params;
-
-    const auth = await verifySuperAdminRequest(req);
-    const isAdmin = auth.authorized || auth.email?.toLowerCase() === 'sushantnawale700@gmail.com';
+    const { userId, isSuperAdmin } = await resolveRequestUser(req);
 
     const { data: targetTmpl } = await supabaseAdmin
       .from('quotation_templates')
@@ -308,23 +313,21 @@ async function handleDelete(
       .eq('id', id)
       .maybeSingle();
 
-    // RULE: System template cannot be deleted by normal users, but CAN be deleted by Super Admin!
-    if (!isAdmin && (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === GLOBAL_SYSTEM_TEMPLATE_ID)) {
-      return NextResponse.json({ error: 'System templates cannot be deleted.' }, { status: 400 });
+    if (!isSuperAdmin && (targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id === GLOBAL_SYSTEM_TEMPLATE_ID)) {
+      return NextResponse.json({ error: 'System templates cannot be deleted by normal users.' }, { status: 403 });
     }
 
-    // RULE: Cannot delete current default template for non-admin
-    if (!isAdmin && targetTmpl?.is_default) {
+    if (!isSuperAdmin && targetTmpl?.is_default) {
       return NextResponse.json({
         error: 'Cannot delete your current Default Template. Please set another template as Default first.'
       }, { status: 400 });
     }
 
-    // Delete template & document from Supabase (using supabaseAdmin for Super Admin)
-    const client = isAdmin ? supabaseAdmin : supabase;
-    await client.from('quotation_documents').delete().eq('template_id', id);
-    await client.from('quotation_templates').delete().eq('id', id);
-    await client.from('quotations').delete().or(`id.eq.${id},quotation_number.eq.${id}`);
+    console.log('[PERMANENT DELETE EXECUTED]', { id, isSuperAdmin });
+
+    await supabaseAdmin.from('quotation_documents').delete().eq('template_id', id);
+    await supabaseAdmin.from('quotations').delete().or(`id.eq.${id},quotation_number.eq.${id}`);
+    await supabaseAdmin.from('quotation_templates').delete().eq('id', id);
 
     return NextResponse.json({ success: true, deletedId: id });
   } catch (error: any) {

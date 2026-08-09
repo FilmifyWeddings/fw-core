@@ -291,6 +291,12 @@ export default function WorkspaceQuotationsGalleryPage() {
   const handleEditTemplate = async (quote: SavedQuotation) => {
     const quoteId = quote.quotation_number || quote.id;
 
+    // RULE: Super Admin (sushantnawale700@gmail.com) ALWAYS edits System Templates directly!
+    if (isSuperAdminUser) {
+      router.push(`/workspace/quotations/builder/templet/${quoteId}`);
+      return;
+    }
+
     if (quote.is_system_template || quoteId === 'FW-2WT85Y0' || quoteId === 'SYSTEM_DEFAULT_WEDDING') {
       setCloningGlobalId(quoteId);
 
@@ -299,6 +305,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         const token = session?.access_token;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (userEmail) headers['x-user-email'] = userEmail;
 
         const res = await fetch('/api/templates/duplicate', {
           method: 'POST',
@@ -403,6 +410,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       const token = session?.access_token;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (userEmail) headers['x-user-email'] = userEmail;
 
       const res = await fetch('/api/templates/duplicate', {
         method: 'POST',
@@ -416,13 +424,13 @@ export default function WorkspaceQuotationsGalleryPage() {
       const duplicatedRecord: SavedQuotation = {
         id: data.newTemplateId,
         quotation_number: data.newTemplateId,
-        title: data.quotation?.title || `${sourceQuote.title} Copy`,
+        title: data.template?.title || data.quotation?.title || `${sourceQuote.title} (Copy)`,
         client_name: data.quotation?.client_name || sourceQuote.client_name || 'Rahul & Neha',
         financials: sourceQuote.financials || {},
         content_json: data.document?.content_json || data.quotation?.content_json,
-        status: 'draft',
+        status: data.template?.status || 'draft',
         is_default: false,
-        is_system_template: false,
+        is_system_template: data.template?.is_system_template ?? isSuperAdminUser,
         updated_at: new Date().toISOString()
       };
 
@@ -526,8 +534,8 @@ export default function WorkspaceQuotationsGalleryPage() {
         // 1. Fetch user & system quotation templates from quotation_templates
         const { data: tmplData } = await supabase
           .from('quotation_templates')
-          .select('id, user_id, title, category, is_default, is_system_template, updated_at')
-          .or(`user_id.eq.${currentUserId},is_system_template.eq.true,user_id.eq.SYSTEM`)
+          .select('id, user_id, workspace_id, title, category, is_default, is_system_template, updated_at')
+          .or(`user_id.eq.${currentUserId},workspace_id.eq.${currentUserId},is_system_template.eq.true,user_id.eq.SYSTEM`)
           .order('updated_at', { ascending: false });
 
         // 2. Fetch associated document content_json from quotation_documents (authoritative source)
