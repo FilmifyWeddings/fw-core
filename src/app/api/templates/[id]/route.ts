@@ -78,9 +78,11 @@ async function handleGet(
       return NextResponse.json({ error: 'Quotation template or document not found' }, { status: 404 });
     }
 
-    // 5. User Isolation Check — Super Admin can view all, users can view system templates or their own
+    // 5. User Isolation Check — Super Admin can view all, users can view system templates, public previews, or their own
+    const isPublicPreview = req.nextUrl.searchParams.get('preview') === 'public' || !!req.nextUrl.searchParams.get('token');
     const targetWorkspace = tmpl?.workspace_id || tmpl?.user_id || doc?.workspace_id || doc?.user_id || quoteRec?.workspace_id || quoteRec?.user_id;
     const isOwner = isSuperAdmin ||
+      isPublicPreview ||
       tmpl?.is_system_template ||
       !targetWorkspace ||
       targetWorkspace === workspaceId ||

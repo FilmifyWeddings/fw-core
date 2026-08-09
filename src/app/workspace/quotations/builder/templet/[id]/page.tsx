@@ -1801,6 +1801,85 @@ function StudioCoreAiryBuilderContent() {
     });
   }, [userId]);
 
+  const tokenParam = searchParams?.get('token') || '';
+  const isPublicPreview = searchParams?.get('preview') === 'public' || !!tokenParam;
+
+  // Modals for Public Preview Actions
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const [budgetRequested, setBudgetRequested] = useState<number | null>(null);
+  const [submittingAction, setSubmittingAction] = useState(false);
+  const [budgetValue, setBudgetValue] = useState('');
+  const [budgetNotes, setBudgetNotes] = useState('');
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  const handleAcceptSubmit = async () => {
+    if (!tokenParam) return;
+    setSubmittingAction(true);
+    try {
+      const res = await fetch('/api/quotations/response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: tokenParam,
+          responseType: 'accepted',
+          clientName: data?.cover?.coupleName || 'Client'
+        })
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        setAccepted(true);
+        setShowAcceptModal(false);
+        setActionSuccessMsg('Thank you! Quotation accepted successfully.');
+      } else {
+        alert(json.error || 'Failed to accept quotation.');
+      }
+    } catch (e) {
+      console.error('Accept proposal error:', e);
+      alert('Network error submitting response.');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const handleBudgetSubmit = async () => {
+    if (!tokenParam) return;
+    if (!budgetValue || isNaN(Number(budgetValue))) {
+      alert('Please enter a valid budget amount');
+      return;
+    }
+    setSubmittingAction(true);
+    try {
+      const amountNum = Number(budgetValue);
+      const res = await fetch('/api/quotations/response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: tokenParam,
+          responseType: 'budget_discussion',
+          budgetAmount: amountNum,
+          clientNotes: budgetNotes
+        })
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        setBudgetRequested(amountNum);
+        setShowBudgetModal(false);
+        setActionSuccessMsg(`Budget discussion request submitted for ₹${amountNum.toLocaleString('en-IN')}`);
+      } else {
+        alert(json.error || 'Failed to submit budget discussion.');
+      }
+    } catch (e) {
+      console.error('Budget proposal error:', e);
+      alert('Network error submitting request.');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
   const [openCard, setOpenCard] = useState<string | null>('cover');
   // ── DYNAMIC PAGE SEQUENCE & CUSTOM PAGE CONTROLS ──
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
@@ -2301,17 +2380,20 @@ function StudioCoreAiryBuilderContent() {
         const userAccessToken = session?.access_token;
         const userStudioName = session?.user?.user_metadata?.studioName || session?.user?.user_metadata?.studio_name || (session?.user as any)?.studioName;
 
-        if (!currentUserId) {
+        const isPublicPreview = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('preview') === 'public' || !!new URLSearchParams(window.location.search).get('token'));
+
+        if (!currentUserId && !isPublicPreview) {
           console.warn('[User Access Lock] No authenticated session found, redirecting to /workspace/quotations');
           router.push('/workspace/quotations');
           return;
         }
 
-        setUserId(currentUserId);
+        setUserId(currentUserId || 'PUBLIC_USER');
 
         // 1. Fetch via SaaS Template API with User Isolation Lock
         const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
-        const res = await fetch(`/api/templates/${routeId}`, {
+        const fetchUrl = isPublicPreview ? `/api/templates/${routeId}?preview=public` : `/api/templates/${routeId}`;
+        const res = await fetch(fetchUrl, {
           headers: {
             'Authorization': `Bearer ${userAccessToken || ''}`
           }
@@ -4174,84 +4256,88 @@ function StudioCoreAiryBuilderContent() {
       `}</style>
 
       {/* ── TOP HEADER BAR ── */}
-      <header className="h-12 bg-white border-b border-zinc-200 px-3 sm:px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <input
-            type="text"
-            value={data.designName}
-            onChange={(e) => { setData({ ...data, designName: e.target.value }); }}
-            className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[150px] sm:max-w-[320px] truncate"
-          />
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border hidden sm:inline-block ${
-            hasUnsavedChanges ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
-          }`}>
-            {autoSaveStatus}
-          </span>
-        </div>
+      {!isPublicPreview && (
+        <header className="h-12 bg-white border-b border-zinc-200 px-3 sm:px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <input
+              type="text"
+              value={data.designName}
+              onChange={(e) => { setData({ ...data, designName: e.target.value }); }}
+              className="text-xs font-bold text-zinc-900 bg-transparent focus:outline-none focus:border-b border-black py-0.5 max-w-[150px] sm:max-w-[320px] truncate"
+            />
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border hidden sm:inline-block ${
+              hasUnsavedChanges ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+            }`}>
+              {autoSaveStatus}
+            </span>
+          </div>
 
-        {/* Viewport Zoom Controls */}
-        <div className="flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-full border border-zinc-200 text-[10px] font-bold text-zinc-700">
-          <button 
-            type="button" 
-            onClick={() => updateZoomScale(s => s - 0.05)} 
-            className="p-1 hover:bg-zinc-200 rounded-full transition-all cursor-pointer" 
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-3 h-3 text-zinc-600" />
-          </button>
-          <span className="w-8 sm:w-10 text-center font-mono font-bold text-zinc-800 text-[10px]">{Math.round(zoomScale * 100)}%</span>
-          <button 
-            type="button" 
-            onClick={() => updateZoomScale(s => s + 0.05)} 
-            className="p-1 hover:bg-zinc-200 rounded-full transition-all cursor-pointer" 
-            title="Zoom In"
-          >
-            <ZoomIn className="w-3 h-3 text-zinc-600" />
-          </button>
-          <button 
-            type="button" 
-            onClick={autoFitScale} 
-            className="px-1.5 py-0.5 bg-white border border-zinc-300 rounded-md text-[9px] hover:bg-zinc-50 cursor-pointer transition-all hidden sm:inline-block" 
-          >
-            Fit
-          </button>
-        </div>
+          {/* Viewport Zoom Controls */}
+          <div className="flex items-center gap-1 bg-zinc-100 px-2 py-1 rounded-full border border-zinc-200 text-[10px] font-bold text-zinc-700">
+            <button 
+              type="button" 
+              onClick={() => updateZoomScale(s => s - 0.05)} 
+              className="p-1 hover:bg-zinc-200 rounded-full transition-all cursor-pointer" 
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-3 h-3 text-zinc-600" />
+            </button>
+            <span className="w-8 sm:w-10 text-center font-mono font-bold text-zinc-800 text-[10px]">{Math.round(zoomScale * 100)}%</span>
+            <button 
+              type="button" 
+              onClick={() => updateZoomScale(s => s + 0.05)} 
+              className="p-1 hover:bg-zinc-200 rounded-full transition-all cursor-pointer" 
+              title="Zoom In"
+            >
+              <ZoomIn className="w-3 h-3 text-zinc-600" />
+            </button>
+            <button 
+              type="button" 
+              onClick={autoFitScale} 
+              className="px-1.5 py-0.5 bg-white border border-zinc-300 rounded-md text-[9px] hover:bg-zinc-50 cursor-pointer transition-all hidden sm:inline-block" 
+            >
+              Fit
+            </button>
+          </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={handleDownloadPDFCanvas}
-            disabled={isExportingPDF}
-            className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg disabled:opacity-50 active:scale-95 hidden md:flex"
-            title="Download High-Res PDF"
-          >
-            <Download className="w-3.5 h-3.5 stroke-[2.5]" /> <span>{isExportingPDF ? 'Generating PDF...' : 'Download PDF'}</span>
-          </button>
+          {/* Action Buttons */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              onClick={handleDownloadPDFCanvas}
+              disabled={isExportingPDF}
+              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg disabled:opacity-50 active:scale-95 hidden md:flex"
+              title="Download High-Res PDF"
+            >
+              <Download className="w-3.5 h-3.5 stroke-[2.5]" /> <span>{isExportingPDF ? 'Generating PDF...' : 'Download PDF'}</span>
+            </button>
 
-          <button
-            onClick={handleManualSave}
-            disabled={saving}
-            className="px-3 sm:px-4 py-1 rounded-full bg-black hover:bg-zinc-800 text-white text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50"
-          >
-            <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? '...' : 'Save'}
-          </button>
+            <button
+              onClick={handleManualSave}
+              disabled={saving}
+              className="px-3 sm:px-4 py-1 rounded-full bg-black hover:bg-zinc-800 text-white text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? '...' : 'Save'}
+            </button>
 
-          <Link
-            href="/workspace/quotations"
-            className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-1"
-          >
-            <X className="w-4 h-4" />
-          </Link>
-        </div>
-      </header>
+            <Link
+              href="/workspace/quotations"
+              className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-1"
+            >
+              <X className="w-4 h-4" />
+            </Link>
+          </div>
+        </header>
+      )}
 
       {/* ── MAIN WORKSPACE VIEWPORT ── */}
       <div className="flex-1 flex overflow-hidden relative">
         
         {/* DESKTOP SIDEBAR PANEL (>= 768px) */}
-        <aside className="w-[420px] bg-white border-r border-zinc-200 p-4 overflow-y-auto shrink-0 text-xs shadow-sm no-print hidden md:block">
-          {renderSidebarControls()}
-        </aside>
+        {!isPublicPreview && (
+          <aside className="w-[420px] bg-white border-r border-zinc-200 p-4 overflow-y-auto shrink-0 text-xs shadow-sm no-print hidden md:block">
+            {renderSidebarControls()}
+          </aside>
+        )}
 
         {/* CENTER LIVE PROPOSAL DOCUMENT CANVAS */}
         <main 
@@ -5826,6 +5912,150 @@ function StudioCoreAiryBuilderContent() {
                 <span className="text-amber-500 font-extrabold text-sm">{exportProgress}%</span>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── PUBLIC PREVIEW FIXED BOTTOM CLIENT ACTION BAR ── */}
+      {isPublicPreview && (
+        <div className="fixed bottom-0 left-0 right-0 z-[9000] p-4 bg-black/90 backdrop-blur-md border-t border-zinc-800 flex items-center justify-center gap-3 no-print">
+          <button
+            type="button"
+            onClick={handleDownloadPDFCanvas}
+            disabled={isExportingPDF}
+            className="px-4 py-2.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+          >
+            <Download className="w-4 h-4 text-cyan-400" />
+            <span>Download PDF</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBudgetModal(true)}
+            disabled={accepted}
+            className="px-4 py-2.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+          >
+            <DollarSign className="w-4 h-4 text-amber-500" />
+            <span>{budgetRequested ? `Budget: ₹${budgetRequested.toLocaleString('en-IN')}` : 'Discuss Budget'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAcceptModal(true)}
+            disabled={accepted}
+            className="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60"
+          >
+            <CheckCircle2 className="w-4 h-4 text-black" />
+            <span>{accepted ? '✓ Proposal Accepted' : 'Accept Proposal'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Accept Confirmation Modal */}
+      <AnimatePresence>
+        {showAcceptModal && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm bg-[#161412] rounded-3xl p-6 shadow-2xl border border-emerald-500/30 space-y-4 text-center"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-black text-white">Accept this quotation?</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Confirm your details — we block your dates for you, and your confirmation arrives by email.
+              </p>
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAcceptModal(false)}
+                  className="flex-1 py-2.5 rounded-2xl bg-zinc-800 text-zinc-300 font-bold text-xs"
+                >
+                  Not yet
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAcceptSubmit}
+                  disabled={submittingAction}
+                  className="flex-1 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold text-xs flex items-center justify-center gap-1.5"
+                >
+                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Yes, accept</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Discuss Budget Modal */}
+      <AnimatePresence>
+        {showBudgetModal && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm bg-[#161412] rounded-3xl p-6 shadow-2xl border border-amber-500/30 space-y-4 text-center"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center mx-auto">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-black text-white">Tell us your budget</h3>
+              <p className="text-xs text-zinc-400">We will see what we can do to accommodate your vision.</p>
+              <div className="space-y-2 text-left">
+                <input
+                  type="number"
+                  placeholder="Enter your budget (₹)"
+                  value={budgetValue}
+                  onChange={(e) => setBudgetValue(e.target.value)}
+                  className="w-full p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-amber-400 font-bold text-sm outline-none focus:border-amber-500"
+                />
+                <textarea
+                  placeholder="Additional notes / requirement changes (optional)"
+                  rows={2}
+                  value={budgetNotes}
+                  onChange={(e) => setBudgetNotes(e.target.value)}
+                  className="w-full p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-medium text-xs outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBudgetModal(false)}
+                  className="flex-1 py-2.5 rounded-2xl bg-zinc-800 text-zinc-300 font-bold text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBudgetSubmit}
+                  disabled={submittingAction}
+                  className="flex-1 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-xs flex items-center justify-center gap-1.5"
+                >
+                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                  <span>Send</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Notification Banner */}
+      <AnimatePresence>
+        {actionSuccessMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 z-[10000] px-5 py-3 rounded-2xl bg-emerald-500 text-black font-bold text-xs shadow-2xl flex items-center gap-2 no-print"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{actionSuccessMsg}</span>
           </motion.div>
         )}
       </AnimatePresence>
