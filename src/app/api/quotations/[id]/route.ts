@@ -131,7 +131,6 @@ export async function PUT(
       quotation_number: id || 'FW-2026-001',
       title: title || content_json?.designName || 'Wedding - Design 1',
       client_name: client_name || `${content_json?.cover?.groomName || 'Rahul'} & ${content_json?.cover?.brideName || 'Neha'}`,
-      content_json: content_json,
       financials: financials || { total_amount: 0 },
       status: status || 'draft',
       updated_at: new Date().toISOString(),
@@ -142,6 +141,18 @@ export async function PUT(
       .upsert(payload, { onConflict: 'workspace_id,quotation_number' })
       .select()
       .maybeSingle();
+
+    if (content_json) {
+      await supabaseAdmin
+        .from('quotation_documents')
+        .upsert({
+          template_id: id,
+          workspace_id: currentUserId,
+          user_id: currentUserId,
+          content_json: content_json,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'template_id' });
+    }
 
     if (saveErr) {
       console.warn('[API PUT /api/quotations/[id]] DB Upsert Warning:', saveErr.message);

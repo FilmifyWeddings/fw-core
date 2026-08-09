@@ -125,22 +125,24 @@ export async function POST(req: NextRequest) {
     const title = `${leadName} — Wedding Quotation`;
 
     // 2. Insert Quotation Record into quotations table using supabaseAdmin
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceTemplateId);
+
+    const quotePayload: any = {
+      quotation_number: quotationId,
+      workspace_id: workspaceId,
+      user_id: userId,
+      template_id: isUuid ? sourceTemplateId : null,
+      title,
+      client_name: leadName,
+      canvas_data: clonedDoc,
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
     const { error: quoteInsErr } = await supabaseAdmin
       .from('quotations')
-      .insert({
-        id: quotationId,
-        quotation_number: quotationId,
-        lead_id: leadId,
-        workspace_id: workspaceId,
-        user_id: userId,
-        source_template_id: sourceTemplateId,
-        title,
-        client_name: leadName,
-        status: 'draft',
-        content_json: clonedDoc,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
+      .insert(quotePayload);
 
     if (quoteInsErr) {
       console.error('Error inserting quotation record:', quoteInsErr);

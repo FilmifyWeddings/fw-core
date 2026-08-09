@@ -72,7 +72,7 @@ async function handleGet(
       .or(`id.eq.${id},quotation_number.eq.${id}`)
       .maybeSingle();
 
-    const docJson = doc?.document_json || doc?.content_json || quoteRec?.content_json || null;
+    const docJson = doc?.document_json || doc?.content_json || quoteRec?.canvas_data || quoteRec?.content_json || null;
 
     if (!tmpl && !docJson && !quoteRec) {
       return NextResponse.json({ error: 'Quotation template or document not found' }, { status: 404 });
@@ -175,7 +175,6 @@ async function handleUpdate(
           .from('quotations')
           .update({
             title: newTitle,
-            content_json: document,
             updated_at: new Date().toISOString()
           })
           .or(`id.eq.${id},quotation_number.eq.${id}`);
@@ -279,7 +278,6 @@ async function handleUpdate(
         .from('quotations')
         .update({
           title: newTitle,
-          content_json: document,
           updated_at: new Date().toISOString()
         })
         .or(`id.eq.${id},quotation_number.eq.${id}`);
