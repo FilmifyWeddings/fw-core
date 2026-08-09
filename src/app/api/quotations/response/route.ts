@@ -11,7 +11,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { token, responseType, budgetAmount, clientName, clientNotes } = body;
+    const { token, responseType, budgetAmount, clientName, clientPhone, clientNotes } = body;
 
     if (!token) {
       return NextResponse.json({ error: 'Public token is required' }, { status: 400 });
@@ -38,6 +38,11 @@ export async function POST(req: NextRequest) {
     const quotationId = quote.quotation_number || quote.id;
     const leadVersion = canvasData.lead_version || quote.lead_version || 1;
 
+    const formattedNotes = [
+      clientPhone ? `Phone: ${clientPhone}` : null,
+      clientNotes ? `Notes: ${clientNotes}` : null
+    ].filter(Boolean).join(' | ');
+
     // 2. Attempt insert into quotation_responses
     const responsePayload = {
       workspace_id: workspaceId,
@@ -48,7 +53,7 @@ export async function POST(req: NextRequest) {
       response_type: responseType,
       budget_amount: responseType === 'budget_discussion' ? (Number(budgetAmount) || null) : null,
       client_name: clientName || quote.client_name || null,
-      client_notes: clientNotes || null,
+      client_notes: formattedNotes || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };

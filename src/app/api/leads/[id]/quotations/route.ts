@@ -266,7 +266,7 @@ export async function GET(
 
     const { data: allQuotes } = await supabaseAdmin
       .from('quotations')
-      .select('id, quotation_number, title, status, client_notes, public_token')
+      .select('id, quotation_number, title, status, client_name, client_notes, public_token')
       .or(`client_id.eq.${leadId}`);
 
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
@@ -320,18 +320,36 @@ export async function GET(
 
       if (explicitResp) {
         if (explicitResp.response_type === 'accepted') {
-          responseBadge = { type: 'accepted', label: '✓ Accepted' };
+          responseBadge = {
+            type: 'accepted',
+            label: '✓ Accepted',
+            clientName: explicitResp.client_name,
+            clientNotes: explicitResp.client_notes,
+            created_at: explicitResp.created_at
+          };
         } else if (explicitResp.response_type === 'budget_discussion') {
           responseBadge = {
             type: 'budget_discussion',
             label: 'Budget Discussion',
-            budgetAmount: explicitResp.budget_amount
+            budgetAmount: explicitResp.budget_amount,
+            clientName: explicitResp.client_name,
+            clientNotes: explicitResp.client_notes,
+            created_at: explicitResp.created_at
           };
         }
       } else if (matchingQuote?.status === 'accepted') {
-        responseBadge = { type: 'accepted', label: '✓ Accepted' };
+        responseBadge = {
+          type: 'accepted',
+          label: '✓ Accepted',
+          clientName: matchingQuote.client_name,
+          clientNotes: matchingQuote.client_notes
+        };
       } else if (matchingQuote?.client_notes && matchingQuote.client_notes.includes('Budget')) {
-        responseBadge = { type: 'budget_discussion', label: 'Budget Discussion', notes: matchingQuote.client_notes };
+        responseBadge = {
+          type: 'budget_discussion',
+          label: 'Budget Discussion',
+          clientNotes: matchingQuote.client_notes
+        };
       }
 
       return {

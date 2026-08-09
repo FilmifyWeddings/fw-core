@@ -1804,18 +1804,39 @@ function StudioCoreAiryBuilderContent() {
   const tokenParam = searchParams?.get('token') || '';
   const isPublicPreview = searchParams?.get('preview') === 'public' || !!tokenParam;
 
-  // Modals for Public Preview Actions
+  // Modals & Actions for Public Preview
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [budgetRequested, setBudgetRequested] = useState<number | null>(null);
   const [submittingAction, setSubmittingAction] = useState(false);
+
+  // Accept Form States
+  const [clientAcceptName, setClientAcceptName] = useState('');
+  const [clientAcceptPhone, setClientAcceptPhone] = useState('');
+  const [clientAcceptNotes, setClientAcceptNotes] = useState('');
+  const [acceptValidationError, setAcceptValidationError] = useState<string | null>(null);
+
+  // Budget Form States
   const [budgetValue, setBudgetValue] = useState('');
   const [budgetNotes, setBudgetNotes] = useState('');
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
   const handleAcceptSubmit = async () => {
     if (!tokenParam) return;
+    setAcceptValidationError(null);
+
+    if (!clientAcceptName.trim()) {
+      setAcceptValidationError('Please enter your full name');
+      return;
+    }
+    if (!clientAcceptPhone.trim() || clientAcceptPhone.trim().length < 8) {
+      setAcceptValidationError('Please enter a valid phone number');
+      return;
+    }
+
     setSubmittingAction(true);
     try {
       const res = await fetch('/api/quotations/response', {
@@ -1824,7 +1845,9 @@ function StudioCoreAiryBuilderContent() {
         body: JSON.stringify({
           token: tokenParam,
           responseType: 'accepted',
-          clientName: data?.cover?.coupleName || 'Client'
+          clientName: clientAcceptName.trim(),
+          clientPhone: clientAcceptPhone.trim(),
+          clientNotes: clientAcceptNotes.trim()
         })
       });
 
@@ -1832,7 +1855,9 @@ function StudioCoreAiryBuilderContent() {
       if (json.success) {
         setAccepted(true);
         setShowAcceptModal(false);
-        setActionSuccessMsg('Thank you! Quotation accepted successfully.');
+        setShowConfetti(true);
+        setShowSuccessModal(true);
+        setTimeout(() => setShowConfetti(false), 5000);
       } else {
         alert(json.error || 'Failed to accept quotation.');
       }
@@ -5916,74 +5941,182 @@ function StudioCoreAiryBuilderContent() {
         )}
       </AnimatePresence>
 
-      {/* ── PUBLIC PREVIEW FIXED BOTTOM CLIENT ACTION BAR ── */}
+      {/* ── PUBLIC PREVIEW LIQUID GLASS BOTTOM CLIENT ACTION BAR ── */}
       {isPublicPreview && (
-        <div className="fixed bottom-0 left-0 right-0 z-[9000] p-4 bg-black/90 backdrop-blur-md border-t border-zinc-800 flex items-center justify-center gap-3 no-print">
-          <button
-            type="button"
-            onClick={handleDownloadPDFCanvas}
-            disabled={isExportingPDF}
-            className="px-4 py-2.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
-          >
-            <Download className="w-4 h-4 text-cyan-400" />
-            <span>Download PDF</span>
-          </button>
+        <div className="fixed bottom-4 left-0 right-0 z-[9000] px-4 pointer-events-none flex justify-center no-print">
+          <div className="pointer-events-auto bg-white/75 backdrop-blur-xl border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.15)] rounded-full px-5 py-2.5 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadPDFCanvas}
+              disabled={isExportingPDF}
+              className="px-4 py-2 rounded-full bg-zinc-900 hover:bg-black text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              <Download className="w-4 h-4 text-cyan-400" />
+              <span>Download PDF</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setShowBudgetModal(true)}
-            disabled={accepted}
-            className="px-4 py-2.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-          >
-            <DollarSign className="w-4 h-4 text-amber-500" />
-            <span>{budgetRequested ? `Budget: ₹${budgetRequested.toLocaleString('en-IN')}` : 'Discuss Budget'}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowBudgetModal(true)}
+              disabled={accepted}
+              className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-950 border border-amber-500/40 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            >
+              <DollarSign className="w-4 h-4 text-amber-600" />
+              <span>{budgetRequested ? `Budget: ₹${budgetRequested.toLocaleString('en-IN')}` : 'Discuss Budget'}</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setShowAcceptModal(true)}
-            disabled={accepted}
-            className="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60"
-          >
-            <CheckCircle2 className="w-4 h-4 text-black" />
-            <span>{accepted ? '✓ Proposal Accepted' : 'Accept Proposal'}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowAcceptModal(true)}
+              disabled={accepted}
+              className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60"
+            >
+              <CheckCircle2 className="w-4 h-4 text-white" />
+              <span>{accepted ? '✓ Proposal Accepted' : 'Accept Proposal'}</span>
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Accept Confirmation Modal */}
+      {/* ── CELEBRATION CONFETTI ANIMATION (LEFT & RIGHT CANNON BURSTS) ── */}
+      <AnimatePresence>
+        {showConfetti && (
+          <div className="fixed inset-0 z-[20000] pointer-events-none overflow-hidden no-print">
+            {/* Left Cannon Burst */}
+            {Array.from({ length: 30 }).map((_, i) => (
+              <motion.div
+                key={`confetti-l-${i}`}
+                initial={{
+                  x: '0vw',
+                  y: '100vh',
+                  scale: Math.random() * 0.8 + 0.6,
+                  rotate: 0,
+                  opacity: 1
+                }}
+                animate={{
+                  x: `${Math.random() * 45 + 5}vw`,
+                  y: `${Math.random() * 50 + 10}vh`,
+                  rotate: Math.random() * 720 - 360,
+                  opacity: [1, 1, 0]
+                }}
+                transition={{
+                  duration: Math.random() * 1.5 + 2,
+                  ease: [0.15, 0.85, 0.35, 1]
+                }}
+                className="absolute left-0 bottom-0 w-3 h-3 rounded-xs shadow-xs"
+                style={{
+                  backgroundColor: ['#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#F43F5E'][i % 6]
+                }}
+              />
+            ))}
+            {/* Right Cannon Burst */}
+            {Array.from({ length: 30 }).map((_, i) => (
+              <motion.div
+                key={`confetti-r-${i}`}
+                initial={{
+                  x: '100vw',
+                  y: '100vh',
+                  scale: Math.random() * 0.8 + 0.6,
+                  rotate: 0,
+                  opacity: 1
+                }}
+                animate={{
+                  x: `${95 - (Math.random() * 45 + 5)}vw`,
+                  y: `${Math.random() * 50 + 10}vh`,
+                  rotate: Math.random() * 720 - 360,
+                  opacity: [1, 1, 0]
+                }}
+                transition={{
+                  duration: Math.random() * 1.5 + 2,
+                  ease: [0.15, 0.85, 0.35, 1]
+                }}
+                className="absolute right-0 bottom-0 w-3 h-3 rounded-xs shadow-xs"
+                style={{
+                  backgroundColor: ['#F59E0B', '#10B981', '#8B5CF6', '#3B82F6', '#F43F5E', '#EC4899'][i % 6]
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── LIGHT THEME ACCEPT CONFIRMATION MODAL ── */}
       <AnimatePresence>
         {showAcceptModal && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs no-print">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm bg-[#161412] rounded-3xl p-6 shadow-2xl border border-emerald-500/30 space-y-4 text-center"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-emerald-200 space-y-4 text-center text-zinc-900"
             >
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 border border-emerald-300 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
                 <ShieldCheck className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-black text-white">Accept this quotation?</h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Confirm your details — we block your dates for you, and your confirmation arrives by email.
-              </p>
+              <div>
+                <h3 className="text-base font-black text-zinc-900">Accept This Quotation</h3>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Please enter your details to confirm booking and block your dates.
+                </p>
+              </div>
+
+              {acceptValidationError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold text-center">
+                  {acceptValidationError}
+                </div>
+              )}
+
+              <div className="space-y-2.5 text-left">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={clientAcceptName}
+                    onChange={(e) => setClientAcceptName(e.target.value)}
+                    className="w-full p-3 rounded-2xl bg-zinc-50 border border-zinc-300 text-zinc-900 font-bold text-xs outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1">Phone / WhatsApp Number *</label>
+                  <input
+                    type="tel"
+                    placeholder="Enter phone number (+91...)"
+                    value={clientAcceptPhone}
+                    onChange={(e) => setClientAcceptPhone(e.target.value)}
+                    className="w-full p-3 rounded-2xl bg-zinc-50 border border-zinc-300 text-zinc-900 font-bold text-xs outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1">Special Notes / Instructions (Optional)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Any specific requests or date details..."
+                    value={clientAcceptNotes}
+                    onChange={(e) => setClientAcceptNotes(e.target.value)}
+                    className="w-full p-3 rounded-2xl bg-zinc-50 border border-zinc-300 text-zinc-900 font-medium text-xs outline-none focus:border-emerald-500 resize-none"
+                  />
+                </div>
+              </div>
+
               <div className="pt-2 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAcceptModal(false)}
-                  className="flex-1 py-2.5 rounded-2xl bg-zinc-800 text-zinc-300 font-bold text-xs"
+                  className="flex-1 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Not yet
+                  Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleAcceptSubmit}
                   disabled={submittingAction}
-                  className="flex-1 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold text-xs flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all disabled:opacity-50"
                 >
-                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  <span>Yes, accept</span>
+                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  <span>Confirm &amp; Accept</span>
                 </button>
               </div>
             </motion.div>
@@ -5991,42 +6124,95 @@ function StudioCoreAiryBuilderContent() {
         )}
       </AnimatePresence>
 
-      {/* Discuss Budget Modal */}
+      {/* ── LIGHT THEME SUCCESS CONFIRMATION MODAL ── */}
+      <AnimatePresence>
+        {showSuccessModal && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              className="w-full max-w-sm bg-[#FAF9F6] rounded-3xl p-6 shadow-2xl border border-emerald-300 space-y-4 text-center text-zinc-900"
+            >
+              <div className="w-14 h-14 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
+                <Sparkles className="w-7 h-7 text-amber-500 animate-bounce" />
+              </div>
+
+              <div className="space-y-1.5">
+                <h3 className="text-lg font-black text-zinc-900 leading-tight">
+                  Thank You for Accepting Our Proposal! 🎉
+                </h3>
+                <p className="text-xs text-zinc-600 font-medium leading-relaxed">
+                  Our team will connect with you shortly to finalize your dates and details.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 text-left text-xs space-y-1 shadow-2xs">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 block">Accepted Details</span>
+                <p className="font-bold text-zinc-900">Name: {clientAcceptName}</p>
+                <p className="font-semibold text-zinc-700">Phone: {clientAcceptPhone}</p>
+                {clientAcceptNotes && <p className="text-[11px] text-zinc-500 italic mt-1">"{clientAcceptNotes}"</p>}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer"
+              >
+                Close &amp; View Proposal
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── LIGHT THEME DISCUSS BUDGET MODAL ── */}
       <AnimatePresence>
         {showBudgetModal && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs no-print">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm bg-[#161412] rounded-3xl p-6 shadow-2xl border border-amber-500/30 space-y-4 text-center"
+              className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-amber-200 space-y-4 text-center text-zinc-900"
             >
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center mx-auto">
-                <DollarSign className="w-6 h-6" />
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-300 text-amber-600 flex items-center justify-center mx-auto shadow-xs">
+                <DollarSign className="w-6 h-6 text-amber-600" />
               </div>
-              <h3 className="text-base font-black text-white">Tell us your budget</h3>
-              <p className="text-xs text-zinc-400">We will see what we can do to accommodate your vision.</p>
-              <div className="space-y-2 text-left">
-                <input
-                  type="number"
-                  placeholder="Enter your budget (₹)"
-                  value={budgetValue}
-                  onChange={(e) => setBudgetValue(e.target.value)}
-                  className="w-full p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-amber-400 font-bold text-sm outline-none focus:border-amber-500"
-                />
-                <textarea
-                  placeholder="Additional notes / requirement changes (optional)"
-                  rows={2}
-                  value={budgetNotes}
-                  onChange={(e) => setBudgetNotes(e.target.value)}
-                  className="w-full p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-medium text-xs outline-none focus:border-amber-500"
-                />
+              <div>
+                <h3 className="text-base font-black text-zinc-900">Tell Us Your Budget</h3>
+                <p className="text-xs text-zinc-600 mt-1">We will see what we can do to accommodate your vision.</p>
               </div>
+
+              <div className="space-y-2.5 text-left">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1">Target Budget Amount (₹) *</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 250000"
+                    value={budgetValue}
+                    onChange={(e) => setBudgetValue(e.target.value)}
+                    className="w-full p-3 rounded-2xl bg-zinc-50 border border-zinc-300 text-amber-900 font-extrabold text-sm outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1">Additional Notes / Custom Requirements (Optional)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Tell us what changes or adjustments you would prefer..."
+                    value={budgetNotes}
+                    onChange={(e) => setBudgetNotes(e.target.value)}
+                    className="w-full p-3 rounded-2xl bg-zinc-50 border border-zinc-300 text-zinc-900 font-medium text-xs outline-none focus:border-amber-500 resize-none"
+                  />
+                </div>
+              </div>
+
               <div className="pt-2 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setShowBudgetModal(false)}
-                  className="flex-1 py-2.5 rounded-2xl bg-zinc-800 text-zinc-300 font-bold text-xs"
+                  className="flex-1 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
@@ -6034,10 +6220,10 @@ function StudioCoreAiryBuilderContent() {
                   type="button"
                   onClick={handleBudgetSubmit}
                   disabled={submittingAction}
-                  className="flex-1 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-xs flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all disabled:opacity-50"
                 >
                   {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                  <span>Send</span>
+                  <span>Submit Budget Request</span>
                 </button>
               </div>
             </motion.div>
