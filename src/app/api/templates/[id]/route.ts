@@ -292,6 +292,18 @@ export async function DELETE(
       .eq('template_id', id)
       .eq('user_id', user.id);
 
+    await supabaseAdmin
+      .from('quotations')
+      .delete()
+      .eq('quotation_number', id)
+      .eq('workspace_id', user.id);
+
+    await supabaseAdmin
+      .from('quotations')
+      .delete()
+      .eq('id', id)
+      .eq('workspace_id', user.id);
+
     return NextResponse.json({ success: true, message: 'Template deleted successfully.' });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });

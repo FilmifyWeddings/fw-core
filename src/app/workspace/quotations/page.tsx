@@ -421,11 +421,15 @@ export default function WorkspaceQuotationsGalleryPage() {
           .order('updated_at', { ascending: false });
 
         const templateMap: Record<string, any> = {};
-        if (tmplData) {
+        const validTemplateIds = new Set<string>();
+
+        if (tmplData && tmplData.length > 0) {
           tmplData.forEach(t => {
             templateMap[t.id] = t;
+            validTemplateIds.add(t.id);
           });
         }
+        validTemplateIds.add('FW-37C63A54D4');
 
         let combined: SavedQuotation[] = [];
 
@@ -442,17 +446,35 @@ export default function WorkspaceQuotationsGalleryPage() {
           updated_at: new Date().toISOString()
         };
 
-        if (qData && qData.length > 0) {
-          combined = qData.map((q: any) => {
-            const qNum = q.quotation_number || q.id;
-            const tmplMeta = templateMap[qNum] || templateMap[q.id];
-            return {
-              ...q,
-              content_json: docsMap[qNum] || docsMap[q.id] || null,
-              is_default: tmplMeta?.is_default || false,
-              is_system_template: tmplMeta?.is_system_template || qNum === 'FW-37C63A54D4'
-            };
-          });
+        if (tmplData && tmplData.length > 0) {
+          combined = tmplData.map((t: any) => ({
+            id: t.id,
+            quotation_number: t.id,
+            title: t.title || 'Wedding - Design 1',
+            client_name: 'Rahul & Neha',
+            financials: {},
+            status: 'draft',
+            content_json: docsMap[t.id] || null,
+            is_default: t.is_default || false,
+            is_system_template: t.is_system_template || t.id === 'FW-37C63A54D4',
+            updated_at: t.updated_at
+          }));
+        } else if (qData && qData.length > 0) {
+          combined = qData
+            .filter((q: any) => {
+              const qNum = q.quotation_number || q.id;
+              return validTemplateIds.has(qNum) || validTemplateIds.has(q.id);
+            })
+            .map((q: any) => {
+              const qNum = q.quotation_number || q.id;
+              const tmplMeta = templateMap[qNum] || templateMap[q.id];
+              return {
+                ...q,
+                content_json: docsMap[qNum] || docsMap[q.id] || null,
+                is_default: tmplMeta?.is_default || false,
+                is_system_template: tmplMeta?.is_system_template || qNum === 'FW-37C63A54D4'
+              };
+            });
         }
 
         // Ensure Global System Default is included
