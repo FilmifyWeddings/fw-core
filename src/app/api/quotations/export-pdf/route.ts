@@ -63,9 +63,14 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Construct dedicated unauthenticated PDF Preview URL (/pdf-preview/[id])
-    const host = req.headers.get('host') || 'localhost:3000';
-    const protocol = req.headers.get('x-forwarded-proto') || 'http';
-    const requestedUrl = `${protocol}://${host}/pdf-preview/${templateId}`;
+    let targetHost = req.headers.get('host') || 'localhost:3000';
+    const isLocalOrNip = targetHost.includes('127.0.0.1') || targetHost.includes('localhost') || targetHost.includes('nip.io') || /^\d+\.\d+\.\d+\.\d+/.test(targetHost);
+
+    const baseUrl = isLocalOrNip 
+      ? (process.env.NEXT_PUBLIC_APP_URL || 'https://test.studiocore.in') 
+      : `${req.headers.get('x-forwarded-proto') || 'https'}://${targetHost}`;
+
+    const requestedUrl = `${baseUrl}/pdf-preview/${templateId}`;
 
     console.log('[Canva PDF Engine] --------------------------------------------------');
     console.log('[Canva PDF Engine] Requested URL:', requestedUrl);

@@ -312,10 +312,10 @@ export async function GET(
         title = lead.name || 'Wedding Quotation';
       }
 
-      // Determine response badge status
+      // Determine response badge status (Strict Version Isolation)
       let responseBadge: any = null;
       const explicitResp = (allResponses || []).find((r: any) =>
-        r.quotation_id === doc.template_id || r.lead_version === leadVer
+        r.quotation_id === doc.template_id || Number(r.lead_version) === Number(leadVer)
       );
 
       if (explicitResp) {
@@ -337,19 +337,6 @@ export async function GET(
             created_at: explicitResp.created_at
           };
         }
-      } else if (matchingQuote?.status === 'accepted') {
-        responseBadge = {
-          type: 'accepted',
-          label: '✓ Accepted',
-          clientName: matchingQuote.client_name,
-          clientNotes: matchingQuote.client_notes
-        };
-      } else if (matchingQuote?.client_notes && matchingQuote.client_notes.includes('Budget')) {
-        responseBadge = {
-          type: 'budget_discussion',
-          label: 'Budget Discussion',
-          clientNotes: matchingQuote.client_notes
-        };
       }
 
       return {

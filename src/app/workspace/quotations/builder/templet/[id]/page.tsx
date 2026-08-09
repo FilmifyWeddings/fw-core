@@ -5978,64 +5978,80 @@ function StudioCoreAiryBuilderContent() {
         </div>
       )}
 
-      {/* ── CELEBRATION CONFETTI ANIMATION (LEFT & RIGHT CANNON BURSTS) ── */}
+      {/* ── CELEBRATION CONFETTI ANIMATION (INSTANT DUAL CANNON BLAST) ── */}
       <AnimatePresence>
         {showConfetti && (
-          <div className="fixed inset-0 z-[20000] pointer-events-none overflow-hidden no-print">
-            {/* Left Cannon Burst */}
-            {Array.from({ length: 30 }).map((_, i) => (
-              <motion.div
-                key={`confetti-l-${i}`}
-                initial={{
-                  x: '0vw',
-                  y: '100vh',
-                  scale: Math.random() * 0.8 + 0.6,
-                  rotate: 0,
-                  opacity: 1
-                }}
-                animate={{
-                  x: `${Math.random() * 45 + 5}vw`,
-                  y: `${Math.random() * 50 + 10}vh`,
-                  rotate: Math.random() * 720 - 360,
-                  opacity: [1, 1, 0]
-                }}
-                transition={{
-                  duration: Math.random() * 1.5 + 2,
-                  ease: [0.15, 0.85, 0.35, 1]
-                }}
-                className="absolute left-0 bottom-0 w-3 h-3 rounded-xs shadow-xs"
-                style={{
-                  backgroundColor: ['#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#F43F5E'][i % 6]
-                }}
-              />
-            ))}
-            {/* Right Cannon Burst */}
-            {Array.from({ length: 30 }).map((_, i) => (
-              <motion.div
-                key={`confetti-r-${i}`}
-                initial={{
-                  x: '100vw',
-                  y: '100vh',
-                  scale: Math.random() * 0.8 + 0.6,
-                  rotate: 0,
-                  opacity: 1
-                }}
-                animate={{
-                  x: `${95 - (Math.random() * 45 + 5)}vw`,
-                  y: `${Math.random() * 50 + 10}vh`,
-                  rotate: Math.random() * 720 - 360,
-                  opacity: [1, 1, 0]
-                }}
-                transition={{
-                  duration: Math.random() * 1.5 + 2,
-                  ease: [0.15, 0.85, 0.35, 1]
-                }}
-                className="absolute right-0 bottom-0 w-3 h-3 rounded-xs shadow-xs"
-                style={{
-                  backgroundColor: ['#F59E0B', '#10B981', '#8B5CF6', '#3B82F6', '#F43F5E', '#EC4899'][i % 6]
-                }}
-              />
-            ))}
+          <div className="fixed inset-0 z-[25000] pointer-events-none overflow-hidden no-print">
+            {/* Left Cannon Blast */}
+            {Array.from({ length: 45 }).map((_, i) => {
+              const colors = ['#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#F43F5E', '#EAB308'];
+              const color = colors[i % colors.length];
+              const isCircle = i % 3 === 0;
+              const angle = (Math.random() * 50 + 20) * (Math.PI / 180);
+              const speed = Math.random() * 60 + 50;
+              const vx = Math.cos(angle) * speed;
+              const vy = -Math.sin(angle) * speed;
+
+              return (
+                <motion.div
+                  key={`confetti-l-${i}`}
+                  initial={{
+                    x: '0vw',
+                    y: '100vh',
+                    scale: Math.random() * 0.9 + 0.5,
+                    rotate: 0,
+                    opacity: 1
+                  }}
+                  animate={{
+                    x: [`0vw`, `${vx * 0.9}vw`, `${vx * 1.3}vw`],
+                    y: [`100vh`, `${100 + vy * 0.8}vh`, '110vh'],
+                    rotate: Math.random() * 1080 - 540,
+                    opacity: [1, 1, 1, 0]
+                  }}
+                  transition={{
+                    duration: Math.random() * 1.5 + 2.5,
+                    ease: [0.22, 1, 0.36, 1]
+                  }}
+                  className={`absolute left-0 bottom-0 shadow-xs ${isCircle ? 'w-3.5 h-3.5 rounded-full' : 'w-3 h-4 rounded-xs'}`}
+                  style={{ backgroundColor: color }}
+                />
+              );
+            })}
+            {/* Right Cannon Blast */}
+            {Array.from({ length: 45 }).map((_, i) => {
+              const colors = ['#F59E0B', '#10B981', '#8B5CF6', '#3B82F6', '#F43F5E', '#EC4899', '#EAB308'];
+              const color = colors[i % colors.length];
+              const isCircle = i % 3 === 0;
+              const angle = (Math.random() * 50 + 20) * (Math.PI / 180);
+              const speed = Math.random() * 60 + 50;
+              const vx = -Math.cos(angle) * speed;
+              const vy = -Math.sin(angle) * speed;
+
+              return (
+                <motion.div
+                  key={`confetti-r-${i}`}
+                  initial={{
+                    x: '100vw',
+                    y: '100vh',
+                    scale: Math.random() * 0.9 + 0.5,
+                    rotate: 0,
+                    opacity: 1
+                  }}
+                  animate={{
+                    x: [`100vw`, `${100 + vx * 0.9}vw`, `${100 + vx * 1.3}vw`],
+                    y: [`100vh`, `${100 + vy * 0.8}vh`, '110vh'],
+                    rotate: Math.random() * 1080 - 540,
+                    opacity: [1, 1, 1, 0]
+                  }}
+                  transition={{
+                    duration: Math.random() * 1.5 + 2.5,
+                    ease: [0.22, 1, 0.36, 1]
+                  }}
+                  className={`absolute right-0 bottom-0 shadow-xs ${isCircle ? 'w-3.5 h-3.5 rounded-full' : 'w-3 h-4 rounded-xs'}`}
+                  style={{ backgroundColor: color }}
+                />
+              );
+            })}
           </div>
         )}
       </AnimatePresence>
