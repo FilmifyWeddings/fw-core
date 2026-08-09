@@ -4,7 +4,7 @@ import { resolveRequestUser } from '@/lib/auth/admin-guard';
 
 /**
  * Authoritative Route to Set Any Quotation Template as Active User Default in Supabase
- * Directly sets target template ID as default in DB & user metadata without altering target ID.
+ * Directly sets target template ID as default in DB & user metadata & profiles without altering target ID.
  */
 export async function POST(
   req: NextRequest,
@@ -28,7 +28,7 @@ export async function POST(
 
     console.log('[SET DEFAULT TEMPLATE]', { id, userId, workspaceId, userEmail });
 
-    // 1. Store active default_template_id in user_metadata
+    // 1. Store active default_template_id in user_metadata (Supabase Auth)
     if (userId && userId !== 'demo_user') {
       try {
         const { data: userRecord } = await supabaseAdmin.auth.admin.getUserById(userId);
@@ -42,9 +42,19 @@ export async function POST(
       } catch (err) {
         console.warn('[User Metadata Update Warning]:', err);
       }
+
+      // 2. Try updating default_template_id column in profiles table
+      try {
+        await supabaseAdmin
+          .from('profiles')
+          .update({ default_template_id: id, updated_at: new Date().toISOString() })
+          .eq('id', userId);
+      } catch (pErr) {
+        console.warn('[Profiles Table Update Warning]:', pErr);
+      }
     }
 
-    // 2. Clear is_default = false on all workspace and user templates in DB
+    // 3. Clear is_default = false on all workspace and user templates in DB
     const isUuid = /^[0-9a-fA-F-]{36}$/.test(workspaceId);
     if (isUuid) {
       await supabaseAdmin
@@ -58,7 +68,7 @@ export async function POST(
         .or(`user_id.eq.${userId},is_system_template.eq.true,user_id.eq.SYSTEM`);
     }
 
-    // 3. Mark selected target template as is_default = true in DB
+    // 4. Mark selected target template as is_default = true in DB
     const { data: updatedTmpl, error: updateErr } = await supabaseAdmin
       .from('quotation_templates')
       .update({

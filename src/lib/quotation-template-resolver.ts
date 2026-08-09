@@ -16,8 +16,8 @@ export interface ResolvedTemplateResult {
  * Authoritative Centralized Resolver for User Default Quotation Template from Supabase.
  * Rules:
  * A. If requestedTemplateId is provided, fetch that exact template & document.
- * B. If user has active default_template_id in user_metadata, fetch THAT EXACT template & document.
- * C. Query Supabase for ANY template where is_default = true (matching workspace/user or active system default).
+ * B. Check profiles table and user_metadata for explicit active default_template_id.
+ * C. Query Supabase directly for ANY template where is_default = true.
  * D. If no default marked, fallback to Global System Default Template (FW-2WT85Y0).
  */
 export async function resolveUserDefaultQuotationTemplate(
@@ -60,11 +60,27 @@ export async function resolveUserDefaultQuotationTemplate(
     }
   }
 
-  // 2. Rule B: Check active default_template_id stored in user_metadata
+  // 2. Rule B: Check active default_template_id stored in profiles or user_metadata
   if (targetUser && targetUser !== 'demo_user') {
     try {
-      const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(targetUser);
-      const activeDefaultId = userRec?.user?.user_metadata?.default_template_id;
+      let activeDefaultId: string | null = null;
+
+      // First check profiles table
+      const { data: prof } = await supabaseAdmin
+        .from('profiles')
+        .select('default_template_id')
+        .eq('id', targetUser)
+        .maybeSingle();
+
+      if (prof?.default_template_id) {
+        activeDefaultId = prof.default_template_id;
+      }
+
+      // If not in profiles, check Auth user_metadata
+      if (!activeDefaultId) {
+        const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(targetUser);
+        activeDefaultId = userRec?.user?.user_metadata?.default_template_id || null;
+      }
 
       if (activeDefaultId) {
         const { data: tmpl } = await supabaseAdmin
@@ -81,7 +97,7 @@ export async function resolveUserDefaultQuotationTemplate(
 
         const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
 
-        console.log('[Template Resolver] Resolved Active User Metadata Default Template:', {
+        console.log('[Template Resolver] Resolved Active Default Template from Supabase DB/Metadata:', {
           targetUser,
           templateId: activeDefaultId,
           title: tmpl?.title
@@ -93,11 +109,11 @@ export async function resolveUserDefaultQuotationTemplate(
           document: docJson,
           isSystemTemplate: !!tmpl?.is_system_template,
           isDefault: true,
-          resolutionReason: 'USER_METADATA_DEFAULT',
+          resolutionReason: 'ACTIVE_EXPLICIT_DEFAULT',
         };
       }
     } catch (err) {
-      console.warn('[Template Resolver Warning] user_metadata lookup failed:', err);
+      console.warn('[Template Resolver Warning] profiles/user_metadata lookup failed:', err);
     }
   }
 
