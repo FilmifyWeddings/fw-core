@@ -5,13 +5,23 @@ import { resolveRequestUser } from '@/lib/auth/admin-guard';
 /**
  * Authoritative Quotation Templates List API (GET)
  * Bypasses RLS using supabaseAdmin to ensure quotation_documents content_json is never blocked.
- * Filters strictly for normal users so inactive/unpublished system templates are 100% hidden.
+ * Guarantees exact user-selected default_template_id is marked as default in response.
  */
 export async function GET(req: NextRequest) {
   try {
     const { userId, userEmail, isSuperAdmin } = await resolveRequestUser(req);
     const { searchParams } = new URL(req.url);
     const workspaceIdParam = searchParams.get('workspace_id') || userId;
+
+    let activeDefaultId: string | null = null;
+    if (userId && userId !== 'demo_user') {
+      try {
+        const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(userId);
+        if (userRec?.user?.user_metadata?.default_template_id) {
+          activeDefaultId = userRec.user.user_metadata.default_template_id;
+        }
+      } catch (err) {}
+    }
 
     let query = supabaseAdmin
       .from('quotation_templates')
@@ -52,13 +62,26 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const results = validTemplates.map(t => ({
-      ...t,
-      content_json: docsMap[t.id] || null
-    }));
+    const hasUserDefaultInDb = validTemplates.some(t => t.is_default && !t.is_system_template);
+
+    const results = validTemplates.map(t => {
+      let isDefault = t.is_default;
+      if (activeDefaultId) {
+        isDefault = t.id === activeDefaultId;
+      } else if (!hasUserDefaultInDb) {
+        isDefault = t.id === 'FW-2WT85Y0';
+      }
+
+      return {
+        ...t,
+        is_default: isDefault,
+        content_json: docsMap[t.id] || null
+      };
+    });
 
     return NextResponse.json({
       success: true,
+      activeDefaultTemplateId: activeDefaultId,
       templates: results
     });
   } catch (error: any) {

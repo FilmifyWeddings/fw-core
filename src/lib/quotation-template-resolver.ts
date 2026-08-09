@@ -16,8 +16,9 @@ export interface ResolvedTemplateResult {
  * Authoritative Centralized Resolver for User Default Quotation Template from Supabase.
  * Rules:
  * A. If requestedTemplateId is provided, fetch that exact template & document.
- * B. Otherwise, query Supabase for user's active DEFAULT template (is_default = true).
- * C. If no user default set, fallback to published System Default Template (FW-2WT85Y0).
+ * B. If user has active default_template_id in user_metadata, fetch THAT EXACT template & document.
+ * C. Otherwise, query Supabase for user's workspace template with is_default = true.
+ * D. If no user default set, fallback to Global System Default Template (FW-2WT85Y0).
  */
 export async function resolveUserDefaultQuotationTemplate(
   workspaceId: string,
@@ -27,7 +28,7 @@ export async function resolveUserDefaultQuotationTemplate(
   const targetWorkspace = workspaceId || userId || 'demo_user';
   const targetUser = userId || workspaceId || 'demo_user';
 
-  // 1. If requestedTemplateId is explicitly passed
+  // 1. Rule A: If explicit requestedTemplateId is provided
   if (requestedTemplateId) {
     try {
       const { data: tmpl } = await supabaseAdmin
@@ -59,7 +60,48 @@ export async function resolveUserDefaultQuotationTemplate(
     }
   }
 
-  // 2. Query user's active DEFAULT template from Supabase (is_default = true)
+  // 2. Rule B: Check active default_template_id stored in user_metadata
+  if (targetUser && targetUser !== 'demo_user') {
+    try {
+      const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(targetUser);
+      const activeDefaultId = userRec?.user?.user_metadata?.default_template_id;
+
+      if (activeDefaultId) {
+        const { data: tmpl } = await supabaseAdmin
+          .from('quotation_templates')
+          .select('*')
+          .eq('id', activeDefaultId)
+          .maybeSingle();
+
+        const { data: doc } = await supabaseAdmin
+          .from('quotation_documents')
+          .select('*')
+          .eq('template_id', activeDefaultId)
+          .maybeSingle();
+
+        const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
+
+        console.log('[Template Resolver] Resolved Active User Metadata Default Template:', {
+          targetUser,
+          templateId: activeDefaultId,
+          title: tmpl?.title
+        });
+
+        return {
+          templateId: activeDefaultId,
+          template: tmpl || { id: activeDefaultId, title: 'Default Quotation Template', is_system_template: false, is_default: true },
+          document: docJson,
+          isSystemTemplate: !!tmpl?.is_system_template,
+          isDefault: true,
+          resolutionReason: 'USER_METADATA_DEFAULT',
+        };
+      }
+    } catch (err) {
+      console.warn('[Template Resolver Warning] user_metadata lookup failed:', err);
+    }
+  }
+
+  // 3. Rule C: Query user's active DEFAULT template from DB (is_default = true)
   try {
     const isUuid = /^[0-9a-fA-F-]{36}$/.test(targetWorkspace);
     let userTmpls: any[] = [];
@@ -85,6 +127,19 @@ export async function resolveUserDefaultQuotationTemplate(
         .order('updated_at', { ascending: false });
 
       userDefaultTmpl = (fallbackUserTmpls || []).find((t: any) => t.is_default === true);
+    }
+
+    if (!userDefaultTmpl) {
+      const { data: sysDefaultTmpl } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('*')
+        .eq('is_system_template', true)
+        .eq('is_default', true)
+        .maybeSingle();
+
+      if (sysDefaultTmpl) {
+        userDefaultTmpl = sysDefaultTmpl;
+      }
     }
 
     if (userDefaultTmpl) {
@@ -115,7 +170,7 @@ export async function resolveUserDefaultQuotationTemplate(
     console.error('[Template Resolver Error]: Failed to query user default template:', err);
   }
 
-  // 3. Fallback to System Default Template (FW-2WT85Y0 or published system default)
+  // 4. Rule D: Fallback to System Default Template (FW-2WT85Y0 or published system default)
   try {
     const { data: sysTmpl } = await supabaseAdmin
       .from('quotation_templates')

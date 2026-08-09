@@ -273,11 +273,13 @@ export default function WorkspaceQuotationsGalleryPage() {
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Failed to set default template');
 
+      const returnedDefaultId = resData.defaultTemplateId || targetId;
+
       setQuotations(prev => prev.map(q => {
         const qId = q.quotation_number || q.id;
         return {
           ...q,
-          is_default: qId === targetId
+          is_default: qId === returnedDefaultId || qId === targetId
         };
       }));
 
