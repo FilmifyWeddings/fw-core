@@ -361,11 +361,11 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       setQuotations(prev => {
         const next = prev.filter(q => (q.quotation_number || q.id) !== targetId);
-        const hasUserDefault = next.some(q => q.is_default && !q.is_system_template);
-        if (!hasUserDefault) {
+        const hasAnyDefault = next.some(q => q.is_default);
+        if (!hasAnyDefault) {
           return next.map(q => ({
             ...q,
-            is_default: (q.quotation_number || q.id) === 'FW-2WT85Y0' || q.is_default
+            is_default: (q.quotation_number || q.id) === 'FW-2WT85Y0'
           }));
         }
         return next;
@@ -629,12 +629,12 @@ export default function WorkspaceQuotationsGalleryPage() {
           combined.unshift(globalSystemTemplate);
         }
 
-        // Check if any template has is_default = true; if none, default to global system template
-        const hasUserDefault = combined.some(q => q.is_default && !q.is_system_template);
-        if (!hasUserDefault) {
+        // Check if any template has is_default = true; if none at all, default to global system template
+        const hasAnyDefault = combined.some(q => q.is_default);
+        if (!hasAnyDefault) {
           combined = combined.map(q => ({
             ...q,
-            is_default: (q.quotation_number || q.id) === 'FW-2WT85Y0' || q.is_default
+            is_default: (q.quotation_number || q.id) === 'FW-2WT85Y0'
           }));
         }
 

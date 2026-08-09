@@ -2282,7 +2282,20 @@ function StudioCoreAiryBuilderContent() {
         }
 
         setUserId(currentUserId);
-        router.replace('/workspace/quotations/builder/templet/FW-2WT85Y0');
+
+        let targetDefaultId = 'FW-2WT85Y0';
+        try {
+          const res = await fetch('/api/quotation-templates', {
+            headers: userAccessToken ? { 'Authorization': `Bearer ${userAccessToken}` } : {}
+          });
+          const data = await res.json();
+          if (data.templates && data.templates.length > 0) {
+            const defTmpl = data.templates.find((t: any) => t.is_default) || data.templates[0];
+            if (defTmpl?.id) targetDefaultId = defTmpl.id;
+          }
+        } catch (e) {}
+
+        router.replace(`/workspace/quotations/builder/templet/${targetDefaultId}`);
         return;
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
