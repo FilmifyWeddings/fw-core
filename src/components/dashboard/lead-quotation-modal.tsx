@@ -77,22 +77,26 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      const res = await fetch(`/api/leads/${lead.id}/quotations`, {
+      const res = await fetch('/api/quotations/create-for-lead', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        }
+        },
+        body: JSON.stringify({
+          leadId: lead.id,
+          clientName: lead.name
+        })
       });
 
       const json = await res.json();
-      if (json.success && json.templateId) {
-        // Refresh local list & redirect to builder route
+      if (json.success && (json.quotationId || json.templateId)) {
+        const qId = json.quotationId || json.templateId;
         await loadQuotations();
-        router.push(`/workspace/quotations/builder/templet/${json.templateId}`);
+        router.push(`/workspace/quotations/builder/templet/${qId}`);
         onClose();
       } else {
-        setErrorMsg(json.error || 'Failed to create new quotation version.');
+        setErrorMsg(json.error || 'Failed to create new quotation for lead.');
       }
     } catch (err: any) {
       console.error('[LeadQuotationModal] Create error:', err);

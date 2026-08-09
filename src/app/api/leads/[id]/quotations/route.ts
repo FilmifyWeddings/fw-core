@@ -355,25 +355,69 @@ export async function POST(
     const newTemplateId = `FW-L-${leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}-V${nextLeadVersion}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const now = new Date().toISOString();
 
-    // 3. Populate default quotation document JSON with Lead pre-population
+    // 3. Find User's Active Default Template (or Global System Default fallback)
+    const { data: userDefaultTmpl } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('id')
+      .eq('user_id', currentUserId)
+      .eq('is_default', true)
+      .maybeSingle();
+
+    const sourceTemplateId = userDefaultTmpl?.id || 'FW-37C63A54D4';
+
+    let sourceJson: any = null;
+    if (sourceTemplateId) {
+      const { data: sourceDoc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('content_json')
+        .eq('template_id', sourceTemplateId)
+        .maybeSingle();
+      sourceJson = sourceDoc?.content_json;
+    }
+
+    if (!sourceJson) {
+      const { data: globalDoc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('content_json')
+        .eq('template_id', 'FW-37C63A54D4')
+        .maybeSingle();
+      sourceJson = globalDoc?.content_json || DEFAULT_AIRY_PROPOSAL;
+    }
+
+    // 100% COMPLETE DEEP CLONE of the user's active default template
+    const newQuotationJson = typeof structuredClone === 'function' 
+      ? structuredClone(sourceJson) 
+      : JSON.parse(JSON.stringify(sourceJson));
+
     const leadName = lead.name || 'Valued Client';
     const groomName = leadName.includes('&') ? leadName.split('&')[0].trim() : leadName;
     const brideName = leadName.includes('&') ? leadName.split('&')[1].trim() : 'Partner';
 
-    const newQuotationJson = {
-      ...DEFAULT_AIRY_PROPOSAL,
-      designName: `Wedding - Design 1`,
-      eventGroup: 'Wedding',
-      lead_id: leadId,
-      lead_version: nextLeadVersion,
-      cover: {
-        ...DEFAULT_AIRY_PROPOSAL.cover,
-        groomName: groomName || 'Rahul',
-        brideName: brideName || 'Neha',
-        coupleName: leadName,
-        locationName: lead.raw_payload?.venue || lead.raw_payload?.location || 'MUMBAI',
-      }
-    };
+    newQuotationJson.lead_id = leadId;
+    newQuotationJson.lead_version = nextLeadVersion;
+
+    if (!newQuotationJson.cover) newQuotationJson.cover = {};
+    newQuotationJson.cover.coupleName = leadName;
+    newQuotationJson.cover.groomName = groomName || newQuotationJson.cover.groomName || 'Rahul';
+    newQuotationJson.cover.brideName = brideName || newQuotationJson.cover.brideName || 'Neha';
+
+    if (lead.raw_payload?.venue || lead.raw_payload?.location) {
+      newQuotationJson.cover.locationName = lead.raw_payload.venue || lead.raw_payload.location;
+    }
+
+    if (Array.isArray(newQuotationJson.pageSequence)) {
+      newQuotationJson.pageSequence = newQuotationJson.pageSequence.map((p: any) => ({
+        ...p,
+        id: 'page_' + Math.random().toString(36).substring(2, 9)
+      }));
+    }
+
+    if (Array.isArray(newQuotationJson.customPages)) {
+      newQuotationJson.customPages = newQuotationJson.customPages.map((cp: any) => ({
+        ...cp,
+        id: 'cpage_' + Math.random().toString(36).substring(2, 9)
+      }));
+    }
 
     // 4. Save to quotation_templates
     await supabaseAdmin

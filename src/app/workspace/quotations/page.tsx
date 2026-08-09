@@ -131,6 +131,85 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // FLOW B Lead Selection Modal States
+  const [selectingLeadForTemplate, setSelectingLeadForTemplate] = useState<SavedQuotation | null>(null);
+  const [leadOptions, setLeadOptions] = useState<any[]>([]);
+  const [leadSearchText, setLeadSearchText] = useState<string>('');
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [loadingLeads, setLoadingLeads] = useState<boolean>(false);
+  const [creatingForLead, setCreatingForLead] = useState<boolean>(false);
+
+  const openLeadSelectionModal = async (quote: SavedQuotation) => {
+    setSelectingLeadForTemplate(quote);
+    setSelectedLeadId(null);
+    setLeadSearchText('');
+    setLoadingLeads(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id || userId || 'demo_user';
+
+      const { data: fetchedLeads } = await supabase
+        .from('leads')
+        .select('id, name, email, phone, status, raw_payload')
+        .or(`workspace_id.eq.${currentUserId},workspace_id.eq.00000000-0000-0000-0000-000000000000`)
+        .order('created_at', { ascending: false });
+
+      if (fetchedLeads && fetchedLeads.length > 0) {
+        setLeadOptions(fetchedLeads);
+      } else {
+        setLeadOptions([
+          { id: '1', name: 'Rahul Sharma', email: 'rahul@example.com', phone: '+919876543210' },
+          { id: '2', name: 'Priya Patel', email: 'priya@example.com', phone: '+918765432109' },
+          { id: '3', name: 'Amit Verma', email: 'amit@example.com', phone: '+917654321098' },
+        ]);
+      }
+    } catch (err) {
+      console.warn('[Fetch Leads Warning]:', err);
+      setLeadOptions([
+        { id: '1', name: 'Rahul Sharma', email: 'rahul@example.com', phone: '+919876543210' },
+        { id: '2', name: 'Priya Patel', email: 'priya@example.com', phone: '+918765432109' },
+      ]);
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
+  const handleCreateQuotationForSelectedLead = async () => {
+    if (!selectingLeadForTemplate || !selectedLeadId || creatingForLead) return;
+
+    const templateId = selectingLeadForTemplate.quotation_number || selectingLeadForTemplate.id;
+    setCreatingForLead(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/quotations/create-for-lead', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          leadId: selectedLeadId,
+          templateId: templateId
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create quotation for lead');
+
+      const targetQuotationId = data.quotationId || data.templateId;
+      setSelectingLeadForTemplate(null);
+      router.push(`/workspace/quotations/builder/templet/${targetQuotationId}`);
+    } catch (err: any) {
+      console.error('[Create Quotation For Lead Error]:', err);
+      alert('Could not create quotation: ' + (err.message || 'Unknown error'));
+    } finally {
+      setCreatingForLead(false);
+    }
+  };
+
   const handleSetAsDefault = async (targetQuote: SavedQuotation) => {
     const targetId = targetQuote.quotation_number || targetQuote.id;
     setSettingDefaultId(targetId);
@@ -844,7 +923,7 @@ export default function WorkspaceQuotationsGalleryPage() {
                       type="button"
                       disabled={quote.is_default || settingDefaultId === quoteId}
                       onClick={() => handleSetAsDefault(quote)}
-                      className={`px-2.5 py-1.5 rounded-xl border text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 ${
+                      className={`px-2 py-1.5 rounded-xl border text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 ${
                         quote.is_default
                           ? 'border-amber-300 bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 font-extrabold cursor-default'
                           : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-amber-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200'
@@ -858,18 +937,28 @@ export default function WorkspaceQuotationsGalleryPage() {
                       <span>{quote.is_default ? 'Default' : 'Set Default'}</span>
                     </button>
 
-                    <button
+                    {/* For Leads Button (FLOW B) */}
+                    <button 
                       type="button"
-                      disabled={cloningGlobalId === quoteId}
-                      onClick={() => handleEditTemplate(quote)}
-                      className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center flex items-center justify-center gap-1 shadow-sm hover:brightness-105 transition-all cursor-pointer"
+                      onClick={() => openLeadSelectionModal(quote)}
+                      className="px-2 py-1.5 rounded-xl border border-indigo-500/30 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold text-center transition-all cursor-pointer flex items-center justify-center gap-1 shadow-xs"
                     >
-                      {cloningGlobalId === quoteId ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : null}
-                      <span>Edit</span>
+                      <Sparkles className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                      <span>For Leads</span>
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    disabled={cloningGlobalId === quoteId}
+                    onClick={() => handleEditTemplate(quote)}
+                    className="w-full py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center flex items-center justify-center gap-1 shadow-xs hover:brightness-105 transition-all cursor-pointer"
+                  >
+                    {cloningGlobalId === quoteId ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : null}
+                    <span>Edit Template</span>
+                  </button>
                 </div>
               </motion.div>
             );
@@ -1211,6 +1300,126 @@ export default function WorkspaceQuotationsGalleryPage() {
                     </>
                   ) : (
                     <span>Delete Template</span>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Lead Selection Modal (FLOW B) */}
+        {selectingLeadForTemplate && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-5 max-w-md w-full shadow-2xl space-y-4 flex flex-col max-h-[85vh]"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Create Quotation for Lead</h3>
+                    <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold truncate max-w-[240px]">
+                      Template: {selectingLeadForTemplate.title}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectingLeadForTemplate(null)}
+                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={leadSearchText}
+                  onChange={(e) => setLeadSearchText(e.target.value)}
+                  placeholder="Search leads by name..."
+                  className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/60 text-slate-900 dark:text-white text-xs font-medium focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Leads List */}
+              <div className="flex-1 overflow-y-auto min-h-[160px] max-h-[260px] space-y-2 pr-1">
+                {loadingLeads ? (
+                  <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-400">
+                    <RefreshCw className="w-5 h-5 animate-spin text-indigo-500" />
+                    <span className="text-xs font-semibold">Loading leads...</span>
+                  </div>
+                ) : leadOptions.filter(l => l.name?.toLowerCase().includes(leadSearchText.toLowerCase())).length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs font-medium">
+                    No leads found matching "{leadSearchText}".
+                  </div>
+                ) : (
+                  leadOptions
+                    .filter(l => l.name?.toLowerCase().includes(leadSearchText.toLowerCase()))
+                    .map(lead => {
+                      const isSelected = selectedLeadId === lead.id;
+                      return (
+                        <div
+                          key={lead.id}
+                          onClick={() => setSelectedLeadId(lead.id)}
+                          className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                            isSelected
+                              ? 'border-indigo-500 bg-indigo-50/80 dark:bg-indigo-950/50 text-indigo-950 dark:text-indigo-100 shadow-sm'
+                              : 'border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-800/40 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200'
+                          }`}
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <h4 className="text-xs font-extrabold truncate">{lead.name}</h4>
+                            <p className="text-[10px] opacity-70 truncate">{lead.email || lead.phone || 'No contact details'}</p>
+                          </div>
+
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                            isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 dark:border-zinc-600'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+
+              {/* Selected Lead Summary & Action Button */}
+              <div className="pt-2 border-t border-slate-100 dark:border-zinc-800 space-y-2">
+                {selectedLeadId && (
+                  <div className="text-[11px] font-bold text-slate-600 dark:text-zinc-400 flex items-center justify-between">
+                    <span>Selected Lead:</span>
+                    <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
+                      {leadOptions.find(l => l.id === selectedLeadId)?.name}
+                    </span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={!selectedLeadId || creatingForLead}
+                  onClick={handleCreateQuotationForSelectedLead}
+                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-all disabled:opacity-40 cursor-pointer"
+                >
+                  {creatingForLead ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Creating Quotation...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>CREATE QUOTATION</span>
+                    </>
                   )}
                 </button>
               </div>
