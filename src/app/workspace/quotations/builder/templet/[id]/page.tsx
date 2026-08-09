@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1828,7 +1828,7 @@ function StudioCoreAiryBuilderContent() {
   const pageSequence: PageSequenceItem[] = data?.pageSequence || DEFAULT_PAGE_SEQUENCE;
 
   const updatePageSequence = (newSeq: PageSequenceItem[]) => {
-    updateData((prev: any) => ({ ...prev, pageSequence: newSeq }));
+    setData((prev: any) => ({ ...prev, pageSequence: newSeq }));
   };
 
   const movePageUp = (index: number) => {
