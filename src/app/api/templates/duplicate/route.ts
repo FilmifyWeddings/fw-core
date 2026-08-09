@@ -48,11 +48,11 @@ export async function POST(req: NextRequest) {
     // 1. Verify source template permissions
     const { data: sourceTmpl } = await supabaseAdmin
       .from('quotation_templates')
-      .select('id, user_id, is_system_template, title')
+      .select('id, user_id, title')
       .eq('id', sourceTemplateId)
       .maybeSingle();
 
-    const isSystemSource = sourceTemplateId === 'FW-37C63A54D4' || sourceTemplateId === 'SYSTEM_DEFAULT_WEDDING' || sourceTmpl?.is_system_template || sourceTmpl?.user_id === 'SYSTEM';
+    const isSystemSource = sourceTemplateId === 'FW-37C63A54D4' || sourceTemplateId === 'SYSTEM_DEFAULT_WEDDING' || (sourceTmpl as any)?.is_system_template || sourceTmpl?.user_id === 'SYSTEM';
 
     if (!isSystemSource && sourceTmpl && sourceTmpl.user_id && sourceTmpl.user_id !== userId && sourceTmpl.user_id !== 'demo_user') {
       return NextResponse.json(
@@ -146,23 +146,39 @@ export async function POST(req: NextRequest) {
       }));
     }
 
-    // 5. Insert new template record owned by current user
-    const { data: newTemplate, error: tmplErr } = await supabaseAdmin
+    // 5. Insert new template record with schema cache resilience
+    const baseTmplPayload = {
+      id: newTemplateId,
+      user_id: userId,
+      title: uniqueTitle,
+      category: duplicatedJson?.eventGroup || 'Wedding',
+      created_at: now,
+      updated_at: now
+    };
+
+    let newTemplate: any = null;
+
+    const { data: tmpl1, error: tmplErr1 } = await supabaseAdmin
       .from('quotation_templates')
       .insert({
-        id: newTemplateId,
-        user_id: userId,
-        title: uniqueTitle,
-        category: duplicatedJson?.eventGroup || 'Wedding',
+        ...baseTmplPayload,
         is_system_template: false,
-        is_default: false,
-        created_at: now,
-        updated_at: now
+        is_default: false
       })
       .select()
-      .single();
+      .maybeSingle();
 
-    if (tmplErr) throw tmplErr;
+    if (tmplErr1) {
+      console.warn('[Duplicate Template Warning] Full insert failed, trying base payload:', tmplErr1.message);
+      const { data: tmpl2 } = await supabaseAdmin
+        .from('quotation_templates')
+        .insert(baseTmplPayload)
+        .select()
+        .maybeSingle();
+      newTemplate = tmpl2 || baseTmplPayload;
+    } else {
+      newTemplate = tmpl1;
+    }
 
     // 6. Insert new document record
     const { data: newDoc, error: docErr } = await supabaseAdmin

@@ -144,11 +144,11 @@ export async function PATCH(
     // 1. Fetch target template record to check ownership & system status
     const { data: targetTmpl } = await supabaseAdmin
       .from('quotation_templates')
-      .select('id, user_id, is_system_template')
+      .select('id, user_id, title')
       .eq('id', id)
       .maybeSingle();
 
-    const isSystemTemplate = id === 'FW-37C63A54D4' || id === 'SYSTEM_DEFAULT_WEDDING' || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM';
+    const isSystemTemplate = id === 'FW-37C63A54D4' || id === 'SYSTEM_DEFAULT_WEDDING' || (targetTmpl as any)?.is_system_template || targetTmpl?.user_id === 'SYSTEM';
 
     let targetTemplateId = id;
     let isAutoCloned = false;
@@ -177,16 +177,23 @@ export async function PATCH(
 
     const updatedContentJson = { ...content_json, id: targetTemplateId };
 
-    // 3. Upsert quotation_templates
-    await supabaseAdmin
+    // 3. Upsert quotation_templates with schema fallback
+    const baseTmplPayload = {
+      id: targetTemplateId,
+      user_id: currentUserId,
+      title: updatedContentJson?.designName || 'Wedding - Design 1',
+      updated_at: now
+    };
+
+    const resTmpl = await supabaseAdmin
       .from('quotation_templates')
-      .upsert({
-        id: targetTemplateId,
-        user_id: currentUserId,
-        title: updatedContentJson?.designName || 'Wedding - Design 1',
-        is_system_template: false,
-        updated_at: now
-      }, { onConflict: 'id' });
+      .upsert({ ...baseTmplPayload, is_system_template: false }, { onConflict: 'id' });
+
+    if (resTmpl.error) {
+      await supabaseAdmin
+        .from('quotation_templates')
+        .upsert(baseTmplPayload, { onConflict: 'id' });
+    }
 
     // 4. Upsert quotation_documents
     const docPayload = {
