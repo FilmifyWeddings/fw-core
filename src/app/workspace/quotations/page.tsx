@@ -262,6 +262,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       const token = session?.access_token;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (userEmail) headers['x-user-email'] = userEmail;
 
       const res = await fetch(`/api/templates/${targetId}/set-default`, {
         method: 'POST',

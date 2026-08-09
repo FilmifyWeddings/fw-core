@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
+import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 
 export const GLOBAL_SYSTEM_TEMPLATE_ID = 'FW-2WT85Y0';
 
@@ -14,12 +15,9 @@ export interface ResolvedTemplateResult {
 /**
  * Authoritative Centralized Resolver for User Default Quotation Template from Supabase.
  * Rules:
- * A. Query Supabase for existing USER-OWNED default template:
- *    workspace_id = currentWorkspaceId AND is_default = true AND is_system_template = false
- * B. If such template exists, return that template.
- * C. If no user-owned default exists, return SYSTEM TEMPLATE FW-2WT85Y0.
- *
- * NEVER return an arbitrary template, first template, or localStorage template.
+ * A. If requestedTemplateId is provided, fetch that exact template & document.
+ * B. Otherwise, query Supabase for user's active DEFAULT template (is_default = true).
+ * C. If no user default set, fallback to published System Default Template (FW-2WT85Y0).
  */
 export async function resolveUserDefaultQuotationTemplate(
   workspaceId: string,
@@ -27,75 +25,115 @@ export async function resolveUserDefaultQuotationTemplate(
   requestedTemplateId?: string
 ): Promise<ResolvedTemplateResult> {
   const targetWorkspace = workspaceId || userId || 'demo_user';
+  const targetUser = userId || workspaceId || 'demo_user';
 
-  // 1. Query user-owned default template from Supabase
+  // 1. If requestedTemplateId is explicitly passed
+  if (requestedTemplateId) {
+    try {
+      const { data: tmpl } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('*')
+        .eq('id', requestedTemplateId)
+        .maybeSingle();
+
+      const { data: doc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('*')
+        .eq('template_id', requestedTemplateId)
+        .maybeSingle();
+
+      const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
+
+      if (tmpl || docJson) {
+        return {
+          templateId: requestedTemplateId,
+          template: tmpl || { id: requestedTemplateId, title: 'Quotation Template', is_system_template: false, is_default: false },
+          document: docJson,
+          isSystemTemplate: !!tmpl?.is_system_template,
+          isDefault: !!tmpl?.is_default,
+          resolutionReason: 'EXPLICIT_REQUESTED',
+        };
+      }
+    } catch (err) {
+      console.warn('[Template Resolver Warning] Explicit template fetch failed:', err);
+    }
+  }
+
+  // 2. Query user's active DEFAULT template from Supabase (is_default = true)
   try {
-    let query = supabase
-      .from('quotation_templates')
-      .select('*')
-      .eq('is_default', true)
-      .not('is_system_template', 'eq', true);
+    const isUuid = /^[0-9a-fA-F-]{36}$/.test(targetWorkspace);
+    let userTmpls: any[] = [];
 
-    if (targetWorkspace && targetWorkspace !== '00000000-0000-0000-0000-000000000000') {
-      query = query.or(`workspace_id.eq.${targetWorkspace},user_id.eq.${targetWorkspace}`);
+    if (isUuid) {
+      const [resWs, resUser] = await Promise.all([
+        supabaseAdmin.from('quotation_templates').select('*').eq('workspace_id', targetWorkspace).order('updated_at', { ascending: false }),
+        supabaseAdmin.from('quotation_templates').select('*').eq('user_id', targetUser).order('updated_at', { ascending: false })
+      ]);
+      userTmpls = [...(resWs.data || []), ...(resUser.data || [])];
+    } else {
+      const { data } = await supabaseAdmin.from('quotation_templates').select('*').eq('user_id', targetUser).order('updated_at', { ascending: false });
+      userTmpls = data || [];
     }
 
-    const { data: userDefaultTmpls } = await query.limit(1);
-    const userDefaultTmpl = userDefaultTmpls && userDefaultTmpls.length > 0 ? userDefaultTmpls[0] : null;
+    let userDefaultTmpl = userTmpls.find((t: any) => t.is_default === true);
+
+    if (!userDefaultTmpl && targetUser && targetUser !== targetWorkspace) {
+      const { data: fallbackUserTmpls } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('*')
+        .eq('user_id', targetUser)
+        .order('updated_at', { ascending: false });
+
+      userDefaultTmpl = (fallbackUserTmpls || []).find((t: any) => t.is_default === true);
+    }
 
     if (userDefaultTmpl) {
-      const { data: doc } = await supabase
+      const { data: doc } = await supabaseAdmin
         .from('quotation_documents')
         .select('*')
         .eq('template_id', userDefaultTmpl.id)
         .maybeSingle();
 
-      if (doc?.document_json) {
-        const result: ResolvedTemplateResult = {
-          templateId: userDefaultTmpl.id,
-          template: userDefaultTmpl,
-          document: doc.document_json,
-          isSystemTemplate: false,
-          isDefault: true,
-          resolutionReason: 'WORKSPACE_DEFAULT',
-        };
+      const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
 
-        console.log('[Template Resolver Debug]:', {
-          workspaceId: targetWorkspace,
-          requestedTemplateId,
-          resolvedTemplateId: result.templateId,
-          resolvedIsSystemTemplate: result.isSystemTemplate,
-          resolvedIsDefault: result.isDefault,
-          resolutionReason: result.resolutionReason,
-        });
+      console.log('[Template Resolver] Resolved Workspace Default Template:', {
+        workspaceId: targetWorkspace,
+        templateId: userDefaultTmpl.id,
+        title: userDefaultTmpl.title
+      });
 
-        return result;
-      }
+      return {
+        templateId: userDefaultTmpl.id,
+        template: userDefaultTmpl,
+        document: docJson,
+        isSystemTemplate: !!userDefaultTmpl.is_system_template,
+        isDefault: true,
+        resolutionReason: 'WORKSPACE_DEFAULT',
+      };
     }
   } catch (err) {
     console.error('[Template Resolver Error]: Failed to query user default template:', err);
   }
 
-  // 2. Fallback to Global System Template FW-2WT85Y0
+  // 3. Fallback to System Default Template (FW-2WT85Y0 or published system default)
   try {
-    const { data: sysTmpl } = await supabase
+    const { data: sysTmpl } = await supabaseAdmin
       .from('quotation_templates')
       .select('*')
       .eq('id', GLOBAL_SYSTEM_TEMPLATE_ID)
       .maybeSingle();
 
-    const { data: sysDoc } = await supabase
+    const { data: sysDoc } = await supabaseAdmin
       .from('quotation_documents')
       .select('*')
       .eq('template_id', GLOBAL_SYSTEM_TEMPLATE_ID)
       .maybeSingle();
 
-    const docJson = sysDoc?.document_json || {
-      meta: { title: 'System Default Wedding Template', currency: 'INR' },
-      pages: [],
-    };
+    const docJson = sysDoc?.content_json || sysDoc?.document_json || DEFAULT_AIRY_PROPOSAL;
 
-    const result: ResolvedTemplateResult = {
+    console.log('[Template Resolver] Fallback to Global System Template:', GLOBAL_SYSTEM_TEMPLATE_ID);
+
+    return {
       templateId: GLOBAL_SYSTEM_TEMPLATE_ID,
       template: sysTmpl || {
         id: GLOBAL_SYSTEM_TEMPLATE_ID,
@@ -108,23 +146,12 @@ export async function resolveUserDefaultQuotationTemplate(
       isDefault: false,
       resolutionReason: 'SYSTEM_FALLBACK',
     };
-
-    console.log('[Template Resolver Debug]:', {
-      workspaceId: targetWorkspace,
-      requestedTemplateId,
-      resolvedTemplateId: result.templateId,
-      resolvedIsSystemTemplate: result.isSystemTemplate,
-      resolvedIsDefault: result.isDefault,
-      resolutionReason: result.resolutionReason,
-    });
-
-    return result;
   } catch (err) {
     console.error('[Template Resolver Error]: Failed to query system template:', err);
     return {
       templateId: GLOBAL_SYSTEM_TEMPLATE_ID,
       template: { id: GLOBAL_SYSTEM_TEMPLATE_ID, title: 'System Default Wedding Template', is_system_template: true, is_default: false },
-      document: { meta: { title: 'System Default Wedding Template', currency: 'INR' }, pages: [] },
+      document: DEFAULT_AIRY_PROPOSAL,
       isSystemTemplate: true,
       isDefault: false,
       resolutionReason: 'SYSTEM_FALLBACK',
