@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 
 /**
@@ -149,9 +149,40 @@ async function handleUpdate(
       .maybeSingle();
 
     const isSystemTemplate = id === GLOBAL_SYSTEM_TEMPLATE_ID || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM';
+    const isAdmin = userEmail === 'sushantnawale700@gmail.com';
 
-    if (isSystemTemplate) {
-      // RULE: User editing system template -> DO NOT update FW-2WT85Y0. Fork new user template and set as default!
+    if (isSystemTemplate && isAdmin) {
+      // RULE: Super Admin editing system template -> Update directly in Supabase!
+      await supabaseAdmin
+        .from('quotation_templates')
+        .update({
+          title: title || targetTmpl?.title || 'System Template',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (document) {
+        await supabaseAdmin
+          .from('quotation_documents')
+          .upsert({
+            template_id: id,
+            document_json: document,
+            content_json: document,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'template_id' });
+      }
+
+      console.log('[Super Admin System Template Saved Directly]:', { templateId: id });
+
+      return NextResponse.json({
+        success: true,
+        templateId: id,
+        version: body.version || 1
+      });
+    }
+
+    if (isSystemTemplate && !isAdmin) {
+      // RULE: Normal User editing system template -> Fork new user template and set as default!
       const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
       const newTemplateId = `FW-USER-${randomSuffix}`;
 

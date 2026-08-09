@@ -8,7 +8,7 @@ import {
   Plus, Lock, FileText, Image as ImageIcon, Folder, 
   ChevronRight, ExternalLink, Download, Copy, Sparkles, Eye, 
   Upload, HardDrive, CheckCircle2, ArrowRight, X, Trash2,
-  Search, Shield, Check, Layers, Sliders, RefreshCw, Zap, AlertTriangle
+  Search, Shield, Check, Layers, Sliders, RefreshCw, Zap, AlertTriangle, Crown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -117,6 +117,7 @@ export default function WorkspaceQuotationsGalleryPage() {
 
   // User Session & Security
   const [userId, setUserId] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
   // Dynamic Data States
@@ -126,10 +127,51 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [activeCoupleName, setActiveCoupleName] = useState<string>('Rahul & Neha');
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
+  const [togglingSystemId, setTogglingSystemId] = useState<string | null>(null);
   const [cloningGlobalId, setCloningGlobalId] = useState<string | null>(null);
   const [deletingQuote, setDeletingQuote] = useState<SavedQuotation | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const isSuperAdminUser = userEmail.toLowerCase() === 'sushantnawale700@gmail.com';
+
+  const handleToggleSystemTemplate = async (targetQuote: SavedQuotation) => {
+    const targetId = targetQuote.quotation_number || targetQuote.id;
+    setTogglingSystemId(targetId);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const res = await fetch(`/api/templates/${targetId}/toggle-system`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token || ''}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to toggle system template');
+
+      setQuotations(prev => prev.map(q => {
+        if ((q.quotation_number || q.id) === targetId) {
+          return {
+            ...q,
+            is_system_template: data.is_system_template,
+            status: data.status
+          };
+        }
+        return q;
+      }));
+
+      setToastMessage(data.is_system_template ? 'Published as System Template for Users!' : 'Removed from System Templates');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err: any) {
+      alert('Error toggling system template: ' + (err.message || 'Unknown error'));
+    } finally {
+      setTogglingSystemId(null);
+    }
+  };
 
   // FLOW B Lead Selection Modal States
   const [selectingLeadForTemplate, setSelectingLeadForTemplate] = useState<SavedQuotation | null>(null);
@@ -460,6 +502,9 @@ export default function WorkspaceQuotationsGalleryPage() {
         const { data: { session } } = await supabase.auth.getSession();
         const currentUserId = session?.user?.id || 'demo_user';
         setUserId(currentUserId);
+        if (session?.user?.email) {
+          setUserEmail(session.user.email);
+        }
 
         const cached = localStorage.getItem(`wg_gallery_cache_${currentUserId}`);
         if (cached) {
@@ -966,6 +1011,27 @@ export default function WorkspaceQuotationsGalleryPage() {
                     ) : null}
                     <span>Edit Template</span>
                   </button>
+
+                  {/* SUPER ADMIN CONTROL BUTTON (Only for sushantnawale700@gmail.com) */}
+                  {isSuperAdminUser && (
+                    <button
+                      type="button"
+                      disabled={togglingSystemId === quoteId}
+                      onClick={() => handleToggleSystemTemplate(quote)}
+                      className={`w-full py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+                        quote.is_system_template
+                          ? 'bg-amber-500 hover:bg-amber-600 text-black border border-amber-400 font-extrabold'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-amber-400 border border-amber-500/30 font-bold'
+                      }`}
+                    >
+                      {togglingSystemId === quoteId ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Crown className="w-3 h-3 fill-current" />
+                      )}
+                      <span>{quote.is_system_template ? 'System Template [ACTIVE]' : 'Publish for Users'}</span>
+                    </button>
+                  )}
                 </div>
               </motion.div>
             );
