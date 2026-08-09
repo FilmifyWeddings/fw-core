@@ -31,18 +31,66 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Quotation ID is required' }, { status: 400 });
     }
 
-    // 1. Fetch existing quotation record from public.quotations
-    const { data: quote, error: quoteErr } = await supabaseAdmin
-      .from('quotations')
-      .select('*')
-      .or(`id.eq.${quotationId},quotation_number.eq.${quotationId}`)
-      .maybeSingle();
+    // 1. Fetch existing quotation record from public.quotations safely (prevent Postgres UUID type error 22P02)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(quotationId);
 
-    if (quoteErr || !quote) {
-      return NextResponse.json({ error: 'Quotation record not found' }, { status: 404 });
+    let query = supabaseAdmin.from('quotations').select('*');
+    if (isUuid) {
+      query = query.or(`id.eq.${quotationId},quotation_number.eq.${quotationId}`);
+    } else {
+      query = query.eq('quotation_number', quotationId);
     }
 
-    // 2. Ensure stable public token
+    let { data: quote, error: quoteErr } = await query.maybeSingle();
+
+    // Fallback: If not found in quotations table, check quotation_documents and create missing quotations row
+    if (!quote) {
+      const { data: docRow } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('*')
+        .eq('template_id', quotationId)
+        .maybeSingle();
+
+      if (docRow) {
+        const content = docRow.content_json || {};
+        const title = content.designName || 'Wedding Quotation';
+        const randomPart = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const publicToken = `qt_live_${randomPart}`;
+
+        const { data: createdQuote } = await supabaseAdmin
+          .from('quotations')
+          .insert({
+            quotation_number: quotationId,
+            workspace_id: docRow.workspace_id || workspaceId || userId || 'DEFAULT_WS',
+            user_id: docRow.user_id || userId || 'DEFAULT_USER',
+            client_id: docRow.lead_id || content.lead_id || null,
+            title: title,
+            client_name: title,
+            canvas_data: content,
+            public_token: publicToken,
+            status: 'draft',
+            created_at: docRow.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select('*')
+          .maybeSingle();
+
+        if (createdQuote) {
+          quote = createdQuote;
+          quoteErr = null;
+        }
+      }
+    }
+
+    if (!quote) {
+      console.error('[QUOTATION SEND LINK TRACE] Quotation not found for ID:', quotationId, 'Error:', quoteErr);
+      return NextResponse.json({
+        error: `Quotation record not found for ID "${quotationId}"`,
+        quotationId
+      }, { status: 404 });
+    }
+
+    // 2. Ensure stable public token (reuse if existing, create if missing)
     let publicToken = quote.public_token;
 
     if (!publicToken) {
@@ -55,13 +103,20 @@ export async function POST(req: NextRequest) {
         .eq('id', quote.id);
     }
 
-    const origin = req.nextUrl.origin || 'http://localhost:3000';
+    const origin = req.nextUrl?.origin || req.headers?.get('origin') || 'http://localhost:3000';
     const publicUrl = `${origin}/p/quotation/${publicToken}`;
+
+    console.log('[QUOTATION SEND LINK TRACE]', {
+      quotationId,
+      quotationFound: true,
+      publicToken,
+      publicUrl
+    });
 
     return NextResponse.json({
       success: true,
       quotationId: quote.quotation_number || quote.id,
-      token: publicToken,
+      publicToken,
       publicUrl
     });
   } catch (error: any) {

@@ -155,8 +155,48 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
     }
   };
 
-  const handleDownloadPDF = (templateId: string) => {
-    window.open(`/api/quotations/export-pdf?id=${templateId}`, '_blank');
+  const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
+
+  const handleDownloadPDF = async (q: QuotationVersionItem) => {
+    const templateId = q.template_id;
+    if (downloadingPdf === templateId) return;
+
+    setDownloadingPdf(templateId);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch('/api/quotations/export-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          templateId,
+          filename: `${q.title || 'Quotation'}-${q.version_label || `V${q.version}`}.pdf`,
+          content_json: q.content_json
+        })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Failed to export PDF (HTTP ${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${q.title || 'Quotation'}-${q.version_label || `V${q.version}`}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.error('[Download PDF Error]:', err);
+      setErrorMsg(err.message || 'Network error while exporting PDF.');
+    } finally {
+      setDownloadingPdf(null);
+    }
   };
 
   const handleCopyLink = () => {
@@ -298,11 +338,21 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
 
                         <button
                           type="button"
-                          onClick={() => handleDownloadPDF(q.template_id)}
-                          className="px-3 py-1.5 rounded-xl bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                          onClick={() => handleDownloadPDF(q)}
+                          disabled={downloadingPdf === q.template_id}
+                          className="px-3 py-1.5 rounded-xl bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                         >
-                          <Download className="w-3 h-3 text-cyan-500" />
-                          <span>DOWNLOAD PDF</span>
+                          {downloadingPdf === q.template_id ? (
+                            <>
+                              <RefreshCw className="w-3 h-3 animate-spin text-cyan-500" />
+                              <span>Generating PDF...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download className="w-3 h-3 text-cyan-500" />
+                              <span>DOWNLOAD PDF</span>
+                            </>
+                          )}
                         </button>
 
                         <button
