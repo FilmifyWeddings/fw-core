@@ -179,6 +179,7 @@ export default function ClientsPage() {
       const workspaceId = session?.user?.id || 'ws_demo';
 
       const newClientData = {
+        user_id: workspaceId,
         workspace_id: workspaceId,
         lead_id: selectedLeadId || null,
         name: formData.name,
@@ -189,12 +190,11 @@ export default function ClientsPage() {
         total_package_amount: Number(formData.total_package_amount) || 0,
         paid_amount: Number(formData.paid_amount) || 0,
         status: 'active' as const,
-        notes: formData.notes || null,
       };
 
       const { data: inserted, error } = await supabase
         .from('workspace_clients')
-        .insert(newClientData)
+        .insert([newClientData])
         .select()
         .single();
 

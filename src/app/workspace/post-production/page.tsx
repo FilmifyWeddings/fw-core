@@ -97,6 +97,116 @@ export default function PostProductionPage() {
   } | null>(null);
   const [driveInputLink, setDriveInputLink] = useState('');
 
+  // Helper to generate default 3-category deliverables for a client
+  const generateDefaultDeliverables = (eventDateStr?: string | null): DeliverableItem[] => {
+    return [
+      // 1. Photos
+      {
+        id: `deliv_photo_1_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Edited Photos',
+        category: 'photos',
+        count: '500 Photos',
+        assigned_to: 'Vikram (Photo Retoucher)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 15 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      },
+      {
+        id: `deliv_photo_2_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Save the Date Photo',
+        category: 'photos',
+        count: '5 Photos',
+        assigned_to: 'Vikram (Photo Retoucher)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() - 10 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      },
+      {
+        id: `deliv_photo_3_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Instagram Posts',
+        category: 'photos',
+        count: '10 Posts',
+        assigned_to: 'Vikram (Photo Retoucher)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 5 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      },
+
+      // 2. Videos
+      {
+        id: `deliv_video_1_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Cinematic Film',
+        category: 'videos',
+        count: '25 Mins',
+        assigned_to: 'Amit (Senior Video Editor)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 30 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      },
+      {
+        id: `deliv_video_2_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Cinematic Teaser',
+        category: 'videos',
+        count: '1 Min',
+        assigned_to: 'Rahul (Video Editor & Teasers)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 7 * 86400000).toISOString().split('T')[0] : '',
+        status: 'in_progress',
+        drive_link: '',
+        comments: []
+      },
+      {
+        id: `deliv_video_3_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Traditional Full Video',
+        category: 'videos',
+        count: '2 Hours',
+        assigned_to: 'Suresh (Traditional Editor)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 45 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      },
+      {
+        id: `deliv_video_4_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Viral Instagram Reels',
+        category: 'videos',
+        count: '3 Reels',
+        assigned_to: 'Priya (Reels Specialist)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 10 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      },
+
+      // 3. Albums
+      {
+        id: `deliv_album_1_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Main Wedding Album',
+        category: 'albums',
+        count: '40 Pages',
+        assigned_to: 'Rohan (Album Designer)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      },
+      {
+        id: `deliv_album_2_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        title: 'Parent / Mini Album',
+        category: 'albums',
+        count: '20 Pages',
+        assigned_to: 'Rohan (Album Designer)',
+        deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
+        status: 'pending',
+        drive_link: '',
+        comments: []
+      }
+    ];
+  };
+
   // Fetch projects and clients from Supabase
   useEffect(() => {
     fetchPostProductionData();
@@ -108,7 +218,7 @@ export default function PostProductionPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      // 1. Fetch clients
+      // 1. Fetch clients for current workspace
       let clientQuery = supabase
         .from('workspace_clients')
         .select('*')
@@ -119,10 +229,14 @@ export default function PostProductionPage() {
       }
 
       const { data: clientData } = await clientQuery;
-      const clientMap = new Map<string, WorkspaceClient>();
-      if (clientData) {
-        setClients(clientData);
-        clientData.forEach(c => clientMap.set(c.id, c));
+      const clientList = clientData || [];
+      setClients(clientList);
+
+      // If no clients exist in workspace_clients, show empty state
+      if (clientList.length === 0) {
+        setProjects([]);
+        setLoading(false);
+        return;
       }
 
       // 2. Fetch post production projects
@@ -135,39 +249,66 @@ export default function PostProductionPage() {
         projectQuery = projectQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
       }
 
-      const { data: projectData, error: projErr } = await projectQuery;
+      const { data: projectData } = await projectQuery;
+      const projectMap = new Map<string, any>();
+      if (projectData) {
+        projectData.forEach(p => projectMap.set(p.client_id, p));
+      }
 
-      if (!projErr && projectData && projectData.length > 0) {
-        // Hydrate project with client details
-        const hydrated: PostProductionProject[] = projectData.map(p => {
-          const matchedClient = clientMap.get(p.client_id) || p.client || {
-            id: p.client_id,
-            workspace_id: p.workspace_id,
-            name: 'Client ' + p.client_id?.slice(0, 6),
-            phone: '',
-            event_type: 'Wedding',
-            event_date: null,
-            total_package_amount: 0,
-            paid_amount: 0,
-            status: 'active',
-            created_at: p.created_at,
-            updated_at: p.updated_at
+      // 3. Ensure EVERY client has a post-production project
+      const finalProjects: PostProductionProject[] = [];
+      const newProjectsToInsert: any[] = [];
+
+      for (const c of clientList) {
+        const existingProj = projectMap.get(c.id);
+        if (existingProj) {
+          finalProjects.push({
+            ...existingProj,
+            client: c,
+            deliverables: Array.isArray(existingProj.deliverables) && existingProj.deliverables.length > 0 
+              ? existingProj.deliverables 
+              : generateDefaultDeliverables(c.event_date)
+          });
+        } else {
+          // Auto-generate default deliverables for this client
+          const defaultDelivs = generateDefaultDeliverables(c.event_date);
+          const newProj: PostProductionProject = {
+            id: `proj_${c.id}`,
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_id: c.id,
+            client: c,
+            project_manager_name: 'Sushant (Lead Manager)',
+            overall_status: 'active',
+            deliverables: defaultDelivs,
+            created_at: c.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
           };
 
-          return {
-            ...p,
-            client: matchedClient,
-            deliverables: Array.isArray(p.deliverables) ? p.deliverables : []
-          };
-        });
-
-        setProjects(hydrated);
-        // Expand first project by default
-        if (hydrated.length > 0) {
-          setExpandedCards(new Set([hydrated[0].id]));
+          finalProjects.push(newProj);
+          newProjectsToInsert.push({
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_id: c.id,
+            project_manager_name: 'Sushant (Lead Manager)',
+            overall_status: 'active',
+            deliverables: defaultDelivs
+          });
         }
-      } else {
-        setProjects([]);
+      }
+
+      setProjects(finalProjects);
+      if (finalProjects.length > 0) {
+        setExpandedCards(new Set([finalProjects[0].id]));
+      }
+
+      // In background, insert missing project records into Supabase
+      if (newProjectsToInsert.length > 0 && workspaceId !== 'ws_demo') {
+        (async () => {
+          try {
+            await supabase.from('post_production_projects').insert(newProjectsToInsert);
+          } catch (_) {}
+        })();
       }
     } catch (e) {
       console.error('Error fetching post production data:', e);
@@ -242,12 +383,31 @@ export default function PostProductionPage() {
   };
 
   // Persist project changes to Supabase
-  const updateProjectInDB = async (projectId: string, updatedFields: Partial<PostProductionProject>) => {
+  const updateProjectInDB = async (projectId: string, clientId: string, updatedFields: Partial<PostProductionProject>) => {
     try {
-      await supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      // 1. Try update by client_id
+      const { data } = await supabase
         .from('post_production_projects')
         .update({ ...updatedFields, updated_at: new Date().toISOString() })
-        .eq('id', projectId);
+        .eq('client_id', clientId)
+        .select('id');
+
+      // 2. If record does not exist yet in DB, insert it!
+      if (!data || data.length === 0) {
+        await supabase
+          .from('post_production_projects')
+          .insert([{
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_id: clientId,
+            ...updatedFields,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }]);
+      }
     } catch (e) {
       console.error('Error updating project in DB:', e);
     }
@@ -263,7 +423,7 @@ export default function PostProductionPage() {
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         const updated = { ...p, project_manager_name: pmName };
-        updateProjectInDB(projectId, { project_manager_name: pmName });
+        updateProjectInDB(projectId, p.client_id, { project_manager_name: pmName });
         return updated;
       }
       return p;
@@ -302,7 +462,7 @@ export default function PostProductionPage() {
           deliverables: updatedDeliverables
         };
 
-        updateProjectInDB(projectId, {
+        updateProjectInDB(projectId, p.client_id, {
           overall_status: newOverallStatus,
           deliverables: updatedDeliverables
         });
@@ -335,7 +495,7 @@ export default function PostProductionPage() {
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         const updatedDeliverables = [...p.deliverables, newDeliverable];
-        updateProjectInDB(projectId, { deliverables: updatedDeliverables });
+        updateProjectInDB(projectId, p.client_id, { deliverables: updatedDeliverables });
         return { ...p, deliverables: updatedDeliverables };
       }
       return p;
@@ -349,7 +509,7 @@ export default function PostProductionPage() {
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         const updatedDeliverables = p.deliverables.filter(d => d.id !== deliverableId);
-        updateProjectInDB(projectId, { deliverables: updatedDeliverables });
+        updateProjectInDB(projectId, p.client_id, { deliverables: updatedDeliverables });
         return { ...p, deliverables: updatedDeliverables };
       }
       return p;
@@ -379,7 +539,7 @@ export default function PostProductionPage() {
           return d;
         });
 
-        updateProjectInDB(p.id, { deliverables: updatedDeliverables });
+        updateProjectInDB(p.id, p.client_id, { deliverables: updatedDeliverables });
         return { ...p, deliverables: updatedDeliverables };
       }
       return p;
