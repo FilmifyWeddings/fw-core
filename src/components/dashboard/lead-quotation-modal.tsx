@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, FileText, Plus, ExternalLink, Calendar, RefreshCw, AlertCircle, 
-  Send, Download, CheckCircle2, DollarSign, Copy, Check
+  Send, Download, CheckCircle2, DollarSign, Copy, Check, Sparkles
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { AiQuotationModal } from './ai-quotation-modal';
 
 interface QuotationVersionItem {
   id?: string;
@@ -40,6 +41,10 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // AI Quotation Modal state
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiTargetQuotationId, setAiTargetQuotationId] = useState<string | null>(null);
 
   // Share Link Modal state
   const [activeShareModal, setActiveShareModal] = useState<{ quotationId: string; url: string } | null>(null);
@@ -437,6 +442,19 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
 
                         <button
                           type="button"
+                          onClick={() => {
+                            setAiTargetQuotationId(q.template_id);
+                            setAiModalOpen(true);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-extrabold text-xs flex items-center gap-1 transition-all active:scale-95 shrink-0 cursor-pointer border border-amber-500/20"
+                          title="Auto-fill this quotation draft with AI"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-500" />
+                          <span>AI Fill</span>
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleOpenQuotation(q.template_id)}
                           className="px-3 py-1.5 rounded-xl bg-black dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-black font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shrink-0 cursor-pointer"
                         >
@@ -451,28 +469,55 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
             )}
           </div>
 
-          {/* Footer Action */}
-          <div className="p-3.5 bg-zinc-50 dark:bg-[#161412] border-t border-zinc-200/80 dark:border-zinc-800 shrink-0">
+          {/* Footer Actions */}
+          <div className="p-3.5 bg-zinc-50 dark:bg-[#161412] border-t border-zinc-200/80 dark:border-zinc-800 shrink-0 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setAiTargetQuotationId(null);
+                setAiModalOpen(true);
+              }}
+              className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-900 dark:text-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 border border-amber-500/30 active:scale-98 transition-all cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>✨ Create with AI</span>
+            </button>
+
             <button
               type="button"
               onClick={handleCreateNewQuotation}
               disabled={creating}
-              className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-98 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-all disabled:opacity-50 cursor-pointer"
+              className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-98 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all disabled:opacity-50 cursor-pointer"
             >
               {creating ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Creating Quotation...</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Creating...</span>
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 stroke-[3]" />
-                  <span>+ Create New Quotation</span>
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>+ Standard Draft</span>
                 </>
               )}
             </button>
           </div>
         </motion.div>
+
+        {/* ── AI QUOTATION EXTRACTION & PREVIEW MODAL ── */}
+        {aiModalOpen && (
+          <AiQuotationModal
+            isOpen={aiModalOpen}
+            onClose={() => setAiModalOpen(false)}
+            lead={lead}
+            quotationId={aiTargetQuotationId}
+            onApplied={async (updatedDoc, targetQId) => {
+              await loadQuotations();
+              router.push(`/workspace/quotations/builder/templet/${targetQId}`);
+              onClose();
+            }}
+          />
+        )}
 
         {/* ── SHARE LINK POPUP MODAL ── */}
         <AnimatePresence>
