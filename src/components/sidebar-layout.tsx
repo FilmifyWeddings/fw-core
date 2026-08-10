@@ -9,7 +9,7 @@ import {
   Settings, HelpCircle, Sun, Moon, Menu, ChevronDown, ChevronRight, 
   LogOut, Search, MessageSquare, FileSpreadsheet, Check, Shield, GitBranch,
   FileText, Users, ArrowLeft, Globe, BarChart3, FolderOpen, Layout,
-  Calendar, ClipboardList, Sparkles, Webhook, Film
+  Calendar, ClipboardList, Sparkles, Webhook, Film, DollarSign
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { SUITE_REGISTRY, type SubAppSlug } from '@/types';
@@ -33,7 +33,7 @@ const FacebookIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 const SUB_APP_ICON_MAP: Record<string, React.ElementType> = {
   Users, FolderOpen, Calendar, ClipboardList, FileText, Layout, Sparkles, Database,
-  Globe, Webhook, BarChart3, Send, Film
+  Globe, Webhook, BarChart3, Send, Film, DollarSign
 };
 
 interface SidebarLayoutProps {

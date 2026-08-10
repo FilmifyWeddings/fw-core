@@ -348,7 +348,7 @@ export interface FWWhatsAppLog {
 // SaaS Suite Registry Types
 // ─────────────────────────────────────────────────────────────
 
-export type SubAppSlug = 'team-manager' | 'quotations' | 'leads' | 'integrations' | 'clients' | 'post-production';
+export type SubAppSlug = 'team-manager' | 'quotations' | 'leads' | 'integrations' | 'clients' | 'post-production' | 'finance';
 
 export interface SuiteAppNavItem {
   label: string;
@@ -466,12 +466,83 @@ export const SUITE_REGISTRY: SuiteRegistry = {
         { label: 'Client Roster', icon: 'Users', href: '/workspace/clients' },
       ],
     },
+    {
+      slug: 'finance',
+      title: 'Finance & Payments',
+      subtitle: 'Invoicing & P&L',
+      description: 'Comprehensive studio finance tracking with quotation sync, milestone schedules, team payouts, and profit margins.',
+      icon: 'DollarSign',
+      accentColor: '#D97706',
+      accentGradient: 'from-amber-500 to-yellow-600',
+      href: '/workspace/finance',
+      sidebarNavItems: [
+        { label: 'Finance & Milestones', icon: 'DollarSign', href: '/workspace/finance' },
+        { label: 'Client Directory', icon: 'Users', href: '/workspace/clients' },
+        { label: 'Post-Production', icon: 'Film', href: '/workspace/post-production' },
+      ],
+    },
   ],
 };
 
 // ─────────────────────────────────────────────────────────────
-// Workspace Clients & Post-Production Deliverables Types
+// Workspace Clients, Post-Production & Finance Types
 // ─────────────────────────────────────────────────────────────
+
+export interface FinanceMilestoneItem {
+  id: string;
+  step_name: string; // e.g. "Token Booking Amount", "Advance Amount (Pre-Event)", "On Wedding Day", "Final Delivery Amount"
+  due_date: string; // e.g. "2026-02-10"
+  amount: number; // e.g. 25000
+  status: 'pending' | 'completed' | 'partial';
+  paid_date?: string | null;
+  payment_mode?: 'UPI' | 'Bank Transfer' | 'Cash' | 'Card' | 'Cheque' | string;
+  reference_id?: string | null;
+  notes?: string | null;
+}
+
+export interface ClientFinanceRecord {
+  id: string;
+  user_id?: string;
+  workspace_id: string;
+  client_id: string;
+  client?: WorkspaceClient | null;
+  base_package_price: number;
+  discount_amount: number;
+  accommodation_charges: number;
+  travel_charges: number;
+  additional_charges: number;
+  subtotal_amount: number;
+  gst_rate: number;
+  gst_amount: number;
+  final_total_amount: number;
+  received_amount: number;
+  pending_amount: number;
+  payment_status: 'pending' | 'partially_paid' | 'paid' | 'overdue';
+  milestones: FinanceMilestoneItem[];
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FinanceExpenseItem {
+  id: string;
+  user_id?: string;
+  workspace_id: string;
+  client_id?: string | null;
+  client?: WorkspaceClient | null;
+  expense_type: 'team_payout' | 'project_expense' | 'other_expense';
+  category: string; // e.g. "Photographer", "Travel", "Equipment Rental", "Custom"
+  title: string;
+  amount: number;
+  payment_date: string;
+  paid_to?: string | null;
+  payment_mode: 'UPI' | 'Bank Transfer' | 'Cash' | 'Card' | string;
+  status: 'paid' | 'pending';
+  receipt_url?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface WorkspaceClient {
   id: string;
