@@ -2,174 +2,247 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Users, FileText, Database, Sparkles, Plug, Film } from 'lucide-react';
-import { SUITE_REGISTRY, type SuiteAppConfig } from '@/types';
+import { 
+  Database, Users, FileText, Calendar, Film, DollarSign, 
+  Clock, Plug, Settings, HelpCircle, ArrowRight, Sparkles, 
+  CheckCircle2, Layers, ShieldCheck
+} from 'lucide-react';
 
-const ICON_MAP: Record<string, React.ElementType> = {
-  Users,
-  FileText,
-  Database,
-  Plug,
-  Film,
-};
+const WORKSPACE_MODULES = [
+  {
+    id: 'leads',
+    title: 'Leads & CRM Automation',
+    subtitle: 'Meta Ads & WhatsApp Ingestion',
+    description: 'Capture, qualify, and score incoming bridal leads with instant WhatsApp welcome messages and stage pipeline management.',
+    href: '/leads',
+    icon: Database,
+    accentGradient: 'from-emerald-500 to-teal-600',
+    badge: 'CRM Pipeline',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    shadowGlow: 'hover:shadow-emerald-500/15',
+  },
+  {
+    id: 'clients',
+    title: 'Clients Directory',
+    subtitle: 'Booked Wedding Couples',
+    description: 'Centralized client roster with event dates, contact information, package details, deliverables, and billing records.',
+    href: '/workspace/clients',
+    icon: Users,
+    accentGradient: 'from-indigo-500 to-purple-600',
+    badge: 'Directory',
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    shadowGlow: 'hover:shadow-indigo-500/15',
+  },
+  {
+    id: 'quotations',
+    title: 'Quotations & Proposals',
+    subtitle: 'Interactive Canva-style Canvas',
+    description: 'Generate luxury magazine-style wedding quotation PDFs and interactive web links with real-time pricing breakdown.',
+    href: '/quotations',
+    icon: FileText,
+    accentGradient: 'from-amber-400 to-yellow-600',
+    badge: 'Proposals',
+    badgeColor: 'bg-amber-50 text-amber-800 border-amber-300',
+    shadowGlow: 'hover:shadow-amber-500/15',
+  },
+  {
+    id: 'team-manager',
+    title: 'Team Manager & Crew',
+    subtitle: 'Roster & Event Assignments',
+    description: 'Assign photographers, cinematographers, drone operators, and editors to upcoming wedding functions and events.',
+    href: '/team-manager',
+    icon: Calendar,
+    accentGradient: 'from-violet-500 to-purple-700',
+    badge: 'Operations',
+    badgeColor: 'bg-violet-50 text-violet-700 border-violet-200',
+    shadowGlow: 'hover:shadow-violet-500/15',
+  },
+  {
+    id: 'post-production',
+    title: 'Post-Production Tracking',
+    subtitle: 'Deliverables Engine & Editing',
+    description: 'Track photos, cinematic teasers, traditional full films, and luxury print albums with deadline countdowns and Google Drive links.',
+    href: '/workspace/post-production',
+    icon: Film,
+    accentGradient: 'from-pink-500 to-rose-600',
+    badge: 'Deliverables',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+    shadowGlow: 'hover:shadow-rose-500/15',
+  },
+  {
+    id: 'finance',
+    title: 'Finance & Payments',
+    subtitle: 'Milestones, Invoicing & P&L',
+    description: 'Quotation-synced payment milestones, client receipts, team payouts, operational expenses, and profit margin analysis.',
+    href: '/workspace/finance',
+    icon: DollarSign,
+    accentGradient: 'from-amber-500 to-yellow-600',
+    badge: 'Accounting',
+    badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
+    shadowGlow: 'hover:shadow-amber-500/15',
+  },
+  {
+    id: 'attendance',
+    title: 'Workforce Attendance',
+    subtitle: 'Mobile Selfie & GPS Geofencing',
+    description: 'Live selfie clock-in, studio and venue GPS geofence boundaries, break tracking, automatic overtime calculation, and leave management.',
+    href: '/workspace/attendance',
+    icon: Clock,
+    accentGradient: 'from-emerald-500 to-teal-600',
+    badge: 'Workforce',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    shadowGlow: 'hover:shadow-emerald-500/15',
+  },
+  {
+    id: 'integrations',
+    title: 'Integrations & Automations',
+    subtitle: 'Meta Ads, WhatsApp & Webhooks',
+    description: 'Connect Facebook & Instagram Lead Forms, WhatsApp Cloud API, QR-code devices, and automated drip sequences.',
+    href: '/workspace/integrations',
+    icon: Plug,
+    accentGradient: 'from-blue-500 to-cyan-600',
+    badge: 'Channels',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
+    shadowGlow: 'hover:shadow-blue-500/15',
+  },
+  {
+    id: 'settings',
+    title: 'Workspace Settings',
+    subtitle: 'Studio Profile & Preferences',
+    description: 'Configure studio branding, default quotation templates, custom WhatsApp templates, and team member permissions.',
+    href: '/settings',
+    icon: Settings,
+    accentGradient: 'from-slate-600 to-zinc-700',
+    badge: 'Admin',
+    badgeColor: 'bg-slate-100 text-slate-700 border-slate-300',
+    shadowGlow: 'hover:shadow-slate-500/15',
+  },
+  {
+    id: 'support',
+    title: 'Help Desk & Support',
+    subtitle: 'WhatsApp Chat & Documentation',
+    description: 'Instant technical support, video tutorials, FAQ guides, and live WhatsApp assistance for studio operations.',
+    href: '/support',
+    icon: HelpCircle,
+    accentGradient: 'from-teal-500 to-emerald-600',
+    badge: '24/7 Support',
+    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
+    shadowGlow: 'hover:shadow-teal-500/15',
+  },
+];
 
-const SUITE_ACCENT_MAP: Record<string, { bg: string; border: string; text: string; glow: string; iconBg: string }> = {
-  'team-manager': {
-    bg: 'bg-white',
-    border: 'border-zinc-200',
-    text: 'text-zinc-900',
-    glow: 'hover:shadow-[0_20px_40px_rgba(139,92,246,0.08)]',
-    iconBg: 'bg-gradient-to-br from-violet-500 to-purple-600',
-  },
-  'quotations': {
-    bg: 'bg-white',
-    border: 'border-zinc-200',
-    text: 'text-zinc-900',
-    glow: 'hover:shadow-[0_20px_40px_rgba(212,175,55,0.08)]',
-    iconBg: 'bg-gradient-to-br from-amber-400 to-yellow-500',
-  },
-  'leads': {
-    bg: 'bg-white',
-    border: 'border-zinc-200',
-    text: 'text-zinc-900',
-    glow: 'hover:shadow-[0_20px_40px_rgba(16,185,129,0.08)]',
-    iconBg: 'bg-gradient-to-br from-emerald-500 to-green-600',
-  },
-  'integrations': {
-    bg: 'bg-white',
-    border: 'border-zinc-200',
-    text: 'text-zinc-900',
-    glow: 'hover:shadow-[0_20px_40px_rgba(59,130,246,0.08)]',
-    iconBg: 'bg-gradient-to-br from-blue-500 to-indigo-600',
-  },
-  'clients': {
-    bg: 'bg-white',
-    border: 'border-zinc-200',
-    text: 'text-zinc-900',
-    glow: 'hover:shadow-[0_20px_40px_rgba(99,102,241,0.08)]',
-    iconBg: 'bg-gradient-to-br from-indigo-500 to-purple-600',
-  },
-  'post-production': {
-    bg: 'bg-white',
-    border: 'border-zinc-200',
-    text: 'text-zinc-900',
-    glow: 'hover:shadow-[0_20px_40px_rgba(236,72,153,0.08)]',
-    iconBg: 'bg-gradient-to-br from-pink-500 to-rose-600',
-  },
-};
-
-function SuiteCard({ app, index }: { app: SuiteAppConfig; index: number }) {
-  const Icon = ICON_MAP[app.icon] || FileText;
-  const styles = SUITE_ACCENT_MAP[app.slug] || SUITE_ACCENT_MAP['team-manager'];
-
+export default function WorkspaceHubPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, delay: index * 0.1, ease: [0.22, 1, 0.36, 1] }}
-    >
-      <Link href={app.href} className="block group">
-        <div
-          className={`relative bg-white border ${styles.border} rounded-[24px] p-6 transition-all duration-500 ease-out hover:border-zinc-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(108,92,231,0.04),0_1px_3px_rgba(108,92,231,0.02)] cursor-pointer overflow-hidden`}
-          style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}
-        >
-          {/* Subtle gradient overlay on hover */}
-          <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-zinc-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+    <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100">
+      <div className="max-w-7xl mx-auto space-y-8">
 
-          <div className="relative z-10 flex flex-col items-start gap-4">
-            {/* 3D Glassmorphism Icon */}
-            <div
-              className={`w-12 h-12 rounded-xl ${styles.iconBg} flex items-center justify-center shadow-lg shadow-black/5 group-hover:scale-105 transition-transform duration-300`}
-            >
-              <Icon className="w-5.5 h-5.5 text-white" strokeWidth={1.8} />
-            </div>
-
-            {/* Content */}
-            <div className="w-full">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-sm font-bold text-[#0B111E] tracking-tight">
-                  {app.title}
-                </h3>
-              </div>
-              <p className="text-[11px] text-[#4F5E74] leading-relaxed">
-                {app.description}
-              </p>
-            </div>
-          </div>
-        </div>
-      </Link>
-    </motion.div>
-  );
-}
-
-export default function WorkspacePage() {
-  const router = useRouter();
-
-  return (
-    <div className="min-h-screen bg-[#F8F9FD] text-zinc-900">
-      {/* Top navigation bar */}
-      <header className="border-b border-zinc-200 bg-white/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center font-bold text-xs text-white shadow-lg shadow-orange-500/15">
-              FW
-            </div>
-            <div>
-              <span className="font-bold text-sm tracking-tight text-[#0B111E]">FW Studio Suite</span>
-              <span className="text-[10px] text-zinc-400 font-medium ml-2 hidden sm:inline">studio.fwstudioflow.in</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-md text-[10px] font-bold tracking-wide flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live
-            </span>
-          </div>
-        </div>
-      </header>
-
-      {/* Main launchpad content */}
-      <main className="max-w-6xl mx-auto px-6 py-12 sm:py-16">
-        {/* Hero section */}
+        {/* ─────────────────────────────────────────────────────────────
+            HERO HEADER
+        ───────────────────────────────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="mb-10"
+          transition={{ duration: 0.4 }}
+          className="bg-white/90 backdrop-blur-md rounded-3xl p-8 border border-amber-200/70 shadow-sm relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
         >
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-4 h-4 text-amber-500" />
-            <span className="text-[11px] font-bold text-amber-600 uppercase tracking-widest">Application Suite</span>
+          <div className="space-y-2 max-w-2xl">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1.5 shadow-2xs">
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                StudioCore Production Suite
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                10 Integrated Modules
+              </span>
+            </div>
+
+            <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight leading-tight">
+              Studio Operations Command Center
+            </h1>
+
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed font-medium">
+              Manage your entire photography business — from Meta ad lead generation to bespoke quotations, crew assignments, post-production deliverables, milestone billing, and workforce attendance.
+            </p>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-[#0B111E] mb-2">
-            Welcome to your studio workspace
-          </h1>
-          <p className="text-sm text-zinc-500 max-w-lg leading-relaxed">
-            Select a product application to begin. Each tool is an independent module with its own context, navigation, and workspace.
-          </p>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-16 h-16 rounded-2xl bg-black border border-amber-500/40 p-2 shadow-lg shadow-black/10 flex items-center justify-center">
+              <img
+                src="/StudioCorelogo1.png"
+                alt="StudioCore"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          </div>
         </motion.div>
 
-        {/* Suite App Launcher Grid - 4-column side-by-side */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {SUITE_REGISTRY.apps.map((app, index) => (
-            <SuiteCard key={app.slug} app={app} index={index} />
-          ))}
+        {/* ─────────────────────────────────────────────────────────────
+            10-MODULE GRID IN EXACT REQUESTED SEQUENCE
+        ───────────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {WORKSPACE_MODULES.map((mod, index) => {
+            const Icon = mod.icon;
+
+            return (
+              <motion.div
+                key={mod.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: index * 0.05 }}
+              >
+                <Link
+                  href={mod.href}
+                  className="block h-full group focus:outline-none"
+                >
+                  <div
+                    className={`h-full bg-white rounded-3xl p-6 border border-slate-200/90 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-amber-400/80 hover:shadow-xl ${mod.shadowGlow} flex flex-col justify-between space-y-4`}
+                  >
+                    <div className="space-y-4">
+                      {/* Top Header with 3D Gradient Icon & Badge */}
+                      <div className="flex items-center justify-between">
+                        <div
+                          className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${mod.accentGradient} flex items-center justify-center text-white shadow-md shadow-black/10 group-hover:scale-105 transition-transform duration-300`}
+                        >
+                          <Icon className="w-6 h-6 stroke-[2.2]" />
+                        </div>
+
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${mod.badgeColor}`}>
+                          {mod.badge}
+                        </span>
+                      </div>
+
+                      {/* Title & Subtitle */}
+                      <div>
+                        <h3 className="text-base font-black text-slate-900 group-hover:text-amber-700 transition-colors flex items-center gap-1">
+                          {mod.title}
+                        </h3>
+                        <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mt-0.5">
+                          {mod.subtitle}
+                        </p>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        {mod.description}
+                      </p>
+                    </div>
+
+                    {/* Bottom CTA Arrow */}
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-black text-slate-700 group-hover:text-amber-800 transition-colors">
+                      <span>Open Application</span>
+                      <div className="w-7 h-7 rounded-xl bg-slate-50 group-hover:bg-amber-100 flex items-center justify-center text-slate-400 group-hover:text-amber-900 transition-colors">
+                        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              </motion.div>
+            );
+          })}
         </div>
 
-        {/* Footer hint */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.5 }}
-          className="mt-12 text-center"
-        >
-          <p className="text-[11px] text-zinc-400 font-medium">
-            {SUITE_REGISTRY.apps.length} applications available &middot; Click any tile to enter the workspace
-          </p>
-        </motion.div>
-      </main>
+      </div>
     </div>
   );
 }

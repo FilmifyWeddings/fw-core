@@ -10,7 +10,6 @@ import {
   Sparkles, Check, ChevronRight, RefreshCw, FolderPlus
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { SidebarLayout } from '@/components/sidebar-layout';
 import type { WorkspaceClient, Lead } from '@/types';
 
 // Demo initial fallback clients if DB table is empty
@@ -401,8 +400,7 @@ export default function ClientsPage() {
   const activeCount = clients.filter(c => c.status === 'active').length;
 
   return (
-    <SidebarLayout>
-      <div className="min-h-screen bg-[#F8F9FD] dark:bg-[#070708] text-zinc-900 dark:text-zinc-100 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-[#F8F9FD] dark:bg-[#070708] text-zinc-900 dark:text-zinc-100 p-4 sm:p-6 lg:p-8">
         
         {/* Top Header & Quick Actions */}
         <div className="max-w-7xl mx-auto space-y-6">
@@ -856,7 +854,6 @@ export default function ClientsPage() {
           )}
         </AnimatePresence>
 
-      </div>
-    </SidebarLayout>
+    </div>
   );
 }

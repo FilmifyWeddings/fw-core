@@ -10,7 +10,6 @@ import {
   Trash2, X, RefreshCw, Sparkles, Tag, PieChart, Wallet, ArrowRight, Bell, Send, Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { SidebarLayout } from '@/components/sidebar-layout';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem 
 } from '@/types';
@@ -680,9 +679,8 @@ export default function FinancePage() {
   }, [financeRecords, searchQuery, statusFilter]);
 
   return (
-    <SidebarLayout>
-      <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
-        <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
 
           {/* ─────────────────────────────────────────────────────────────
               HEADER & ACTION BUTTONS (WARM LIGHT GOLD THEME)
@@ -1344,7 +1342,6 @@ export default function FinancePage() {
           )}
 
         </div>
-      </div>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: ADD NEW STEP (LIGHT THEME POPUP MODAL)
@@ -1820,6 +1817,6 @@ export default function FinancePage() {
         )}
       </AnimatePresence>
 
-    </SidebarLayout>
+    </div>
   );
 }

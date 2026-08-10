@@ -10,7 +10,6 @@ import {
   ChevronDown, Edit3, Trash2, X, ExternalLink, ArrowRight, UserCheck
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { SidebarLayout } from '@/components/sidebar-layout';
 import type { 
   FWTeamMember, AttendanceRecord, AttendanceLocation, 
   AttendanceShift, AttendanceLeaveRequest, AttendanceMemberLink, AttendanceHoliday
@@ -369,9 +368,8 @@ export default function AttendancePage() {
   }, [teamMembers, records, searchQuery, roleFilter, statusFilter]);
 
   return (
-    <SidebarLayout>
-      <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
-        <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
 
           {/* ─────────────────────────────────────────────────────────────
               HEADER & DATE SELECTOR
@@ -1003,7 +1001,6 @@ export default function AttendancePage() {
           )}
 
         </div>
-      </div>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: ADD GEOFENCE LOCATION
@@ -1261,6 +1258,6 @@ export default function AttendancePage() {
         )}
       </AnimatePresence>
 
-    </SidebarLayout>
+    </div>
   );
 }

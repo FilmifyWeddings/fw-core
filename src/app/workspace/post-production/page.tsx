@@ -11,7 +11,6 @@ import {
   Bell, Send, UserPlus, FileText, CheckSquare, MoreVertical, Link2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { SidebarLayout } from '@/components/sidebar-layout';
 import type { 
   PostProductionProject, DeliverableItem, DeliverableCategory, DeliverableStatus, WorkspaceClient, DeliverableComment 
 } from '@/types';
@@ -590,9 +589,8 @@ export default function PostProductionPage() {
   const overallPercentage = totalDeliverablesCount > 0 ? Math.round((completedDeliverablesCount / totalDeliverablesCount) * 100) : 0;
 
   return (
-    <SidebarLayout>
-      <div className="min-h-screen bg-[#F8F9FD] text-slate-900 pb-20 pt-2 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#F8F9FD] text-slate-900 pb-20 pt-2 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6">
 
           {/* ─────────────────────────────────────────────────────────────
               HEADER & TOP CONTROLS (LIGHT THEME)
@@ -959,7 +957,6 @@ export default function PostProductionPage() {
           )}
 
         </div>
-      </div>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: ADD NEW PROJECT MANAGER
@@ -1283,7 +1280,7 @@ export default function PostProductionPage() {
         )}
       </AnimatePresence>
 
-    </SidebarLayout>
+    </div>
   );
 }
 
