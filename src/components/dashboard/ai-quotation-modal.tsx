@@ -29,6 +29,7 @@ export function AiQuotationModal({
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [promptCopied, setPromptCopied] = useState(false);
 
   // Extracted Result State
   const [extractedDoc, setExtractedDoc] = useState<any>(null);
@@ -37,6 +38,34 @@ export function AiQuotationModal({
   const [conflicts, setConflicts] = useState<any[]>([]);
 
   if (!isOpen || !lead) return null;
+
+  const handleCopySystemPrompt = () => {
+    const masterPrompt = `You are StudioCore AI Quotation Extraction Assistant for Professional Wedding Photographers.
+
+==================================================
+RULES & DESIGN SYSTEM PRESERVATION
+==================================================
+1. DO NOT redesign the quotation. Visual design, theme, colors, typography, and fonts MUST remain 100% SAME.
+2. Standard 11 Pages Schema: Cover, About Us, Pre-Wedding, Functions & Coverage, Deliverables, Special Value Additions, Pricing, Payment Terms, Add-Ons, Terms & Conditions, Thank You.
+3. If no details exist for a specific page (e.g. no pre-wedding shoot or no add-ons), mark that page as hidden/removed (visible: false) for this quotation instance.
+4. Support custom dropdown values without modifying global template dropdowns.
+
+==================================================
+LEAD & CLIENT METADATA CONTEXT
+==================================================
+- Lead Name: ${lead.name || 'N/A'}
+- Phone: ${lead.phone || 'N/A'}
+- Email: ${lead.email || 'N/A'}
+- Raw Lead Form Details: ${JSON.stringify(lead.raw_payload || {}, null, 2)}
+- Lead Comments & Notes: ${Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text).join('\n') : 'N/A'}
+- Additional Notes: ${additionalNotes || 'N/A'}
+
+Respond strictly in valid JSON matching StudioCore Quotation Document Schema.`;
+
+    navigator.clipboard.writeText(masterPrompt);
+    setPromptCopied(true);
+    setTimeout(() => setPromptCopied(false), 2500);
+  };
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -326,14 +355,35 @@ export function AiQuotationModal({
           <div className="p-4 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
             {step === 'input' ? (
               <>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  disabled={generating}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Cancel
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={generating}
+                    className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopySystemPrompt}
+                    className="px-3.5 py-2.5 rounded-xl bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Copy complete multi-page AI system prompt with client metadata"
+                  >
+                    {promptCopied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <span className="text-emerald-600 dark:text-emerald-400">Prompt Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Copy AI Prompt</span>
+                      </>
+                    )}
+                  </button>
+                </div>
 
                 <button
                   type="button"

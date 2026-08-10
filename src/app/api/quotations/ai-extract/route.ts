@@ -428,6 +428,34 @@ function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextDat
     totalInvestment: `₹${totalAmount.toLocaleString('en-IN')}`
   };
 
+  // Handle Page Sequence Visibility (Remove pages if explicitly not required or empty)
+  if (Array.isArray(doc.pageSequence)) {
+    let filteredSeq = [...doc.pageSequence];
+
+    // Pre-wedding shoot page check
+    const hasPreWedding = aiData.pre_wedding?.pre_wedding_included !== false && (doc.shootDetails?.daysText || doc.shootDetails?.text || contextData.notes_and_comments?.toLowerCase().includes('pre wedding') || contextData.additional_user_notes?.toLowerCase().includes('pre wedding'));
+    if (!hasPreWedding) {
+      filteredSeq = filteredSeq.filter(p => (typeof p === 'string' ? p : p.id) !== 'shootDetails');
+      if (doc.shootDetails) doc.shootDetails.visible = false;
+    }
+
+    // Special value additions check
+    const hasSpecialValues = doc.specialValueAdditions?.selectedItems && doc.specialValueAdditions.selectedItems.length > 0;
+    if (!hasSpecialValues) {
+      filteredSeq = filteredSeq.filter(p => (typeof p === 'string' ? p : p.id) !== 'specialValueAdditions');
+      if (doc.specialValueAdditions) doc.specialValueAdditions.visible = false;
+    }
+
+    // Add-ons page check
+    const hasAddOns = doc.addOnsPage?.items && doc.addOnsPage.items.length > 0;
+    if (!hasAddOns) {
+      filteredSeq = filteredSeq.filter(p => (typeof p === 'string' ? p : p.id) !== 'addOnsPage');
+      if (doc.addOnsPage) doc.addOnsPage.visible = false;
+    }
+
+    doc.pageSequence = filteredSeq;
+  }
+
   return {
     document: doc,
     summary,
