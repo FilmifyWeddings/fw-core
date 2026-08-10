@@ -259,7 +259,9 @@ export function normalizeQuotationData(rawInput: any) {
       date: e.date || 'TBD',
       time: e.time || 'Full Day',
       venue: e.venue || e.location || 'Venue TBD',
-      team: Array.isArray(e.services) ? e.services.join(', ') : (e.team || e.services || 'Photographers & Cinematographers')
+      team: Array.isArray(e.team)
+        ? e.team.join(', ')
+        : (Array.isArray(e.services) ? e.services.join(', ') : (e.team || e.services || 'Photographers & Cinematographers'))
     }));
   } else if (Array.isArray(d.functionsPage.items)) {
     funcItems = d.functionsPage.items;
