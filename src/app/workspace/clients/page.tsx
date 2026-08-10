@@ -113,17 +113,22 @@ export default function ClientsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      // 2. Fetch clients table
-      const { data: clientData, error: clientErr } = await supabase
+      // 2. Fetch clients table scoped to current user workspace
+      let clientQuery = supabase
         .from('workspace_clients')
         .select('*')
         .order('created_at', { ascending: false });
 
+      if (workspaceId && workspaceId !== 'ws_demo') {
+        clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+      }
+
+      const { data: clientData, error: clientErr } = await clientQuery;
+
       if (!clientErr && clientData && clientData.length > 0) {
         setClients(clientData);
       } else {
-        // Fallback to initial demo clients if table empty
-        setClients(INITIAL_CLIENTS);
+        setClients([]);
       }
 
       // 3. Fetch leads for "Convert Lead" option

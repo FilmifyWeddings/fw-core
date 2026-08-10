@@ -390,8 +390,87 @@ export default function LeadsPage() {
     handleLeadUpdate(leadId, { status: newStatus });
   };
 
+  // Helper to automatically create/sync client when lead stage is set to "Booked"
+  const autoSyncBookedLeadToClient = async (leadId: string, targetLead: Lead, updatedFields: Partial<Lead>) => {
+    try {
+      const mergedLead: Lead = { ...targetLead, ...updatedFields };
+      const currentWorkspaceId = mergedLead.workspace_id || userId;
+      if (!currentWorkspaceId) return;
+
+      // 1. Check if client already exists for this lead
+      const { data: existingClients } = await supabase
+        .from('workspace_clients')
+        .select('id')
+        .eq('lead_id', leadId);
+
+      if (existingClients && existingClients.length > 0) {
+        console.log('[LeadToClient] Client already exists for lead:', leadId);
+        return;
+      }
+
+      // 2. Extract best possible values from lead and raw payload
+      const raw = mergedLead.raw_payload || {};
+      const clientName = mergedLead.name || raw.groom_name || raw.bride_name || 'Booked Client';
+      const clientPhone = mergedLead.phone || raw.phone || raw.contact || '';
+      const clientEmail = mergedLead.email || raw.email || null;
+      
+      const eventType = raw.shoot_type || raw.event_type || raw.service || 'Wedding';
+      
+      // Parse event date if present (YYYY-MM-DD or parseable string)
+      let parsedEventDate: string | null = null;
+      if (raw.event_date || raw.wedding_date || raw.date) {
+        const rawDate = raw.event_date || raw.wedding_date || raw.date;
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          parsedEventDate = d.toISOString().split('T')[0];
+        }
+      }
+
+      // Parse budget / package amount
+      let packageAmount = 0;
+      if (raw.budget || raw.package_amount || raw.amount) {
+        const numStr = String(raw.budget || raw.package_amount || raw.amount).replace(/[^0-9.]/g, '');
+        packageAmount = parseFloat(numStr) || 0;
+      }
+
+      const clientPayload = {
+        user_id: currentWorkspaceId,
+        workspace_id: currentWorkspaceId,
+        lead_id: leadId,
+        name: clientName,
+        phone: clientPhone,
+        email: clientEmail,
+        event_type: eventType,
+        event_date: parsedEventDate,
+        total_package_amount: packageAmount,
+        paid_amount: 0,
+        status: 'active'
+      };
+
+      const { data: newClient, error: clientErr } = await supabase
+        .from('workspace_clients')
+        .insert([clientPayload])
+        .select('id')
+        .single();
+
+      if (clientErr) {
+        console.error('[LeadToClient] Error creating client from booked lead:', clientErr.message);
+      } else if (newClient) {
+        console.log('[LeadToClient] Successfully auto-created client from booked lead:', newClient.id);
+        // Link client_id on leads table
+        await supabase
+          .from('leads')
+          .update({ client_id: newClient.id })
+          .eq('id', leadId);
+      }
+    } catch (e) {
+      console.error('[LeadToClient] autoSyncBookedLeadToClient Exception:', e);
+    }
+  };
+
   const handleLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
     // Optimistic UI Update
+    const currentLead = leads.find(l => l.id === leadId);
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updatedFields, updated_at: new Date().toISOString() } : l));
 
     if (!isDemoMode) {
@@ -400,6 +479,16 @@ export default function LeadsPage() {
           .from('leads')
           .update({ ...updatedFields, updated_at: new Date().toISOString() })
           .eq('id', leadId);
+
+        // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"
+        const isBooked = 
+          (updatedFields.stage_id && updatedFields.stage_id.toLowerCase().includes('book')) ||
+          (typeof updatedFields.status === 'string' && updatedFields.status.toLowerCase().includes('book')) ||
+          (updatedFields.stage_id && stages.some(s => s.id === updatedFields.stage_id && s.name.toLowerCase().includes('book')));
+
+        if (isBooked && currentLead) {
+          await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
+        }
       } catch (err) {
         console.error("Database update error:", err);
       }
