@@ -224,21 +224,21 @@ export default function TeamManagerPage() {
       } catch (e) {
         // Bucket initialized or skipped
       }
-      // 1. Fetch Team Members for current user
+      // 1. Fetch Team Members for authenticated user only
       let membersQuery = supabase
         .from('fw_team_members')
         .select('*')
         .order('name', { ascending: true });
 
       if (uid) {
-        membersQuery = membersQuery.or(`user_id.eq.${uid},user_id.is.null`);
+        membersQuery = membersQuery.eq('user_id', uid);
       }
 
       const { data: membersData, error: membersErr } = await membersQuery;
       if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
       setTeamMembers(membersData || []);
 
-      // 2. Fetch Projects for current user
+      // 2. Fetch Projects for authenticated user only
       let projectsQuery = supabase
         .from('fw_projects')
         .select(`
@@ -254,7 +254,7 @@ export default function TeamManagerPage() {
         .order('created_at', { ascending: false });
 
       if (uid) {
-        projectsQuery = projectsQuery.or(`user_id.eq.${uid},user_id.is.null`);
+        projectsQuery = projectsQuery.eq('user_id', uid);
       }
 
       const { data: projectsData, error: projectsErr } = await projectsQuery;
