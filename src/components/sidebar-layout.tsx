@@ -222,7 +222,12 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/terms') ||
     pathname.startsWith('/privacy-policy')
   ) {
-    return <div className="h-screen w-full overflow-hidden bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100">{children}</div>;
+    const isCanvasBuilder = pathname.startsWith('/workspace/quotations/builder') || pathname.startsWith('/admin/workspace/quotations/builder');
+    return (
+      <div className={`${isCanvasBuilder ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto overflow-x-hidden'} w-full bg-white dark:bg-[#070708] text-zinc-900 dark:text-zinc-100`}>
+        {children}
+      </div>
+    );
   }
   
   // For sub-app routes, render the context-aware sidebar
