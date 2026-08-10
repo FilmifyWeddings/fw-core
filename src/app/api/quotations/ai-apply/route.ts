@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
+import { normalizeQuotationData } from '@/lib/quotation-defaults';
 
 /**
  * Authoritative Route to Apply AI Extracted Data to Current Quotation Draft
@@ -35,11 +36,14 @@ export async function POST(req: NextRequest) {
       workspaceId
     });
 
+    // Normalize document schema so ChatGPT / AI JSON structures unwrap & render cleanly on canvas
+    const normalizedDoc = normalizeQuotationData(document);
+
     // 1. Update quotation_documents content_json in place
     const { error: docErr } = await supabaseAdmin
       .from('quotation_documents')
       .update({
-        content_json: document,
+        content_json: normalizedDoc,
         updated_at: new Date().toISOString()
       })
       .eq('template_id', targetId);

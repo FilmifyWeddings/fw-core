@@ -226,127 +226,127 @@ export function calculatePricingTotals(pricing: any) {
   return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
 }
 
-export function normalizeQuotationData(loaded: any) {
+export function normalizeQuotationData(rawInput: any) {
   const d = DEFAULT_AIRY_PROPOSAL;
-  if (!loaded || typeof loaded !== 'object') return d;
+  if (!rawInput || typeof rawInput !== 'object') return d;
+
+  // 1. Unwrap root wrappers if present ({ quotation: { ... } } or { pages: { ... } })
+  let loaded = rawInput;
+  if (loaded.quotation && typeof loaded.quotation === 'object') {
+    loaded = { ...loaded, ...loaded.quotation };
+  }
+  const pagesObj = loaded.pages && typeof loaded.pages === 'object' ? loaded.pages : loaded;
+
+  // 2. Normalize Cover
+  const coverSrc = loaded.cover || pagesObj.cover || {};
+  const cover = {
+    ...d.cover,
+    ...coverSrc,
+    coupleName: coverSrc.coupleName || coverSrc.client_name || coverSrc.couple_name || loaded.client?.client_name || d.cover.coupleName,
+    weddingDate: coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || (d.cover as any).weddingDate || '',
+    locationName: coverSrc.locationName || coverSrc.wedding_location || coverSrc.city || d.cover.locationName,
+    eventType: coverSrc.eventType || coverSrc.title || coverSrc.event_type || d.cover.eventType
+  };
+
+  // 3. Normalize Functions / Events Page
+  const funcsSrc = loaded.functionsPage || pagesObj.functions_coverage || pagesObj.functions || {};
+  let funcItems: any[] = [];
+  const rawEvents = funcsSrc.events || funcsSrc.items || funcsSrc.functions || [];
+  if (Array.isArray(rawEvents) && rawEvents.length > 0) {
+    funcItems = rawEvents.map((e: any, idx: number) => ({
+      id: e.id || `func-norm-${idx}`,
+      name: e.name || e.event_name || `Event ${idx + 1}`,
+      date: e.date || 'TBD',
+      time: e.time || 'Full Day',
+      venue: e.venue || e.location || 'Venue TBD',
+      team: Array.isArray(e.services) ? e.services.join(', ') : (e.team || e.services || 'Photographers & Cinematographers')
+    }));
+  } else if (Array.isArray(d.functionsPage.items)) {
+    funcItems = d.functionsPage.items;
+  }
+
+  const functionsPage = {
+    ...d.functionsPage,
+    ...funcsSrc,
+    items: funcItems
+  };
+
+  // 4. Normalize Deliverables Page
+  const delivSrc = loaded.deliverablesPage || pagesObj.deliverables || {};
+  const delivItems = Array.isArray(delivSrc.items)
+    ? delivSrc.items
+    : (Array.isArray(delivSrc.selectedItems) ? delivSrc.selectedItems : d.deliverablesPage.selectedItems);
+  const deliverablesPage = {
+    ...d.deliverablesPage,
+    ...delivSrc,
+    selectedItems: delivItems
+  };
+
+  // 5. Normalize Pricing Page
+  const pricingSrc = loaded.pricingPage || pagesObj.pricing || {};
+  const basePriceVal = typeof pricingSrc.basePrice === 'number'
+    ? pricingSrc.basePrice
+    : (typeof pricingSrc.total_amount === 'number' ? pricingSrc.total_amount : d.pricingPage.basePrice);
+
+  const pricingPage = {
+    ...d.pricingPage,
+    ...pricingSrc,
+    basePrice: basePriceVal
+  };
+
+  // 6. Normalize Thank You Page
+  const thankSrc = loaded.thankYouPage || pagesObj.thank_you || {};
+  const thankYouPage = {
+    ...d.thankYouPage,
+    ...thankSrc,
+    contactPerson: thankSrc.contactPerson || thankSrc.signature || d.thankYouPage.contactPerson
+  };
+
+  // 7. Calculate Active Page Sequence from Page Visibility Flags
+  const activeSeq: string[] = ['cover', 'aboutUs'];
+
+  // Check shootDetails / pre_wedding
+  const preWedSrc = loaded.shootDetails || pagesObj.pre_wedding;
+  if (preWedSrc?.visible !== false) activeSeq.push('shootDetails');
+
+  // Functions page
+  if (funcsSrc?.visible !== false) activeSeq.push('functionsPage');
+
+  // Deliverables page
+  if (delivSrc?.visible !== false) activeSeq.push('deliverablesPage');
+
+  // Special value additions
+  const valAddSrc = loaded.specialValueAdditions || pagesObj.special_value_additions;
+  if (valAddSrc?.visible === true && valAddSrc?.selectedItems?.length > 0) activeSeq.push('specialValueAdditions');
+
+  // Pricing page
+  if (pricingSrc?.visible !== false) activeSeq.push('pricingPage');
+
+  // Payment terms
+  const payTermsSrc = loaded.paymentTermsPage || pagesObj.payment_terms;
+  if (payTermsSrc?.visible === true && payTermsSrc?.steps?.length > 0) activeSeq.push('paymentTermsPage');
+
+  // Add-ons
+  const addOnsSrc = loaded.addOnsPage || pagesObj.add_ons;
+  if (addOnsSrc?.visible === true && addOnsSrc?.items?.length > 0) activeSeq.push('addOnsPage');
+
+  // Terms
+  const termsSrc = loaded.termsPage || pagesObj.terms_conditions;
+  if (termsSrc?.visible === true && termsSrc?.items?.length > 0) activeSeq.push('termsPage');
+
+  // Thank you
+  if (thankSrc?.visible !== false) activeSeq.push('thankYouPage');
 
   return {
     ...d,
     ...loaded,
-    cover: { ...d.cover, ...(loaded.cover || {}) },
-    aboutUs: { ...d.aboutUs, ...(loaded.aboutUs || {}) },
-    shootDetails: { ...d.shootDetails, ...(loaded.shootDetails || {}) },
-    functionsPage: {
-      ...d.functionsPage,
-      ...(loaded.functionsPage || {}),
-      items: Array.isArray(loaded.functionsPage?.items) ? loaded.functionsPage.items : d.functionsPage.items,
-    },
-    deliverablesPage: {
-      ...d.deliverablesPage,
-      ...(loaded.deliverablesPage || {}),
-      selectedItems: Array.isArray(loaded.deliverablesPage?.selectedItems)
-        ? loaded.deliverablesPage.selectedItems
-        : d.deliverablesPage.selectedItems,
-      availableOptions: Array.isArray(loaded.deliverablesPage?.availableOptions)
-        ? loaded.deliverablesPage.availableOptions
-        : d.deliverablesPage.availableOptions,
-    },
-    specialValueAdditions: {
-      ...d.specialValueAdditions,
-      ...(loaded.specialValueAdditions || {}),
-      selectedItems: Array.isArray(loaded.specialValueAdditions?.selectedItems)
-        ? loaded.specialValueAdditions.selectedItems
-        : d.specialValueAdditions.selectedItems,
-      availableOptions: Array.isArray(loaded.specialValueAdditions?.availableOptions)
-        ? loaded.specialValueAdditions.availableOptions
-        : d.specialValueAdditions.availableOptions,
-      note: loaded.specialValueAdditions?.note ?? d.specialValueAdditions.note ?? '',
-      photo: loaded.specialValueAdditions?.photo ?? d.specialValueAdditions.photo ?? '',
-      photoHeight: loaded.specialValueAdditions?.photoHeight ?? d.specialValueAdditions.photoHeight ?? 360,
-      photoWidth: loaded.specialValueAdditions?.photoWidth ?? d.specialValueAdditions.photoWidth ?? 75,
-      photoFocalY: loaded.specialValueAdditions?.photoFocalY ?? d.specialValueAdditions.photoFocalY ?? 50,
-      bgOpacity: loaded.specialValueAdditions?.bgOpacity ?? d.specialValueAdditions.bgOpacity ?? 40,
-      frameShape: loaded.specialValueAdditions?.frameShape ?? d.specialValueAdditions.frameShape ?? 'rounded',
-      imagePosition: loaded.specialValueAdditions?.imagePosition ?? d.specialValueAdditions.imagePosition ?? 'bottom',
-    },
-    pricingPage: {
-      ...d.pricingPage,
-      ...(loaded.pricingPage || {}),
-      basePrice: typeof loaded.pricingPage?.basePrice === 'number' ? loaded.pricingPage.basePrice : d.pricingPage.basePrice,
-      discountAmount: typeof loaded.pricingPage?.discountAmount === 'number' ? loaded.pricingPage.discountAmount : d.pricingPage.discountAmount,
-      accommodationCharges: typeof loaded.pricingPage?.accommodationCharges === 'number' ? loaded.pricingPage.accommodationCharges : d.pricingPage.accommodationCharges,
-      travelCharges: typeof loaded.pricingPage?.travelCharges === 'number' ? loaded.pricingPage.travelCharges : d.pricingPage.travelCharges,
-      additionalCharges: typeof loaded.pricingPage?.additionalCharges === 'number' ? loaded.pricingPage.additionalCharges : d.pricingPage.additionalCharges,
-      gstPct: typeof loaded.pricingPage?.gstPct === 'number' ? loaded.pricingPage.gstPct : d.pricingPage.gstPct,
-      note: loaded.pricingPage?.note ?? d.pricingPage.note ?? '',
-      photo: loaded.pricingPage?.photo ?? d.pricingPage.photo ?? '',
-      photoHeight: loaded.pricingPage?.photoHeight ?? d.pricingPage.photoHeight ?? 360,
-      photoWidth: loaded.pricingPage?.photoWidth ?? d.pricingPage.photoWidth ?? 75,
-      photoFocalY: loaded.pricingPage?.photoFocalY ?? d.pricingPage.photoFocalY ?? 50,
-      bgOpacity: loaded.pricingPage?.bgOpacity ?? d.pricingPage.bgOpacity ?? 40,
-      frameShape: loaded.pricingPage?.frameShape ?? d.pricingPage.frameShape ?? 'rounded',
-      imagePosition: loaded.pricingPage?.imagePosition ?? d.pricingPage.imagePosition ?? 'bottom',
-    },
-    paymentTermsPage: {
-      ...d.paymentTermsPage,
-      ...(loaded.paymentTermsPage || {}),
-      steps: Array.isArray(loaded.paymentTermsPage?.steps)
-        ? loaded.paymentTermsPage.steps
-        : d.paymentTermsPage.steps,
-      note: loaded.paymentTermsPage?.note ?? d.paymentTermsPage.note ?? '',
-      photo: loaded.paymentTermsPage?.photo ?? d.paymentTermsPage.photo ?? '',
-      photoHeight: loaded.paymentTermsPage?.photoHeight ?? d.paymentTermsPage.photoHeight ?? 360,
-      photoWidth: loaded.paymentTermsPage?.photoWidth ?? d.paymentTermsPage.photoWidth ?? 75,
-      photoFocalY: loaded.paymentTermsPage?.photoFocalY ?? d.paymentTermsPage.photoFocalY ?? 50,
-      bgOpacity: loaded.paymentTermsPage?.bgOpacity ?? d.paymentTermsPage.bgOpacity ?? 40,
-      frameShape: loaded.paymentTermsPage?.frameShape ?? d.paymentTermsPage.frameShape ?? 'rounded',
-      imagePosition: loaded.paymentTermsPage?.imagePosition ?? d.paymentTermsPage.imagePosition ?? 'bottom',
-    },
-    addOnsPage: {
-      ...d.addOnsPage,
-      ...(loaded.addOnsPage || {}),
-      items: Array.isArray(loaded.addOnsPage?.items)
-        ? loaded.addOnsPage.items
-        : d.addOnsPage.items,
-      note: loaded.addOnsPage?.note ?? d.addOnsPage.note ?? '',
-      photo: loaded.addOnsPage?.photo ?? d.addOnsPage.photo ?? '',
-      photoHeight: loaded.addOnsPage?.photoHeight ?? d.addOnsPage.photoHeight ?? 360,
-      photoWidth: loaded.addOnsPage?.photoWidth ?? d.addOnsPage.photoWidth ?? 75,
-      photoFocalY: loaded.addOnsPage?.photoFocalY ?? d.addOnsPage.photoFocalY ?? 50,
-      bgOpacity: loaded.addOnsPage?.bgOpacity ?? d.addOnsPage.bgOpacity ?? 40,
-      frameShape: loaded.addOnsPage?.frameShape ?? d.addOnsPage.frameShape ?? 'rounded',
-      imagePosition: loaded.addOnsPage?.imagePosition ?? d.addOnsPage.imagePosition ?? 'bottom',
-    },
-    termsPage: {
-      ...d.termsPage,
-      ...(loaded.termsPage || {}),
-      items: Array.isArray(loaded.termsPage?.items)
-        ? loaded.termsPage.items
-        : d.termsPage.items,
-      note: loaded.termsPage?.note ?? d.termsPage.note ?? '',
-      photo: loaded.termsPage?.photo ?? d.termsPage.photo ?? '',
-      photoHeight: loaded.termsPage?.photoHeight ?? d.termsPage.photoHeight ?? 360,
-      photoWidth: loaded.termsPage?.photoWidth ?? d.termsPage.photoWidth ?? 75,
-      photoFocalY: loaded.termsPage?.photoFocalY ?? d.termsPage.photoFocalY ?? 50,
-      bgOpacity: loaded.termsPage?.bgOpacity ?? d.termsPage.bgOpacity ?? 40,
-      frameShape: loaded.termsPage?.frameShape ?? d.termsPage.frameShape ?? 'rounded',
-      imagePosition: loaded.termsPage?.imagePosition ?? d.termsPage.imagePosition ?? 'bottom',
-    },
-    thankYouPage: {
-      ...d.thankYouPage,
-      ...(loaded.thankYouPage || {}),
-      contactPerson: loaded.thankYouPage?.contactPerson ?? d.thankYouPage.contactPerson ?? 'Filming Team',
-      phone: loaded.thankYouPage?.phone ?? d.thankYouPage.phone ?? '',
-      email: loaded.thankYouPage?.email ?? d.thankYouPage.email ?? '',
-      website: loaded.thankYouPage?.website ?? d.thankYouPage.website ?? '',
-      instagram: loaded.thankYouPage?.instagram ?? d.thankYouPage.instagram ?? '',
-      photo: loaded.thankYouPage?.photo ?? d.thankYouPage.photo ?? '',
-      photoHeight: loaded.thankYouPage?.photoHeight ?? d.thankYouPage.photoHeight ?? 360,
-      photoWidth: loaded.thankYouPage?.photoWidth ?? d.thankYouPage.photoWidth ?? 75,
-      photoFocalY: loaded.thankYouPage?.photoFocalY ?? d.thankYouPage.photoFocalY ?? 50,
-      bgOpacity: loaded.thankYouPage?.bgOpacity ?? d.thankYouPage.bgOpacity ?? 40,
-      frameShape: loaded.thankYouPage?.frameShape ?? d.thankYouPage.frameShape ?? 'rounded',
-      imagePosition: loaded.thankYouPage?.imagePosition ?? d.thankYouPage.imagePosition ?? 'bottom',
-    },
+    cover,
+    aboutUs: { ...d.aboutUs, ...(loaded.aboutUs || pagesObj.about_us || {}) },
+    shootDetails: { ...d.shootDetails, ...(loaded.shootDetails || pagesObj.pre_wedding || {}) },
+    functionsPage,
+    deliverablesPage,
+    pricingPage,
+    thankYouPage,
+    pageSequence: loaded.pageSequence && Array.isArray(loaded.pageSequence) ? loaded.pageSequence : activeSeq
   };
 }
