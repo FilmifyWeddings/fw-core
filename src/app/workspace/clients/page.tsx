@@ -211,6 +211,24 @@ export default function ClientsPage() {
         setClients(prev => [inserted, ...prev]);
       }
 
+      // If converted from a lead, automatically update CRM Lead stage to "Booked"
+      if (selectedLeadId) {
+        try {
+          await supabase
+            .from('leads')
+            .update({
+              stage_id: 'booked',
+              status: 'Booked',
+              client_id: inserted?.id || null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', selectedLeadId);
+          console.log('[ClientsPage] CRM lead stage auto-updated to Booked for lead:', selectedLeadId);
+        } catch (leadErr) {
+          console.error('[ClientsPage] Error updating lead stage to Booked:', leadErr);
+        }
+      }
+
       // Reset form & close modal
       setFormData({
         name: '', phone: '', email: '', event_type: 'Wedding',

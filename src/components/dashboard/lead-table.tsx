@@ -215,7 +215,19 @@ export function LeadTable({
 
   useEffect(() => {
     if (stages && stages.length > 0) {
-      setStagesState(stages);
+      const hasBooked = stages.some((s: any) => s.id === 'booked' || s.name?.toLowerCase() === 'booked');
+      const merged = hasBooked ? stages : [...stages, { id: 'booked', name: 'Booked', color: '#10b981', position: 4 }];
+      setStagesState(merged);
+    } else {
+      setStagesState([
+        { id: 'new', name: 'Inquiry / New', color: '#6366f1', position: 0 },
+        { id: 'contacted', name: 'Contacted', color: '#8b5cf6', position: 1 },
+        { id: 'cool', name: 'Cool / Warm', color: '#06b6d4', position: 2 },
+        { id: 'hot', name: 'Hot 🔥', color: '#ef4444', position: 3 },
+        { id: 'booked', name: 'Booked', color: '#10b981', position: 4 },
+        { id: 'won', name: 'Won 🎉', color: '#10b981', position: 5 },
+        { id: 'lost', name: 'Lost ❌', color: '#f43f5e', position: 6 }
+      ]);
     }
   }, [stages]);
 
