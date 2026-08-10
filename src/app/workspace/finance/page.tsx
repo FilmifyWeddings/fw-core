@@ -63,6 +63,17 @@ export default function FinancePage() {
     target_milestone_id: ''
   });
 
+  const [showAddStepModal, setShowAddStepModal] = useState<{
+    open: boolean;
+    recordId?: string;
+  }>({ open: false });
+
+  const [stepFormData, setStepFormData] = useState({
+    step_name: '',
+    due_date: new Date().toISOString().split('T')[0],
+    amount: ''
+  });
+
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [expenseFormData, setExpenseFormData] = useState({
     expense_type: 'project_expense' as const,
@@ -81,14 +92,6 @@ export default function FinancePage() {
     client?: WorkspaceClient;
     financeRecord?: ClientFinanceRecord;
   }>({ open: false });
-
-  const [showReminderModal, setShowReminderModal] = useState<{
-    open: boolean;
-    client?: WorkspaceClient;
-    milestone?: FinanceMilestoneItem;
-  }>({ open: false });
-  const [reminderDate, setReminderDate] = useState('');
-  const [reminderNote, setReminderNote] = useState('');
 
   // Fetch Finance Data
   useEffect(() => {
@@ -144,25 +147,41 @@ export default function FinancePage() {
       for (const c of clientList) {
         const existing = financeMap.get(c.id);
         if (existing) {
+          const finalTotal = Math.round(Number(existing.final_total_amount) || Number(c.total_package_amount) || 169920);
+          const received = Math.round(Number(existing.received_amount) || Number(c.paid_amount) || 0);
+          const pending = Math.max(0, finalTotal - received);
+
           finalRecords.push({
             ...existing,
             client: c,
+            base_package_price: Math.round(Number(existing.base_package_price) || 150000),
+            discount_amount: Math.round(Number(existing.discount_amount) || 10000),
+            accommodation_charges: Math.round(Number(existing.accommodation_charges) || 1000),
+            travel_charges: Math.round(Number(existing.travel_charges) || 2000),
+            additional_charges: Math.round(Number(existing.additional_charges) || 1000),
+            subtotal_amount: Math.round(Number(existing.subtotal_amount) || 144000),
+            gst_rate: Number(existing.gst_rate) || 18,
+            gst_amount: Math.round(Number(existing.gst_amount) || 25920),
+            final_total_amount: finalTotal,
+            received_amount: received,
+            pending_amount: pending,
+            payment_status: pending === 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
             milestones: Array.isArray(existing.milestones) && existing.milestones.length > 0
               ? existing.milestones
-              : generateDefaultMilestones(existing.final_total_amount || c.total_package_amount || 169920, c.event_date)
+              : generateDefaultMilestones(finalTotal, c.event_date, received)
           });
         } else {
           // Calculate default pricing breakdown matching user quotation image
-          const basePkg = Number(c.total_package_amount) || 150000;
+          const basePkg = Math.round(Number(c.total_package_amount) || 150000);
           const discount = 10000;
           const accommodation = 1000;
           const travel = 2000;
           const additional = 1000;
-          const subtotal = basePkg - discount + accommodation + travel + additional;
+          const subtotal = Math.round(basePkg - discount + accommodation + travel + additional);
           const gstRate = 18;
           const gstAmount = Math.round((subtotal * gstRate) / 100);
           const finalTotal = subtotal + gstAmount;
-          const received = Number(c.paid_amount) || 25000;
+          const received = Math.round(Number(c.paid_amount) || 25000);
           const pending = Math.max(0, finalTotal - received);
 
           const defaultMilestones = generateDefaultMilestones(finalTotal, c.event_date, received);
@@ -369,17 +388,17 @@ export default function FinancePage() {
         user_id: workspaceId,
         workspace_id: workspaceId,
         client_id: record.client_id,
-        base_package_price: record.base_package_price,
-        discount_amount: record.discount_amount,
-        accommodation_charges: record.accommodation_charges,
-        travel_charges: record.travel_charges,
-        additional_charges: record.additional_charges,
-        subtotal_amount: record.subtotal_amount,
+        base_package_price: Math.round(record.base_package_price),
+        discount_amount: Math.round(record.discount_amount),
+        accommodation_charges: Math.round(record.accommodation_charges),
+        travel_charges: Math.round(record.travel_charges),
+        additional_charges: Math.round(record.additional_charges),
+        subtotal_amount: Math.round(record.subtotal_amount),
         gst_rate: record.gst_rate,
-        gst_amount: record.gst_amount,
-        final_total_amount: record.final_total_amount,
-        received_amount: record.received_amount,
-        pending_amount: record.pending_amount,
+        gst_amount: Math.round(record.gst_amount),
+        final_total_amount: Math.round(record.final_total_amount),
+        received_amount: Math.round(record.received_amount),
+        pending_amount: Math.round(record.pending_amount),
         payment_status: record.payment_status,
         milestones: record.milestones,
         updated_at: new Date().toISOString()
@@ -401,8 +420,8 @@ export default function FinancePage() {
       await supabase
         .from('workspace_clients')
         .update({
-          total_package_amount: record.final_total_amount,
-          paid_amount: record.received_amount,
+          total_package_amount: Math.round(record.final_total_amount),
+          paid_amount: Math.round(record.received_amount),
           updated_at: new Date().toISOString()
         })
         .eq('id', record.client_id);
@@ -420,20 +439,21 @@ export default function FinancePage() {
   ) => {
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === recordId) {
-        const updated = { ...rec, [field]: val };
+        const updated = { ...rec, [field]: Math.round(val || 0) };
         
         // Recalculate Subtotal
-        const subtotal = 
+        const subtotal = Math.round(
           Number(updated.base_package_price || 0) - 
           Number(updated.discount_amount || 0) + 
           Number(updated.accommodation_charges || 0) + 
           Number(updated.travel_charges || 0) + 
-          Number(updated.additional_charges || 0);
+          Number(updated.additional_charges || 0)
+        );
 
         const gstRate = Number(updated.gst_rate || 18);
         const gstAmount = Math.round((subtotal * gstRate) / 100);
         const finalTotal = subtotal + gstAmount;
-        const pending = Math.max(0, finalTotal - Number(updated.received_amount || 0));
+        const pending = Math.max(0, finalTotal - Math.round(Number(updated.received_amount || 0)));
 
         const finalUpdated: ClientFinanceRecord = {
           ...updated,
@@ -451,17 +471,36 @@ export default function FinancePage() {
     }));
   };
 
+  // Handle Milestone Date Change
+  const handleMilestoneDateChange = (recordId: string, milestoneId: string, newDate: string) => {
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const updatedMilestones = rec.milestones.map(m => {
+          if (m.id === milestoneId) {
+            return { ...m, due_date: newDate };
+          }
+          return m;
+        });
+
+        const updated = { ...rec, milestones: updatedMilestones };
+        updateFinanceRecordInDB(updated);
+        return updated;
+      }
+      return rec;
+    }));
+  };
+
   // Handle Recording a Milestone Payment
   const handleSaveRecordedPayment = () => {
     if (!showRecordPaymentModal.financeRecord) return;
     const rec = showRecordPaymentModal.financeRecord;
-    const paidAmt = parseFloat(paymentFormData.amount) || 0;
+    const paidAmt = Math.round(parseFloat(paymentFormData.amount) || 0);
     if (paidAmt <= 0) {
       alert('Please enter a valid payment amount.');
       return;
     }
 
-    const newReceived = rec.received_amount + paidAmt;
+    const newReceived = Math.round(rec.received_amount + paidAmt);
     const newPending = Math.max(0, rec.final_total_amount - newReceived);
     const newStatus = newPending === 0 ? 'paid' : 'partially_paid';
 
@@ -505,9 +544,44 @@ export default function FinancePage() {
     });
   };
 
+  // Handle Add New Step from Modal
+  const handleSaveNewStep = () => {
+    if (!showAddStepModal.recordId || !stepFormData.step_name.trim()) {
+      alert('Please enter Step Name');
+      return;
+    }
+
+    const amt = Math.round(parseFloat(stepFormData.amount) || 0);
+    const newMilestone: FinanceMilestoneItem = {
+      id: `m_step_${Date.now()}`,
+      step_name: stepFormData.step_name.trim(),
+      due_date: stepFormData.due_date,
+      amount: amt,
+      status: 'pending',
+      payment_mode: 'UPI'
+    };
+
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === showAddStepModal.recordId) {
+        const updatedMilestones = [...rec.milestones, newMilestone];
+        const updated = { ...rec, milestones: updatedMilestones };
+        updateFinanceRecordInDB(updated);
+        return updated;
+      }
+      return rec;
+    }));
+
+    setShowAddStepModal({ open: false });
+    setStepFormData({
+      step_name: '',
+      due_date: new Date().toISOString().split('T')[0],
+      amount: ''
+    });
+  };
+
   // Handle Add New Expense
   const handleSaveExpense = async () => {
-    const amt = parseFloat(expenseFormData.amount) || 0;
+    const amt = Math.round(parseFloat(expenseFormData.amount) || 0);
     if (!expenseFormData.title || amt <= 0) {
       alert('Please enter Expense Title and a valid Amount.');
       return;
@@ -571,51 +645,24 @@ export default function FinancePage() {
     }
   };
 
-  // Add custom milestone to client schedule
-  const handleAddMilestone = (recordId: string) => {
-    const namePrompt = prompt('Enter Milestone / Step Name (e.g. Pre-Wedding Shoot Balance):');
-    if (!namePrompt || !namePrompt.trim()) return;
-
-    const amountPrompt = prompt('Enter Amount (₹):', '25000');
-    const amt = parseFloat(amountPrompt || '0') || 0;
-
-    const newMilestone: FinanceMilestoneItem = {
-      id: `m_custom_${Date.now()}`,
-      step_name: namePrompt.trim(),
-      due_date: new Date().toISOString().split('T')[0],
-      amount: amt,
-      status: 'pending',
-      payment_mode: 'UPI'
-    };
-
-    setFinanceRecords(prev => prev.map(rec => {
-      if (rec.id === recordId) {
-        const updated = { ...rec, milestones: [...rec.milestones, newMilestone] };
-        updateFinanceRecordInDB(updated);
-        return updated;
-      }
-      return rec;
-    }));
-  };
-
-  // Totals calculations
+  // Totals calculations (Strict Integers, No Floats)
   const totalInvoiced = useMemo(() => {
-    return financeRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0);
+    return Math.round(financeRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0));
   }, [financeRecords]);
 
   const totalReceived = useMemo(() => {
-    return financeRecords.reduce((acc, r) => acc + (Number(r.received_amount) || 0), 0);
+    return Math.round(financeRecords.reduce((acc, r) => acc + (Number(r.received_amount) || 0), 0));
   }, [financeRecords]);
 
   const totalPending = useMemo(() => {
-    return financeRecords.reduce((acc, r) => acc + (Number(r.pending_amount) || 0), 0);
-  }, [financeRecords]);
+    return Math.max(0, totalInvoiced - totalReceived);
+  }, [totalInvoiced, totalReceived]);
 
   const totalExpensesAmount = useMemo(() => {
-    return expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+    return Math.round(expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0));
   }, [expenses]);
 
-  const netProfit = totalReceived - totalExpensesAmount;
+  const netProfit = Math.round(totalReceived - totalExpensesAmount);
   const profitMargin = totalReceived > 0 ? Math.round((netProfit / totalReceived) * 100) : 0;
 
   // Filtered finance records
@@ -634,7 +681,7 @@ export default function FinancePage() {
 
   return (
     <SidebarLayout>
-      <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-7xl mx-auto space-y-6">
 
           {/* ─────────────────────────────────────────────────────────────
@@ -698,7 +745,9 @@ export default function FinancePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight">₹{totalInvoiced.toLocaleString('en-IN')}</h3>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums">
+                  ₹{totalInvoiced.toLocaleString('en-IN')}
+                </h3>
                 <p className="text-[10px] font-semibold text-slate-500 mt-0.5">{financeRecords.length} Active Contracts</p>
               </div>
               <div className="h-1 w-full bg-amber-500 rounded-full" />
@@ -713,7 +762,9 @@ export default function FinancePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-black text-emerald-700 tracking-tight">₹{totalReceived.toLocaleString('en-IN')}</h3>
+                <h3 className="text-2xl font-black text-emerald-700 tracking-tight font-sans tabular-nums">
+                  ₹{totalReceived.toLocaleString('en-IN')}
+                </h3>
                 <p className="text-[10px] font-semibold text-emerald-600 mt-0.5">
                   {totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0}% Realized
                 </p>
@@ -730,7 +781,9 @@ export default function FinancePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-black text-orange-700 tracking-tight">₹{totalPending.toLocaleString('en-IN')}</h3>
+                <h3 className="text-2xl font-black text-orange-700 tracking-tight font-sans tabular-nums">
+                  ₹{totalPending.toLocaleString('en-IN')}
+                </h3>
                 <p className="text-[10px] font-semibold text-orange-600 mt-0.5">Scheduled Milestones</p>
               </div>
               <div className="h-1 w-full bg-orange-500 rounded-full" />
@@ -745,7 +798,9 @@ export default function FinancePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-black text-rose-700 tracking-tight">₹{totalExpensesAmount.toLocaleString('en-IN')}</h3>
+                <h3 className="text-2xl font-black text-rose-700 tracking-tight font-sans tabular-nums">
+                  ₹{totalExpensesAmount.toLocaleString('en-IN')}
+                </h3>
                 <p className="text-[10px] font-semibold text-rose-600 mt-0.5">{expenses.length} Logged Payouts</p>
               </div>
               <div className="h-1 w-full bg-rose-500 rounded-full" />
@@ -760,7 +815,9 @@ export default function FinancePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-black tracking-tight">₹{netProfit.toLocaleString('en-IN')}</h3>
+                <h3 className="text-2xl font-black tracking-tight font-sans tabular-nums">
+                  ₹{netProfit.toLocaleString('en-IN')}
+                </h3>
                 <p className="text-[11px] font-bold text-amber-100 mt-0.5">
                   {profitMargin}% Profit Margin 🔥
                 </p>
@@ -913,7 +970,7 @@ export default function FinancePage() {
                         <div className="flex flex-wrap items-center gap-4">
                           {/* Received vs Pending Progress Mini Widget */}
                           <div className="space-y-1 text-right min-w-[170px]">
-                            <div className="flex items-center justify-between text-xs font-extrabold">
+                            <div className="flex items-center justify-between text-xs font-extrabold tabular-nums">
                               <span className="text-emerald-700">Rec: ₹{record.received_amount.toLocaleString('en-IN')}</span>
                               <span className="text-orange-700">Pend: ₹{record.pending_amount.toLocaleString('en-IN')}</span>
                             </div>
@@ -923,7 +980,7 @@ export default function FinancePage() {
                                 style={{ width: `${progressPct}%` }}
                               />
                             </div>
-                            <p className="text-[10px] font-bold text-slate-400">Total: ₹{record.final_total_amount.toLocaleString('en-IN')}</p>
+                            <p className="text-[10px] font-bold text-slate-400 tabular-nums">Total: ₹{record.final_total_amount.toLocaleString('en-IN')}</p>
                           </div>
 
                           {/* Quick Record Payment Button */}
@@ -994,7 +1051,7 @@ export default function FinancePage() {
                                       type="number"
                                       value={record.base_package_price || 0}
                                       onChange={(e) => handleBreakdownChange(record.id, 'base_package_price', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-black text-slate-900 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      className="w-28 text-right font-bold text-slate-900 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
                                     />
                                   </div>
 
@@ -1005,7 +1062,7 @@ export default function FinancePage() {
                                       type="number"
                                       value={record.discount_amount || 0}
                                       onChange={(e) => handleBreakdownChange(record.id, 'discount_amount', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-black text-rose-600 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      className="w-28 text-right font-bold text-rose-600 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
                                     />
                                   </div>
 
@@ -1016,7 +1073,7 @@ export default function FinancePage() {
                                       type="number"
                                       value={record.accommodation_charges || 0}
                                       onChange={(e) => handleBreakdownChange(record.id, 'accommodation_charges', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
                                     />
                                   </div>
 
@@ -1027,7 +1084,7 @@ export default function FinancePage() {
                                       type="number"
                                       value={record.travel_charges || 0}
                                       onChange={(e) => handleBreakdownChange(record.id, 'travel_charges', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
                                     />
                                   </div>
 
@@ -1038,20 +1095,20 @@ export default function FinancePage() {
                                       type="number"
                                       value={record.additional_charges || 0}
                                       onChange={(e) => handleBreakdownChange(record.id, 'additional_charges', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
                                     />
                                   </div>
 
                                   {/* Subtotal (Gross Total) */}
                                   <div className="flex items-center justify-between pt-2 border-t border-amber-200/80 font-black text-slate-900 px-1.5">
                                     <span>SUBTOTAL (GROSS TOTAL)</span>
-                                    <span className="text-sm font-black font-mono">₹{record.subtotal_amount.toLocaleString('en-IN')}</span>
+                                    <span className="text-sm font-black font-sans tabular-nums">₹{record.subtotal_amount.toLocaleString('en-IN')}</span>
                                   </div>
 
                                   {/* GST (18%) */}
                                   <div className="flex items-center justify-between px-1.5 text-slate-600 font-bold">
                                     <span>GST ({record.gst_rate}%)</span>
-                                    <span className="font-mono">₹{record.gst_amount.toLocaleString('en-IN')}</span>
+                                    <span className="font-sans tabular-nums">₹{record.gst_amount.toLocaleString('en-IN')}</span>
                                   </div>
                                 </div>
 
@@ -1061,7 +1118,7 @@ export default function FinancePage() {
                                     <p className="text-[10px] font-black uppercase text-amber-900 tracking-wider">Final Net Investment</p>
                                     <p className="text-[9px] font-medium text-slate-500">Inclusive of all Taxes & Fees</p>
                                   </div>
-                                  <h4 className="text-xl font-black text-slate-900 font-mono tracking-tight">
+                                  <h4 className="text-xl font-black text-slate-900 font-sans tabular-nums tracking-tight">
                                     ₹{record.final_total_amount.toLocaleString('en-IN')}
                                   </h4>
                                 </div>
@@ -1076,10 +1133,11 @@ export default function FinancePage() {
                                       <h3 className="text-lg font-black text-slate-900 tracking-wider uppercase font-serif">Payment Terms & Schedule</h3>
                                     </div>
                                     <button
-                                      onClick={() => handleAddMilestone(record.id)}
-                                      className="px-2.5 py-1 text-xs font-bold text-amber-900 bg-amber-200/80 hover:bg-amber-300 rounded-lg transition"
+                                      onClick={() => setShowAddStepModal({ open: true, recordId: record.id })}
+                                      className="px-3 py-1 text-xs font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 rounded-lg transition shadow-2xs flex items-center gap-1"
                                     >
-                                      + Add Step
+                                      <Plus className="w-3.5 h-3.5" />
+                                      Add Step
                                     </button>
                                   </div>
 
@@ -1098,9 +1156,14 @@ export default function FinancePage() {
                                       <tbody className="divide-y divide-amber-100">
                                         {milestones.map((m) => (
                                           <tr key={m.id} className="hover:bg-white/60 transition">
-                                            {/* Date */}
-                                            <td className="py-2.5 font-bold text-slate-700 whitespace-nowrap">
-                                              {m.due_date ? new Date(m.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                                            {/* Editable Date Picker */}
+                                            <td className="py-2.5 whitespace-nowrap">
+                                              <input
+                                                type="date"
+                                                value={m.due_date ? m.due_date.split('T')[0] : ''}
+                                                onChange={(e) => handleMilestoneDateChange(record.id, m.id, e.target.value)}
+                                                className="px-2 py-1 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer shadow-2xs font-sans"
+                                              />
                                             </td>
 
                                             {/* Step Name */}
@@ -1108,14 +1171,14 @@ export default function FinancePage() {
                                               {m.step_name}
                                             </td>
 
-                                            {/* Amount */}
-                                            <td className="py-2.5 text-right font-black font-mono text-slate-900 whitespace-nowrap">
-                                              ₹{m.amount.toLocaleString('en-IN')}
+                                            {/* Amount with clean sans-serif font */}
+                                            <td className="py-2.5 text-right font-black font-sans tabular-nums text-slate-900 whitespace-nowrap">
+                                              ₹{Math.round(m.amount).toLocaleString('en-IN')}
                                             </td>
 
                                             {/* Status Badge */}
                                             <td className="py-2.5 text-center">
-                                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
                                                 m.status === 'completed'
                                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                                                   : 'bg-amber-100 text-amber-800 border-amber-300'
@@ -1137,16 +1200,16 @@ export default function FinancePage() {
                                                     });
                                                     setPaymentFormData(prev => ({
                                                       ...prev,
-                                                      amount: String(m.amount),
+                                                      amount: String(Math.round(m.amount)),
                                                       target_milestone_id: m.id
                                                     }));
                                                   }}
-                                                  className="px-2 py-0.5 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded transition"
+                                                  className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-2xs"
                                                 >
                                                   Pay
                                                 </button>
                                               ) : (
-                                                <span className="text-[10px] font-semibold text-emerald-600">Paid ({m.payment_mode || 'UPI'})</span>
+                                                <span className="text-[10px] font-bold text-emerald-600">Paid ({m.payment_mode || 'UPI'})</span>
                                               )}
                                             </td>
                                           </tr>
@@ -1161,7 +1224,7 @@ export default function FinancePage() {
                                   {/* Fixed Amount */}
                                   <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-center shadow-2xs">
                                     <p className="text-[9px] font-black uppercase text-slate-400">Fixed Amount</p>
-                                    <h5 className="text-sm font-black text-slate-900 font-mono mt-0.5">
+                                    <h5 className="text-sm font-black text-slate-900 font-sans tabular-nums mt-0.5">
                                       ₹{record.final_total_amount.toLocaleString('en-IN')}
                                     </h5>
                                   </div>
@@ -1169,7 +1232,7 @@ export default function FinancePage() {
                                   {/* Received Amount */}
                                   <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-center shadow-2xs">
                                     <p className="text-[9px] font-black uppercase text-emerald-700">Received Amount</p>
-                                    <h5 className="text-sm font-black text-emerald-800 font-mono mt-0.5">
+                                    <h5 className="text-sm font-black text-emerald-800 font-sans tabular-nums mt-0.5">
                                       ₹{record.received_amount.toLocaleString('en-IN')}
                                     </h5>
                                   </div>
@@ -1177,7 +1240,7 @@ export default function FinancePage() {
                                   {/* Pending Amount */}
                                   <div className="p-2.5 bg-amber-100/80 rounded-xl border border-amber-300 text-center shadow-2xs">
                                     <p className="text-[9px] font-black uppercase text-amber-900">Pending Amount</p>
-                                    <h5 className="text-sm font-black text-amber-950 font-mono mt-0.5">
+                                    <h5 className="text-sm font-black text-amber-950 font-sans tabular-nums mt-0.5">
                                       ₹{record.pending_amount.toLocaleString('en-IN')}
                                     </h5>
                                   </div>
@@ -1228,6 +1291,7 @@ export default function FinancePage() {
                           <th className="py-3 px-4 font-black">Date</th>
                           <th className="py-3 px-4 font-black">Category</th>
                           <th className="py-3 px-4 font-black">Title & Details</th>
+                          <th className="py-3 px-4 font-black">Linked Client</th>
                           <th className="py-3 px-4 font-black">Paid To</th>
                           <th className="py-3 px-4 font-black">Payment Mode</th>
                           <th className="py-3 px-4 text-right font-black">Amount</th>
@@ -1235,36 +1299,42 @@ export default function FinancePage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {expenses.map(exp => (
-                          <tr key={exp.id} className="hover:bg-amber-50/20 transition">
-                            <td className="py-3 px-4 font-bold text-slate-700 whitespace-nowrap">
-                              {new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                {exp.category}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 font-extrabold text-slate-900">
-                              {exp.title}
-                              {exp.notes && <span className="block text-[10px] font-normal text-slate-500">{exp.notes}</span>}
-                            </td>
-                            <td className="py-3 px-4 font-semibold text-slate-700">
-                              {exp.paid_to || '—'}
-                            </td>
-                            <td className="py-3 px-4 font-bold text-slate-600">
-                              {exp.payment_mode}
-                            </td>
-                            <td className="py-3 px-4 text-right font-black font-mono text-rose-600 text-sm whitespace-nowrap">
-                              ₹{exp.amount.toLocaleString('en-IN')}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Paid
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {expenses.map(exp => {
+                          const linkedClient = clients.find(c => c.id === exp.client_id);
+                          return (
+                            <tr key={exp.id} className="hover:bg-amber-50/20 transition">
+                              <td className="py-3 px-4 font-bold text-slate-700 whitespace-nowrap">
+                                {new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                  {exp.category}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 font-extrabold text-slate-900">
+                                {exp.title}
+                                {exp.notes && <span className="block text-[10px] font-normal text-slate-500">{exp.notes}</span>}
+                              </td>
+                              <td className="py-3 px-4 font-semibold text-slate-600">
+                                {linkedClient ? `${linkedClient.name}` : '— General'}
+                              </td>
+                              <td className="py-3 px-4 font-semibold text-slate-700">
+                                {exp.paid_to || '—'}
+                              </td>
+                              <td className="py-3 px-4 font-bold text-slate-600">
+                                {exp.payment_mode}
+                              </td>
+                              <td className="py-3 px-4 text-right font-black font-sans tabular-nums text-rose-600 text-sm whitespace-nowrap">
+                                ₹{Math.round(exp.amount).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Paid
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1277,6 +1347,91 @@ export default function FinancePage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD NEW STEP (LIGHT THEME POPUP MODAL)
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showAddStepModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4 font-sans"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Add Milestone Step</h3>
+                    <p className="text-[11px] text-slate-500">Add a custom milestone to client payment schedule</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowAddStepModal({ open: false })}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Step / Milestone Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Pre-Wedding Shoot Balance / Album Delivery"
+                    value={stepFormData.step_name}
+                    onChange={(e) => setStepFormData(prev => ({ ...prev, step_name: e.target.value }))}
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-medium"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700">Due Date</label>
+                    <input
+                      type="date"
+                      value={stepFormData.due_date}
+                      onChange={(e) => setStepFormData(prev => ({ ...prev, due_date: e.target.value }))}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-800 font-sans"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700">Amount (₹)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 25000"
+                      value={stepFormData.amount}
+                      onChange={(e) => setStepFormData(prev => ({ ...prev, amount: e.target.value }))}
+                      className="w-full px-3 py-2 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-900 font-sans tabular-nums"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowAddStepModal({ open: false })}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveNewStep}
+                  className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-md transition"
+                >
+                  Save Step
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
           MODAL: RECORD PAYMENT
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -1286,7 +1441,7 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4"
+              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4 font-sans"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1314,7 +1469,7 @@ export default function FinancePage() {
                     placeholder="e.g. 50000"
                     value={paymentFormData.amount}
                     onChange={(e) => setPaymentFormData(prev => ({ ...prev, amount: e.target.value }))}
-                    className="w-full px-3.5 py-2 text-sm font-bold font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900"
+                    className="w-full px-3.5 py-2 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 font-sans tabular-nums"
                   />
                 </div>
 
@@ -1340,7 +1495,7 @@ export default function FinancePage() {
                       type="date"
                       value={paymentFormData.payment_date}
                       onChange={(e) => setPaymentFormData(prev => ({ ...prev, payment_date: e.target.value }))}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-800"
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-800 font-sans"
                     />
                   </div>
                 </div>
@@ -1377,7 +1532,7 @@ export default function FinancePage() {
       </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: ADD NEW EXPENSE / TEAM PAYOUT
+          MODAL: ADD NEW EXPENSE / TEAM PAYOUT (WITH CLIENT DROPDOWN)
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showAddExpenseModal && (
@@ -1386,7 +1541,7 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4"
+              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4 font-sans"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1404,8 +1559,25 @@ export default function FinancePage() {
               </div>
 
               <div className="space-y-3">
+                {/* Select Client Dropdown */}
                 <div>
-                  <label className="text-xs font-bold text-slate-600">Category</label>
+                  <label className="text-xs font-bold text-slate-700">Select Client / Project (Optional)</label>
+                  <select
+                    value={expenseFormData.client_id}
+                    onChange={(e) => setExpenseFormData(prev => ({ ...prev, client_id: e.target.value }))}
+                    className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-800"
+                  >
+                    <option value="">None / General Studio Expense</option>
+                    {clients.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — {c.event_type} ({c.event_date ? new Date(c.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Date TBD'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Category</label>
                   <select
                     value={expenseFormData.category}
                     onChange={(e) => {
@@ -1429,7 +1601,7 @@ export default function FinancePage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-600">Title / Description</label>
+                  <label className="text-xs font-bold text-slate-700">Title / Description</label>
                   <input
                     type="text"
                     placeholder="e.g. Lead Photographer 3-Day Wedding Advance"
@@ -1441,18 +1613,18 @@ export default function FinancePage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-slate-600">Amount (₹)</label>
+                    <label className="text-xs font-bold text-slate-700">Amount (₹)</label>
                     <input
                       type="number"
                       placeholder="e.g. 25000"
                       value={expenseFormData.amount}
                       onChange={(e) => setExpenseFormData(prev => ({ ...prev, amount: e.target.value }))}
-                      className="w-full px-3.5 py-2 text-sm font-bold font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-900"
+                      className="w-full px-3.5 py-2 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-900 font-sans tabular-nums"
                     />
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-600">Paid To</label>
+                    <label className="text-xs font-bold text-slate-700">Paid To</label>
                     <input
                       type="text"
                       placeholder="e.g. Amit Sharma"
@@ -1465,7 +1637,7 @@ export default function FinancePage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-slate-600">Payment Mode</label>
+                    <label className="text-xs font-bold text-slate-700">Payment Mode</label>
                     <select
                       value={expenseFormData.payment_mode}
                       onChange={(e) => setExpenseFormData(prev => ({ ...prev, payment_mode: e.target.value }))}
@@ -1479,12 +1651,12 @@ export default function FinancePage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-600">Date</label>
+                    <label className="text-xs font-bold text-slate-700">Date</label>
                     <input
                       type="date"
                       value={expenseFormData.payment_date}
                       onChange={(e) => setExpenseFormData(prev => ({ ...prev, payment_date: e.target.value }))}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-800"
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-800 font-sans"
                     />
                   </div>
                 </div>
@@ -1514,7 +1686,7 @@ export default function FinancePage() {
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showInvoiceModal.open && showInvoiceModal.client && showInvoiceModal.financeRecord && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto font-sans">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1557,7 +1729,7 @@ export default function FinancePage() {
                     <span className="px-3 py-1 bg-amber-100 text-amber-900 font-black text-xs rounded-lg uppercase tracking-wider">
                       Tax Invoice
                     </span>
-                    <p className="text-xs font-mono font-bold text-slate-800 mt-2">INV-{showInvoiceModal.financeRecord.id.slice(0, 8).toUpperCase()}</p>
+                    <p className="text-xs font-bold font-sans tabular-nums text-slate-800 mt-2">INV-{showInvoiceModal.financeRecord.id.slice(0, 8).toUpperCase()}</p>
                     <p className="text-[11px] text-slate-500">Date: {new Date().toLocaleDateString('en-IN')}</p>
                   </div>
                 </div>
@@ -1589,37 +1761,37 @@ export default function FinancePage() {
                   <tbody className="divide-y divide-slate-100">
                     <tr>
                       <td className="py-2 font-bold text-slate-800">Base Wedding Coverage Package</td>
-                      <td className="py-2 text-right font-black font-mono">₹{showInvoiceModal.financeRecord.base_package_price.toLocaleString('en-IN')}</td>
+                      <td className="py-2 text-right font-bold font-sans tabular-nums">₹{showInvoiceModal.financeRecord.base_package_price.toLocaleString('en-IN')}</td>
                     </tr>
                     {showInvoiceModal.financeRecord.discount_amount > 0 && (
                       <tr>
                         <td className="py-2 font-bold text-rose-600">Discount (Complimentary)</td>
-                        <td className="py-2 text-right font-black font-mono text-rose-600">-₹{showInvoiceModal.financeRecord.discount_amount.toLocaleString('en-IN')}</td>
+                        <td className="py-2 text-right font-bold font-sans tabular-nums text-rose-600">-₹{showInvoiceModal.financeRecord.discount_amount.toLocaleString('en-IN')}</td>
                       </tr>
                     )}
                     {showInvoiceModal.financeRecord.accommodation_charges > 0 && (
                       <tr>
                         <td className="py-2 text-slate-600 font-medium">Accommodation Charges</td>
-                        <td className="py-2 text-right font-bold font-mono">₹{showInvoiceModal.financeRecord.accommodation_charges.toLocaleString('en-IN')}</td>
+                        <td className="py-2 text-right font-bold font-sans tabular-nums">₹{showInvoiceModal.financeRecord.accommodation_charges.toLocaleString('en-IN')}</td>
                       </tr>
                     )}
                     {showInvoiceModal.financeRecord.travel_charges > 0 && (
                       <tr>
                         <td className="py-2 text-slate-600 font-medium">Travel Charges</td>
-                        <td className="py-2 text-right font-bold font-mono">₹{showInvoiceModal.financeRecord.travel_charges.toLocaleString('en-IN')}</td>
+                        <td className="py-2 text-right font-bold font-sans tabular-nums">₹{showInvoiceModal.financeRecord.travel_charges.toLocaleString('en-IN')}</td>
                       </tr>
                     )}
                     <tr className="border-t border-slate-200 font-black">
                       <td className="py-2">SUBTOTAL</td>
-                      <td className="py-2 text-right font-mono">₹{showInvoiceModal.financeRecord.subtotal_amount.toLocaleString('en-IN')}</td>
+                      <td className="py-2 text-right font-sans tabular-nums font-black">₹{showInvoiceModal.financeRecord.subtotal_amount.toLocaleString('en-IN')}</td>
                     </tr>
                     <tr className="text-slate-600">
                       <td className="py-2">GST ({showInvoiceModal.financeRecord.gst_rate}%)</td>
-                      <td className="py-2 text-right font-mono">₹{showInvoiceModal.financeRecord.gst_amount.toLocaleString('en-IN')}</td>
+                      <td className="py-2 text-right font-sans tabular-nums">₹{showInvoiceModal.financeRecord.gst_amount.toLocaleString('en-IN')}</td>
                     </tr>
                     <tr className="border-t-2 border-slate-900 font-black text-sm">
                       <td className="py-3 text-slate-900">GRAND TOTAL</td>
-                      <td className="py-3 text-right font-mono text-slate-900">₹{showInvoiceModal.financeRecord.final_total_amount.toLocaleString('en-IN')}</td>
+                      <td className="py-3 text-right font-sans tabular-nums font-black text-slate-900">₹{showInvoiceModal.financeRecord.final_total_amount.toLocaleString('en-IN')}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1628,11 +1800,11 @@ export default function FinancePage() {
                 <div className="grid grid-cols-2 gap-4 p-4 bg-amber-50 rounded-xl border border-amber-200 text-xs">
                   <div>
                     <span className="font-bold text-emerald-800 block">Total Amount Received:</span>
-                    <span className="text-base font-black font-mono text-emerald-700">₹{showInvoiceModal.financeRecord.received_amount.toLocaleString('en-IN')}</span>
+                    <span className="text-base font-black font-sans tabular-nums text-emerald-700">₹{showInvoiceModal.financeRecord.received_amount.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="text-right">
                     <span className="font-bold text-amber-900 block">Balance Pending:</span>
-                    <span className="text-base font-black font-mono text-amber-950">₹{showInvoiceModal.financeRecord.pending_amount.toLocaleString('en-IN')}</span>
+                    <span className="text-base font-black font-sans tabular-nums text-amber-950">₹{showInvoiceModal.financeRecord.pending_amount.toLocaleString('en-IN')}</span>
                   </div>
                 </div>
 
