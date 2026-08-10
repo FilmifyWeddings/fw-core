@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
 
 export const maxDuration = 60; // 60 seconds timeout for AI generation
 
@@ -67,6 +68,12 @@ export async function POST(req: NextRequest) {
           .maybeSingle();
         if (qRecord?.content_json) existingDoc = qRecord.content_json;
       }
+    }
+
+    // STRICT GUARANTEE: If no document exists, resolve user's active default quotation template
+    if (!existingDoc) {
+      const resolvedDefault = await resolveUserDefaultQuotationTemplate(workspaceId, userId);
+      existingDoc = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
     }
 
     // 3. Assemble Combined Context Text
