@@ -1,1053 +1,1331 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Film, Video, Camera, BookOpen, Clock, AlertTriangle, CheckCircle2, 
   ExternalLink, User, Calendar, Plus, Search, Filter, Layers, 
   ChevronDown, ChevronUp, Edit3, MessageSquare, ArrowLeft, RefreshCw, 
-  Play, Sparkles, Check, X, ShieldAlert, AlertCircle, FileText
+  Play, Sparkles, Check, X, ShieldAlert, AlertCircle, Trash2, FolderPlus,
+  Bell, Send, UserPlus, FileText, CheckSquare, MoreVertical, Link2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { SidebarLayout } from '@/components/sidebar-layout';
 import type { 
-  PostProductionProject, DeliverableItem, DeliverableCategory, DeliverableStatus, WorkspaceClient 
+  PostProductionProject, DeliverableItem, DeliverableCategory, DeliverableStatus, WorkspaceClient, DeliverableComment 
 } from '@/types';
 
 // Category metadata helper
-const CATEGORY_META: Record<DeliverableCategory, { label: string; icon: React.ElementType; color: string; badgeBg: string }> = {
-  teaser: { label: 'Teaser Film', icon: Play, color: 'text-cyan-400', badgeBg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300' },
-  film: { label: 'Full Film', icon: Video, color: 'text-amber-400', badgeBg: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
-  reels: { label: 'Reels', icon: Film, color: 'text-pink-400', badgeBg: 'bg-pink-500/10 border-pink-500/30 text-pink-300' },
-  photos: { label: 'Edited Photos', icon: Camera, color: 'text-indigo-400', badgeBg: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300' },
-  album: { label: 'Print Album', icon: BookOpen, color: 'text-purple-400', badgeBg: 'bg-purple-500/10 border-purple-500/30 text-purple-300' },
+const CATEGORY_META = {
+  photos: { label: 'Photos', icon: Camera, color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
+  videos: { label: 'Videos', icon: Video, color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200' },
+  albums: { label: 'Albums', icon: BookOpen, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
+  teaser: { label: 'Teaser Film', icon: Play, color: 'text-cyan-600', bg: 'bg-cyan-50 border-cyan-200' },
+  film: { label: 'Full Film', icon: Video, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
+  reels: { label: 'Reels', icon: Film, color: 'text-pink-600', bg: 'bg-pink-50 border-pink-200' },
+  album: { label: 'Print Album', icon: BookOpen, color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
 };
 
-// Status metadata helper
-const STATUS_META: Record<DeliverableStatus, { label: string; bg: string; border: string; text: string }> = {
-  pending: { label: 'Pending', bg: 'bg-zinc-800/80', border: 'border-zinc-700', text: 'text-zinc-400' },
-  in_progress: { label: 'In Progress', bg: 'bg-blue-500/15', border: 'border-blue-500/30', text: 'text-blue-400' },
-  under_review: { label: 'Under Review', bg: 'bg-purple-500/15', border: 'border-purple-500/30', text: 'text-purple-300' },
-  completed: { label: 'Completed', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', text: 'text-emerald-400' },
-};
+// Stage / Status options with Light Theme Badges
+const STATUS_OPTIONS: { value: DeliverableStatus; label: string; badgeClass: string; dotClass: string }[] = [
+  { value: 'pending', label: 'Pending', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200', dotClass: 'bg-slate-400' },
+  { value: 'upcoming', label: 'Upcoming', badgeClass: 'bg-sky-50 text-sky-700 border-sky-200', dotClass: 'bg-sky-500' },
+  { value: 'in_progress', label: 'In Progress', badgeClass: 'bg-blue-50 text-blue-700 border-blue-200', dotClass: 'bg-blue-600' },
+  { value: 'under_review', label: 'Under Review', badgeClass: 'bg-purple-50 text-purple-700 border-purple-200', dotClass: 'bg-purple-600' },
+  { value: 'completed', label: 'Done', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', dotClass: 'bg-emerald-600' },
+];
 
-// Demo initial post-production projects
-const INITIAL_PROJECTS: PostProductionProject[] = [
-  {
-    id: 'proj_1',
-    workspace_id: 'ws_demo',
-    client_id: 'client_1',
-    client: {
-      id: 'client_1',
-      workspace_id: 'ws_demo',
-      name: 'Vinu Bhad & Neha',
-      phone: '+919876543210',
-      event_type: 'Wedding & Reception',
-      event_date: '2026-11-18',
-      total_package_amount: 250000,
-      paid_amount: 150000,
-      status: 'active',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    project_manager_id: 'pm_1',
-    project_manager_name: 'Sushant (Lead Manager)',
-    overall_status: 'active',
-    deliverables: [
-      {
-        id: 'deliv_101',
-        title: '1-Minute Instagram Teaser',
-        category: 'teaser',
-        assigned_to: 'Rahul (Video Editor)',
-        deadline: '2026-08-05',
-        status: 'in_progress',
-        drive_link: 'https://drive.google.com/drive/folders/demo_teaser',
-        revision_notes: 'Client requested cinematic color grading adjustment in entry scene.'
-      },
-      {
-        id: 'deliv_102',
-        title: 'Full Length Wedding Film (25 mins)',
-        category: 'film',
-        assigned_to: 'Amit (Senior Editor)',
-        deadline: '2026-08-20',
-        status: 'pending',
-        drive_link: '',
-        revision_notes: ''
-      },
-      {
-        id: 'deliv_103',
-        title: '3 Viral Instagram Reels',
-        category: 'reels',
-        assigned_to: 'Priya (Reels Specialist)',
-        deadline: '2026-07-28', // OVERDUE
-        status: 'under_review',
-        drive_link: 'https://drive.google.com/drive/folders/demo_reels',
-        revision_notes: 'Audio sync updated with trending track.'
-      },
-      {
-        id: 'deliv_104',
-        title: 'Master Retouched Photos (500 Shots)',
-        category: 'photos',
-        assigned_to: 'Vikram (Photo Retoucher)',
-        deadline: '2026-08-15',
-        status: 'completed',
-        drive_link: 'https://drive.google.com/drive/folders/demo_photos',
-        revision_notes: 'Delivered via Google Drive.'
-      }
-    ],
-    notes: 'High priority client. Color theme: Warm Cinematic Gold.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'proj_2',
-    workspace_id: 'ws_demo',
-    client_id: 'client_2',
-    client: {
-      id: 'client_2',
-      workspace_id: 'ws_demo',
-      name: 'Mohit Agarwal & Riya',
-      phone: '+919812345678',
-      event_type: 'Pre-Wedding Shoot',
-      event_date: '2026-09-05',
-      total_package_amount: 75000,
-      paid_amount: 75000,
-      status: 'active',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    project_manager_id: 'pm_2',
-    project_manager_name: 'Pooja (Post Manager)',
-    overall_status: 'delayed',
-    deliverables: [
-      {
-        id: 'deliv_201',
-        title: 'Pre-Wedding Musical Teaser',
-        category: 'teaser',
-        assigned_to: 'Rahul (Video Editor)',
-        deadline: '2026-07-25', // OVERDUE
-        status: 'in_progress',
-        drive_link: 'https://drive.google.com/drive/folders/prewedding',
-        revision_notes: 'Waiting for client drone footage selection.'
-      },
-      {
-        id: 'deliv_202',
-        title: 'Retouched Couple Album (40 Pages)',
-        category: 'album',
-        assigned_to: 'Karan (Album Designer)',
-        deadline: '2026-08-10',
-        status: 'pending',
-        drive_link: '',
-        revision_notes: ''
-      }
-    ],
-    notes: 'Shot in Udaipur. Requires slow-mo color grading.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
+// Initial default Team PMs and Editors
+const INITIAL_PMS = [
+  'Sushant (Lead Manager)',
+  'Pooja (Post Manager)',
+  'Rahul Sharma (Production Lead)',
+  'Amit Verma (Studio Head)'
+];
+
+const INITIAL_EDITORS = [
+  'Vikram (Photo Retoucher)',
+  'Rahul (Video Editor & Teasers)',
+  'Amit (Senior Video Editor)',
+  'Priya (Reels Specialist)',
+  'Suresh (Traditional Editor)',
+  'Rohan (Album Designer)',
+  'Kunal (Colorist)'
 ];
 
 export default function PostProductionPage() {
-  const searchParams = useSearchParams();
-  const highlightClientId = searchParams?.get('client_id');
-
-  const [projects, setProjects] = useState<PostProductionProject[]>(INITIAL_PROJECTS);
+  const [projects, setProjects] = useState<PostProductionProject[]>([]);
   const [clients, setClients] = useState<WorkspaceClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'delayed' | 'completed'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(highlightClientId || null);
+  
+  // Expanded cards set (holds project IDs that are currently expanded)
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
-  // Edit Deliverable Drawer State
-  const [activeDeliverable, setActiveDeliverable] = useState<{ projectId: string; deliverable: DeliverableItem } | null>(null);
-  const [editForm, setEditForm] = useState<DeliverableItem | null>(null);
+  // PM and Editor lists
+  const [pmList, setPmList] = useState<string[]>(INITIAL_PMS);
+  const [editorList, setEditorList] = useState<string[]>(INITIAL_EDITORS);
 
-  // New Project / New Deliverable Modal State
-  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  const [newProjClientId, setNewProjClientId] = useState('');
-  const [newProjManager, setNewProjManager] = useState('Sushant (Lead Manager)');
+  // Modals state
+  const [showAddProjectModal, setShowAddProjectModal] = useState(false);
+  const [showAddPMModal, setShowAddPMModal] = useState<{ open: boolean; projectId?: string }>({ open: false });
+  const [newPMName, setNewPMName] = useState('');
+  
+  const [showAddEditorModal, setShowAddEditorModal] = useState<{ open: boolean; projectId?: string; deliverableId?: string }>({ open: false });
+  const [newEditorName, setNewEditorName] = useState('');
 
-  const [showNewDeliverableModal, setShowNewDeliverableModal] = useState<string | null>(null); // projectId
-  const [newDelivForm, setNewDelivForm] = useState<{ title: string; category: DeliverableCategory; assigned_to: string; deadline: string }>({
-    title: '', category: 'teaser', assigned_to: '', deadline: ''
-  });
+  // Comment Modal state
+  const [activeCommentModal, setActiveCommentModal] = useState<{
+    open: boolean;
+    projectId: string;
+    deliverableId: string;
+    deliverableTitle: string;
+  } | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [commentAuthor, setCommentAuthor] = useState('Rahul Sharma');
+  const [commentAlertFlag, setCommentAlertFlag] = useState(false);
+  const [commentFollowupDate, setCommentFollowupDate] = useState('');
 
+  // Drive Link Modal state
+  const [activeDriveModal, setActiveDriveModal] = useState<{
+    open: boolean;
+    projectId: string;
+    deliverableId: string;
+    currentLink: string;
+  } | null>(null);
+  const [driveInputLink, setDriveInputLink] = useState('');
+
+  // Fetch projects and clients from Supabase
   useEffect(() => {
-    fetchProjectsAndClients();
+    fetchPostProductionData();
   }, []);
 
-  const fetchProjectsAndClients = async () => {
+  const fetchPostProductionData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch clients for dropdown options
-      const { data: clientsData } = await supabase.from('workspace_clients').select('*');
-      if (clientsData && clientsData.length > 0) {
-        setClients(clientsData);
-      }
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
 
-      // 2. Fetch post-production projects
-      const { data: projectsData, error } = await supabase
-        .from('post_production_projects')
-        .select('*, client:workspace_clients(*)')
+      // 1. Fetch clients
+      let clientQuery = supabase
+        .from('workspace_clients')
+        .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && projectsData && projectsData.length > 0) {
-        setProjects(projectsData);
+      if (workspaceId && workspaceId !== 'ws_demo') {
+        clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+      }
+
+      const { data: clientData } = await clientQuery;
+      const clientMap = new Map<string, WorkspaceClient>();
+      if (clientData) {
+        setClients(clientData);
+        clientData.forEach(c => clientMap.set(c.id, c));
+      }
+
+      // 2. Fetch post production projects
+      let projectQuery = supabase
+        .from('post_production_projects')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (workspaceId && workspaceId !== 'ws_demo') {
+        projectQuery = projectQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+      }
+
+      const { data: projectData, error: projErr } = await projectQuery;
+
+      if (!projErr && projectData && projectData.length > 0) {
+        // Hydrate project with client details
+        const hydrated: PostProductionProject[] = projectData.map(p => {
+          const matchedClient = clientMap.get(p.client_id) || p.client || {
+            id: p.client_id,
+            workspace_id: p.workspace_id,
+            name: 'Client ' + p.client_id?.slice(0, 6),
+            phone: '',
+            event_type: 'Wedding',
+            event_date: null,
+            total_package_amount: 0,
+            paid_amount: 0,
+            status: 'active',
+            created_at: p.created_at,
+            updated_at: p.updated_at
+          };
+
+          return {
+            ...p,
+            client: matchedClient,
+            deliverables: Array.isArray(p.deliverables) ? p.deliverables : []
+          };
+        });
+
+        setProjects(hydrated);
+        // Expand first project by default
+        if (hydrated.length > 0) {
+          setExpandedCards(new Set([hydrated[0].id]));
+        }
       } else {
-        setProjects(INITIAL_PROJECTS);
+        setProjects([]);
       }
     } catch (e) {
-      console.error('Error fetching post-production data:', e);
+      console.error('Error fetching post production data:', e);
     } finally {
       setLoading(false);
     }
   };
 
-  // Helper: calculate deadline countdown badge
-  const renderDeadlineBadge = (deadlineStr?: string | null, status?: DeliverableStatus) => {
-    if (status === 'completed') {
-      return (
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
-          <CheckCircle2 className="w-3 h-3" /> Completed
-        </span>
-      );
-    }
-
-    if (!deadlineStr) {
-      return <span className="text-[10px] text-zinc-500">No deadline</span>;
-    }
-
-    const deadlineDate = new Date(deadlineStr);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const diffTime = deadlineDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) {
-      const daysLate = Math.abs(diffDays);
-      return (
-        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 border border-rose-500/40 text-rose-400 shadow-xs shadow-rose-500/20 animate-pulse flex items-center gap-1">
-          <AlertTriangle className="w-3 h-3" /> OVERDUE ({daysLate}d late)
-        </span>
-      );
-    }
-
-    if (diffDays === 0) {
-      return (
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center gap-1">
-          <Clock className="w-3 h-3" /> Due Today
-        </span>
-      );
-    }
-
-    return (
-      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 flex items-center gap-1">
-        <Clock className="w-3 h-3 text-cyan-400" /> Due in {diffDays}d
-      </span>
-    );
+  // Toggle card expansion
+  const toggleCardExpansion = (projectId: string) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
   };
 
-  // Helper: compute project completion percentage
-  const calculateCompletionPercentage = (deliverables: DeliverableItem[]) => {
+  // Helper to calculate project progress %
+  const calculateProgress = (deliverables: DeliverableItem[] = []) => {
     if (!deliverables || deliverables.length === 0) return 0;
-    const completedCount = deliverables.filter(d => d.status === 'completed').length;
+    const completedCount = deliverables.filter(d => d.status === 'completed' || d.status === 'done').length;
     return Math.round((completedCount / deliverables.length) * 100);
   };
 
-  // Save Deliverable Drawer Edits
-  const handleSaveDeliverableEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeDeliverable || !editForm) return;
-
-    const { projectId } = activeDeliverable;
-
-    const updatedProjects = projects.map(proj => {
-      if (proj.id === projectId) {
-        const updatedDeliverables = proj.deliverables.map(d => 
-          d.id === editForm.id ? editForm : d
-        );
-
-        // Auto update project overall_status if all completed or any overdue
-        const completionPct = calculateCompletionPercentage(updatedDeliverables);
-        let newOverallStatus: 'active' | 'delayed' | 'completed' = proj.overall_status;
-        if (completionPct === 100) newOverallStatus = 'completed';
-
-        return {
-          ...proj,
-          deliverables: updatedDeliverables,
-          overall_status: newOverallStatus,
-        };
-      }
-      return proj;
-    });
-
-    setProjects(updatedProjects);
-
-    // Persist to Supabase
-    try {
-      const targetProj = updatedProjects.find(p => p.id === projectId);
-      if (targetProj) {
-        await supabase
-          .from('post_production_projects')
-          .update({ deliverables: targetProj.deliverables, overall_status: targetProj.overall_status })
-          .eq('id', projectId);
-      }
-    } catch (err) {
-      console.error('Error saving deliverable edit:', err);
+  // Helper for overdue calculations
+  const getDeadlineStatus = (deadlineStr?: string | null, status?: DeliverableStatus) => {
+    if (status === 'completed' || status === 'done') {
+      return { isCompleted: true, text: 'Completed', isOverdue: false, badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    }
+    if (!deadlineStr) {
+      return { isCompleted: false, text: 'No Deadline', isOverdue: false, badgeClass: 'bg-slate-50 text-slate-500 border-slate-200' };
     }
 
-    setActiveDeliverable(null);
-    setEditForm(null);
+    const deadline = new Date(deadlineStr);
+    if (isNaN(deadline.getTime())) {
+      return { isCompleted: false, text: 'No Deadline', isOverdue: false, badgeClass: 'bg-slate-50 text-slate-500 border-slate-200' };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    deadline.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.round((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      const pastDays = Math.abs(diffDays);
+      return {
+        isCompleted: false,
+        text: `OVERDUE (${pastDays}d ago)`,
+        isOverdue: true,
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 ring-1 ring-rose-300 font-bold animate-pulse'
+      };
+    } else if (diffDays === 0) {
+      return {
+        isCompleted: false,
+        text: 'Due Today',
+        isOverdue: true,
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-300 font-bold'
+      };
+    } else {
+      return {
+        isCompleted: false,
+        text: `Due in ${diffDays}d`,
+        isOverdue: false,
+        badgeClass: 'bg-sky-50 text-sky-700 border-sky-200 font-medium'
+      };
+    }
   };
 
-  // Add New Deliverable to Project
-  const handleAddDeliverable = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!showNewDeliverableModal || !newDelivForm.title) return;
-
-    const projectId = showNewDeliverableModal;
-    const newDelivItem: DeliverableItem = {
-      id: `deliv_${Date.now()}`,
-      title: newDelivForm.title,
-      category: newDelivForm.category,
-      assigned_to: newDelivForm.assigned_to || 'Unassigned',
-      deadline: newDelivForm.deadline || null,
-      status: 'pending',
-      drive_link: '',
-      revision_notes: ''
-    };
-
-    const updatedProjects = projects.map(proj => {
-      if (proj.id === projectId) {
-        return {
-          ...proj,
-          deliverables: [...proj.deliverables, newDelivItem]
-        };
-      }
-      return proj;
-    });
-
-    setProjects(updatedProjects);
-
+  // Persist project changes to Supabase
+  const updateProjectInDB = async (projectId: string, updatedFields: Partial<PostProductionProject>) => {
     try {
-      const targetProj = updatedProjects.find(p => p.id === projectId);
-      if (targetProj) {
-        await supabase
-          .from('post_production_projects')
-          .update({ deliverables: targetProj.deliverables })
-          .eq('id', projectId);
-      }
+      await supabase
+        .from('post_production_projects')
+        .update({ ...updatedFields, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
     } catch (e) {
-      console.error('Error adding deliverable:', e);
+      console.error('Error updating project in DB:', e);
     }
-
-    setShowNewDeliverableModal(null);
-    setNewDelivForm({ title: '', category: 'teaser', assigned_to: '', deadline: '' });
   };
 
-  // Create New Post-Production Project
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProjClientId) {
-      alert('Please select a Client for this Post-Production project.');
+  // Handle Project Manager Change
+  const handlePMChange = (projectId: string, pmName: string) => {
+    if (pmName === '__ADD_NEW__') {
+      setShowAddPMModal({ open: true, projectId });
       return;
     }
 
-    const selectedClient = clients.find(c => c.id === newProjClientId);
-
-    // Preset deliverables template
-    const defaultDeliverables: DeliverableItem[] = [
-      { id: `deliv_${Date.now()}_1`, title: '1-Minute Instagram Teaser', category: 'teaser', status: 'pending', assigned_to: 'Video Editor' },
-      { id: `deliv_${Date.now()}_2`, title: 'Full Length Highlight Film (20-30 mins)', category: 'film', status: 'pending', assigned_to: 'Senior Editor' },
-      { id: `deliv_${Date.now()}_3`, title: '3 Instagram Reels / Shorts', category: 'reels', status: 'pending', assigned_to: 'Reels Specialist' },
-      { id: `deliv_${Date.now()}_4`, title: 'Master Color Graded Photos (400+)', category: 'photos', status: 'pending', assigned_to: 'Photo Retoucher' },
-    ];
-
-    const newProj: PostProductionProject = {
-      id: `proj_${Date.now()}`,
-      workspace_id: 'ws_demo',
-      client_id: newProjClientId,
-      client: selectedClient || null,
-      project_manager_name: newProjManager || 'Sushant (Lead Manager)',
-      overall_status: 'active',
-      deliverables: defaultDeliverables,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    try {
-      const { data: inserted, error } = await supabase
-        .from('post_production_projects')
-        .insert({
-          workspace_id: newProj.workspace_id,
-          client_id: newProj.client_id,
-          project_manager_name: newProj.project_manager_name,
-          overall_status: newProj.overall_status,
-          deliverables: newProj.deliverables,
-        })
-        .select()
-        .single();
-
-      if (!error && inserted) {
-        setProjects(prev => [inserted, ...prev]);
-      } else {
-        setProjects(prev => [newProj, ...prev]);
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const updated = { ...p, project_manager_name: pmName };
+        updateProjectInDB(projectId, { project_manager_name: pmName });
+        return updated;
       }
-    } catch (e) {
-      setProjects(prev => [newProj, ...prev]);
-    }
-
-    setShowNewProjectModal(false);
-    setNewProjClientId('');
+      return p;
+    }));
   };
 
-  // Filter projects
-  const filteredProjects = projects.filter(proj => {
-    const clientName = proj.client?.name || '';
-    const eventType = proj.client?.event_type || '';
-    const matchesSearch = 
-      clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      eventType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      proj.project_manager_name.toLowerCase().includes(searchQuery.toLowerCase());
+  // Handle Deliverable Field Change (Count, Deadline, Assignee, Status)
+  const handleDeliverableUpdate = (
+    projectId: string, 
+    deliverableId: string, 
+    field: keyof DeliverableItem, 
+    value: any
+  ) => {
+    if (field === 'assigned_to' && value === '__ADD_NEW__') {
+      setShowAddEditorModal({ open: true, projectId, deliverableId });
+      return;
+    }
 
-    const matchesStatus = statusFilter === 'all' || proj.overall_status === statusFilter;
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const updatedDeliverables = p.deliverables.map(d => {
+          if (d.id === deliverableId) {
+            return { ...d, [field]: value };
+          }
+          return d;
+        });
 
-    return matchesSearch && matchesStatus;
-  });
+        // Recalculate project overall status based on deliverables
+        const allCompleted = updatedDeliverables.length > 0 && updatedDeliverables.every(d => d.status === 'completed' || d.status === 'done');
+        const hasOverdue = updatedDeliverables.some(d => getDeadlineStatus(d.deadline, d.status).isOverdue);
+        const newOverallStatus = allCompleted ? 'completed' : hasOverdue ? 'delayed' : 'active';
 
-  // Calculate System High-Level Summary Stats
-  const totalProjectsCount = projects.length;
-  const activeProjectsCount = projects.filter(p => p.overall_status === 'active').length;
-  const delayedProjectsCount = projects.filter(p => p.overall_status === 'delayed').length;
+        const updatedProject = {
+          ...p,
+          overall_status: newOverallStatus as any,
+          deliverables: updatedDeliverables
+        };
+
+        updateProjectInDB(projectId, {
+          overall_status: newOverallStatus,
+          deliverables: updatedDeliverables
+        });
+
+        return updatedProject;
+      }
+      return p;
+    }));
+  };
+
+  // Add Custom Deliverable into a specific category (Photos, Videos, Albums)
+  const handleAddDeliverable = (projectId: string, category: 'photos' | 'videos' | 'albums') => {
+    const titlePrompt = prompt(`Enter title for new ${category === 'photos' ? 'Photo' : category === 'videos' ? 'Video' : 'Album'} deliverable:`);
+    if (!titlePrompt || !titlePrompt.trim()) return;
+
+    const countPrompt = prompt(`Enter count / specifications (e.g. 500 Photos, 3 Reels, 40 Pages):`, category === 'photos' ? '100 Photos' : category === 'videos' ? '1 Video' : '30 Pages');
+
+    const newDeliverable: DeliverableItem = {
+      id: `deliv_${category}_${Date.now()}`,
+      title: titlePrompt.trim(),
+      category: category,
+      count: countPrompt || '',
+      assigned_to: category === 'photos' ? 'Vikram (Photo Retoucher)' : category === 'videos' ? 'Amit (Senior Video Editor)' : 'Rohan (Album Designer)',
+      deadline: '',
+      status: 'pending',
+      drive_link: '',
+      comments: []
+    };
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const updatedDeliverables = [...p.deliverables, newDeliverable];
+        updateProjectInDB(projectId, { deliverables: updatedDeliverables });
+        return { ...p, deliverables: updatedDeliverables };
+      }
+      return p;
+    }));
+  };
+
+  // Delete deliverable item
+  const handleDeleteDeliverable = (projectId: string, deliverableId: string) => {
+    if (!confirm('Are you sure you want to delete this deliverable item?')) return;
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const updatedDeliverables = p.deliverables.filter(d => d.id !== deliverableId);
+        updateProjectInDB(projectId, { deliverables: updatedDeliverables });
+        return { ...p, deliverables: updatedDeliverables };
+      }
+      return p;
+    }));
+  };
+
+  // Add Comment with optional reminder alert
+  const handleSaveComment = () => {
+    if (!activeCommentModal || !commentText.trim()) return;
+
+    const newComment: DeliverableComment = {
+      id: `comm_${Date.now()}`,
+      text: commentText.trim(),
+      authorName: commentAuthor,
+      createdAt: new Date().toISOString(),
+      alert_flag: commentAlertFlag,
+      followup_at: commentFollowupDate || null
+    };
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === activeCommentModal.projectId) {
+        const updatedDeliverables = p.deliverables.map(d => {
+          if (d.id === activeCommentModal.deliverableId) {
+            const existing = d.comments || [];
+            return { ...d, comments: [newComment, ...existing] };
+          }
+          return d;
+        });
+
+        updateProjectInDB(p.id, { deliverables: updatedDeliverables });
+        return { ...p, deliverables: updatedDeliverables };
+      }
+      return p;
+    }));
+
+    setCommentText('');
+    setCommentAlertFlag(false);
+    setCommentFollowupDate('');
+  };
+
+  // Save Drive Link
+  const handleSaveDriveLink = () => {
+    if (!activeDriveModal) return;
+
+    handleDeliverableUpdate(
+      activeDriveModal.projectId, 
+      activeDriveModal.deliverableId, 
+      'drive_link', 
+      driveInputLink.trim()
+    );
+
+    setActiveDriveModal(null);
+  };
+
+  // Filtered projects
+  const filteredProjects = useMemo(() => {
+    return projects.filter(proj => {
+      const clientName = proj.client?.name?.toLowerCase() || '';
+      const pmName = proj.project_manager_name?.toLowerCase() || '';
+      const eventType = proj.client?.event_type?.toLowerCase() || '';
+      const query = searchQuery.toLowerCase();
+
+      const matchesSearch = clientName.includes(query) || pmName.includes(query) || eventType.includes(query);
+      const matchesStatus = statusFilter === 'all' || proj.overall_status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [projects, searchQuery, statusFilter]);
+
+  // Overall statistics
+  const totalProjects = projects.length;
+  const activeProjects = projects.filter(p => p.overall_status === 'active').length;
+  const delayedProjects = projects.filter(p => p.overall_status === 'delayed').length;
+  
   const allDeliverables = projects.flatMap(p => p.deliverables || []);
   const totalDeliverablesCount = allDeliverables.length;
-  const completedDeliverablesCount = allDeliverables.filter(d => d.status === 'completed').length;
-  const overallSystemCompletionPct = totalDeliverablesCount > 0 ? Math.round((completedDeliverablesCount / totalDeliverablesCount) * 100) : 0;
+  const completedDeliverablesCount = allDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length;
+  const overallPercentage = totalDeliverablesCount > 0 ? Math.round((completedDeliverablesCount / totalDeliverablesCount) * 100) : 0;
 
   return (
     <SidebarLayout>
-      {/* ── Dark Cinematic Studio Theme ── */}
-      <div className="min-h-screen bg-[#0B0F17] text-zinc-100 p-4 sm:p-6 lg:p-8 font-sans">
-        
-        {/* Top Header */}
+      <div className="min-h-screen bg-[#F8F9FD] text-slate-900 pb-20 pt-2 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#121824]/90 p-6 rounded-3xl border border-slate-800/80 shadow-2xl backdrop-blur-md">
-            <div>
-              <div className="flex items-center gap-2.5 mb-1">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-lg shadow-pink-500/20 text-white">
-                  <Film className="w-5 h-5" />
-                </div>
-                <h1 className="text-2xl font-black tracking-tight text-white">Post-Production Tracking</h1>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                  Dark Cinematic Board
-                </span>
+
+          {/* ─────────────────────────────────────────────────────────────
+              HEADER & TOP CONTROLS (LIGHT THEME)
+          ───────────────────────────────────────────────────────────── */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-rose-500 flex items-center justify-center shadow-md text-white">
+                <Film className="w-6 h-6" />
               </div>
-              <p className="text-xs text-zinc-400 font-medium">
-                Track teasers, full films, reels, photo edits, drive links, editor assignees, and real-time deadline countdowns.
-              </p>
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Post-Production Tracking</h1>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    Light Suite
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Deliverables engine with 3-category tracking (Photos, Videos, Albums), interactive PMs, editors, and deadline countdowns.
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-3">
               <Link
                 href="/workspace/clients"
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-2xl bg-slate-800/80 hover:bg-slate-800 text-zinc-200 font-bold text-xs transition-all flex items-center justify-center gap-2 border border-slate-700"
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition flex items-center gap-2"
               >
-                <ArrowLeft className="w-4 h-4 text-indigo-400" />
-                <span>Clients Directory</span>
+                <User className="w-4 h-4" />
+                Client Directory
               </Link>
-
               <button
-                onClick={() => setShowNewProjectModal(true)}
-                className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-bold text-xs transition-all shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                onClick={fetchPostProductionData}
+                className="p-2 text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
+                title="Refresh Data"
               >
-                <Plus className="w-4 h-4" />
-                <span>New Post-Prod Project</span>
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
 
-          {/* Metric Overview Bar */}
+          {/* ─────────────────────────────────────────────────────────────
+              METRICS DASHBOARD (CLEAN LIGHT CARDS)
+          ───────────────────────────────────────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-[#121824]/90 p-5 rounded-2xl border border-slate-800/80 shadow-lg flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Total Studio Projects</p>
-                <h3 className="text-xl font-black text-white mt-1">{totalProjectsCount} Projects</h3>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Studio Projects</p>
+                <h3 className="text-2xl font-black text-slate-900 mt-1">{totalProjects} <span className="text-xs font-semibold text-slate-500 font-normal">Projects</span></h3>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-pink-500/10 text-pink-400 flex items-center justify-center">
+              <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center">
                 <Layers className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-[#121824]/90 p-5 rounded-2xl border border-slate-800/80 shadow-lg flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Overall Deliverables Done</p>
-                <h3 className="text-xl font-black text-emerald-400 mt-1">{overallSystemCompletionPct}% Completed</h3>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Overall Deliverables Done</p>
+                <h3 className="text-2xl font-black text-emerald-600 mt-1">{overallPercentage}% <span className="text-xs font-semibold text-slate-500 font-normal">({completedDeliverablesCount}/{totalDeliverablesCount})</span></h3>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
                 <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-[#121824]/90 p-5 rounded-2xl border border-slate-800/80 shadow-lg flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Active Pipeline</p>
-                <h3 className="text-xl font-black text-cyan-400 mt-1">{activeProjectsCount} Active</h3>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Active Pipeline</p>
+                <h3 className="text-2xl font-black text-blue-600 mt-1">{activeProjects} <span className="text-xs font-semibold text-slate-500 font-normal">Active</span></h3>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
+              <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center">
                 <Clock className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-[#121824]/90 p-5 rounded-2xl border border-slate-800/80 shadow-lg flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Delayed / Overdue Projects</p>
-                <h3 className="text-xl font-black text-rose-400 mt-1">{delayedProjectsCount} Delayed</h3>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Delayed / Overdue Projects</p>
+                <h3 className="text-2xl font-black text-rose-600 mt-1">{delayedProjects} <span className="text-xs font-semibold text-slate-500 font-normal">Delayed</span></h3>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5" />
               </div>
             </div>
           </div>
 
-          {/* Search & Status Filters */}
-          <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-[#121824]/90 p-4 rounded-2xl border border-slate-800/80 shadow-md">
+          {/* ─────────────────────────────────────────────────────────────
+              SEARCH & FILTER CONTROLS
+          ───────────────────────────────────────────────────────────── */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="relative w-full md:w-96">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 placeholder="Search by client, manager, or event type..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-xs bg-slate-900/80 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-white placeholder:text-zinc-500"
+                className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-900 placeholder:text-slate-400 font-medium"
               />
             </div>
 
-            <div className="flex items-center gap-2.5 w-full md:w-auto">
-              <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-                <Filter className="w-3.5 h-3.5" />
-                <span className="font-semibold hidden sm:inline">Filter Status:</span>
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-slate-400" />
+                <span className="text-xs font-semibold text-slate-600">Status:</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="px-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="delayed">Delayed</option>
+                  <option value="completed">Completed</option>
+                </select>
               </div>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="bg-slate-900 border border-slate-800 text-xs font-semibold text-zinc-200 rounded-xl px-3 py-2 focus:outline-none cursor-pointer"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active (🟢)</option>
-                <option value="delayed">Delayed (🔴)</option>
-                <option value="completed">Completed (🔵)</option>
-              </select>
-
-              <button
-                onClick={fetchProjectsAndClients}
-                className="p-2 rounded-xl border border-slate-800 bg-slate-900 text-zinc-400 hover:text-white transition-colors"
-                title="Refresh Projects Board"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
             </div>
           </div>
 
-          {/* Project Board Cards */}
-          <div className="space-y-4">
-            {filteredProjects.length === 0 ? (
-              <div className="bg-[#121824]/90 p-16 rounded-3xl border border-slate-800 text-center text-zinc-400">
-                <Film className="w-12 h-12 mx-auto text-slate-700 mb-3" />
-                <h3 className="text-base font-bold text-white">No post-production projects match criteria</h3>
-                <p className="text-xs text-zinc-500 mt-1">Initialize a project for a client to begin tracking deliverables.</p>
-                <button
-                  onClick={() => setShowNewProjectModal(true)}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 text-white font-bold text-xs shadow-lg shadow-pink-500/20"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Create Project
-                </button>
+          {/* ─────────────────────────────────────────────────────────────
+              CLIENT POST-PRODUCTION CARDS LIST
+          ───────────────────────────────────────────────────────────── */}
+          {loading ? (
+            <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3 shadow-sm">
+              <RefreshCw className="w-8 h-8 mx-auto animate-spin text-indigo-600" />
+              <p className="text-sm font-semibold text-slate-600">Loading Post-Production Projects...</p>
+            </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center space-y-4 shadow-sm">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center">
+                <Film className="w-7 h-7" />
               </div>
-            ) : (
-              filteredProjects.map((project) => {
-                const clientName = project.client?.name || 'Unnamed Client';
-                const eventType = project.client?.event_type || 'Wedding Event';
-                const eventDate = project.client?.event_date;
-                const completionPct = calculateCompletionPercentage(project.deliverables || []);
-                const isExpanded = expandedProjectId === project.id;
+              <div>
+                <h3 className="text-base font-bold text-slate-900">No Post-Production Projects Found</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                  Mark any lead as &quot;Booked&quot; in the CRM or add a client from the Client Directory to automatically start post-production tracking.
+                </p>
+              </div>
+              <Link
+                href="/leads"
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+              >
+                Go to Leads CRM
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {filteredProjects.map((project) => {
+                const isExpanded = expandedCards.has(project.id);
+                const progress = calculateProgress(project.deliverables);
+                const deliverables = project.deliverables || [];
+
+                // Categorize deliverables into 3 groups
+                const photoDeliverables = deliverables.filter(d => d.category === 'photos');
+                const videoDeliverables = deliverables.filter(d => d.category === 'videos' || d.category === 'film' || d.category === 'teaser' || d.category === 'reels');
+                const albumDeliverables = deliverables.filter(d => d.category === 'albums' || d.category === 'album');
 
                 return (
-                  <div
+                  <motion.div
                     key={project.id}
-                    className="bg-[#121824]/90 rounded-3xl border border-slate-800/80 shadow-xl overflow-hidden transition-all hover:border-slate-700"
+                    layout
+                    className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all hover:border-slate-300"
                   >
-                    {/* Project Card Header */}
-                    <div className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800/60">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-3">
-                          <h2 className="text-lg font-black text-white">{clientName}</h2>
-                          
-                          {project.overall_status === 'active' && (
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
-                            </span>
-                          )}
-                          {project.overall_status === 'delayed' && (
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3" /> Delayed
-                            </span>
-                          )}
-                          {project.overall_status === 'completed' && (
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> Completed
-                            </span>
-                          )}
+                    {/* ── CARD HEADER ── */}
+                    <div className="p-5 sm:p-6 bg-gradient-to-r from-slate-50/70 via-white to-slate-50/40 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                            {project.client?.name || 'Vinu Bhad & Neha'}
+                          </h2>
+
+                          {/* Status Badge */}
+                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${
+                            project.overall_status === 'completed'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : project.overall_status === 'delayed'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse'
+                              : 'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}>
+                            {project.overall_status === 'completed' ? 'Completed' : project.overall_status === 'delayed' ? 'Delayed' : 'Active'}
+                          </span>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-4 text-xs text-zinc-400">
-                          <span className="inline-flex items-center gap-1 text-pink-400 font-semibold">
-                            <Sparkles className="w-3 h-3" /> {eventType}
+                        {/* Event Details & PM Dropdown */}
+                        <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-slate-600 font-medium">
+                          <span className="flex items-center gap-1.5 text-slate-800 font-semibold">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            {project.client?.event_type || 'Wedding & Reception'}
                           </span>
-                          {eventDate && (
-                            <span className="inline-flex items-center gap-1 font-mono">
-                              <Calendar className="w-3 h-3 text-amber-400" /> Event Date: {eventDate}
-                            </span>
-                          )}
-                          <span className="inline-flex items-center gap-1 text-zinc-400">
-                            <User className="w-3 h-3 text-cyan-400" /> PM: {project.project_manager_name}
+
+                          <span className="text-slate-300">•</span>
+
+                          <span className="flex items-center gap-1.5 text-slate-700">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            Event Date: {project.client?.event_date ? new Date(project.client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '2026-11-18'}
                           </span>
+
+                          <span className="text-slate-300">•</span>
+
+                          {/* Project Manager Dropdown with Add Option */}
+                          <div className="flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="text-slate-500">PM:</span>
+                            <select
+                              value={project.project_manager_name || 'Sushant (Lead Manager)'}
+                              onChange={(e) => handlePMChange(project.id, e.target.value)}
+                              className="px-2 py-1 text-xs font-bold text-indigo-700 bg-indigo-50/70 border border-indigo-200/80 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
+                            >
+                              {pmList.map(pm => (
+                                <option key={pm} value={pm}>{pm}</option>
+                              ))}
+                              <option value="__ADD_NEW__" className="font-bold text-indigo-600">+ Add New PM</option>
+                            </select>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Progress Bar & Toggle Button */}
-                      <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-                        <div className="w-48 space-y-1">
-                          <div className="flex items-center justify-between text-[11px] font-bold">
-                            <span className="text-zinc-400">Progress</span>
-                            <span className="text-pink-400 font-mono">{completionPct}%</span>
+                      {/* Right: Progress Bar & Toggle Button */}
+                      <div className="flex items-center gap-6">
+                        <div className="w-48 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs font-bold">
+                            <span className="text-slate-500">Progress</span>
+                            <span className="text-indigo-600">{progress}%</span>
                           </div>
-                          <div className="w-full h-2 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-pink-500 via-rose-500 to-amber-400 transition-all duration-500"
-                              style={{ width: `${completionPct}%` }}
+                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
+                            <div 
+                              className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+                              style={{ width: `${progress}%` }}
                             />
                           </div>
                         </div>
 
                         <button
-                          onClick={() => setExpandedProjectId(isExpanded ? null : project.id)}
-                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-zinc-200 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                          onClick={() => toggleCardExpansion(project.id)}
+                          className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-2 ${
+                            isExpanded 
+                              ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200' 
+                              : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 shadow-sm'
+                          }`}
                         >
-                          <span>{isExpanded ? 'Hide Checklist' : 'View Deliverables'}</span>
-                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          {isExpanded ? (
+                            <>
+                              Hide Checklist
+                              <ChevronUp className="w-4 h-4" />
+                            </>
+                          ) : (
+                            <>
+                              View Deliverables
+                              <ChevronDown className="w-4 h-4" />
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>
 
-                    {/* Expandable Deliverables Checklist */}
-                    {isExpanded && (
-                      <div className="p-6 bg-slate-950/60 space-y-4">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
-                            <Layers className="w-3.5 h-3.5 text-pink-400" />
-                            Deliverable Items Checklist ({project.deliverables?.length || 0})
-                          </h4>
+                    {/* ── EXPANDED DELIVERABLES ACCORDION (3 CATEGORIES) ── */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="p-5 sm:p-6 space-y-6 bg-slate-50/40"
+                        >
+                          {/* 1. 📸 PHOTOS SECTION */}
+                          <DeliverableCategorySection
+                            categoryTitle="Photos"
+                            categoryKey="photos"
+                            icon={Camera}
+                            accentColor="indigo"
+                            badgeText={`${photoDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/${photoDeliverables.length} Done`}
+                            items={photoDeliverables}
+                            projectId={project.id}
+                            editorList={editorList}
+                            onUpdate={handleDeliverableUpdate}
+                            onAdd={() => handleAddDeliverable(project.id, 'photos')}
+                            onDelete={handleDeleteDeliverable}
+                            onOpenComment={(item) => setActiveCommentModal({
+                              open: true,
+                              projectId: project.id,
+                              deliverableId: item.id,
+                              deliverableTitle: item.title
+                            })}
+                            onOpenDrive={(item) => {
+                              setActiveDriveModal({
+                                open: true,
+                                projectId: project.id,
+                                deliverableId: item.id,
+                                currentLink: item.drive_link || ''
+                              });
+                              setDriveInputLink(item.drive_link || '');
+                            }}
+                            getDeadlineStatus={getDeadlineStatus}
+                          />
 
-                          <button
-                            onClick={() => setShowNewDeliverableModal(project.id)}
-                            className="px-3 py-1.5 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border border-pink-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Plus className="w-3 h-3" /> Add Deliverable
-                          </button>
-                        </div>
+                          {/* 2. 🎬 VIDEOS SECTION */}
+                          <DeliverableCategorySection
+                            categoryTitle="Videos"
+                            categoryKey="videos"
+                            icon={Video}
+                            accentColor="rose"
+                            badgeText={`${videoDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/${videoDeliverables.length} Done`}
+                            items={videoDeliverables}
+                            projectId={project.id}
+                            editorList={editorList}
+                            onUpdate={handleDeliverableUpdate}
+                            onAdd={() => handleAddDeliverable(project.id, 'videos')}
+                            onDelete={handleDeleteDeliverable}
+                            onOpenComment={(item) => setActiveCommentModal({
+                              open: true,
+                              projectId: project.id,
+                              deliverableId: item.id,
+                              deliverableTitle: item.title
+                            })}
+                            onOpenDrive={(item) => {
+                              setActiveDriveModal({
+                                open: true,
+                                projectId: project.id,
+                                deliverableId: item.id,
+                                currentLink: item.drive_link || ''
+                              });
+                              setDriveInputLink(item.drive_link || '');
+                            }}
+                            getDeadlineStatus={getDeadlineStatus}
+                          />
 
-                        <div className="space-y-2.5">
-                          {!project.deliverables || project.deliverables.length === 0 ? (
-                            <p className="text-xs text-zinc-500 py-4 text-center">No deliverable items added yet.</p>
-                          ) : (
-                            project.deliverables.map((deliv) => {
-                              const catMeta = CATEGORY_META[deliv.category] || CATEGORY_META['teaser'];
-                              const CatIcon = catMeta.icon;
-                              const statusMeta = STATUS_META[deliv.status] || STATUS_META['pending'];
-
-                              return (
-                                <div
-                                  key={deliv.id}
-                                  className="p-4 rounded-2xl bg-[#121824] border border-slate-800/80 hover:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
-                                >
-                                  {/* Left: Category Icon & Title */}
-                                  <div className="flex items-center gap-3">
-                                    <div className={`w-9 h-9 rounded-xl ${catMeta.badgeBg} flex items-center justify-center border shrink-0`}>
-                                      <CatIcon className="w-4 h-4" />
-                                    </div>
-
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <h5 className="text-xs font-bold text-white">{deliv.title}</h5>
-                                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${statusMeta.bg} ${statusMeta.border} ${statusMeta.text}`}>
-                                          {statusMeta.label}
-                                        </span>
-                                      </div>
-
-                                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-400 mt-1">
-                                        {deliv.assigned_to && (
-                                          <span className="inline-flex items-center gap-1 font-medium">
-                                            <User className="w-3 h-3 text-indigo-400" /> Editor: {deliv.assigned_to}
-                                          </span>
-                                        )}
-                                        {deliv.revision_notes && (
-                                          <span className="inline-flex items-center gap-1 text-amber-300/80 font-medium truncate max-w-xs" title={deliv.revision_notes}>
-                                            <MessageSquare className="w-3 h-3 text-amber-400" /> {deliv.revision_notes}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Right: Deadline Badge & Action Menu */}
-                                  <div className="flex items-center gap-3 self-end sm:self-auto">
-                                    {renderDeadlineBadge(deliv.deadline, deliv.status)}
-
-                                    {deliv.drive_link && (
-                                      <a
-                                        href={deliv.drive_link}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="p-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-colors"
-                                        title="Open Drive Link"
-                                      >
-                                        <ExternalLink className="w-3.5 h-3.5" />
-                                      </a>
-                                    )}
-
-                                    <button
-                                      onClick={() => {
-                                        setActiveDeliverable({ projectId: project.id, deliverable: deliv });
-                                        setEditForm(deliv);
-                                      }}
-                                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-zinc-200 font-bold text-[11px] border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
-                                    >
-                                      <Edit3 className="w-3 h-3 text-pink-400" /> Edit
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                          {/* 3. 📖 ALBUMS SECTION */}
+                          <DeliverableCategorySection
+                            categoryTitle="Albums"
+                            categoryKey="albums"
+                            icon={BookOpen}
+                            accentColor="amber"
+                            badgeText={`${albumDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/${albumDeliverables.length} Done`}
+                            items={albumDeliverables}
+                            projectId={project.id}
+                            editorList={editorList}
+                            onUpdate={handleDeliverableUpdate}
+                            onAdd={() => handleAddDeliverable(project.id, 'albums')}
+                            onDelete={handleDeleteDeliverable}
+                            onOpenComment={(item) => setActiveCommentModal({
+                              open: true,
+                              projectId: project.id,
+                              deliverableId: item.id,
+                              deliverableTitle: item.title
+                            })}
+                            onOpenDrive={(item) => {
+                              setActiveDriveModal({
+                                open: true,
+                                projectId: project.id,
+                                deliverableId: item.id,
+                                currentLink: item.drive_link || ''
+                              });
+                              setDriveInputLink(item.drive_link || '');
+                            }}
+                            getDeadlineStatus={getDeadlineStatus}
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
                 );
-              })
-            )}
+              })}
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD NEW PROJECT MANAGER
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showAddPMModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <UserPlus className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">Add New Project Manager</h3>
+                </div>
+                <button 
+                  onClick={() => setShowAddPMModal({ open: false })}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600">Project Manager Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Rahul Sharma (Lead Manager)"
+                  value={newPMName}
+                  onChange={(e) => setNewPMName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowAddPMModal({ open: false })}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (newPMName.trim()) {
+                      const name = newPMName.trim();
+                      setPmList(prev => [...prev, name]);
+                      if (showAddPMModal.projectId) {
+                        handlePMChange(showAddPMModal.projectId, name);
+                      }
+                      setNewPMName('');
+                      setShowAddPMModal({ open: false });
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+                >
+                  Save Project Manager
+                </button>
+              </div>
+            </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD NEW EDITOR
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showAddEditorModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                    <UserPlus className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">Add New Editor / Artist</h3>
+                </div>
+                <button 
+                  onClick={() => setShowAddEditorModal({ open: false })}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600">Editor Name & Role</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Vikas (Colorist & Editor)"
+                  value={newEditorName}
+                  onChange={(e) => setNewEditorName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowAddEditorModal({ open: false })}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (newEditorName.trim()) {
+                      const name = newEditorName.trim();
+                      setEditorList(prev => [...prev, name]);
+                      if (showAddEditorModal.projectId && showAddEditorModal.deliverableId) {
+                        handleDeliverableUpdate(
+                          showAddEditorModal.projectId,
+                          showAddEditorModal.deliverableId,
+                          'assigned_to',
+                          name
+                        );
+                      }
+                      setNewEditorName('');
+                      setShowAddEditorModal({ open: false });
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+                >
+                  Save Editor
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: COMMENTS & REMINDER DRAWER
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {activeCommentModal?.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
+            >
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">{activeCommentModal.deliverableTitle}</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Activity logs, client revisions & follow-up reminders</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setActiveCommentModal(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Comments List (Scrollable) */}
+              <div className="flex-1 p-5 overflow-y-auto space-y-3">
+                {(() => {
+                  const currentProject = projects.find(p => p.id === activeCommentModal.projectId);
+                  const currentItem = currentProject?.deliverables.find(d => d.id === activeCommentModal.deliverableId);
+                  const comments = currentItem?.comments || [];
+
+                  if (comments.length === 0) {
+                    return (
+                      <div className="py-8 text-center text-slate-400 space-y-1">
+                        <MessageSquare className="w-6 h-6 mx-auto stroke-1" />
+                        <p className="text-xs font-semibold">No comments or reminders logged yet.</p>
+                      </div>
+                    );
+                  }
+
+                  return comments.map(comm => (
+                    <div key={comm.id} className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800">{comm.authorName || 'Lead Editor'}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {new Date(comm.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed font-normal">{comm.text}</p>
+                      {comm.alert_flag && comm.followup_at && (
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 w-fit">
+                          <Bell className="w-3 h-3" />
+                          Reminder Set: {new Date(comm.followup_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              {/* Add Comment Input Footer */}
+              <div className="p-4 border-t border-slate-200 bg-slate-50 space-y-3">
+                <textarea
+                  rows={2}
+                  placeholder="Type editor revision note or task update..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 resize-none font-medium placeholder:text-slate-400"
+                />
+
+                {/* Reminder Checkbox & Date Picker */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={commentAlertFlag}
+                      onChange={(e) => setCommentAlertFlag(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <Bell className="w-3.5 h-3.5 text-amber-500" />
+                    Set Follow-up Reminder
+                  </label>
+
+                  {commentAlertFlag && (
+                    <input
+                      type="datetime-local"
+                      value={commentFollowupDate}
+                      onChange={(e) => setCommentFollowupDate(e.target.value)}
+                      className="px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-medium"
+                    />
+                  )}
+
+                  <button
+                    onClick={handleSaveComment}
+                    disabled={!commentText.trim()}
+                    className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl shadow-sm transition flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Post Log
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: DRIVE LINK POPUP
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {activeDriveModal?.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Link2 className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">Google Drive Delivery Link</h3>
+                </div>
+                <button 
+                  onClick={() => setActiveDriveModal(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600">Drive Folder URL</label>
+                <input
+                  type="url"
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  value={driveInputLink}
+                  onChange={(e) => setDriveInputLink(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 font-mono"
+                />
+              </div>
+
+              <div className="flex justify-between items-center pt-2">
+                {driveInputLink.trim() && (
+                  <a
+                    href={driveInputLink.trim()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
+                  >
+                    Test Open Link <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                <div className="flex gap-2 ml-auto">
+                  <button
+                    onClick={() => setActiveDriveModal(null)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveDriveLink}
+                    className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+                  >
+                    Save Link
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+    </SidebarLayout>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DELIVERABLE CATEGORY SUB-SECTION COMPONENT
+// ─────────────────────────────────────────────────────────────
+interface DeliverableCategorySectionProps {
+  categoryTitle: string;
+  categoryKey: 'photos' | 'videos' | 'albums';
+  icon: React.ElementType;
+  accentColor: 'indigo' | 'rose' | 'amber';
+  badgeText: string;
+  items: DeliverableItem[];
+  projectId: string;
+  editorList: string[];
+  onUpdate: (projectId: string, deliverableId: string, field: keyof DeliverableItem, value: any) => void;
+  onAdd: () => void;
+  onDelete: (projectId: string, deliverableId: string) => void;
+  onOpenComment: (item: DeliverableItem) => void;
+  onOpenDrive: (item: DeliverableItem) => void;
+  getDeadlineStatus: (deadlineStr?: string | null, status?: DeliverableStatus) => any;
+}
+
+function DeliverableCategorySection({
+  categoryTitle,
+  categoryKey,
+  icon: Icon,
+  accentColor,
+  badgeText,
+  items,
+  projectId,
+  editorList,
+  onUpdate,
+  onAdd,
+  onDelete,
+  onOpenComment,
+  onOpenDrive,
+  getDeadlineStatus
+}: DeliverableCategorySectionProps) {
+  const accentClasses = {
+    indigo: {
+      bg: 'bg-indigo-50/60',
+      border: 'border-indigo-100',
+      text: 'text-indigo-700',
+      iconBg: 'bg-indigo-100 text-indigo-600',
+      buttonBg: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'
+    },
+    rose: {
+      bg: 'bg-rose-50/60',
+      border: 'border-rose-100',
+      text: 'text-rose-700',
+      iconBg: 'bg-rose-100 text-rose-600',
+      buttonBg: 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
+    },
+    amber: {
+      bg: 'bg-amber-50/60',
+      border: 'border-amber-100',
+      text: 'text-amber-700',
+      iconBg: 'bg-amber-100 text-amber-600',
+      buttonBg: 'bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200'
+    }
+  }[accentColor];
+
+  return (
+    <div className={`p-4 rounded-2xl border ${accentClasses.border} ${accentClasses.bg} space-y-3`}>
+      {/* Category Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className={`w-7 h-7 rounded-lg ${accentClasses.iconBg} flex items-center justify-center font-bold`}>
+            <Icon className="w-4 h-4" />
+          </div>
+          <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">{categoryTitle}</h3>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border bg-white ${accentClasses.text} ${accentClasses.border}`}>
+            {badgeText}
+          </span>
         </div>
 
-        {/* ── Deliverable Edit Drawer Modal ── */}
-        <AnimatePresence>
-          {activeDeliverable && editForm && (
-            <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/70 backdrop-blur-xs p-4 sm:p-6">
-              <motion.div
-                initial={{ opacity: 0, x: 100 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 100 }}
-                className="w-full max-w-lg bg-[#121824] rounded-3xl border border-slate-800 p-6 shadow-2xl space-y-5 text-white max-h-[90vh] overflow-y-auto"
-              >
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-pink-500 text-white flex items-center justify-center">
-                      <Edit3 className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-black">Edit Deliverable Status</h2>
-                      <p className="text-xs text-zinc-400">Update deadline, assignee, and Google Drive links.</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => { setActiveDeliverable(null); setEditForm(null); }}
-                    className="p-1.5 rounded-xl hover:bg-slate-800 text-zinc-400 hover:text-white"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
+        <button
+          onClick={onAdd}
+          className={`px-3 py-1 text-xs font-bold rounded-lg border ${accentClasses.buttonBg} transition flex items-center gap-1.5 shadow-2xs`}
+        >
+          <Plus className="w-3.5 h-3.5" />
+          + Add {categoryTitle.slice(0, -1)}
+        </button>
+      </div>
 
-                <form onSubmit={handleSaveDeliverableEdit} className="space-y-4 text-xs">
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Deliverable Title</label>
+      {/* Deliverable Items List */}
+      <div className="space-y-2">
+        {items.length === 0 ? (
+          <div className="p-4 bg-white rounded-xl border border-slate-200 text-center text-xs text-slate-400 font-medium">
+            No {categoryTitle.toLowerCase()} deliverables added yet. Click &quot;+ Add {categoryTitle.slice(0, -1)}&quot; to add one.
+          </div>
+        ) : (
+          items.map(item => {
+            const dl = getDeadlineStatus(item.deadline, item.status);
+            const commentsCount = item.comments?.length || 0;
+
+            return (
+              <div
+                key={item.id}
+                className="p-3 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:border-slate-300 transition-all"
+              >
+                {/* Left: Title & Count Input */}
+                <div className="flex items-center gap-3 min-w-[240px]">
+                  <div className="w-2 h-2 rounded-full bg-slate-300" />
+                  <div className="space-y-1">
+                    <span className="text-xs font-extrabold text-slate-900 block">{item.title}</span>
                     <input
                       type="text"
-                      required
-                      value={editForm.title}
-                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium focus:outline-none focus:ring-2 focus:ring-pink-500"
+                      value={item.count || ''}
+                      placeholder="Count (e.g. 500 Photos)"
+                      onChange={(e) => onUpdate(projectId, item.id, 'count', e.target.value)}
+                      className="px-2 py-0.5 text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded-md text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-36"
                     />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Category</label>
-                      <select
-                        value={editForm.category}
-                        onChange={(e) => setEditForm({ ...editForm, category: e.target.value as DeliverableCategory })}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium focus:outline-none"
-                      >
-                        <option value="teaser">🎬 Teaser Film</option>
-                        <option value="film">🎥 Full Film</option>
-                        <option value="reels">📱 Instagram Reels</option>
-                        <option value="photos">📷 Edited Photos</option>
-                        <option value="album">📖 Print Album</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Current Status</label>
-                      <select
-                        value={editForm.status}
-                        onChange={(e) => setEditForm({ ...editForm, status: e.target.value as DeliverableStatus })}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium focus:outline-none"
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="under_review">Under Review</option>
-                        <option value="completed">Completed ✓</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Assigned Editor</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Rahul (Editor)"
-                        value={editForm.assigned_to || ''}
-                        onChange={(e) => setEditForm({ ...editForm, assigned_to: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium focus:outline-none focus:ring-2 focus:ring-pink-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Target Deadline</label>
-                      <input
-                        type="date"
-                        value={editForm.deadline || ''}
-                        onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium focus:outline-none focus:ring-2 focus:ring-pink-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Google Drive / Dropbox Folder Link</label>
-                    <input
-                      type="url"
-                      placeholder="https://drive.google.com/..."
-                      value={editForm.drive_link || ''}
-                      onChange={(e) => setEditForm({ ...editForm, drive_link: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium focus:outline-none focus:ring-2 focus:ring-pink-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Client Revision & Feedback Notes</label>
-                    <textarea
-                      rows={3}
-                      placeholder="e.g. Client requested color grading tweaks on couple entry..."
-                      value={editForm.revision_notes || ''}
-                      onChange={(e) => setEditForm({ ...editForm, revision_notes: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium resize-none focus:outline-none focus:ring-2 focus:ring-pink-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() => { setActiveDeliverable(null); setEditForm(null); }}
-                      className="px-4 py-2 rounded-xl bg-slate-800 text-zinc-300 font-bold"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold shadow-lg shadow-pink-500/20"
-                    >
-                      Save Deliverable
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Add Deliverable Modal ── */}
-        <AnimatePresence>
-          {showNewDeliverableModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-md bg-[#121824] rounded-3xl border border-slate-800 p-6 shadow-2xl space-y-4 text-white"
-              >
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <h3 className="text-base font-black">Add Deliverable Item</h3>
-                  <button onClick={() => setShowNewDeliverableModal(null)} className="text-zinc-400 hover:text-white">
-                    <X className="w-5 h-5" />
-                  </button>
                 </div>
 
-                <form onSubmit={handleAddDeliverable} className="space-y-3.5 text-xs">
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Title *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. 4K Cinematic Wedding Film"
-                      value={newDelivForm.title}
-                      onChange={(e) => setNewDelivForm({ ...newDelivForm, title: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Category</label>
-                      <select
-                        value={newDelivForm.category}
-                        onChange={(e) => setNewDelivForm({ ...newDelivForm, category: e.target.value as DeliverableCategory })}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium"
-                      >
-                        <option value="teaser">🎬 Teaser Film</option>
-                        <option value="film">🎥 Full Film</option>
-                        <option value="reels">📱 Instagram Reels</option>
-                        <option value="photos">📷 Edited Photos</option>
-                        <option value="album">📖 Print Album</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Assigned Editor</label>
-                      <input
-                        type="text"
-                        placeholder="Editor Name"
-                        value={newDelivForm.assigned_to}
-                        onChange={(e) => setNewDelivForm({ ...newDelivForm, assigned_to: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Target Deadline</label>
+                {/* Center: Deadline Picker & Assignee Editor */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Deadline Date */}
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
                     <input
                       type="date"
-                      value={newDelivForm.deadline}
-                      onChange={(e) => setNewDelivForm({ ...newDelivForm, deadline: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium"
+                      value={item.deadline || ''}
+                      onChange={(e) => onUpdate(projectId, item.id, 'deadline', e.target.value)}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() => setShowNewDeliverableModal(null)}
-                      className="px-4 py-2 rounded-xl bg-slate-800 text-zinc-300 font-bold"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold"
-                    >
-                      Add Item
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* ── New Post-Production Project Modal ── */}
-        <AnimatePresence>
-          {showNewProjectModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-lg bg-[#121824] rounded-3xl border border-slate-800 p-6 shadow-2xl space-y-4 text-white"
-              >
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <Film className="w-5 h-5 text-pink-400" />
-                    <h3 className="text-base font-black">Create Post-Production Tracker Project</h3>
-                  </div>
-                  <button onClick={() => setShowNewProjectModal(false)} className="text-zinc-400 hover:text-white">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleCreateProject} className="space-y-4 text-xs">
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Select Client *</label>
+                  {/* Editor Assignee Dropdown */}
+                  <div className="flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-slate-400" />
                     <select
-                      required
-                      value={newProjClientId}
-                      onChange={(e) => setNewProjClientId(e.target.value)}
-                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium"
+                      value={item.assigned_to || ''}
+                      onChange={(e) => onUpdate(projectId, item.id, 'assigned_to', e.target.value)}
+                      className="px-2 py-1 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
-                      <option value="">-- Choose client from directory --</option>
-                      {clients.map(client => (
-                        <option key={client.id} value={client.id}>
-                          {client.name} ({client.event_type})
-                        </option>
+                      <option value="">Unassigned</option>
+                      {editorList.map(ed => (
+                        <option key={ed} value={ed}>{ed}</option>
                       ))}
+                      <option value="__ADD_NEW__" className="font-bold text-indigo-600">+ Add New Editor</option>
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Project Manager Name</label>
-                    <input
-                      type="text"
-                      value={newProjManager}
-                      onChange={(e) => setNewProjManager(e.target.value)}
-                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-medium"
-                    />
-                  </div>
+                  {/* Stage Dropdown */}
+                  <select
+                    value={item.status || 'pending'}
+                    onChange={(e) => onUpdate(projectId, item.id, 'status', e.target.value)}
+                    className="px-2.5 py-1 text-xs font-bold bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
+                  >
+                    {STATUS_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
 
-                  <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-[11px] text-zinc-400 space-y-1">
-                    <span className="font-bold text-pink-400 block">⚡ Includes Preset Deliverables Template:</span>
-                    <ul className="list-disc list-inside space-y-0.5 text-zinc-300">
-                      <li>🎬 1-Minute Instagram Teaser</li>
-                      <li>🎥 Full Length Highlight Film (20-30 mins)</li>
-                      <li>📱 3 Instagram Reels / Shorts</li>
-                      <li>📷 Master Color Graded Photos (400+)</li>
-                    </ul>
-                  </div>
+                  {/* Overdue / Countdown Badge */}
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] border whitespace-nowrap ${dl.badgeClass}`}>
+                    {dl.text}
+                  </span>
+                </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() => setShowNewProjectModal(false)}
-                      className="px-4 py-2 rounded-xl bg-slate-800 text-zinc-300 font-bold"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 text-white font-bold shadow-lg shadow-pink-500/25"
-                    >
-                      Initialize Project
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+                {/* Right: Drive Link, Comments/Reminders & Delete */}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  {/* Comments / Activity Button with count badge */}
+                  <button
+                    onClick={() => onOpenComment(item)}
+                    className="px-2 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded-lg transition flex items-center gap-1"
+                    title="View comments & reminders"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    {commentsCount > 0 && <span>{commentsCount}</span>}
+                  </button>
 
+                  {/* Drive Link Button */}
+                  <button
+                    onClick={() => onOpenDrive(item)}
+                    className={`p-1.5 rounded-lg border transition ${
+                      item.drive_link 
+                        ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' 
+                        : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-600'
+                    }`}
+                    title={item.drive_link ? 'Open / edit Google Drive link' : 'Attach Google Drive link'}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Delete Item Button */}
+                  <button
+                    onClick={() => onDelete(projectId, item.id)}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 border border-slate-200 rounded-lg transition"
+                    title="Delete item"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
-    </SidebarLayout>
+    </div>
   );
 }

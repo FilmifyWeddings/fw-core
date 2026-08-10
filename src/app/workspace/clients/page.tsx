@@ -209,6 +209,122 @@ export default function ClientsPage() {
         setClients(prev => [fallbackClient, ...prev]);
       } else if (inserted) {
         setClients(prev => [inserted, ...prev]);
+
+        // Auto-create Post-Production Project for this client
+        const defaultDeliverables = [
+          {
+            id: `deliv_photo_1_${Date.now()}`,
+            title: 'Edited Photos',
+            category: 'photos',
+            count: '500 Photos',
+            assigned_to: 'Vikram (Photo Retoucher)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 15 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_photo_2_${Date.now()}`,
+            title: 'Save the Date Photo',
+            category: 'photos',
+            count: '5 Photos',
+            assigned_to: 'Vikram (Photo Retoucher)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() - 10 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_photo_3_${Date.now()}`,
+            title: 'Instagram Posts',
+            category: 'photos',
+            count: '10 Posts',
+            assigned_to: 'Vikram (Photo Retoucher)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 5 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_video_1_${Date.now()}`,
+            title: 'Cinematic Film',
+            category: 'videos',
+            count: '25 Mins',
+            assigned_to: 'Amit (Senior Video Editor)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 30 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_video_2_${Date.now()}`,
+            title: 'Cinematic Teaser',
+            category: 'videos',
+            count: '1 Min',
+            assigned_to: 'Rahul (Teaser Specialist)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 7 * 86400000).toISOString().split('T')[0] : '',
+            status: 'in_progress',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_video_3_${Date.now()}`,
+            title: 'Traditional Full Video',
+            category: 'videos',
+            count: '2 Hours',
+            assigned_to: 'Suresh (Traditional Editor)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 45 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_video_4_${Date.now()}`,
+            title: 'Viral Instagram Reels',
+            category: 'videos',
+            count: '3 Reels',
+            assigned_to: 'Priya (Reels Specialist)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 10 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_album_1_${Date.now()}`,
+            title: 'Main Wedding Album',
+            category: 'albums',
+            count: '40 Pages',
+            assigned_to: 'Rohan (Album Designer)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          },
+          {
+            id: `deliv_album_2_${Date.now()}`,
+            title: 'Parent / Mini Album',
+            category: 'albums',
+            count: '20 Pages',
+            assigned_to: 'Rohan (Album Designer)',
+            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
+            status: 'pending',
+            drive_link: '',
+            comments: []
+          }
+        ];
+
+        try {
+          await supabase
+            .from('post_production_projects')
+            .insert([{
+              user_id: workspaceId,
+              workspace_id: workspaceId,
+              client_id: inserted.id,
+              project_manager_name: 'Sushant (Lead Manager)',
+              overall_status: 'active',
+              deliverables: defaultDeliverables
+            }]);
+        } catch (_) {}
       }
 
       // If converted from a lead, automatically update CRM Lead stage to "Booked"

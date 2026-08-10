@@ -490,22 +490,34 @@ export interface WorkspaceClient {
   updated_at: string;
 }
 
-export type DeliverableCategory = 'teaser' | 'film' | 'reels' | 'photos' | 'album';
-export type DeliverableStatus = 'pending' | 'in_progress' | 'under_review' | 'completed';
+export type DeliverableCategory = 'photos' | 'videos' | 'albums' | 'teaser' | 'film' | 'reels' | 'album';
+export type DeliverableStatus = 'pending' | 'upcoming' | 'in_progress' | 'under_review' | 'completed' | 'done';
+
+export interface DeliverableComment {
+  id: string;
+  text: string;
+  authorName?: string;
+  createdAt: string;
+  alert_flag?: boolean;
+  followup_at?: string | null;
+}
 
 export interface DeliverableItem {
   id: string;
   title: string;
   category: DeliverableCategory;
+  count?: string | number | null; // e.g. '500 Photos', '25 Pages', '3 Reels'
   assigned_to?: string | null;
   deadline?: string | null;
   status: DeliverableStatus;
   drive_link?: string | null;
   revision_notes?: string | null;
+  comments?: DeliverableComment[];
 }
 
 export interface PostProductionProject {
   id: string;
+  user_id?: string;
   workspace_id: string;
   client_id: string;
   client?: WorkspaceClient | null;
