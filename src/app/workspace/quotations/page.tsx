@@ -82,15 +82,17 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
     ? title.toUpperCase()
     : (currentCoupleName || title || coupleName || 'RAHUL & NEHA');
 
+  const coverPhoto = coverObj.photoUrl || coverObj.photo || coverObj.imageUrl || '';
+
   const data = {
     ...baseData,
     cover: {
       ...coverObj,
       coupleName: displayCoupleName,
-      photoUrl: coverObj.photoUrl || coverObj.photo || coverObj.imageUrl || '',
-      photo: coverObj.photo || coverObj.photoUrl || coverObj.imageUrl || '',
-      frameShape: coverObj.frameShape || ((coverObj.photo || coverObj.photoUrl || coverObj.imageUrl) ? 'background' : 'arch'),
-      bgOpacity: typeof coverObj.bgOpacity === 'number' ? coverObj.bgOpacity : 40
+      photoUrl: coverPhoto,
+      photo: coverPhoto,
+      frameShape: coverPhoto ? 'background' : (coverObj.frameShape || 'arch'),
+      bgOpacity: coverPhoto ? Math.max(Number(coverObj.bgOpacity) || 60, 60) : 40
     }
   };
 
@@ -569,8 +571,24 @@ export default function WorkspaceQuotationsGalleryPage() {
 
         const docsMap: Record<string, any> = {};
         tmplData.forEach((t: any) => {
-          if (t.id && t.content_json) {
-            docsMap[t.id] = t.content_json;
+          if (!t.id) return;
+          let docJson = t.content_json;
+
+          // Read latest builder draft from localStorage if available
+          if (typeof window !== 'undefined') {
+            try {
+              const localDraftStr = localStorage.getItem(`wg_proposal_draft_${t.id}`);
+              if (localDraftStr) {
+                const parsedDraft = JSON.parse(localDraftStr);
+                if (parsedDraft && typeof parsedDraft === 'object') {
+                  docJson = parsedDraft;
+                }
+              }
+            } catch (e) {}
+          }
+
+          if (docJson) {
+            docsMap[t.id] = docJson;
           }
         });
 
