@@ -47,7 +47,11 @@ const formatMemberName2Lines = (fullName: string) => {
 };
 
 const customStyle = `
-  body {
+  html, body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    height: auto !important;
+    min-height: 100% !important;
     background-color: #F1F5F9 !important;
     color: #0B111E !important;
   }
@@ -137,7 +141,8 @@ export default function TeamManagerPage() {
     return 'Studio Admin';
   }, []);
   
-  // Real Data State
+  // Real Data State & Current User Workspace ID
+  const [currentUserId, setCurrentUserId] = useState<string>('');
   const [projects, setProjects] = useState<FWProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -206,28 +211,35 @@ export default function TeamManagerPage() {
   }, [activeDropdownId]);
 
   // ─────────────────────────────────────────────────────────────
-  // DATA FETCHING & HYDRATION FROM SUPABASE (RELATIONAL SCHEMAS)
+  // DATA FETCHING & HYDRATION FROM SUPABASE (RELATIONAL SCHEMAS + WORKSPACE ISOLATION)
   // ─────────────────────────────────────────────────────────────
-  const fetchAllData = async () => {
+  const fetchAllData = async (targetUid?: string) => {
     setLoading(true);
     setError(null);
+    const uid = targetUid !== undefined ? targetUid : currentUserId;
+
     try {
       try {
         await supabase.storage.createBucket('team-avatars', { public: true });
       } catch (e) {
         // Bucket initialized or skipped
       }
-      // 1. Fetch Team Members
-      const { data: membersData, error: membersErr } = await supabase
+      // 1. Fetch Team Members for current user
+      let membersQuery = supabase
         .from('fw_team_members')
         .select('*')
         .order('name', { ascending: true });
 
+      if (uid) {
+        membersQuery = membersQuery.or(`user_id.eq.${uid},user_id.is.null`);
+      }
+
+      const { data: membersData, error: membersErr } = await membersQuery;
       if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
       setTeamMembers(membersData || []);
 
-      // 2. Fetch Projects with nested sub_events and fw_assignments JOIN
-      const { data: projectsData, error: projectsErr } = await supabase
+      // 2. Fetch Projects for current user
+      let projectsQuery = supabase
         .from('fw_projects')
         .select(`
           *,
@@ -241,6 +253,11 @@ export default function TeamManagerPage() {
         `)
         .order('created_at', { ascending: false });
 
+      if (uid) {
+        projectsQuery = projectsQuery.or(`user_id.eq.${uid},user_id.is.null`);
+      }
+
+      const { data: projectsData, error: projectsErr } = await projectsQuery;
       if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
       setProjects(projectsData || []);
     } catch (err: any) {
@@ -252,7 +269,13 @@ export default function TeamManagerPage() {
   };
 
   useEffect(() => {
-    fetchAllData();
+    async function initUserAndFetch() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id || '';
+      setCurrentUserId(uid);
+      await fetchAllData(uid);
+    }
+    initUserAndFetch();
   }, []);
 
   // Handle Team Member Save (Create / Edit)
@@ -265,16 +288,21 @@ export default function TeamManagerPage() {
     avatar_url?: string;
   }) => {
     try {
+      const payload = {
+        ...memberData,
+        ...(currentUserId ? { user_id: currentUserId } : {})
+      };
+
       if (editingMember) {
         const { error: updateErr } = await supabase
           .from('fw_team_members')
-          .update(memberData)
+          .update(payload)
           .eq('id', editingMember.id);
         if (updateErr) throw updateErr;
       } else {
         const { data: insertedMember, error: insertErr } = await supabase
           .from('fw_team_members')
-          .insert([memberData])
+          .insert([payload])
           .select()
           .single();
         if (insertErr) throw insertErr;
@@ -282,7 +310,10 @@ export default function TeamManagerPage() {
         if (activeAssignmentForMember?.assignmentId && insertedMember) {
           await supabase
             .from('fw_assignments')
-            .update({ assigned_member_id: insertedMember.id })
+            .update({ 
+              assigned_member_id: insertedMember.id,
+              ...(currentUserId ? { user_id: currentUserId } : {})
+            })
             .eq('id', activeAssignmentForMember.assignmentId);
         }
       }
@@ -503,7 +534,8 @@ export default function TeamManagerPage() {
           .insert([{ 
             client_name: couplingName,
             main_date: firstSubEventDate,
-            main_venue: firstSubEventVenue
+            main_venue: firstSubEventVenue,
+            ...(currentUserId ? { user_id: currentUserId } : {})
           }])
           .select()
           .single();
@@ -527,6 +559,7 @@ export default function TeamManagerPage() {
               operational_notes: block.notes || null,
               shift_hours_slot: block.shiftSlot || null,
               roles: rolesToSave,
+              ...(currentUserId ? { user_id: currentUserId } : {})
             };
 
             const { data: insertedSubEvent, error: seErr } = await supabase
@@ -548,6 +581,7 @@ export default function TeamManagerPage() {
                 required_role: role,
                 assigned_member_id: null,
                 status: 'pending',
+                ...(currentUserId ? { user_id: currentUserId } : {})
               }));
 
               const { error: assignErr } = await supabase
