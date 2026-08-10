@@ -43,12 +43,66 @@ export function AiQuotationModal({
     const masterPrompt = `You are StudioCore AI Quotation Extraction Assistant for Professional Wedding Photographers.
 
 ==================================================
-RULES & DESIGN SYSTEM PRESERVATION
+STRICT DESIGN & LAYOUT RULES
 ==================================================
-1. DO NOT redesign the quotation. Visual design, theme, colors, typography, and fonts MUST remain 100% SAME.
-2. Standard 11 Pages Schema: Cover, About Us, Pre-Wedding, Functions & Coverage, Deliverables, Special Value Additions, Pricing, Payment Terms, Add-Ons, Terms & Conditions, Thank You.
-3. If no details exist for a specific page (e.g. no pre-wedding shoot or no add-ons), mark that page as hidden/removed (visible: false) for this quotation instance.
-4. Support custom dropdown values without modifying global template dropdowns.
+1. DO NOT redesign the quotation. Visual design, theme, colors, typography, layout, and fonts MUST remain 100% SAME as the default template.
+2. DO NOT delete pages from template structure. If a page has no data, set visible: false for this quotation instance.
+3. IGNORE DROPDOWN LIMITATIONS: Do NOT restrict values to predefined dropdown options. Extract exact custom text provided by the user for functions, deliverables, crew, or add-ons.
+4. DATE NOT FIXED RULE: If the event date for a function is not specified in user text, set date to "Date Not Fixed".
+
+==================================================
+PAGE-BY-PAGE MAPPING RULES
+==================================================
+PAGE 1: COVER (cover)
+- coupleName: Couple / Client Name (e.g. "Ritesh & Nethmini")
+- eventType: Title (e.g. "Wedding Photography & Films")
+- sideOption: "Groom Side" | "Bride Side" | "Both Sides"
+- locationName: Location / Venue / City
+
+PAGE 2: ABOUT US (aboutUs)
+- KEEP DEFAULT TEMPLATE CONTENT AS IS. Do not modify or erase.
+
+PAGE 3: PRE-WEDDING SHOOT (shootDetails)
+- visible: true/false
+- daysText: Duration (e.g. "1 Full Day")
+- deliverablesText: Edited photos & video deliverables
+- crewText: Team coverage (Photographers, Cinematographers, Drone)
+- notes: Travel, stay, or makeup notes
+
+PAGE 4: FUNCTIONS & COVERAGE (functionsPage)
+- visible: true/false
+- items: Array of objects [{ id, name, date, time, venue, team }]
+- If date is not specified, set date: "Date Not Fixed"
+- Extract every function mentioned (Haldi, Mehendi, Sangeet, Wedding, Reception, Engagement, etc.)
+
+PAGE 5: DELIVERABLES (deliverablesPage)
+- visible: true/false
+- selectedItems: Array of deliverable strings matching exact user details as cards
+
+PAGE 6: SPECIAL VALUE ADDITIONS (specialValueAdditions)
+- visible: true/false
+- selectedItems: Complimentary/free items (Free Drone, Free Reel Package, Free Extra Hours)
+- note: Terms note
+
+PAGE 7: PRICING DETAILS (pricingPage)
+- visible: true/false
+- basePrice: Investment Amount
+- discountAmount, travelCharges, accommodationCharges, additionalCharges, gstPct
+- note: Price validity label
+
+PAGE 8: PAYMENT TERMS & SCHEDULE (paymentTermsPage)
+- visible: true/false
+- steps: Array of objects [{ name, pct, amount, status }]
+
+PAGE 9: ADD-ONS & UPGRADES (addOnsPage)
+- visible: true/false
+- items: Array of objects [{ id, title, price, selected }]
+
+PAGE 10: TERMS & CONDITIONS (termsPage)
+- KEEP DEFAULT TEMPLATE TERMS AS IS (use_existing_default_terms: YES).
+
+PAGE 11: THANK YOU (thankYouPage)
+- KEEP DEFAULT TEMPLATE BRANDING & CONTACT AS IS.
 
 ==================================================
 LEAD & CLIENT METADATA CONTEXT
@@ -56,11 +110,11 @@ LEAD & CLIENT METADATA CONTEXT
 - Lead Name: ${lead.name || 'N/A'}
 - Phone: ${lead.phone || 'N/A'}
 - Email: ${lead.email || 'N/A'}
-- Raw Lead Form Details: ${JSON.stringify(lead.raw_payload || {}, null, 2)}
+- Lead Form Payload: ${JSON.stringify(lead.raw_payload || {}, null, 2)}
 - Lead Comments & Notes: ${Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text).join('\n') : 'N/A'}
 - Additional Notes: ${additionalNotes || 'N/A'}
 
-Respond strictly in valid JSON matching StudioCore Quotation Document Schema.`;
+Respond strictly in valid JSON matching StudioCore Quotation Schema.`;
 
     navigator.clipboard.writeText(masterPrompt);
     setPromptCopied(true);
