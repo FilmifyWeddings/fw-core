@@ -19,6 +19,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/auth') ||
     pathname.startsWith('/api/webhooks') ||
     pathname.startsWith('/api/public') ||
+    pathname.startsWith('/attendance') ||
     pathname.startsWith('/_next') ||
     pathname === '/privacy-policy' ||
     pathname === '/terms-of-service' ||
@@ -29,7 +30,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/p/quotation') ||
     pathname.includes('.');
 
-  // If visiting any public route (especially /login), pass through unconditionally!
+  // If visiting any public route (especially /login or /attendance), pass through unconditionally!
   if (isPublicRoute) {
     return response;
   }

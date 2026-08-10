@@ -348,7 +348,7 @@ export interface FWWhatsAppLog {
 // SaaS Suite Registry Types
 // ─────────────────────────────────────────────────────────────
 
-export type SubAppSlug = 'team-manager' | 'quotations' | 'leads' | 'integrations' | 'clients' | 'post-production' | 'finance';
+export type SubAppSlug = 'team-manager' | 'quotations' | 'leads' | 'integrations' | 'clients' | 'post-production' | 'finance' | 'attendance';
 
 export interface SuiteAppNavItem {
   label: string;
@@ -481,8 +481,177 @@ export const SUITE_REGISTRY: SuiteRegistry = {
         { label: 'Post-Production', icon: 'Film', href: '/workspace/post-production' },
       ],
     },
+    {
+      slug: 'attendance',
+      title: 'Workforce Attendance',
+      subtitle: 'Selfie & GPS Clock-In',
+      description: 'Mobile-first workforce attendance with live selfie verification, GPS geofencing, event shoot logs, and automatic overtime tracking.',
+      icon: 'Clock',
+      accentColor: '#10B981',
+      accentGradient: 'from-emerald-500 to-teal-600',
+      href: '/workspace/attendance',
+      sidebarNavItems: [
+        { label: 'Daily Roster', icon: 'Clock', href: '/workspace/attendance' },
+        { label: 'Live Crew Activity', icon: 'Users', href: '/workspace/attendance' },
+        { label: 'Leave Management', icon: 'Calendar', href: '/workspace/attendance' },
+        { label: 'Geofence & Shifts', icon: 'Globe', href: '/workspace/attendance' },
+      ],
+    },
   ],
 };
+
+// ─────────────────────────────────────────────────────────────
+// Workforce Attendance & Time Tracking Types
+// ─────────────────────────────────────────────────────────────
+
+export interface AttendanceSettings {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  require_selfie: boolean;
+  require_geofence: boolean;
+  grace_period_minutes: number;
+  default_shift_start: string;
+  default_shift_end: string;
+  half_day_threshold_hours: number;
+  full_day_threshold_hours: number;
+  overtime_threshold_hours: number;
+  photo_retention_days: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AttendanceLocation {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radius_meters: number;
+  address?: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AttendanceShift {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  is_overnight: boolean;
+  grace_period_minutes: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AttendanceMemberLink {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  member_id: string;
+  member?: FWTeamMember | null;
+  secure_token: string;
+  is_active: boolean;
+  last_accessed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  member_id: string;
+  member?: FWTeamMember | null;
+  project_id?: string | null;
+  project?: FWProject | null;
+  date: string; // YYYY-MM-DD
+  status: 'present' | 'absent' | 'late' | 'half_day' | 'leave' | 'holiday' | 'week_off';
+  check_in_time?: string | null;
+  check_in_lat?: number | null;
+  check_in_lng?: number | null;
+  check_in_accuracy?: number | null;
+  check_in_photo_path?: string | null;
+  check_in_location_id?: string | null;
+  check_in_location?: AttendanceLocation | null;
+  check_in_verified: boolean;
+  check_in_geofence_status: 'verified' | 'outside_geofence' | 'overridden' | 'no_geofence';
+  check_out_time?: string | null;
+  check_out_lat?: number | null;
+  check_out_lng?: number | null;
+  check_out_photo_path?: string | null;
+  check_out_verified: boolean;
+  work_duration_minutes: number;
+  break_duration_minutes: number;
+  overtime_minutes: number;
+  late_minutes: number;
+  early_checkout_minutes: number;
+  shift_id?: string | null;
+  device_info?: Record<string, any>;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AttendanceBreak {
+  id: string;
+  attendance_record_id: string;
+  user_id: string;
+  workspace_id: string;
+  member_id: string;
+  break_start: string;
+  break_end?: string | null;
+  duration_minutes: number;
+  break_type: 'lunch' | 'tea' | 'custom' | string;
+  created_at?: string;
+}
+
+export interface AttendanceLeaveRequest {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  member_id: string;
+  member?: FWTeamMember | null;
+  leave_type: 'casual' | 'sick' | 'paid' | 'unpaid' | 'half_day' | 'emergency';
+  start_date: string;
+  end_date: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by?: string | null;
+  review_notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AttendanceCorrection {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  member_id: string;
+  member?: FWTeamMember | null;
+  attendance_record_id?: string | null;
+  requested_check_in?: string | null;
+  requested_check_out?: string | null;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by?: string | null;
+  created_at?: string;
+}
+
+export interface AttendanceHoliday {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  name: string;
+  date: string;
+  is_optional: boolean;
+  created_at?: string;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Workspace Clients, Post-Production & Finance Types
