@@ -46,17 +46,6 @@ const formatMemberName2Lines = (fullName: string) => {
   return { line1, line2 };
 };
 
-const customStyle = `
-  html, body {
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    height: auto !important;
-    min-height: 100% !important;
-    background-color: #F1F5F9 !important;
-    color: #0B111E !important;
-  }
-`;
-
 // Helper to extract 2-letter uppercase initials (e.g. "Sushant Nawale" -> "SN")
 const getInitials = (name: string): string => {
   if (!name) return 'TM';
@@ -673,15 +662,8 @@ export default function TeamManagerPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F8F9FD] text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 pb-20 md:pb-6">
-      <style>{customStyle}</style>
-
-      {/* ─────────────────────────────────────────────────────────────
-          MAIN CONTENT WORKSPACE AREA (100% FULL WIDTH RESPONSIVE)
-         ───────────────────────────────────────────────────────────── */}
-      <main className="w-full min-h-screen px-4 sm:px-6 lg:px-8 py-6 bg-slate-100 space-y-6">
-        
-        {/* PC STICKY TOP TOOLBAR WRAPPER */}
+    <div className="w-full min-h-screen bg-slate-100 text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-20 md:pb-6">
+      {/* PC STICKY TOP TOOLBAR WRAPPER */}
         <div className="sticky top-0 z-30 bg-slate-100/95 backdrop-blur-md pb-4 pt-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 border-b border-slate-200/60 shadow-2xs space-y-4">
           {/* Top Responsive Header Block */}
           <div className="flex flex-row items-center justify-between gap-3">
@@ -1346,8 +1328,6 @@ export default function TeamManagerPage() {
             )}
           </div>
         )}
-
-      </main>
 
       {/* ─── MOBILE STICKY BOTTOM FOOTER NAVIGATION BAR (FLOATING PILL STYLE) ─── */}
       <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm">
