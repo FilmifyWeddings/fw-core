@@ -4,8 +4,10 @@ export const maxDuration = 120; // 2 minutes server execution timeout
 
 /**
  * Server-side AI Voice Comment API Route
- * Step A: Direct Audio Transcription via Groq Whisper Large-v3 (Multi-lingual: Hindi, Marathi, Gujarati, English, etc.)
- * Step B: Google Gemini 1.5 Flash (or GPT-4o-mini) Text Formatting with Output Script Selector
+ * Dual-Engine Architecture:
+ * 1. Primary: Direct Audio via Groq Whisper Large-v3 (or OpenAI Whisper)
+ * 2. Fallback: Client-Captured Live Real-Time Speech Transcript
+ * 3. Step B: Gemini 1.5 Flash (or GPT-4o-mini) Text Polishing & Script Matching
  */
 export async function POST(req: NextRequest) {
   try {
@@ -14,6 +16,7 @@ export async function POST(req: NextRequest) {
     const openAiKey = process.env.OPENAI_API_KEY;
 
     let rawTranscript = '';
+    let liveFallbackText = '';
     let audioFile: Blob | File | null = null;
     let outputFormat: 'auto' | 'hinglish' | 'native' | 'english' = 'auto';
 
@@ -21,90 +24,104 @@ export async function POST(req: NextRequest) {
     if (contentType.includes('application/json')) {
       const body = await req.json().catch(() => ({}));
       if (body.rawText) rawTranscript = String(body.rawText).trim();
+      if (body.liveText) liveFallbackText = String(body.liveText).trim();
       if (body.outputFormat) outputFormat = body.outputFormat;
     } else {
       const formData = await req.formData();
       const directText = formData.get('rawText');
       if (directText) rawTranscript = String(directText).trim();
+
+      const liveTextVal = formData.get('liveText');
+      if (liveTextVal) liveFallbackText = String(liveTextVal).trim();
+
       audioFile = formData.get('audio') as Blob | File | null;
+
       const formatVal = formData.get('outputFormat');
       if (formatVal && ['auto', 'hinglish', 'native', 'english'].includes(String(formatVal))) {
         outputFormat = formatVal as any;
       }
     }
 
-    // Step A: Transcribe Audio using Groq Whisper Large-v3 (with OpenAI fallback)
+    // Step A: Transcribe Audio via Groq Whisper Large-v3
     if (!rawTranscript && audioFile) {
       const audioArrayBuffer = await audioFile.arrayBuffer();
 
-      // 1. Direct Groq Whisper Large-v3
-      if (groqKey) {
-        try {
-          const groqFormData = new FormData();
-          const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
-            type: audioFile.type || 'audio/webm',
-          });
-          groqFormData.append('file', fileObj);
-          groqFormData.append('model', 'whisper-large-v3');
-          groqFormData.append('temperature', '0');
-          groqFormData.append(
-            'prompt',
-            'StudioCore Indian Wedding Photography Client Notes. Automatically transcribes Marathi, Hindi, Gujarati, Punjabi, Bengali, Tamil, Telugu, Kannada, Hinglish, and English.'
-          );
+      if (audioArrayBuffer && audioArrayBuffer.byteLength > 500) {
+        // 1. Try Groq Whisper Large-v3
+        if (groqKey) {
+          try {
+            const groqFormData = new FormData();
+            const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
+              type: audioFile.type || 'audio/webm',
+            });
+            groqFormData.append('file', fileObj);
+            groqFormData.append('model', 'whisper-large-v3');
+            groqFormData.append('temperature', '0');
+            groqFormData.append(
+              'prompt',
+              'StudioCore Wedding Photography Client Notes in Marathi, Hindi, Hinglish, Gujarati, Bengali, Tamil, Telugu, and English.'
+            );
 
-          const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${groqKey}`,
-            },
-            body: groqFormData,
-          });
+            const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${groqKey}`,
+              },
+              body: groqFormData,
+            });
 
-          if (groqRes.ok) {
-            const groqJson = await groqRes.json();
-            rawTranscript = (groqJson.text || '').trim();
-            console.log('[Groq Whisper Large-v3 Success]:', rawTranscript);
-          } else {
-            const errBody = await groqRes.text();
-            console.warn('[Groq Whisper Error]:', errBody);
+            if (groqRes.ok) {
+              const groqJson = await groqRes.json();
+              rawTranscript = (groqJson.text || '').trim();
+              console.log('[Groq Whisper Large-v3 Result]:', rawTranscript);
+            } else {
+              const errBody = await groqRes.text();
+              console.warn('[Groq Whisper Error Body]:', errBody);
+            }
+          } catch (e) {
+            console.warn('[Groq Whisper Exception]:', e);
           }
-        } catch (e) {
-          console.warn('[Groq API Exception]:', e);
         }
-      }
 
-      // 2. Fallback to OpenAI Whisper API
-      if (!rawTranscript && openAiKey) {
-        try {
-          const whisperFormData = new FormData();
-          const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
-            type: audioFile.type || 'audio/webm',
-          });
-          whisperFormData.append('file', fileObj);
-          whisperFormData.append('model', 'whisper-1');
+        // 2. Fallback to OpenAI Whisper API
+        if (!rawTranscript && openAiKey) {
+          try {
+            const whisperFormData = new FormData();
+            const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
+              type: audioFile.type || 'audio/webm',
+            });
+            whisperFormData.append('file', fileObj);
+            whisperFormData.append('model', 'whisper-1');
 
-          const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${openAiKey}`,
-            },
-            body: whisperFormData,
-          });
+            const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${openAiKey}`,
+              },
+              body: whisperFormData,
+            });
 
-          if (whisperRes.ok) {
-            const whisperJson = await whisperRes.json();
-            rawTranscript = (whisperJson.text || '').trim();
-            console.log('[OpenAI Whisper Success]:', rawTranscript);
+            if (whisperRes.ok) {
+              const whisperJson = await whisperRes.json();
+              rawTranscript = (whisperJson.text || '').trim();
+              console.log('[OpenAI Whisper Result]:', rawTranscript);
+            }
+          } catch (e) {
+            console.warn('[OpenAI Whisper Exception]:', e);
           }
-        } catch (e) {
-          console.warn('[OpenAI Whisper Exception]:', e);
         }
       }
     }
 
+    // 3. Fallback to client-side real-time transcript if whisper did not return
+    if (!rawTranscript && liveFallbackText) {
+      rawTranscript = liveFallbackText;
+      console.log('[Using Live WebSpeech Fallback]:', rawTranscript);
+    }
+
     if (!rawTranscript) {
       return NextResponse.json(
-        { success: false, error: 'Could not transcribe speech. Please speak clearly and try again.' },
+        { success: false, error: 'No speech detected. Please speak clearly into your mic and try again.' },
         { status: 400 }
       );
     }
@@ -116,7 +133,7 @@ export async function POST(req: NextRequest) {
     if (outputFormat === 'hinglish') {
       formatGuideline = `OUTPUT SCRIPT RULE: Output in clean, natural HINGLISH or MARATHISH using English/Latin alphabet (e.g. "Client ne bola ki Haldi aur Sangeet ke photos 7 days me chahiye"). Do NOT use Devanagari script.`;
     } else if (outputFormat === 'native') {
-      formatGuideline = `OUTPUT SCRIPT RULE: Output in original authentic Indian Script (Devanagari for Hindi/Marathi, e.g. "लग्नाचे आणि रिसेप्शनचे फोटो वेळेवर द्यावे" or "क्लाइंट ने टोकन अमाउंट दे दिया है"). Keep the exact native language script.`;
+      formatGuideline = `OUTPUT SCRIPT RULE: Output in authentic Indian Script (Devanagari for Hindi/Marathi, e.g. "लग्नाचे आणि रिसेप्शनचे फोटो वेळेवर द्यावे" or "क्लाइंट ने टोकन अमाउंट दे दिया है"). Preserve the exact native language script.`;
     } else if (outputFormat === 'english') {
       formatGuideline = `OUTPUT SCRIPT RULE: Translate and output in clean, professional ENGLISH text (e.g. "The client requested delivery of wedding and reception photos on time").`;
     } else {

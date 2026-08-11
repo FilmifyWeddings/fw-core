@@ -4,7 +4,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Mic, Sparkles, X, Check, RotateCcw, Loader2, Square, 
-  Volume2, Globe, Copy, ArrowRight, Wand2, ShieldCheck
+  Volume2, Globe, Copy, ArrowRight, Wand2, ShieldCheck,
+  CheckCircle2, RefreshCw
 } from 'lucide-react';
 
 interface AiMicButtonProps {
@@ -24,6 +25,7 @@ export default function AiMicButton({
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing' | 'review'>('idle');
   const [seconds, setSeconds] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [liveStreamText, setLiveStreamText] = useState('');
   const [rawTranscript, setRawTranscript] = useState('');
   const [cleanedComment, setCleanedComment] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -32,14 +34,16 @@ export default function AiMicButton({
   // Output Script Style Selector
   const [outputFormat, setOutputFormat] = useState<'auto' | 'hinglish' | 'native' | 'english'>('auto');
 
-  // MediaRecorder & Web Audio References
+  // MediaRecorder, WebSpeech & Web Audio References
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recognitionRef = useRef<any>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const liveTextRef = useRef<string>('');
 
   // Clean up recording tracks on unmount or modal close
   useEffect(() => {
@@ -57,6 +61,12 @@ export default function AiMicButton({
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -71,6 +81,7 @@ export default function AiMicButton({
     setIsOpen(true);
     setRecordingState('idle');
     setErrorMessage(null);
+    setLiveStreamText('');
     setRawTranscript('');
     setCleanedComment('');
     setSeconds(0);
@@ -84,11 +95,47 @@ export default function AiMicButton({
 
   const startRecording = async () => {
     setErrorMessage(null);
+    setLiveStreamText('');
     setRawTranscript('');
     setCleanedComment('');
     setSeconds(0);
+    liveTextRef.current = '';
     audioChunksRef.current = [];
 
+    // 1. Initialize Real-Time Live Speech Recognition (WebSpeech API)
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      try {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        // Multi-lingual Indian Speech Support
+        rec.lang = 'hi-IN'; // Recognizes Hindi, Marathi, Hinglish naturally
+
+        rec.onresult = (event: any) => {
+          let fullStr = '';
+          for (let i = 0; i < event.results.length; i++) {
+            fullStr += event.results[i][0].transcript + ' ';
+          }
+          const trimmed = fullStr.trim();
+          liveTextRef.current = trimmed;
+          setLiveStreamText(trimmed);
+        };
+
+        rec.onerror = (e: any) => {
+          console.warn('[WebSpeech Warning]:', e.error);
+        };
+
+        rec.start();
+        recognitionRef.current = rec;
+      } catch (e) {
+        console.warn('[WebSpeech Init Error]:', e);
+      }
+    }
+
+    // 2. Initialize Microphone & High-Fidelity Audio Stream
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -99,7 +146,7 @@ export default function AiMicButton({
       });
       streamRef.current = stream;
 
-      // Set up Web Audio API for dynamic ChatGPT/Gemini Soundwave Orb Visualizer
+      // Web Audio API for Gemini / ChatGPT Live Soundwave Visualizer
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
       audioCtxRef.current = audioCtx;
@@ -111,7 +158,7 @@ export default function AiMicButton({
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      // Live volume amplitude loop
+      // Real-time volume amplitude loop
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const updateVolume = () => {
         if (!analyserRef.current) return;
@@ -146,24 +193,26 @@ export default function AiMicButton({
       };
 
       mediaRecorder.onstop = async () => {
+        const liveCaptured = liveTextRef.current.trim();
         const audioBlob = new Blob(audioChunksRef.current, {
           type: mediaRecorder.mimeType || 'audio/webm',
         });
 
         stopMediaTracks();
 
-        if (audioBlob.size > 800) {
-          await sendAudioToGroqWhisper(audioBlob);
+        // Process audio via Dual-Engine (Groq Whisper + Live Speech Fallback)
+        if (audioBlob.size > 500 || liveCaptured.length > 2) {
+          await processVoiceInput(audioBlob, liveCaptured);
         } else {
-          setErrorMessage('Recording was too short. Please tap the mic and speak clearly.');
+          setErrorMessage('Recording too short. Please speak clearly into your mic.');
           setRecordingState('idle');
         }
       };
 
-      mediaRecorder.start(250); // Slice data every 250ms
+      mediaRecorder.start(250); // Collect data chunks every 250ms
       setRecordingState('recording');
 
-      // Continuous recording timer (NO 1-minute limit!)
+      // Continuous recording timer (No limit!)
       timerIntervalRef.current = setInterval(() => {
         setSeconds((prev) => prev + 1);
       }, 1000);
@@ -171,7 +220,7 @@ export default function AiMicButton({
       console.error('[Voice Recording Error]:', err);
       setErrorMessage(
         err.name === 'NotAllowedError'
-          ? 'Microphone permission denied. Please allow microphone access in browser settings.'
+          ? 'Microphone permission denied. Please allow mic access in browser settings.'
           : 'Could not access microphone. Please check your mic connection.'
       );
       setRecordingState('idle');
@@ -179,6 +228,11 @@ export default function AiMicButton({
   };
 
   const stopRecording = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
@@ -188,14 +242,15 @@ export default function AiMicButton({
     }
   };
 
-  // Direct Audio Transmission to Groq Whisper Large-v3 API
-  const sendAudioToGroqWhisper = async (blob: Blob) => {
+  // Send to API with Groq Whisper + Live Speech + Gemini Polish
+  const processVoiceInput = async (blob: Blob, liveText: string) => {
     setRecordingState('processing');
     setErrorMessage(null);
 
     try {
       const formData = new FormData();
       formData.append('audio', blob, 'voice_comment.webm');
+      formData.append('liveText', liveText);
       formData.append('outputFormat', outputFormat);
 
       const res = await fetch('/api/ai/voice-comment', {
@@ -208,13 +263,20 @@ export default function AiMicButton({
         throw new Error(json.error || 'Speech transcription failed.');
       }
 
-      setRawTranscript(json.rawTranscript || '');
-      setCleanedComment(json.cleanedComment || json.text || '');
+      setRawTranscript(json.rawTranscript || liveText || '');
+      setCleanedComment(json.cleanedComment || json.text || liveText || '');
       setRecordingState('review');
     } catch (err: any) {
-      console.error('[Groq Whisper Error]:', err);
-      setErrorMessage(err.message || 'Speech recognition failed. Please try again.');
-      setRecordingState('idle');
+      console.error('[Voice Processing Error]:', err);
+      if (liveText.length > 2) {
+        // Safe graceful fallback to live recognized transcript
+        setRawTranscript(liveText);
+        setCleanedComment(liveText);
+        setRecordingState('review');
+      } else {
+        setErrorMessage(err.message || 'Speech recognition failed. Please try again.');
+        setRecordingState('idle');
+      }
     }
   };
 
@@ -250,46 +312,46 @@ export default function AiMicButton({
         whileTap={{ scale: 0.95 }}
         whileHover={{ scale: 1.03 }}
         onClick={handleOpenModal}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-md shadow-emerald-500/20 border border-emerald-400/40 transition-all ${className}`}
-        title="Record AI Voice Note (Whisper Large-v3)"
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-600 via-teal-600 to-amber-500 hover:from-emerald-500 hover:to-amber-400 text-white shadow-md shadow-emerald-500/20 border border-emerald-300 transition-all ${className}`}
+        title="Record AI Voice Note (ChatGPT / Gemini Style)"
       >
-        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+        <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-pulse" />
         <Mic className="w-3.5 h-3.5" />
         <span>{buttonText}</span>
       </motion.button>
 
       {/* ─────────────────────────────────────────────────────────────
-          FUTURISTIC CHATGPT / GEMINI LIVE VOICE MODAL
+          LIGHT THEME CHATGPT / GEMINI LIVE VOICE MODAL
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md font-sans">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-md font-sans">
             <motion.div
-              initial={{ scale: 0.92, opacity: 0, y: 20 }}
+              initial={{ scale: 0.94, opacity: 0, y: 16 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.92, opacity: 0, y: 20 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="relative w-full max-w-lg bg-slate-900/95 text-white rounded-3xl border border-slate-700/80 shadow-2xl shadow-emerald-500/10 overflow-hidden flex flex-col p-6 space-y-6"
+              exit={{ scale: 0.94, opacity: 0, y: 16 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 320 }}
+              className="relative w-full max-w-lg bg-[#FDFCF7] text-slate-900 rounded-3xl border border-emerald-200/90 shadow-2xl overflow-hidden flex flex-col p-6 space-y-5"
             >
-              {/* Background ambient neon glow */}
-              <div className="absolute -top-24 -right-24 w-60 h-60 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute -bottom-24 -left-24 w-60 h-60 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
+              {/* Background Light Ambient Glow */}
+              <div className="absolute -top-20 -right-20 w-52 h-52 bg-emerald-100/60 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-20 -left-20 w-52 h-52 bg-amber-100/60 rounded-full blur-3xl pointer-events-none" />
 
               {/* Modal Header */}
-              <div className="flex items-center justify-between z-10">
+              <div className="flex items-center justify-between z-10 border-b border-emerald-100/80 pb-3.5">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 text-white">
-                    <Wand2 className="w-4 h-4" />
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-500/20 text-white">
+                    <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black tracking-tight text-white flex items-center gap-1.5">
-                      StudioCore AI Voice Note
-                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        Whisper Large-v3
+                    <h3 className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+                      StudioCore AI Voice
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Live AI
                       </span>
                     </h3>
-                    <p className="text-[11px] font-medium text-slate-400">
-                      Multi-lingual speech: Marathi, Hindi, Hinglish, English
+                    <p className="text-[11px] font-semibold text-slate-500">
+                      Real-time Indian speech: Marathi, Hindi, Hinglish, English
                     </p>
                   </div>
                 </div>
@@ -297,7 +359,7 @@ export default function AiMicButton({
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -307,11 +369,11 @@ export default function AiMicButton({
                   OUTPUT SCRIPT / LANGUAGE FORMAT SELECTOR
               ───────────────────────────────────────────────────────────── */}
               <div className="z-10 space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-bold px-1">
-                  <span>Output Script Style:</span>
-                  <span className="text-emerald-400 font-mono text-[10px]">Auto-detects Spoken Language</span>
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-extrabold px-1">
+                  <span>Output Script Format:</span>
+                  <span className="text-emerald-700 font-mono text-[10px] font-bold">Auto-matches Spoken Language</span>
                 </div>
-                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-950/60 border border-slate-800 rounded-2xl">
+                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100/80 border border-slate-200/80 rounded-2xl">
                   {[
                     { id: 'auto', label: '🌟 Auto Style', hint: 'Natural' },
                     { id: 'hinglish', label: '🔤 Hinglish', hint: 'Roman ABC' },
@@ -322,14 +384,14 @@ export default function AiMicButton({
                       key={tab.id}
                       type="button"
                       onClick={() => setOutputFormat(tab.id as any)}
-                      className={`py-2 px-1 rounded-xl text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                      className={`py-2 px-1 rounded-xl text-xs font-black transition flex flex-col items-center justify-center gap-0.5 ${
                         outputFormat === tab.id
-                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30 border border-emerald-400/40'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                          ? 'bg-white text-emerald-900 shadow-sm border border-emerald-300'
+                          : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
                       <span className="text-[11px] leading-tight">{tab.label}</span>
-                      <span className="text-[9px] opacity-75 font-normal">{tab.hint}</span>
+                      <span className="text-[9px] opacity-75 font-semibold">{tab.hint}</span>
                     </button>
                   ))}
                 </div>
@@ -338,31 +400,31 @@ export default function AiMicButton({
               {/* ─────────────────────────────────────────────────────────────
                   MAIN INTERACTIVE BODY
               ───────────────────────────────────────────────────────────── */}
-              <div className="z-10 flex flex-col items-center justify-center py-4 space-y-5">
+              <div className="z-10 flex flex-col items-center justify-center py-2 space-y-4">
                 
-                {/* 1. RECORDING & IDLE STATE: GEMINI LIVE SOUNDWAVE ORB */}
+                {/* 1. RECORDING & IDLE STATE: GEMINI / CHATGPT LIVE SOUNDWAVE ORB */}
                 {recordingState === 'recording' || recordingState === 'idle' ? (
-                  <div className="flex flex-col items-center space-y-4">
-                    {/* Animated Pulsing Soundwave Orb */}
-                    <div className="relative flex items-center justify-center">
+                  <div className="w-full flex flex-col items-center space-y-4">
+                    {/* Animated Pulsing Soundwave Orb (Light Theme) */}
+                    <div className="relative flex items-center justify-center my-2">
                       {/* Pulse Wave Ring 1 */}
                       <motion.div
                         animate={{
-                          scale: recordingState === 'recording' ? [1, 1.2 + audioLevel * 0.008, 1] : 1,
-                          opacity: recordingState === 'recording' ? [0.3, 0.7, 0.3] : 0.2,
+                          scale: recordingState === 'recording' ? [1, 1.25 + audioLevel * 0.008, 1] : 1,
+                          opacity: recordingState === 'recording' ? [0.4, 0.8, 0.4] : 0.3,
                         }}
                         transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
-                        className="absolute w-36 h-36 rounded-full bg-gradient-to-tr from-emerald-500/30 to-cyan-500/30 blur-md pointer-events-none"
+                        className="absolute w-32 h-32 rounded-full bg-emerald-200/70 blur-md pointer-events-none"
                       />
 
                       {/* Pulse Wave Ring 2 */}
                       <motion.div
                         animate={{
-                          scale: recordingState === 'recording' ? [1, 1.4 + audioLevel * 0.012, 1] : 1,
-                          opacity: recordingState === 'recording' ? [0.2, 0.5, 0.2] : 0.1,
+                          scale: recordingState === 'recording' ? [1, 1.45 + audioLevel * 0.012, 1] : 1,
+                          opacity: recordingState === 'recording' ? [0.3, 0.6, 0.3] : 0.15,
                         }}
                         transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
-                        className="absolute w-44 h-44 rounded-full bg-gradient-to-br from-teal-500/20 to-indigo-500/20 blur-lg pointer-events-none"
+                        className="absolute w-40 h-40 rounded-full bg-amber-200/50 blur-lg pointer-events-none"
                       />
 
                       {/* Center Mic Button */}
@@ -370,16 +432,16 @@ export default function AiMicButton({
                         type="button"
                         whileTap={{ scale: 0.94 }}
                         onClick={recordingState === 'recording' ? stopRecording : startRecording}
-                        className={`relative z-10 w-24 h-24 rounded-full flex items-center justify-center shadow-2xl transition-all ${
+                        className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all ${
                           recordingState === 'recording'
-                            ? 'bg-gradient-to-tr from-rose-600 to-rose-500 text-white shadow-rose-600/40 ring-4 ring-rose-500/30 animate-pulse'
-                            : 'bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-emerald-500/40 hover:scale-105 ring-4 ring-emerald-500/20'
+                            ? 'bg-gradient-to-tr from-rose-600 to-rose-500 text-white shadow-rose-500/30 ring-4 ring-rose-300 animate-pulse'
+                            : 'bg-gradient-to-tr from-emerald-600 via-teal-600 to-amber-500 text-white shadow-emerald-600/30 hover:scale-105 ring-4 ring-emerald-200'
                         }`}
                       >
                         {recordingState === 'recording' ? (
-                          <Square className="w-8 h-8 fill-current" />
+                          <Square className="w-7 h-7 fill-current" />
                         ) : (
-                          <Mic className="w-10 h-10 stroke-[2.3]" />
+                          <Mic className="w-8 h-8 stroke-[2.4]" />
                         )}
                       </motion.button>
                     </div>
@@ -390,42 +452,60 @@ export default function AiMicButton({
                         <>
                           <div className="flex items-center justify-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-                            <span className="text-2xl font-black font-mono tracking-widest text-white">
+                            <span className="text-2xl font-black font-mono tracking-widest text-slate-900">
                               {formatTimer(seconds)}
                             </span>
                           </div>
-                          <p className="text-xs font-semibold text-emerald-400">
-                            Listening... Speak naturally in Marathi, Hindi, or English
-                          </p>
-                          <p className="text-[10px] text-slate-500 font-medium">
-                            Tap red square when finished (No time limit)
+                          <p className="text-xs font-bold text-emerald-700">
+                            Listening live... Speak naturally in Marathi, Hindi, or English
                           </p>
                         </>
                       ) : (
                         <>
-                          <h4 className="text-sm font-black text-white">Tap Microphone to Speak</h4>
-                          <p className="text-xs text-slate-400 max-w-xs">
-                            Direct Groq Whisper Large-v3 recognition with instant multi-lingual auto-detection.
+                          <h4 className="text-sm font-black text-slate-900">Tap Microphone to Speak</h4>
+                          <p className="text-xs text-slate-500 max-w-xs font-medium">
+                            Live real-time speech recognition with auto multi-lingual detection.
                           </p>
                         </>
                       )}
                     </div>
+
+                    {/* REAL-TIME LIVE STREAMING TRANSCRIPT BOX */}
+                    {recordingState === 'recording' && (
+                      <div className="w-full p-4 rounded-2xl bg-white border border-emerald-200/90 shadow-sm text-xs space-y-1 min-h-[70px] max-h-36 overflow-y-auto">
+                        <div className="flex items-center justify-between text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider">
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Live Speech Streaming:
+                          </span>
+                          <span className="font-mono text-slate-400">Real-Time</span>
+                        </div>
+                        <p className="text-slate-800 font-bold leading-relaxed whitespace-pre-wrap">
+                          {liveStreamText || (
+                            <span className="text-slate-400 font-medium italic">
+                              Start speaking... your words will appear here in real-time...
+                            </span>
+                          )}
+                          <span className="inline-block w-1.5 h-3.5 bg-emerald-500 ml-1 animate-pulse" />
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : null}
 
                 {/* 2. PROCESSING STATE */}
                 {recordingState === 'processing' && (
-                  <div className="py-8 flex flex-col items-center justify-center space-y-4 text-center">
+                  <div className="py-6 flex flex-col items-center justify-center space-y-4 text-center">
                     <div className="relative">
-                      <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+                      <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-center">
+                        <RefreshCw className="w-7 h-7 text-emerald-600 animate-spin" />
                       </div>
-                      <Sparkles className="w-4 h-4 text-amber-400 absolute -top-1 -right-1 animate-bounce" />
+                      <Sparkles className="w-4 h-4 text-amber-500 absolute -top-1 -right-1 animate-bounce" />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-sm font-black text-white">Processing Voice Recording...</h4>
-                      <p className="text-xs text-slate-400">
-                        Transcribing via Groq Whisper Large-v3 & Polishing with Gemini AI
+                      <h4 className="text-sm font-black text-slate-900">Polishing Voice Note...</h4>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Transcribing & formatting quotation comment with AI
                       </p>
                     </div>
                   </div>
@@ -435,15 +515,15 @@ export default function AiMicButton({
                 {recordingState === 'review' && (
                   <div className="w-full space-y-4">
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-slate-400">
-                        <span className="flex items-center gap-1 text-emerald-400">
-                          <Check className="w-3.5 h-3.5" />
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+                        <span className="flex items-center gap-1 text-emerald-700 font-extrabold">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                           Polished AI Comment:
                         </span>
                         <button
                           type="button"
                           onClick={handleCopy}
-                          className="text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition"
+                          className="text-[11px] font-bold text-slate-500 hover:text-slate-900 flex items-center gap-1 transition"
                         >
                           <Copy className="w-3 h-3" />
                           {copied ? 'Copied!' : 'Copy'}
@@ -455,16 +535,16 @@ export default function AiMicButton({
                         rows={4}
                         value={cleanedComment}
                         onChange={(e) => setCleanedComment(e.target.value)}
-                        className="w-full p-3.5 rounded-2xl bg-slate-950/80 border border-emerald-500/40 text-white font-medium text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none shadow-inner"
+                        className="w-full p-3.5 rounded-2xl bg-white border border-emerald-300 text-slate-900 font-bold text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500/20 resize-none shadow-sm"
                       />
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center justify-between gap-3 pt-2">
+                    <div className="flex items-center justify-between gap-3 pt-1">
                       <button
                         type="button"
                         onClick={startRecording}
-                        className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1.5"
+                        className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         Record Again
@@ -473,7 +553,7 @@ export default function AiMicButton({
                       <button
                         type="button"
                         onClick={handleInsert}
-                        className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs tracking-wide uppercase shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 transition"
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs tracking-wide uppercase shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition"
                       >
                         <Check className="w-4 h-4 stroke-[2.5]" />
                         Insert into Comment
@@ -484,7 +564,7 @@ export default function AiMicButton({
 
                 {/* Error Banner */}
                 {errorMessage && (
-                  <div className="w-full p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs text-center font-semibold">
+                  <div className="w-full p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs text-center font-bold">
                     {errorMessage}
                   </div>
                 )}
