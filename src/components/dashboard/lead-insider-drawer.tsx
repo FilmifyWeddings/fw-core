@@ -11,6 +11,7 @@ import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { QuotationBuilder } from './quotation-builder';
 import { TeamTasksManager } from './team-tasks-manager';
+import AiMicButton from '@/components/AiMicButton';
 
 interface LeadInsiderDrawerProps {
   lead: Lead | null;
@@ -748,6 +749,13 @@ export function LeadInsiderDrawer({
                 onChange={(e) => setCommentText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
                 className="flex-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-3 rounded-xl text-xs focus:outline-none placeholder-slate-400 dark:placeholder-zinc-650"
+              />
+              <AiMicButton
+                size="md"
+                buttonText="Voice AI"
+                onInsertComment={(text) =>
+                  setCommentText((prev) => (prev ? `${prev} ${text}` : text))
+                }
               />
               <button
                 onClick={() => setEnableFollowup(!enableFollowup)}

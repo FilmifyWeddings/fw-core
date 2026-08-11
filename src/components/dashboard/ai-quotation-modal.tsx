@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
+import AiMicButton from '@/components/AiMicButton';
 
 interface AiQuotationModalProps {
   isOpen: boolean;
@@ -302,10 +303,19 @@ Respond strictly in valid JSON matching StudioCore Quotation Schema.`;
 
                 {/* Optional Additional Notes Input */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
-                    <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Add anything else for AI (Optional)</span>
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Add anything else for AI (Optional)</span>
+                    </label>
+                    <AiMicButton
+                      size="sm"
+                      buttonText="Voice AI Note"
+                      onInsertComment={(text) =>
+                        setAdditionalNotes((prev) => (prev ? `${prev}\n${text}` : text))
+                      }
+                    />
+                  </div>
                   <textarea
                     rows={4}
                     value={additionalNotes}
