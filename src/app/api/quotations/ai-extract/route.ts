@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
 import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
 
 export const maxDuration = 60; // 60 seconds timeout for AI generation
@@ -403,6 +403,37 @@ function fallbackHeuristicExtractor(contextData: any) {
  * Maps raw AI extraction result into the exact StudioCore Quotation JSON document structure.
  */
 function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextData: any) {
+  const rootObj = aiData.quotation || aiData;
+
+  // Check if aiData is ALREADY a structured StudioCore Quotation JSON document (e.g. pasted by user or output by LLM prompt)
+  if (rootObj.cover || rootObj.functionsPage || rootObj.pricingPage || rootObj.pages) {
+    const normDoc = normalizeQuotationData(rootObj);
+    const cName = normDoc.cover?.coupleName || (normDoc.cover?.groomName ? `${normDoc.cover.groomName} & ${normDoc.cover.brideName}` : 'Client & Partner');
+    const baseP = normDoc.pricingPage?.basePrice || 0;
+    const discP = normDoc.pricingPage?.discountAmount || 0;
+    const travP = normDoc.pricingPage?.travelCharges || 0;
+    const accP = normDoc.pricingPage?.accommodationCharges || 0;
+    const totAmount = baseP - discP + travP + accP;
+
+    const summary = {
+      coupleName: cName,
+      weddingDate: normDoc.functionsPage?.items?.[0]?.date || normDoc.cover?.weddingDate || 'Date TBD',
+      location: normDoc.cover?.locationName || 'Location TBD',
+      functionsCount: normDoc.functionsPage?.items?.length || 0,
+      functionsList: (normDoc.functionsPage?.items || []).map((f: any) => f.name),
+      photographers: 2,
+      cinematographers: 2,
+      totalInvestment: `₹${totAmount.toLocaleString('en-IN')}`
+    };
+
+    return {
+      document: normDoc,
+      summary,
+      missingInformation: [],
+      conflicts: []
+    };
+  }
+
   const doc = JSON.parse(JSON.stringify(baseSchema));
 
   const couple = aiData.couple || {};
