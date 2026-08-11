@@ -4,19 +4,14 @@ export const maxDuration = 60; // 60 seconds timeout
 
 /**
  * Server-side AI Voice Comment API Route
- * 1. Takes audio Blob from client FormData
- * 2. Transcribes multi-lingual audio (Hinglish/Hindi/Marathi/English) via OpenAI Whisper API
- * 3. Polishes & formats transcript using GPT-4o-mini tailored for Wedding Studio Quotations
+ * Step A: Groq API Whisper Large-v3 Speech-to-Text
+ * Step B: Google Gemini 1.5 Flash Text Formatting & Polish
  */
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { success: false, error: 'OPENAI_API_KEY is missing in server environment variables.' },
-        { status: 500 }
-      );
-    }
+    const groqKey = process.env.GROQ_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const openAiKey = process.env.OPENAI_API_KEY;
 
     const formData = await req.formData();
     const audioFile = formData.get('audio') as Blob | File | null;
@@ -28,85 +23,158 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Prepare FormData for OpenAI Whisper API
-    const whisperFormData = new FormData();
-    const fileBlob = new Blob([await audioFile.arrayBuffer()], { type: audioFile.type || 'audio/webm' });
-    whisperFormData.append('file', fileBlob, 'voice_comment.webm');
-    whisperFormData.append('model', 'whisper-1');
-    whisperFormData.append(
-      'prompt',
-      'StudioCore Wedding Photography Quotation Client Notes. Supports Hinglish, Hindi, Marathi, English.'
-    );
+    // Step A: Audio Transcription via Groq Whisper Large-v3 (or OpenAI Whisper fallback)
+    let rawTranscript = '';
+    const audioArrayBuffer = await audioFile.arrayBuffer();
 
-    // Call OpenAI Whisper API
-    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: whisperFormData,
-    });
+    if (groqKey) {
+      try {
+        const groqFormData = new FormData();
+        const fileBlob = new Blob([audioArrayBuffer], { type: audioFile.type || 'audio/webm' });
+        groqFormData.append('file', fileBlob, 'voice_recording.webm');
+        groqFormData.append('model', 'whisper-large-v3');
+        groqFormData.append(
+          'prompt',
+          'StudioCore Wedding Photography Client Notes. Supports Hinglish, Hindi, Marathi, and English.'
+        );
 
-    if (!whisperRes.ok) {
-      const errText = await whisperRes.text();
-      console.error('[Whisper API Error]:', errText);
-      return NextResponse.json(
-        { success: false, error: 'Audio transcription failed. Please try speaking again.' },
-        { status: 500 }
-      );
+        const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${groqKey}`,
+          },
+          body: groqFormData,
+        });
+
+        if (groqRes.ok) {
+          const groqJson = await groqRes.json();
+          rawTranscript = (groqJson.text || '').trim();
+        } else {
+          const errBody = await groqRes.text();
+          console.warn('[Groq Whisper Error]:', errBody);
+        }
+      } catch (e) {
+        console.warn('[Groq API Exception]:', e);
+      }
     }
 
-    const whisperJson = await whisperRes.json();
-    const rawTranscript = (whisperJson.text || '').trim();
+    // Fallback to OpenAI Whisper API if Groq failed or key absent
+    if (!rawTranscript && openAiKey) {
+      try {
+        const whisperFormData = new FormData();
+        const fileBlob = new Blob([audioArrayBuffer], { type: audioFile.type || 'audio/webm' });
+        whisperFormData.append('file', fileBlob, 'voice_comment.webm');
+        whisperFormData.append('model', 'whisper-1');
+
+        const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${openAiKey}`,
+          },
+          body: whisperFormData,
+        });
+
+        if (whisperRes.ok) {
+          const whisperJson = await whisperRes.json();
+          rawTranscript = (whisperJson.text || '').trim();
+        }
+      } catch (e) {
+        console.warn('[OpenAI Whisper Exception]:', e);
+      }
+    }
 
     if (!rawTranscript) {
       return NextResponse.json(
-        { success: false, error: 'No clear speech detected in recording. Please try again.' },
+        { success: false, error: 'Could not transcribe speech. Please speak clearly and try again.' },
         { status: 400 }
       );
     }
 
-    // Polish raw transcript using GPT-4o-mini
-    const polishSystemPrompt = `You are StudioCore AI Voice Assistant for wedding photography studios.
-Clean this raw voice transcript.
-1. Fix Hindi, Hinglish, Marathi, and English spelling or grammar errors.
-2. Format photography, event, and quotation terms cleanly (e.g., Haldi, Mehendi, Sangeet, Wedding, Pre-Wedding, Candid Photography, Cinematography, Drone, Album, Reels, Advance Payment, Deliverables, GST).
-3. Keep the exact tone and intent of the user. Do NOT add conversational filler like "Here is your cleaned comment:".
-4. Output ONLY the polished comment text string.`;
-
-    const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: polishSystemPrompt },
-          { role: 'user', content: rawTranscript },
-        ],
-        temperature: 0.3,
-      }),
-    });
-
+    // Step B: Text Cleanup & Formatting via Google Gemini 1.5 Flash (or GPT-4o fallback)
     let cleanedComment = rawTranscript;
-    if (chatRes.ok) {
-      const chatJson = await chatRes.json();
-      const content = chatJson.choices?.[0]?.message?.content?.trim();
-      if (content) {
-        // Strip quotes if wrapped
-        cleanedComment = content.replace(/^["']|["']$/g, '');
+    const systemInstruction =
+      'You are a professional wedding studio assistant. Clean up this raw voice transcript. Fix any Hinglish, Marathi, or Hindi phonetic typos, format wedding photography terms correctly, and return polished text for a quotation/lead comment.';
+
+    if (geminiKey) {
+      try {
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: `${systemInstruction}\n\nRaw Voice Transcript:\n"${rawTranscript}"\n\nReturn ONLY the clean polished text string:`,
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.2,
+              },
+            }),
+          }
+        );
+
+        if (geminiRes.ok) {
+          const geminiJson = await geminiRes.json();
+          const gText = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (gText) {
+            cleanedComment = gText.replace(/^["']|["']$/g, '');
+          }
+        } else {
+          const gErr = await geminiRes.text();
+          console.warn('[Gemini 1.5 Flash Error]:', gErr);
+        }
+      } catch (e) {
+        console.warn('[Gemini API Exception]:', e);
+      }
+    }
+
+    // Fallback to OpenAI GPT-4o-mini if Gemini wasn't available or failed
+    if (cleanedComment === rawTranscript && openAiKey) {
+      try {
+        const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${openAiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: rawTranscript },
+            ],
+            temperature: 0.2,
+          }),
+        });
+
+        if (chatRes.ok) {
+          const chatJson = await chatRes.json();
+          const content = chatJson.choices?.[0]?.message?.content?.trim();
+          if (content) {
+            cleanedComment = content.replace(/^["']|["']$/g, '');
+          }
+        }
+      } catch (e) {
+        console.warn('[GPT-4o Fallback Exception]:', e);
       }
     }
 
     return NextResponse.json({
       success: true,
+      text: cleanedComment,
       rawTranscript,
       cleanedComment,
     });
   } catch (error: any) {
-    console.error('[Voice Comment API Error]:', error);
+    console.error('[Voice Comment Route Error]:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error processing voice comment.' },
       { status: 500 }
