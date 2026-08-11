@@ -80,7 +80,10 @@ export default function AiMicButton({
         const rec = new SpeechRecognition();
         rec.continuous = true;
         rec.interimResults = true;
-        rec.lang = 'hi-IN'; // Multi-lingual Indian speech recognition
+        // Multi-lingual speech recognition (English, Hinglish, Marathi, Hindi)
+        if (typeof navigator !== 'undefined' && navigator.language) {
+          rec.lang = navigator.language.includes('hi') || navigator.language.includes('mr') ? navigator.language : 'en-IN';
+        }
 
         rec.onresult = (event: any) => {
           let currentText = '';

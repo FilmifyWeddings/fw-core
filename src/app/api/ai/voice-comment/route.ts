@@ -102,8 +102,17 @@ export async function POST(req: NextRequest) {
 
     // Step B: Text Cleanup & Formatting via Google Gemini 1.5 Flash (or GPT-4o fallback)
     let cleanedComment = rawTranscript;
-    const systemInstruction =
-      'You are a professional wedding studio assistant. Clean up this raw voice transcript. Fix any Hinglish, Marathi, or Hindi phonetic typos, format wedding photography terms correctly, and return polished text for a quotation/lead comment.';
+    const systemInstruction = `You are a professional StudioCore AI voice assistant for wedding photography studios.
+Clean up and format this raw voice transcript into a polished quotation/lead comment.
+
+LANGUAGE & TRANSCRIPTION RULES:
+1. MATCH THE USER'S SPOKEN LANGUAGE INTENT:
+   - If spoken in ENGLISH -> Output clean, professional ENGLISH.
+   - If spoken in HINGLISH -> Output clean HINGLISH / ENGLISH.
+   - If spoken in MARATHI or HINDI -> Output clean ENGLISH or HINGLISH comment that captures the exact meaning.
+2. Fix any phonetic typos and spellings.
+3. Standardize wedding photography & quotation terms (e.g., Haldi, Mehendi, Sangeet, Wedding, Pre-Wedding, Candid Photography, Cinematography, Drone, Album, Reels, Advance Payment, Deliverables, GST).
+4. Output ONLY the final polished comment text. Do NOT include intro text, conversational filler, or surround with quotes.`;
 
     if (geminiKey) {
       try {
