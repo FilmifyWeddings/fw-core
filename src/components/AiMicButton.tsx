@@ -19,19 +19,22 @@ export default function AiMicButton({
   const [isOpen, setIsOpen] = useState(false);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing' | 'review'>('idle');
   const [seconds, setSeconds] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState('');
   const [rawTranscript, setRawTranscript] = useState('');
   const [cleanedComment, setCleanedComment] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
 
-  // Web Audio & Recording References
+  // Web Audio & Speech Recognition References
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recognitionRef = useRef<any>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const liveSpeechTextRef = useRef<string>('');
 
   // Clean up recording on unmount or modal close
   useEffect(() => {
@@ -43,6 +46,12 @@ export default function AiMicButton({
   const stopMediaTracks = () => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -55,10 +64,44 @@ export default function AiMicButton({
 
   const startRecording = async () => {
     setErrorMessage(null);
+    setLiveTranscript('');
     setRawTranscript('');
     setCleanedComment('');
     setSeconds(0);
+    liveSpeechTextRef.current = '';
     audioChunksRef.current = [];
+
+    // Try initializing Web Speech API for real-time live browser transcription
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      try {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'hi-IN'; // Multi-lingual Indian speech recognition
+
+        rec.onresult = (event: any) => {
+          let currentText = '';
+          for (let i = 0; i < event.results.length; i++) {
+            currentText += event.results[i][0].transcript + ' ';
+          }
+          const trimmed = currentText.trim();
+          liveSpeechTextRef.current = trimmed;
+          setLiveTranscript(trimmed);
+        };
+
+        rec.onerror = (e: any) => {
+          console.warn('[WebSpeech API Warning]:', e.error);
+        };
+
+        rec.start();
+        recognitionRef.current = rec;
+      } catch (e) {
+        console.warn('[WebSpeech Init Error]:', e);
+      }
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -108,18 +151,22 @@ export default function AiMicButton({
       };
 
       mediaRecorder.onstop = async () => {
-        stopMediaTracks();
+        const liveText = liveSpeechTextRef.current.trim();
         const audioBlob = new Blob(audioChunksRef.current, {
           type: mediaRecorder.mimeType || 'audio/webm',
         });
 
-        if (audioBlob.size < 1000) {
-          setErrorMessage('Recording too short. Please speak again.');
-          setRecordingState('idle');
-          return;
-        }
+        stopMediaTracks();
 
-        await processAudio(audioBlob);
+        // If live text was captured by browser WebSpeech, use it directly!
+        if (liveText.length > 2) {
+          await processRawText(liveText);
+        } else if (audioBlob.size > 500) {
+          await processAudioBlob(audioBlob);
+        } else {
+          setErrorMessage('Recording too short. Please speak again clearly.');
+          setRecordingState('idle');
+        }
       };
 
       mediaRecorder.start(250); // Collect data chunks every 250ms
@@ -139,7 +186,7 @@ export default function AiMicButton({
       console.error('[Voice Recording Error]:', err);
       setErrorMessage(
         err.name === 'NotAllowedError'
-          ? 'Microphone permission denied. Please allow mic access in browser.'
+          ? 'Microphone permission denied. Please allow mic access in browser settings.'
           : 'Could not access microphone. Please check your mic settings.'
       );
       setRecordingState('idle');
@@ -147,6 +194,11 @@ export default function AiMicButton({
   };
 
   const stopRecording = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
@@ -155,7 +207,35 @@ export default function AiMicButton({
     }
   };
 
-  const processAudio = async (blob: Blob) => {
+  const processRawText = async (speechText: string) => {
+    setRecordingState('processing');
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch('/api/ai/voice-comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawText: speechText }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Voice text polishing failed.');
+      }
+
+      setRawTranscript(speechText);
+      setCleanedComment(json.cleanedComment || json.text || speechText);
+      setRecordingState('review');
+    } catch (err: any) {
+      console.warn('[Process RawText Exception]:', err);
+      // Fallback to raw text if AI API polishing fails
+      setRawTranscript(speechText);
+      setCleanedComment(speechText);
+      setRecordingState('review');
+    }
+  };
+
+  const processAudioBlob = async (blob: Blob) => {
     setRecordingState('processing');
     setErrorMessage(null);
 
@@ -174,11 +254,11 @@ export default function AiMicButton({
       }
 
       setRawTranscript(json.rawTranscript || '');
-      setCleanedComment(json.cleanedComment || json.rawTranscript || '');
+      setCleanedComment(json.cleanedComment || json.text || json.rawTranscript || '');
       setRecordingState('review');
     } catch (err: any) {
       console.error('[Voice Process Error]:', err);
-      setErrorMessage(err.message || 'AI processing failed. Please try again.');
+      setErrorMessage(err.message || 'Speech recognition failed. Please speak clearly and try again.');
       setRecordingState('idle');
     }
   };
@@ -225,7 +305,7 @@ export default function AiMicButton({
 
       {/* Live Voice Recording & Transcription Modal */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="w-full max-w-lg bg-[#141312] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-white">
             {/* Modal Header */}
             <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-gradient-to-r from-purple-950/40 via-zinc-900 to-indigo-950/40">
@@ -255,9 +335,9 @@ export default function AiMicButton({
                 </div>
               )}
 
-              {/* State 1: Active Recording with Soundwave */}
+              {/* State 1: Active Recording with Live Soundwave & Real-time Text */}
               {recordingState === 'recording' && (
-                <div className="space-y-4 text-center py-4">
+                <div className="space-y-4 text-center py-2">
                   {/* Glowing Mic Badge */}
                   <div className="relative inline-flex items-center justify-center">
                     <div className="absolute inset-0 rounded-full bg-purple-500/20 animate-ping" />
@@ -280,21 +360,26 @@ export default function AiMicButton({
                     })}
                   </div>
 
-                  {/* Timer & Status */}
-                  <div>
-                    <div className="text-2xl font-black font-mono tracking-wider text-purple-300">
-                      00:{seconds < 10 ? `0${seconds}` : seconds} / 01:00
-                    </div>
-                    <p className="text-xs text-zinc-400 font-medium mt-1">
-                      Listening... Speak your notes clearly
+                  {/* Real-time Streaming Live Text Box */}
+                  <div className="p-3 rounded-xl bg-zinc-900 border border-purple-500/30 text-left min-h-[60px] max-h-[100px] overflow-y-auto">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                      🎙️ Live Speech Text:
+                    </span>
+                    <p className="text-xs text-zinc-200 font-medium italic">
+                      {liveTranscript || 'Listening... Speak your notes clearly'}
                     </p>
+                  </div>
+
+                  {/* Timer */}
+                  <div className="text-xl font-black font-mono tracking-wider text-purple-300">
+                    00:{seconds < 10 ? `0${seconds}` : seconds} / 01:00
                   </div>
 
                   {/* Stop Recording Action */}
                   <button
                     type="button"
                     onClick={stopRecording}
-                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer inline-flex items-center gap-2"
+                    className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer inline-flex items-center gap-2"
                   >
                     <Square className="w-4 h-4 fill-white" />
                     <span>Done Speaking</span>
@@ -307,7 +392,7 @@ export default function AiMicButton({
                 <div className="py-10 space-y-3 text-center">
                   <Loader2 className="w-10 h-10 animate-spin text-purple-400 mx-auto" />
                   <p className="text-sm font-extrabold text-white">Transcribing & Polishing Comment...</p>
-                  <p className="text-xs text-zinc-400">Processing multi-lingual speech with OpenAI Whisper & GPT-4o</p>
+                  <p className="text-xs text-zinc-400">Formatting speech with Groq & Gemini 1.5 Flash</p>
                 </div>
               )}
 

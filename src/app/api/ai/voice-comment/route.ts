@@ -4,8 +4,8 @@ export const maxDuration = 60; // 60 seconds timeout
 
 /**
  * Server-side AI Voice Comment API Route
- * Step A: Groq API Whisper Large-v3 Speech-to-Text
- * Step B: Google Gemini 1.5 Flash Text Formatting & Polish
+ * Step A: Audio Transcription via Groq Whisper Large-v3 (or OpenAI Whisper fallback)
+ * Step B: Google Gemini 1.5 Flash (or GPT-4o-mini) Text Formatting & Polish
  */
 export async function POST(req: NextRequest) {
   try {
@@ -13,73 +13,83 @@ export async function POST(req: NextRequest) {
     const geminiKey = process.env.GEMINI_API_KEY;
     const openAiKey = process.env.OPENAI_API_KEY;
 
-    const formData = await req.formData();
-    const audioFile = formData.get('audio') as Blob | File | null;
-
-    if (!audioFile) {
-      return NextResponse.json(
-        { success: false, error: 'No audio file provided in request.' },
-        { status: 400 }
-      );
-    }
-
-    // Step A: Audio Transcription via Groq Whisper Large-v3 (or OpenAI Whisper fallback)
     let rawTranscript = '';
-    const audioArrayBuffer = await audioFile.arrayBuffer();
+    let audioFile: Blob | File | null = null;
 
-    if (groqKey) {
-      try {
-        const groqFormData = new FormData();
-        const fileBlob = new Blob([audioArrayBuffer], { type: audioFile.type || 'audio/webm' });
-        groqFormData.append('file', fileBlob, 'voice_recording.webm');
-        groqFormData.append('model', 'whisper-large-v3');
-        groqFormData.append(
-          'prompt',
-          'StudioCore Wedding Photography Client Notes. Supports Hinglish, Hindi, Marathi, and English.'
-        );
-
-        const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${groqKey}`,
-          },
-          body: groqFormData,
-        });
-
-        if (groqRes.ok) {
-          const groqJson = await groqRes.json();
-          rawTranscript = (groqJson.text || '').trim();
-        } else {
-          const errBody = await groqRes.text();
-          console.warn('[Groq Whisper Error]:', errBody);
-        }
-      } catch (e) {
-        console.warn('[Groq API Exception]:', e);
-      }
+    const contentType = req.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const body = await req.json().catch(() => ({}));
+      if (body.rawText) rawTranscript = String(body.rawText).trim();
+    } else {
+      const formData = await req.formData();
+      const directText = formData.get('rawText');
+      if (directText) rawTranscript = String(directText).trim();
+      audioFile = formData.get('audio') as Blob | File | null;
     }
 
-    // Fallback to OpenAI Whisper API if Groq failed or key absent
-    if (!rawTranscript && openAiKey) {
-      try {
-        const whisperFormData = new FormData();
-        const fileBlob = new Blob([audioArrayBuffer], { type: audioFile.type || 'audio/webm' });
-        whisperFormData.append('file', fileBlob, 'voice_comment.webm');
-        whisperFormData.append('model', 'whisper-1');
+    // If no direct text, transcribe audio file via Groq Whisper (or OpenAI fallback)
+    if (!rawTranscript && audioFile) {
+      const audioArrayBuffer = await audioFile.arrayBuffer();
 
-        const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${openAiKey}`,
-          },
-          body: whisperFormData,
-        });
+      // Try Groq Whisper Large-v3
+      if (groqKey) {
+        try {
+          const groqFormData = new FormData();
+          const fileObj = new File([audioArrayBuffer], 'voice_recording.webm', {
+            type: audioFile.type || 'audio/webm',
+          });
+          groqFormData.append('file', fileObj);
+          groqFormData.append('model', 'whisper-large-v3');
+          groqFormData.append(
+            'prompt',
+            'StudioCore Wedding Photography Client Notes. Supports Hinglish, Hindi, Marathi, and English.'
+          );
 
-        if (whisperRes.ok) {
-          const whisperJson = await whisperRes.json();
-          rawTranscript = (whisperJson.text || '').trim();
+          const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${groqKey}`,
+            },
+            body: groqFormData,
+          });
+
+          if (groqRes.ok) {
+            const groqJson = await groqRes.json();
+            rawTranscript = (groqJson.text || '').trim();
+          } else {
+            const errBody = await groqRes.text();
+            console.warn('[Groq Whisper Error]:', errBody);
+          }
+        } catch (e) {
+          console.warn('[Groq API Exception]:', e);
         }
-      } catch (e) {
-        console.warn('[OpenAI Whisper Exception]:', e);
+      }
+
+      // Fallback to OpenAI Whisper API
+      if (!rawTranscript && openAiKey) {
+        try {
+          const whisperFormData = new FormData();
+          const fileObj = new File([audioArrayBuffer], 'voice_comment.webm', {
+            type: audioFile.type || 'audio/webm',
+          });
+          whisperFormData.append('file', fileObj);
+          whisperFormData.append('model', 'whisper-1');
+
+          const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${openAiKey}`,
+            },
+            body: whisperFormData,
+          });
+
+          if (whisperRes.ok) {
+            const whisperJson = await whisperRes.json();
+            rawTranscript = (whisperJson.text || '').trim();
+          }
+        } catch (e) {
+          console.warn('[OpenAI Whisper Exception]:', e);
+        }
       }
     }
 
@@ -136,7 +146,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback to OpenAI GPT-4o-mini if Gemini wasn't available or failed
+    // Fallback to OpenAI GPT-4o-mini
     if (cleanedComment === rawTranscript && openAiKey) {
       try {
         const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
