@@ -51,26 +51,28 @@ async function handleGet(
       });
     }
 
-    // 2. Fetch User Template Metadata from quotation_templates
-    const { data: tmpl } = await supabaseAdmin
-      .from('quotation_templates')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+    // 2. Fetch Template, Document Snapshot, and Quotation Record in parallel (3x Faster!)
+    const [tmplRes, docRes, quoteRecRes] = await Promise.all([
+      supabaseAdmin
+        .from('quotation_templates')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('quotation_documents')
+        .select('*')
+        .eq('template_id', id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('quotations')
+        .select('*')
+        .or(`id.eq.${id},quotation_number.eq.${id}`)
+        .maybeSingle()
+    ]);
 
-    // 3. Fetch Document Snapshot from quotation_documents
-    const { data: doc } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('*')
-      .eq('template_id', id)
-      .maybeSingle();
-
-    // 4. Fetch Quotation Record from quotations if exists
-    const { data: quoteRec } = await supabaseAdmin
-      .from('quotations')
-      .select('*')
-      .or(`id.eq.${id},quotation_number.eq.${id}`)
-      .maybeSingle();
+    const tmpl = tmplRes.data;
+    const doc = docRes.data;
+    const quoteRec = quoteRecRes.data;
 
     const docJson = doc?.document_json || doc?.content_json || quoteRec?.canvas_data || quoteRec?.content_json || null;
 

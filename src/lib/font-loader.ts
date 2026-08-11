@@ -6,7 +6,7 @@ export interface FontItem {
   format?: 'truetype' | 'opentype';
 }
 
-// Pre-defined static list of custom fonts for instant client fallback
+// Pre-defined static list of custom fonts
 export const STATIC_CUSTOM_FONTS: FontItem[] = [
   { name: 'Aligin', family: "'Aligin', sans-serif", fileUrl: '/custom-fonts/aligin.otf', format: 'opentype', category: 'Custom Fonts' },
   { name: 'Amida', family: "'Amida', sans-serif", fileUrl: '/custom-fonts/amida.otf', format: 'opentype', category: 'Custom Fonts' },
@@ -60,10 +60,11 @@ export const SYSTEM_DISPLAY_FONTS: FontItem[] = [
 ];
 
 const registeredFontFamilies = new Set<string>();
+let combinedStyleElement: HTMLStyleElement | null = null;
 
 /**
- * Registers a font by dynamically injecting @font-face CSS rules into document.head
- * and using the Web FontFace API for instant rendering.
+ * Registers font CSS definitions into a single combined style block in document.head
+ * Uses browser-native lazy font fetching with font-display: swap (Zero upfront downloads!)
  */
 export function registerFontFace(font: FontItem): void {
   if (typeof window === 'undefined' || !font.fileUrl) return;
@@ -73,72 +74,69 @@ export function registerFontFace(font: FontItem): void {
 
   const fontFormat = font.format || (font.fileUrl.endsWith('.otf') ? 'opentype' : 'truetype');
   
-  // 1. Inject @font-face CSS Rule into head
-  const styleId = `font-face-${cleanFamilyName.replace(/[^a-zA-Z0-9]/g, '-')}`;
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.innerHTML = `
-      @font-face {
-        font-family: '${cleanFamilyName}';
-        src: url('${font.fileUrl}') format('${fontFormat}');
-        font-weight: normal;
-        font-style: normal;
-        font-display: swap;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  // 2. Use Web FontFace API if supported
-  if ('FontFace' in window) {
-    try {
-      const fontFace = new FontFace(cleanFamilyName, `url('${font.fileUrl}') format('${fontFormat}')`);
-      fontFace.load().then((loadedFace) => {
-        document.fonts.add(loadedFace);
-      }).catch((err) => {
-        console.warn(`[FontLoader] Failed to load font face ${cleanFamilyName}:`, err);
-      });
-    } catch (e) {
-      console.warn(`[FontLoader] Error creating FontFace for ${cleanFamilyName}:`, e);
+  if (!combinedStyleElement) {
+    combinedStyleElement = document.getElementById('studiocore-font-definitions') as HTMLStyleElement;
+    if (!combinedStyleElement) {
+      combinedStyleElement = document.createElement('style');
+      combinedStyleElement.id = 'studiocore-font-definitions';
+      document.head.appendChild(combinedStyleElement);
     }
   }
+
+  combinedStyleElement.innerHTML += `
+    @font-face {
+      font-family: '${cleanFamilyName}';
+      src: url('${font.fileUrl}') format('${fontFormat}');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+  `;
 
   registeredFontFamilies.add(cleanFamilyName);
 }
 
 /**
- * Register array of font items
+ * Register array of font items (CSS-only injection without eager network load)
  */
 export function registerAllFonts(fonts: FontItem[]): void {
   fonts.forEach(font => registerFontFace(font));
 }
 
 /**
- * Fetches dynamic custom fonts from /api/fonts endpoint and registers them all
+ * Preload and activate a specific single font on-demand when selected or used in document
+ */
+export async function preloadActiveFont(fontNameOrFamily: string): Promise<void> {
+  if (typeof window === 'undefined' || !fontNameOrFamily) return;
+
+  const cleanName = fontNameOrFamily.replace(/['",]/g, '').trim();
+  const fontItem = STATIC_CUSTOM_FONTS.find(
+    f => f.name.toLowerCase() === cleanName.toLowerCase() || f.family.toLowerCase().includes(cleanName.toLowerCase())
+  );
+
+  if (fontItem && fontItem.fileUrl && 'FontFace' in window) {
+    try {
+      const fontFormat = fontItem.format || (fontItem.fileUrl.endsWith('.otf') ? 'opentype' : 'truetype');
+      const fontFace = new FontFace(fontItem.name, `url('${fontItem.fileUrl}') format('${fontFormat}')`);
+      const loaded = await fontFace.load();
+      document.fonts.add(loaded);
+    } catch (err) {
+      console.warn(`[FontLoader] Error preloading active font ${cleanName}:`, err);
+    }
+  }
+}
+
+/**
+ * Initializes font definitions once on client start
  */
 export async function loadCustomFontsFromAPI(): Promise<FontItem[]> {
-  // Register static list first for immediate rendering
+  // Register static list CSS definitions immediately without network blocking
   registerAllFonts(STATIC_CUSTOM_FONTS);
-
-  if (typeof window === 'undefined') return STATIC_CUSTOM_FONTS;
-
-  try {
-    const res = await fetch('/api/fonts');
-    if (!res.ok) return STATIC_CUSTOM_FONTS;
-    const data = await res.json();
-    if (data.fonts && Array.isArray(data.fonts)) {
-      registerAllFonts(data.fonts);
-      return data.fonts;
-    }
-  } catch (err) {
-    console.warn('[FontLoader] Error fetching custom fonts from API:', err);
-  }
   return STATIC_CUSTOM_FONTS;
 }
 
 /**
- * Ensures that all fonts are fully loaded before capturing canvas or generating PDF.
+ * Ensures that loaded fonts are ready before PDF export or canvas snapshot
  */
 export async function ensureFontsReady(): Promise<void> {
   if (typeof window === 'undefined') return;

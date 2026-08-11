@@ -19,7 +19,7 @@ import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
-import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
+import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
 import { toPng, toJpeg } from 'html-to-image';
 import { PDFDocument } from 'pdf-lib';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
@@ -2441,8 +2441,20 @@ function StudioCoreAiryBuilderContent() {
 
         setUserId(currentUserId || 'PUBLIC_USER');
 
-        // 1. Fetch via SaaS Template API with User Isolation Lock
         const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
+
+        // 1. INSTANT LOCAL CACHE HYDRATION (<5ms First Contentful Render)
+        const cachedLocal = await getCachedDocumentLocal(routeId);
+        if (cachedLocal?.documentJson) {
+          currentVersionRef.current = cachedLocal.version || 1;
+          const localNormalized = normalizeQuotationData(cachedLocal.documentJson);
+          if (localNormalized.primaryFont) preloadActiveFont(localNormalized.primaryFont);
+          if (localNormalized.secondaryFont) preloadActiveFont(localNormalized.secondaryFont);
+          setRawData(localNormalized);
+          setIsDataReady(true);
+        }
+
+        // 2. Parallel Network Fetch for Canonical DB Document
         const fetchUrl = isPublicPreview ? `/api/templates/${routeId}?preview=public` : `/api/templates/${routeId}`;
         const res = await fetch(fetchUrl, {
           headers: {
@@ -2465,13 +2477,8 @@ function StudioCoreAiryBuilderContent() {
           // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
           loadedData = normalizeQuotationData(docContent);
           currentVersionRef.current = json.document?.version || 1;
-        } else {
-          // Fallback to local IndexedDB cache only if document does not exist on DB
-          const cachedLocal = await getCachedDocumentLocal(routeId);
-          if (cachedLocal?.documentJson) {
-            currentVersionRef.current = cachedLocal.version || 1;
-            loadedData = normalizeQuotationData(cachedLocal.documentJson);
-          }
+        } else if (cachedLocal?.documentJson) {
+          loadedData = normalizeQuotationData(cachedLocal.documentJson);
         }
 
         if (!loadedData) {
@@ -2481,6 +2488,10 @@ function StudioCoreAiryBuilderContent() {
         if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
           loadedData.cover = { ...loadedData.cover, brandName: userStudioName };
         }
+
+        // Preload active fonts
+        if (loadedData.primaryFont) preloadActiveFont(loadedData.primaryFont);
+        if (loadedData.secondaryFont) preloadActiveFont(loadedData.secondaryFont);
 
         // Cache canonical state locally and hydrate editor
         cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
@@ -2494,11 +2505,9 @@ function StudioCoreAiryBuilderContent() {
         console.warn('[Quotation Initialization Error]:', err);
         setIsDataReady(true);
       } finally {
-        setTimeout(() => {
-          isInitialLoadedRef.current = true;
-          setIsDataReady(true);
-          setAutoSaveStatus('Auto-saved to cloud');
-        }, 100);
+        isInitialLoadedRef.current = true;
+        setIsDataReady(true);
+        setAutoSaveStatus('Auto-saved to cloud');
       }
     }
     initUserAndLoadData();

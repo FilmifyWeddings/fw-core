@@ -94,34 +94,22 @@ export async function POST(req: NextRequest) {
       isSystemTemplate
     });
 
-    // 1. Fetch existing quotation documents for this lead & workspace to calculate version & title inheritance
-    const { data: allDocs } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('*');
-
-    const { data: allQuotes } = await supabaseAdmin
-      .from('quotations')
-      .select('*');
-
+    // 1. Fetch existing quotation documents specifically for this lead to calculate version
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-    const existingDocs = (allDocs || []).filter((d: any) =>
-      (d.workspace_id === workspaceId || d.user_id === userId || !d.workspace_id) &&
-      (
-        d.lead_id === leadId ||
-        d.content_json?.lead_id === leadId ||
-        (d.template_id && (d.template_id.includes(leadId) || d.template_id.includes(leadShortId)))
-      )
-    );
+    const [docsRes, quotesRes] = await Promise.all([
+      supabaseAdmin
+        .from('quotation_documents')
+        .select('id, template_id, lead_id, version, lead_version, content_json')
+        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`),
+      supabaseAdmin
+        .from('quotations')
+        .select('id, quotation_number, title, canvas_data')
+        .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortId}%`)
+    ]);
 
-    const existingQuotes = (allQuotes || []).filter((q: any) =>
-      (q.workspace_id === workspaceId || q.user_id === userId || !q.workspace_id) &&
-      (
-        q.client_id === leadId ||
-        q.canvas_data?.lead_id === leadId ||
-        (q.quotation_number && (q.quotation_number.includes(leadId) || q.quotation_number.includes(leadShortId)))
-      )
-    );
+    const existingDocs = docsRes.data || [];
+    const existingQuotes = quotesRes.data || [];
 
     let maxVersion = 0;
     let latestQuotationDoc: any = null;

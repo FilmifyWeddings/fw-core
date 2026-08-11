@@ -253,58 +253,49 @@ export async function GET(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    // 2. Fetch all quotation documents linked to this lead_id
-    const { data: allDocs } = await supabaseAdmin
-      .from('quotation_documents')
-      .select('*');
-
-    // 3. Fetch client response metadata from quotation_responses & quotations
-    const { data: allResponses } = await supabaseAdmin
-      .from('quotation_responses')
-      .select('*')
-      .eq('lead_id', leadId);
-
-    const { data: allQuotes } = await supabaseAdmin
-      .from('quotations')
-      .select('id, quotation_number, title, status, client_name, client_notes, public_token')
-      .or(`client_id.eq.${leadId}`);
-
+    // 2. Fetch quotation documents specifically for this lead (Indexed & Filtered, Avoid DB Table Scan)
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-    const docs = (allDocs || []).filter((d: any) =>
-      d.lead_id === leadId ||
-      d.content_json?.lead_id === leadId ||
-      (d.template_id && (d.template_id.includes(leadId) || d.template_id.includes(leadShortId)))
-    );
+    const { data: matchedDocs } = await supabaseAdmin
+      .from('quotation_documents')
+      .select('id, template_id, lead_id, version, lead_version, created_at, updated_at, content_json')
+      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
 
-    const sortedByAge = [...(docs || [])].sort((a: any, b: any) =>
+    // 3. Fetch client response metadata & quotations in parallel
+    const [responsesRes, quotesRes] = await Promise.all([
+      supabaseAdmin
+        .from('quotation_responses')
+        .select('quotation_id, lead_version, response_type, client_name, client_notes, budget_amount, created_at')
+        .eq('lead_id', leadId),
+      supabaseAdmin
+        .from('quotations')
+        .select('id, quotation_number, title, status, client_name, client_notes, public_token')
+        .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortId}%`)
+    ]);
+
+    const allResponses = responsesRes.data || [];
+    const allQuotes = quotesRes.data || [];
+
+    const sortedByAge = [...(matchedDocs || [])].sort((a: any, b: any) =>
       new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
     );
 
-    const formattedQuotations = await Promise.all(sortedByAge.map(async (doc: any, idx: number) => {
+    const formattedQuotations = sortedByAge.map((doc: any, idx: number) => {
       const content = doc.content_json || {};
       const explicitVer = doc.lead_version || content.lead_version || (doc.version > 1 ? doc.version : null);
       const leadVer = (explicitVer && typeof explicitVer === 'number' && explicitVer > 0)
         ? explicitVer
         : (idx + 1);
 
-      let title = content.designName;
+      let title = content.designName || content.cover?.coupleName;
 
-      const matchingQuote = (allQuotes || []).find((q: any) =>
+      const matchingQuote = allQuotes.find((q: any) =>
         q.id === doc.template_id || q.quotation_number === doc.template_id
       );
 
       if (!title || title === 'Wedding - Design 1') {
         if (matchingQuote?.title) {
           title = matchingQuote.title;
-        } else {
-          const { data: qRec } = await supabaseAdmin
-            .from('quotations')
-            .select('title')
-            .or(`id.eq.${doc.template_id},quotation_number.eq.${doc.template_id}`)
-            .maybeSingle();
-
-          if (qRec?.title) title = qRec.title;
         }
       }
 
@@ -312,8 +303,8 @@ export async function GET(
         title = lead.name || 'Wedding Quotation';
       }
 
-      // Determine response badges for this version (Strict Version Isolation - Multi-Response Supported)
-      const versionResponsesList = (allResponses || []).filter((r: any) =>
+      // Determine response badges for this version
+      const versionResponsesList = allResponses.filter((r: any) =>
         r.quotation_id === doc.template_id || Number(r.lead_version) === Number(leadVer)
       );
 
@@ -351,10 +342,9 @@ export async function GET(
         created_at: doc.created_at || new Date().toISOString(),
         public_token: matchingQuote?.public_token || null,
         responseBadge,
-        responses: versionResponses,
-        content_json: content
+        responses: versionResponses
       };
-    }));
+    });
 
     // Sort versions descending for modal display: V3, V2, V1
     formattedQuotations.sort((a, b) => b.version - a.version);
