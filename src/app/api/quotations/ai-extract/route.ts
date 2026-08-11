@@ -229,15 +229,38 @@ Return ONLY a JSON object with:
  * Intelligent Fallback Extraction Engine when LLM API keys are not present
  */
 function fallbackHeuristicExtractor(contextData: any) {
+  const userNotes = (contextData.additional_user_notes || '').trim();
+
+  // If user pasted valid JSON directly into AI prompt notes, parse and unwrap it
+  if (userNotes.startsWith('{') || userNotes.includes('{')) {
+    try {
+      const jsonMatch = userNotes.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.quotation || parsed.pages || parsed.cover || parsed.functionsPage || parsed.functions_coverage) {
+          return mapAiOutputToQuotationDocument(parsed, {}, contextData);
+        }
+      }
+    } catch (e) {}
+  }
+
   const leadInfo = contextData.lead_info || {};
   const raw = contextData.raw_form_fields || {};
   const meta = contextData.meta_fields || {};
-  const notes = `${contextData.notes_and_comments || ''} ${contextData.additional_user_notes || ''}`;
+  const notes = `${userNotes}\n${contextData.notes_and_comments || ''}`;
 
-  const fullText = `${JSON.stringify(raw)} ${JSON.stringify(meta)} ${notes}`.toLowerCase();
+  const fullText = `${notes} ${JSON.stringify(raw)} ${JSON.stringify(meta)}`.toLowerCase();
 
-  // 1. Couple & Names
-  let leadName = leadInfo.name || raw.name || raw.client_name || raw.full_name || '';
+  // 1. Couple & Names (Prioritize user notes over leadInfo)
+  let leadName = '';
+  const noteNameMatch = userNotes.match(/(?:couple|client|bride|groom|name)[:\s]+([A-Za-z0-9\s&]+)/i);
+  if (noteNameMatch) {
+    leadName = noteNameMatch[1].split('\n')[0].trim();
+  }
+  if (!leadName) {
+    leadName = leadInfo.name || raw.name || raw.client_name || raw.full_name || '';
+  }
+
   let groomName = '';
   let brideName = '';
 
@@ -254,11 +277,13 @@ function fallbackHeuristicExtractor(contextData: any) {
     brideName = 'Bride';
   }
 
-  // 2. Dates
-  let weddingDate = raw.event_date || raw.wedding_date || raw.date || null;
-  if (!weddingDate) {
-    const dateMatch = notes.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(?:\d{2,4})?)\b/i);
-    if (dateMatch) weddingDate = dateMatch[1];
+  // 2. Dates (Prioritize user notes over leadInfo)
+  let weddingDate = null;
+  const dateMatch = userNotes.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(?:\d{2,4})?)\b/i);
+  if (dateMatch) {
+    weddingDate = dateMatch[1];
+  } else {
+    weddingDate = raw.event_date || raw.wedding_date || raw.date || null;
   }
 
   // 3. Location / Venue

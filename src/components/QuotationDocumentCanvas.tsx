@@ -923,19 +923,21 @@ function ThreeDCurvedFunctionEditor({
     }
   };
 
+  const safeRequirements = Array.isArray(func.requirements) ? func.requirements : [];
+
   const toggleRequirement = (reqName: string) => {
-    const exists = func.requirements.find(r => r.name === reqName);
+    const exists = safeRequirements.find(r => r.name === reqName);
     let newReqs: { name: string; qty: number }[];
     if (exists) {
-      newReqs = func.requirements.filter(r => r.name !== reqName);
+      newReqs = safeRequirements.filter(r => r.name !== reqName);
     } else {
-      newReqs = [...func.requirements, { name: reqName, qty: 1 }];
+      newReqs = [...safeRequirements, { name: reqName, qty: 1 }];
     }
     onUpdate({ ...func, requirements: newReqs });
   };
 
   const changeRequirementQty = (reqName: string, qty: number) => {
-    const newReqs = func.requirements.map(r => r.name === reqName ? { ...r, qty } : r);
+    const newReqs = safeRequirements.map(r => r.name === reqName ? { ...r, qty } : r);
     onUpdate({ ...func, requirements: newReqs });
   };
 
@@ -944,8 +946,8 @@ function ThreeDCurvedFunctionEditor({
     if (customReq && customReq.trim()) {
       const trimmed = customReq.trim();
       onAddCustomRequirement(trimmed);
-      if (!func.requirements.find(r => r.name === trimmed)) {
-        onUpdate({ ...func, requirements: [...func.requirements, { name: trimmed, qty: 1 }] });
+      if (!safeRequirements.find(r => r.name === trimmed)) {
+        onUpdate({ ...func, requirements: [...safeRequirements, { name: trimmed, qty: 1 }] });
       }
     }
   };
@@ -1099,7 +1101,7 @@ function ThreeDCurvedFunctionEditor({
 
         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
           {availableRequirements.map((reqName) => {
-            const reqObj = func.requirements.find(r => r.name === reqName);
+            const reqObj = safeRequirements.find(r => r.name === reqName);
             const isSelected = !!reqObj;
             return (
               <div
@@ -1867,7 +1869,7 @@ export default function QuotationDocumentCanvas({
                                             <span className="font-sans font-medium tracking-tight">
                                               {[
                                                 (func as FunctionItem).dateNotFixed ? 'DATE NOT FIXED' : func.date,
-                                                func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null,
+                                                func.time || (func.startTime && func.endTime ? `${func.startTime} TO ${func.endTime}` : null),
                                                 (func.durationSlot && func.durationSlot !== 'None') ? `(${func.durationSlot})` : null
                                               ].filter(Boolean).join(' • ')}
                                             </span>
@@ -1875,38 +1877,45 @@ export default function QuotationDocumentCanvas({
                                         </div>
 
                                         {/* Venue Location */}
-                                        {func.location && (
+                                        {(func.venue || func.location) && (
                                           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90" style={{ color: textColor }}>
                                             <MapPin className="w-3.5 h-3.5 shrink-0 text-amber-600" style={{ color: kickerColor }} />
-                                            <span>{func.location}</span>
+                                            <span>{func.venue || func.location}</span>
                                           </div>
                                         )}
 
-                                        {/* Requirements & Crew List */}
-                                        {func.requirements && func.requirements.length > 0 && (
+                                        {/* Crew & Team Coverage */}
+                                        {(func.team || func.services || (func.requirements && func.requirements.length > 0)) && (
                                           <div className="space-y-1 pt-0.5">
                                             <span className="text-[10px] uppercase font-bold tracking-widest block opacity-75" style={{ color: kickerColor }}>
                                               Crew &amp; Requirements:
                                             </span>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-medium">
-                                              {func.requirements.map((req: any, rIdx: number) => {
-                                                const q = req.qty || 1;
-                                                let label = req.name;
-                                                if (q > 1) {
-                                                  if (req.name.toLowerCase().includes('photography') || req.name.toLowerCase().includes('photographer')) {
-                                                    label = req.name.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
-                                                  } else if (req.name.toLowerCase().includes('cinematography') || req.name.toLowerCase().includes('cinematographer')) {
-                                                    label = req.name.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
+                                            {func.requirements && func.requirements.length > 0 ? (
+                                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-medium">
+                                                {func.requirements.map((req: any, rIdx: number) => {
+                                                  const q = req.qty || 1;
+                                                  let label = req.name;
+                                                  if (q > 1) {
+                                                    if (req.name.toLowerCase().includes('photography') || req.name.toLowerCase().includes('photographer')) {
+                                                      label = req.name.replace(/photography/i, 'Photographers').replace(/photographer/i, 'Photographers');
+                                                    } else if (req.name.toLowerCase().includes('cinematography') || req.name.toLowerCase().includes('cinematographer')) {
+                                                      label = req.name.replace(/cinematography/i, 'Cinematographers').replace(/cinematographer/i, 'Cinematographers');
+                                                    }
                                                   }
-                                                }
-                                                return (
-                                                  <div key={rIdx} className="flex items-center gap-1.5" style={{ color: textColor }}>
-                                                    <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: kickerColor }} />
-                                                    <span>{`${q} × ${label}`}</span>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
+                                                  return (
+                                                    <div key={rIdx} className="flex items-center gap-1.5" style={{ color: textColor }}>
+                                                      <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: kickerColor }} />
+                                                      <span>{`${q} × ${label}`}</span>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            ) : (
+                                              <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: textColor }}>
+                                                <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: kickerColor }} />
+                                                <span>{Array.isArray(func.team) ? func.team.join(', ') : (func.team || (Array.isArray(func.services) ? func.services.join(', ') : func.services))}</span>
+                                              </div>
+                                            )}
                                           </div>
                                         )}
 

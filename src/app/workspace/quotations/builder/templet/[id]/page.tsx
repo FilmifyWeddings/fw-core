@@ -1374,19 +1374,21 @@ function ThreeDCurvedFunctionEditor({
     }
   };
 
+  const safeRequirements = Array.isArray(func.requirements) ? func.requirements : [];
+
   const toggleRequirement = (reqName: string) => {
-    const exists = func.requirements.find(r => r.name === reqName);
+    const exists = safeRequirements.find(r => r.name === reqName);
     let newReqs: { name: string; qty: number }[];
     if (exists) {
-      newReqs = func.requirements.filter(r => r.name !== reqName);
+      newReqs = safeRequirements.filter(r => r.name !== reqName);
     } else {
-      newReqs = [...func.requirements, { name: reqName, qty: 1 }];
+      newReqs = [...safeRequirements, { name: reqName, qty: 1 }];
     }
     onUpdate({ ...func, requirements: newReqs });
   };
 
   const changeRequirementQty = (reqName: string, qty: number) => {
-    const newReqs = func.requirements.map(r => r.name === reqName ? { ...r, qty } : r);
+    const newReqs = safeRequirements.map(r => r.name === reqName ? { ...r, qty } : r);
     onUpdate({ ...func, requirements: newReqs });
   };
 
@@ -1395,8 +1397,8 @@ function ThreeDCurvedFunctionEditor({
     if (customReq && customReq.trim()) {
       const trimmed = customReq.trim();
       onAddCustomRequirement(trimmed);
-      if (!func.requirements.find(r => r.name === trimmed)) {
-        onUpdate({ ...func, requirements: [...func.requirements, { name: trimmed, qty: 1 }] });
+      if (!safeRequirements.find(r => r.name === trimmed)) {
+        onUpdate({ ...func, requirements: [...safeRequirements, { name: trimmed, qty: 1 }] });
       }
     }
   };
@@ -1550,7 +1552,7 @@ function ThreeDCurvedFunctionEditor({
 
         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
           {availableRequirements.map((reqName) => {
-            const reqObj = func.requirements.find(r => r.name === reqName);
+            const reqObj = safeRequirements.find(r => r.name === reqName);
             const isSelected = !!reqObj;
             return (
               <div
