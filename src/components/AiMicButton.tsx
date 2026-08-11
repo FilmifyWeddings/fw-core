@@ -1,7 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Sparkles, X, Check, RotateCcw, Loader2, Square, Volume2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Mic, Sparkles, X, Check, RotateCcw, Loader2, Square, 
+  Volume2, Globe, Copy, ArrowRight, Wand2, ShieldCheck
+} from 'lucide-react';
 
 interface AiMicButtonProps {
   onInsertComment: (cleanedText: string) => void;
@@ -19,24 +23,25 @@ export default function AiMicButton({
   const [isOpen, setIsOpen] = useState(false);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing' | 'review'>('idle');
   const [seconds, setSeconds] = useState(0);
-  const [liveTranscript, setLiveTranscript] = useState('');
+  const [audioLevel, setAudioLevel] = useState(0);
   const [rawTranscript, setRawTranscript] = useState('');
   const [cleanedComment, setCleanedComment] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [audioLevel, setAudioLevel] = useState(0);
+  const [copied, setCopied] = useState(false);
 
-  // Web Audio & Speech Recognition References
+  // Output Script Style Selector
+  const [outputFormat, setOutputFormat] = useState<'auto' | 'hinglish' | 'native' | 'english'>('auto');
+
+  // MediaRecorder & Web Audio References
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recognitionRef = useRef<any>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const liveSpeechTextRef = useRef<string>('');
 
-  // Clean up recording on unmount or modal close
+  // Clean up recording tracks on unmount or modal close
   useEffect(() => {
     return () => {
       stopMediaTracks();
@@ -44,13 +49,13 @@ export default function AiMicButton({
   }, []);
 
   const stopMediaTracks = () => {
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-      recognitionRef.current = null;
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -62,55 +67,39 @@ export default function AiMicButton({
     }
   };
 
-  const startRecording = async () => {
+  const handleOpenModal = () => {
+    setIsOpen(true);
+    setRecordingState('idle');
     setErrorMessage(null);
-    setLiveTranscript('');
     setRawTranscript('');
     setCleanedComment('');
     setSeconds(0);
-    liveSpeechTextRef.current = '';
+  };
+
+  const handleCloseModal = () => {
+    stopRecording();
+    stopMediaTracks();
+    setIsOpen(false);
+  };
+
+  const startRecording = async () => {
+    setErrorMessage(null);
+    setRawTranscript('');
+    setCleanedComment('');
+    setSeconds(0);
     audioChunksRef.current = [];
 
-    // Try initializing Web Speech API for real-time live browser transcription
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      try {
-        const rec = new SpeechRecognition();
-        rec.continuous = true;
-        rec.interimResults = true;
-        // Multi-lingual speech recognition (English, Hinglish, Marathi, Hindi)
-        if (typeof navigator !== 'undefined' && navigator.language) {
-          rec.lang = navigator.language.includes('hi') || navigator.language.includes('mr') ? navigator.language : 'en-IN';
-        }
-
-        rec.onresult = (event: any) => {
-          let currentText = '';
-          for (let i = 0; i < event.results.length; i++) {
-            currentText += event.results[i][0].transcript + ' ';
-          }
-          const trimmed = currentText.trim();
-          liveSpeechTextRef.current = trimmed;
-          setLiveTranscript(trimmed);
-        };
-
-        rec.onerror = (e: any) => {
-          console.warn('[WebSpeech API Warning]:', e.error);
-        };
-
-        rec.start();
-        recognitionRef.current = rec;
-      } catch (e) {
-        console.warn('[WebSpeech Init Error]:', e);
-      }
-    }
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       streamRef.current = stream;
 
-      // Set up Web Audio API for VAD & Live Soundwave Level
+      // Set up Web Audio API for dynamic ChatGPT/Gemini Soundwave Orb Visualizer
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
       audioCtxRef.current = audioCtx;
@@ -118,10 +107,11 @@ export default function AiMicButton({
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.8;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      // Audio VAD Level Loop
+      // Live volume amplitude loop
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const updateVolume = () => {
         if (!analyserRef.current) return;
@@ -131,120 +121,82 @@ export default function AiMicButton({
           sum += dataArray[i];
         }
         const avg = sum / dataArray.length;
-        setAudioLevel(Math.min(100, Math.round((avg / 128) * 100)));
+        const normalized = Math.min(100, Math.round((avg / 128) * 100));
+        setAudioLevel(normalized);
         animFrameRef.current = requestAnimationFrame(updateVolume);
       };
       updateVolume();
 
       // Set up MediaRecorder
-      let options: MediaRecorderOptions = {};
-      if (MediaRecorder.isTypeSupported('audio/webm')) {
-        options = { mimeType: 'audio/webm' };
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        options = { mimeType: 'audio/mp4' };
+      let mimeType = 'audio/webm;codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+        else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+        else mimeType = '';
       }
 
+      const options = mimeType ? { mimeType } : undefined;
       const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
+        if (e.data && e.data.size > 0) {
           audioChunksRef.current.push(e.data);
         }
       };
 
       mediaRecorder.onstop = async () => {
-        const liveText = liveSpeechTextRef.current.trim();
         const audioBlob = new Blob(audioChunksRef.current, {
           type: mediaRecorder.mimeType || 'audio/webm',
         });
 
         stopMediaTracks();
 
-        // If live text was captured by browser WebSpeech, use it directly!
-        if (liveText.length > 2) {
-          await processRawText(liveText);
-        } else if (audioBlob.size > 500) {
-          await processAudioBlob(audioBlob);
+        if (audioBlob.size > 800) {
+          await sendAudioToGroqWhisper(audioBlob);
         } else {
-          setErrorMessage('Recording too short. Please speak again clearly.');
+          setErrorMessage('Recording was too short. Please tap the mic and speak clearly.');
           setRecordingState('idle');
         }
       };
 
-      mediaRecorder.start(250); // Collect data chunks every 250ms
+      mediaRecorder.start(250); // Slice data every 250ms
       setRecordingState('recording');
 
-      // Start 60s max ticker
+      // Continuous recording timer (NO 1-minute limit!)
       timerIntervalRef.current = setInterval(() => {
-        setSeconds((prev) => {
-          if (prev >= 59) {
-            stopRecording();
-            return 60;
-          }
-          return prev + 1;
-        });
+        setSeconds((prev) => prev + 1);
       }, 1000);
     } catch (err: any) {
       console.error('[Voice Recording Error]:', err);
       setErrorMessage(
         err.name === 'NotAllowedError'
-          ? 'Microphone permission denied. Please allow mic access in browser settings.'
-          : 'Could not access microphone. Please check your mic settings.'
+          ? 'Microphone permission denied. Please allow microphone access in browser settings.'
+          : 'Could not access microphone. Please check your mic connection.'
       );
       setRecordingState('idle');
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
     }
   };
 
-  const processRawText = async (speechText: string) => {
-    setRecordingState('processing');
-    setErrorMessage(null);
-
-    try {
-      const res = await fetch('/api/ai/voice-comment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawText: speechText }),
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Voice text polishing failed.');
-      }
-
-      setRawTranscript(speechText);
-      setCleanedComment(json.cleanedComment || json.text || speechText);
-      setRecordingState('review');
-    } catch (err: any) {
-      console.warn('[Process RawText Exception]:', err);
-      // Fallback to raw text if AI API polishing fails
-      setRawTranscript(speechText);
-      setCleanedComment(speechText);
-      setRecordingState('review');
-    }
-  };
-
-  const processAudioBlob = async (blob: Blob) => {
+  // Direct Audio Transmission to Groq Whisper Large-v3 API
+  const sendAudioToGroqWhisper = async (blob: Blob) => {
     setRecordingState('processing');
     setErrorMessage(null);
 
     try {
       const formData = new FormData();
-      formData.append('audio', blob, 'recording.webm');
+      formData.append('audio', blob, 'voice_comment.webm');
+      formData.append('outputFormat', outputFormat);
 
       const res = await fetch('/api/ai/voice-comment', {
         method: 'POST',
@@ -253,231 +205,296 @@ export default function AiMicButton({
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Voice transcription failed.');
+        throw new Error(json.error || 'Speech transcription failed.');
       }
 
       setRawTranscript(json.rawTranscript || '');
-      setCleanedComment(json.cleanedComment || json.text || json.rawTranscript || '');
+      setCleanedComment(json.cleanedComment || json.text || '');
       setRecordingState('review');
     } catch (err: any) {
-      console.error('[Voice Process Error]:', err);
-      setErrorMessage(err.message || 'Speech recognition failed. Please speak clearly and try again.');
+      console.error('[Groq Whisper Error]:', err);
+      setErrorMessage(err.message || 'Speech recognition failed. Please try again.');
       setRecordingState('idle');
     }
   };
 
-  const handleOpenModal = () => {
-    setIsOpen(true);
-    startRecording();
+  const handleCopy = async () => {
+    if (!cleanedComment) return;
+    try {
+      await navigator.clipboard.writeText(cleanedComment);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (_) {}
   };
 
-  const handleCloseModal = () => {
-    stopRecording();
-    stopMediaTracks();
-    setIsOpen(false);
-    setRecordingState('idle');
-  };
-
-  const handleConfirmInsert = () => {
+  const handleInsert = () => {
     if (cleanedComment.trim()) {
       onInsertComment(cleanedComment.trim());
+      handleCloseModal();
     }
-    handleCloseModal();
   };
 
-  // Button Size Styles
-  const sizeClasses = {
-    sm: 'px-2.5 py-1 text-[11px] gap-1 rounded-lg',
-    md: 'px-3 py-1.5 text-xs gap-1.5 rounded-xl',
-    lg: 'px-4 py-2 text-sm gap-2 rounded-xl',
+  const formatTimer = (totalSecs: number) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
   return (
     <>
-      {/* AI Mic Trigger Button */}
-      <button
+      {/* ─────────────────────────────────────────────────────────────
+          TRIGGER BUTTON
+      ───────────────────────────────────────────────────────────── */}
+      <motion.button
         type="button"
+        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.03 }}
         onClick={handleOpenModal}
-        className={`inline-flex items-center font-black uppercase tracking-wider text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-md hover:shadow-lg transition-all cursor-pointer select-none border border-purple-400/30 ${sizeClasses[size]} ${className}`}
-        title="Record AI Voice Comment (Hindi / Hinglish / Marathi / English)"
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-md shadow-emerald-500/20 border border-emerald-400/40 transition-all ${className}`}
+        title="Record AI Voice Note (Whisper Large-v3)"
       >
-        <Sparkles className="w-3.5 h-3.5 animate-pulse text-amber-300" />
+        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
         <Mic className="w-3.5 h-3.5" />
         <span>{buttonText}</span>
-      </button>
+      </motion.button>
 
-      {/* Live Voice Recording & Transcription Modal */}
-      {isOpen && (
-        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-[#141312] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-white">
-            {/* Modal Header */}
-            <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-gradient-to-r from-purple-950/40 via-zinc-900 to-indigo-950/40">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-purple-600/20 border border-purple-500/30 text-purple-400">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">AI Voice Comment Assistant</h3>
-                  <p className="text-[10px] text-zinc-400">Speak in Hindi, Hinglish, Marathi, or English</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white cursor-pointer transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* ─────────────────────────────────────────────────────────────
+          FUTURISTIC CHATGPT / GEMINI LIVE VOICE MODAL
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md font-sans">
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative w-full max-w-lg bg-slate-900/95 text-white rounded-3xl border border-slate-700/80 shadow-2xl shadow-emerald-500/10 overflow-hidden flex flex-col p-6 space-y-6"
+            >
+              {/* Background ambient neon glow */}
+              <div className="absolute -top-24 -right-24 w-60 h-60 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-24 -left-24 w-60 h-60 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Modal Body Content */}
-            <div className="p-5 space-y-5">
-              {errorMessage && (
-                <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-800/80 text-rose-300 text-xs font-semibold">
-                  ⚠️ {errorMessage}
-                </div>
-              )}
-
-              {/* State 1: Active Recording with Live Soundwave & Real-time Text */}
-              {recordingState === 'recording' && (
-                <div className="space-y-4 text-center py-2">
-                  {/* Glowing Mic Badge */}
-                  <div className="relative inline-flex items-center justify-center">
-                    <div className="absolute inset-0 rounded-full bg-purple-500/20 animate-ping" />
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600 to-pink-600 flex items-center justify-center text-white shadow-xl z-10">
-                      <Mic className="w-8 h-8 animate-pulse" />
-                    </div>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between z-10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 text-white">
+                    <Wand2 className="w-4 h-4" />
                   </div>
-
-                  {/* Audio Level Soundwaves Visualizer */}
-                  <div className="flex items-center justify-center gap-1.5 h-8">
-                    {[40, 70, 100, 60, 90, 50, 80, 100, 60, 40].map((h, i) => {
-                      const scaledHeight = Math.max(8, Math.round((audioLevel / 100) * h));
-                      return (
-                        <div
-                          key={i}
-                          className="w-1.5 rounded-full bg-gradient-to-t from-purple-500 to-pink-400 transition-all duration-75"
-                          style={{ height: `${scaledHeight}px` }}
-                        />
-                      );
-                    })}
-                  </div>
-
-                  {/* Real-time Streaming Live Text Box */}
-                  <div className="p-3 rounded-xl bg-zinc-900 border border-purple-500/30 text-left min-h-[60px] max-h-[100px] overflow-y-auto">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
-                      🎙️ Live Speech Text:
-                    </span>
-                    <p className="text-xs text-zinc-200 font-medium italic">
-                      {liveTranscript || 'Listening... Speak your notes clearly'}
+                  <div>
+                    <h3 className="text-sm font-black tracking-tight text-white flex items-center gap-1.5">
+                      StudioCore AI Voice Note
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        Whisper Large-v3
+                      </span>
+                    </h3>
+                    <p className="text-[11px] font-medium text-slate-400">
+                      Multi-lingual speech: Marathi, Hindi, Hinglish, English
                     </p>
                   </div>
-
-                  {/* Timer */}
-                  <div className="text-xl font-black font-mono tracking-wider text-purple-300">
-                    00:{seconds < 10 ? `0${seconds}` : seconds} / 01:00
-                  </div>
-
-                  {/* Stop Recording Action */}
-                  <button
-                    type="button"
-                    onClick={stopRecording}
-                    className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer inline-flex items-center gap-2"
-                  >
-                    <Square className="w-4 h-4 fill-white" />
-                    <span>Done Speaking</span>
-                  </button>
                 </div>
-              )}
 
-              {/* State 2: Processing AI Transcription */}
-              {recordingState === 'processing' && (
-                <div className="py-10 space-y-3 text-center">
-                  <Loader2 className="w-10 h-10 animate-spin text-purple-400 mx-auto" />
-                  <p className="text-sm font-extrabold text-white">Transcribing & Polishing Comment...</p>
-                  <p className="text-xs text-zinc-400">Formatting speech with Groq & Gemini 1.5 Flash</p>
-                </div>
-              )}
-
-              {/* State 3: Review & Edit Preview */}
-              {recordingState === 'review' && (
-                <div className="space-y-4">
-                  {/* Raw Transcript Collapsible Note */}
-                  {rawTranscript && (
-                    <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs">
-                      <span className="text-[10px] uppercase font-bold text-zinc-500 block mb-1">
-                        🎙️ Raw Audio Transcript:
-                      </span>
-                      <p className="text-zinc-300 italic">{rawTranscript}</p>
-                    </div>
-                  )}
-
-                  {/* Polished Comment Input Textarea */}
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-purple-300 mb-1.5 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-purple-400" />
-                      Polished Comment Preview (Editable)
-                    </label>
-                    <textarea
-                      rows={4}
-                      value={cleanedComment}
-                      onChange={(e) => setCleanedComment(e.target.value)}
-                      className="w-full p-3 rounded-xl bg-zinc-900 border border-purple-500/40 text-white text-xs font-medium focus:outline-none focus:border-purple-400 leading-relaxed shadow-inner"
-                      placeholder="Comment text will appear here..."
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Idle State Fallback */}
-              {recordingState === 'idle' && !errorMessage && (
-                <div className="py-8 text-center space-y-3">
-                  <button
-                    type="button"
-                    onClick={startRecording}
-                    className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider shadow-lg cursor-pointer transition-all inline-flex items-center gap-2"
-                  >
-                    <Mic className="w-4 h-4" />
-                    <span>Start Speaking</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer Actions */}
-            {recordingState === 'review' && (
-              <div className="p-4 border-t border-zinc-800 bg-zinc-900/50 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={startRecording}
-                  className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
+                  onClick={handleCloseModal}
+                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Re-record</span>
+                  <X className="w-4 h-4" />
                 </button>
+              </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white font-bold text-xs cursor-pointer transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmInsert}
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs uppercase tracking-wider shadow-md cursor-pointer transition-all inline-flex items-center gap-1.5"
-                  >
-                    <Check className="w-4 h-4 stroke-[3]" />
-                    <span>Insert Comment</span>
-                  </button>
+              {/* ─────────────────────────────────────────────────────────────
+                  OUTPUT SCRIPT / LANGUAGE FORMAT SELECTOR
+              ───────────────────────────────────────────────────────────── */}
+              <div className="z-10 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 font-bold px-1">
+                  <span>Output Script Style:</span>
+                  <span className="text-emerald-400 font-mono text-[10px]">Auto-detects Spoken Language</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-950/60 border border-slate-800 rounded-2xl">
+                  {[
+                    { id: 'auto', label: '🌟 Auto Style', hint: 'Natural' },
+                    { id: 'hinglish', label: '🔤 Hinglish', hint: 'Roman ABC' },
+                    { id: 'native', label: '🇮🇳 Native', hint: 'मराठी / हिंदी' },
+                    { id: 'english', label: '🇬🇧 English', hint: 'Translated' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setOutputFormat(tab.id as any)}
+                      className={`py-2 px-1 rounded-xl text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                        outputFormat === tab.id
+                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30 border border-emerald-400/40'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <span className="text-[11px] leading-tight">{tab.label}</span>
+                      <span className="text-[9px] opacity-75 font-normal">{tab.hint}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
+
+              {/* ─────────────────────────────────────────────────────────────
+                  MAIN INTERACTIVE BODY
+              ───────────────────────────────────────────────────────────── */}
+              <div className="z-10 flex flex-col items-center justify-center py-4 space-y-5">
+                
+                {/* 1. RECORDING & IDLE STATE: GEMINI LIVE SOUNDWAVE ORB */}
+                {recordingState === 'recording' || recordingState === 'idle' ? (
+                  <div className="flex flex-col items-center space-y-4">
+                    {/* Animated Pulsing Soundwave Orb */}
+                    <div className="relative flex items-center justify-center">
+                      {/* Pulse Wave Ring 1 */}
+                      <motion.div
+                        animate={{
+                          scale: recordingState === 'recording' ? [1, 1.2 + audioLevel * 0.008, 1] : 1,
+                          opacity: recordingState === 'recording' ? [0.3, 0.7, 0.3] : 0.2,
+                        }}
+                        transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+                        className="absolute w-36 h-36 rounded-full bg-gradient-to-tr from-emerald-500/30 to-cyan-500/30 blur-md pointer-events-none"
+                      />
+
+                      {/* Pulse Wave Ring 2 */}
+                      <motion.div
+                        animate={{
+                          scale: recordingState === 'recording' ? [1, 1.4 + audioLevel * 0.012, 1] : 1,
+                          opacity: recordingState === 'recording' ? [0.2, 0.5, 0.2] : 0.1,
+                        }}
+                        transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
+                        className="absolute w-44 h-44 rounded-full bg-gradient-to-br from-teal-500/20 to-indigo-500/20 blur-lg pointer-events-none"
+                      />
+
+                      {/* Center Mic Button */}
+                      <motion.button
+                        type="button"
+                        whileTap={{ scale: 0.94 }}
+                        onClick={recordingState === 'recording' ? stopRecording : startRecording}
+                        className={`relative z-10 w-24 h-24 rounded-full flex items-center justify-center shadow-2xl transition-all ${
+                          recordingState === 'recording'
+                            ? 'bg-gradient-to-tr from-rose-600 to-rose-500 text-white shadow-rose-600/40 ring-4 ring-rose-500/30 animate-pulse'
+                            : 'bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-emerald-500/40 hover:scale-105 ring-4 ring-emerald-500/20'
+                        }`}
+                      >
+                        {recordingState === 'recording' ? (
+                          <Square className="w-8 h-8 fill-current" />
+                        ) : (
+                          <Mic className="w-10 h-10 stroke-[2.3]" />
+                        )}
+                      </motion.button>
+                    </div>
+
+                    {/* Timer & Status Label */}
+                    <div className="text-center space-y-1">
+                      {recordingState === 'recording' ? (
+                        <>
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                            <span className="text-2xl font-black font-mono tracking-widest text-white">
+                              {formatTimer(seconds)}
+                            </span>
+                          </div>
+                          <p className="text-xs font-semibold text-emerald-400">
+                            Listening... Speak naturally in Marathi, Hindi, or English
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-medium">
+                            Tap red square when finished (No time limit)
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <h4 className="text-sm font-black text-white">Tap Microphone to Speak</h4>
+                          <p className="text-xs text-slate-400 max-w-xs">
+                            Direct Groq Whisper Large-v3 recognition with instant multi-lingual auto-detection.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* 2. PROCESSING STATE */}
+                {recordingState === 'processing' && (
+                  <div className="py-8 flex flex-col items-center justify-center space-y-4 text-center">
+                    <div className="relative">
+                      <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+                      </div>
+                      <Sparkles className="w-4 h-4 text-amber-400 absolute -top-1 -right-1 animate-bounce" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-black text-white">Processing Voice Recording...</h4>
+                      <p className="text-xs text-slate-400">
+                        Transcribing via Groq Whisper Large-v3 & Polishing with Gemini AI
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. REVIEW & EDIT STATE */}
+                {recordingState === 'review' && (
+                  <div className="w-full space-y-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+                        <span className="flex items-center gap-1 text-emerald-400">
+                          <Check className="w-3.5 h-3.5" />
+                          Polished AI Comment:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopy}
+                          className="text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition"
+                        >
+                          <Copy className="w-3 h-3" />
+                          {copied ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+
+                      {/* Clean Output Textarea */}
+                      <textarea
+                        rows={4}
+                        value={cleanedComment}
+                        onChange={(e) => setCleanedComment(e.target.value)}
+                        className="w-full p-3.5 rounded-2xl bg-slate-950/80 border border-emerald-500/40 text-white font-medium text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none shadow-inner"
+                      />
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-between gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={startRecording}
+                        className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1.5"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Record Again
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleInsert}
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs tracking-wide uppercase shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Check className="w-4 h-4 stroke-[2.5]" />
+                        Insert into Comment
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Banner */}
+                {errorMessage && (
+                  <div className="w-full p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs text-center font-semibold">
+                    {errorMessage}
+                  </div>
+                )}
+
+              </div>
+
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </>
   );
 }

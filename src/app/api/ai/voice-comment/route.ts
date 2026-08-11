@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const maxDuration = 60; // 60 seconds timeout
+export const maxDuration = 120; // 2 minutes server execution timeout
 
 /**
  * Server-side AI Voice Comment API Route
- * Step A: Audio Transcription via Groq Whisper Large-v3 (or OpenAI Whisper fallback)
- * Step B: Google Gemini 1.5 Flash (or GPT-4o-mini) Text Formatting & Polish
+ * Step A: Direct Audio Transcription via Groq Whisper Large-v3 (Multi-lingual: Hindi, Marathi, Gujarati, English, etc.)
+ * Step B: Google Gemini 1.5 Flash (or GPT-4o-mini) Text Formatting with Output Script Selector
  */
 export async function POST(req: NextRequest) {
   try {
@@ -15,34 +15,41 @@ export async function POST(req: NextRequest) {
 
     let rawTranscript = '';
     let audioFile: Blob | File | null = null;
+    let outputFormat: 'auto' | 'hinglish' | 'native' | 'english' = 'auto';
 
     const contentType = req.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const body = await req.json().catch(() => ({}));
       if (body.rawText) rawTranscript = String(body.rawText).trim();
+      if (body.outputFormat) outputFormat = body.outputFormat;
     } else {
       const formData = await req.formData();
       const directText = formData.get('rawText');
       if (directText) rawTranscript = String(directText).trim();
       audioFile = formData.get('audio') as Blob | File | null;
+      const formatVal = formData.get('outputFormat');
+      if (formatVal && ['auto', 'hinglish', 'native', 'english'].includes(String(formatVal))) {
+        outputFormat = formatVal as any;
+      }
     }
 
-    // If no direct text, transcribe audio file via Groq Whisper (or OpenAI fallback)
+    // Step A: Transcribe Audio using Groq Whisper Large-v3 (with OpenAI fallback)
     if (!rawTranscript && audioFile) {
       const audioArrayBuffer = await audioFile.arrayBuffer();
 
-      // Try Groq Whisper Large-v3
+      // 1. Direct Groq Whisper Large-v3
       if (groqKey) {
         try {
           const groqFormData = new FormData();
-          const fileObj = new File([audioArrayBuffer], 'voice_recording.webm', {
+          const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
             type: audioFile.type || 'audio/webm',
           });
           groqFormData.append('file', fileObj);
           groqFormData.append('model', 'whisper-large-v3');
+          groqFormData.append('temperature', '0');
           groqFormData.append(
             'prompt',
-            'StudioCore Wedding Photography Client Notes. Supports Hinglish, Hindi, Marathi, and English.'
+            'StudioCore Indian Wedding Photography Client Notes. Automatically transcribes Marathi, Hindi, Gujarati, Punjabi, Bengali, Tamil, Telugu, Kannada, Hinglish, and English.'
           );
 
           const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -56,6 +63,7 @@ export async function POST(req: NextRequest) {
           if (groqRes.ok) {
             const groqJson = await groqRes.json();
             rawTranscript = (groqJson.text || '').trim();
+            console.log('[Groq Whisper Large-v3 Success]:', rawTranscript);
           } else {
             const errBody = await groqRes.text();
             console.warn('[Groq Whisper Error]:', errBody);
@@ -65,11 +73,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Fallback to OpenAI Whisper API
+      // 2. Fallback to OpenAI Whisper API
       if (!rawTranscript && openAiKey) {
         try {
           const whisperFormData = new FormData();
-          const fileObj = new File([audioArrayBuffer], 'voice_comment.webm', {
+          const fileObj = new File([audioArrayBuffer], 'voice_note.webm', {
             type: audioFile.type || 'audio/webm',
           });
           whisperFormData.append('file', fileObj);
@@ -86,6 +94,7 @@ export async function POST(req: NextRequest) {
           if (whisperRes.ok) {
             const whisperJson = await whisperRes.json();
             rawTranscript = (whisperJson.text || '').trim();
+            console.log('[OpenAI Whisper Success]:', rawTranscript);
           }
         } catch (e) {
           console.warn('[OpenAI Whisper Exception]:', e);
@@ -102,17 +111,28 @@ export async function POST(req: NextRequest) {
 
     // Step B: Text Cleanup & Formatting via Google Gemini 1.5 Flash (or GPT-4o fallback)
     let cleanedComment = rawTranscript;
-    const systemInstruction = `You are a professional StudioCore AI voice assistant for wedding photography studios.
+
+    let formatGuideline = '';
+    if (outputFormat === 'hinglish') {
+      formatGuideline = `OUTPUT SCRIPT RULE: Output in clean, natural HINGLISH or MARATHISH using English/Latin alphabet (e.g. "Client ne bola ki Haldi aur Sangeet ke photos 7 days me chahiye"). Do NOT use Devanagari script.`;
+    } else if (outputFormat === 'native') {
+      formatGuideline = `OUTPUT SCRIPT RULE: Output in original authentic Indian Script (Devanagari for Hindi/Marathi, e.g. "लग्नाचे आणि रिसेप्शनचे फोटो वेळेवर द्यावे" or "क्लाइंट ने टोकन अमाउंट दे दिया है"). Keep the exact native language script.`;
+    } else if (outputFormat === 'english') {
+      formatGuideline = `OUTPUT SCRIPT RULE: Translate and output in clean, professional ENGLISH text (e.g. "The client requested delivery of wedding and reception photos on time").`;
+    } else {
+      // auto
+      formatGuideline = `OUTPUT SCRIPT RULE: Preserve the user's natural spoken language and script. If spoken in Hindi/Marathi script or Hinglish, clean grammar and punctuation while keeping the original language style.`;
+    }
+
+    const systemInstruction = `You are an elite StudioCore AI voice assistant for wedding photography studios.
 Clean up and format this raw voice transcript into a polished quotation/lead comment.
 
-LANGUAGE & TRANSCRIPTION RULES:
-1. MATCH THE USER'S SPOKEN LANGUAGE INTENT:
-   - If spoken in ENGLISH -> Output clean, professional ENGLISH.
-   - If spoken in HINGLISH -> Output clean HINGLISH / ENGLISH.
-   - If spoken in MARATHI or HINDI -> Output clean ENGLISH or HINGLISH comment that captures the exact meaning.
-2. Fix any phonetic typos and spellings.
-3. Standardize wedding photography & quotation terms (e.g., Haldi, Mehendi, Sangeet, Wedding, Pre-Wedding, Candid Photography, Cinematography, Drone, Album, Reels, Advance Payment, Deliverables, GST).
-4. Output ONLY the final polished comment text. Do NOT include intro text, conversational filler, or surround with quotes.`;
+${formatGuideline}
+
+TERMINOLOGY & POLISHING RULES:
+1. Fix any phonetic slips, stutters, and background noise typos.
+2. Standardize wedding photography terms (Haldi, Mehendi, Sangeet, Wedding, Pre-Wedding, Candid Photography, Traditional Video, Cinematography, Drone Operator, Teaser Film, 2 Albums, Advance Token Amount, GST, Deliverables).
+3. Return ONLY the final polished comment text. Do NOT wrap in quotes, do NOT add conversational filler like "Here is your note:".`;
 
     if (geminiKey) {
       try {
@@ -134,7 +154,7 @@ LANGUAGE & TRANSCRIPTION RULES:
                 },
               ],
               generationConfig: {
-                temperature: 0.2,
+                temperature: 0.15,
               },
             }),
           }
@@ -170,7 +190,7 @@ LANGUAGE & TRANSCRIPTION RULES:
               { role: 'system', content: systemInstruction },
               { role: 'user', content: rawTranscript },
             ],
-            temperature: 0.2,
+            temperature: 0.15,
           }),
         });
 
@@ -191,6 +211,7 @@ LANGUAGE & TRANSCRIPTION RULES:
       text: cleanedComment,
       rawTranscript,
       cleanedComment,
+      outputFormat,
     });
   } catch (error: any) {
     console.error('[Voice Comment Route Error]:', error);
