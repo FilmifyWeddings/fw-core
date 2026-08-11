@@ -140,6 +140,7 @@ Analyze the following lead and quotation context:
 ${JSON.stringify(contextData, null, 2)}
 
 INSTRUCTIONS:
+0. CRITICAL RULE: If 'additional_user_notes' is present in the context, the information inside 'additional_user_notes' MUST take 100% OVERRIDING PRIORITY over lead_info and raw_form_fields. User prompt notes are the source of truth!
 1. Extract couple names (Groom & Bride), event type, wedding location, dates.
 2. Extract all event functions (Haldi, Mehendi, Sangeet, Wedding, Reception, Engagement, etc.) with dates, times, venues, and team coverage (photographers, cinematographers, drone, live streaming).
 3. Extract deliverables (photos, videos, reels, albums, USB, RAW files, SDE).
@@ -286,22 +287,23 @@ function fallbackHeuristicExtractor(contextData: any) {
     weddingDate = raw.event_date || raw.wedding_date || raw.date || null;
   }
 
-  // 3. Location / Venue
-  let location = raw.venue || raw.location || raw.city || raw.destination || null;
+  // 3. Location / Venue (Prioritize user notes over leadInfo)
+  let location: string | null = null;
+  if (userNotes) {
+    const locMatch = userNotes.match(/(?:at|in|venue|location|city|destination)[:\s]+([A-Za-z0-9\s,]+)/i);
+    if (locMatch) {
+      location = locMatch[1].split('\n')[0].trim();
+    }
+  }
   if (!location) {
-    const locMatch = notes.match(/(?:at|in|venue|location)[:\s]+([A-Za-z0-9\s,]+)/i);
-    if (locMatch) location = locMatch[1].split('.')[0].trim();
+    location = raw.venue || raw.location || raw.city || raw.destination || null;
   }
 
-  // 4. Budget / Pricing
+  // 4. Budget / Pricing (Prioritize user notes over leadInfo)
   let budget: number | null = null;
-  const rawBudget = raw.budget || raw.package_budget || raw.pricing || null;
-  if (rawBudget) {
-    const num = parseInt(String(rawBudget).replace(/[^0-9]/g, ''));
-    if (!isNaN(num) && num > 0) budget = num;
-  }
-  if (!budget) {
-    const bMatch = notes.match(/(?:₹|rs\.?|inr|budget)[:\s]*([0-9,]+(?:\s*lakh|\s*k)?)/i);
+  if (userNotes) {
+    const bMatch = userNotes.match(/(?:₹|rs\.?|inr|budget|price|cost|investment)[:\s]*([0-9,]+(?:\s*lakh|\s*k)?)/i) ||
+                   userNotes.match(/\b([0-9]{2,3},[0-9]{3})\b/);
     if (bMatch) {
       let valStr = bMatch[1].toLowerCase();
       if (valStr.includes('lakh') || valStr.includes('l')) {
@@ -314,6 +316,13 @@ function fallbackHeuristicExtractor(contextData: any) {
         const num = parseInt(valStr.replace(/[^0-9]/g, ''));
         if (!isNaN(num)) budget = num;
       }
+    }
+  }
+  if (!budget) {
+    const rawBudget = raw.budget || raw.package_budget || raw.pricing || null;
+    if (rawBudget) {
+      const num = parseInt(String(rawBudget).replace(/[^0-9]/g, ''));
+      if (!isNaN(num) && num > 0) budget = num;
     }
   }
 
