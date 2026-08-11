@@ -4,10 +4,8 @@ export const maxDuration = 120; // 2 minutes server execution timeout
 
 /**
  * Server-side AI Voice Comment API Route
- * Dual-Engine Architecture:
- * 1. Primary: Direct Audio via Groq Whisper Large-v3 (or OpenAI Whisper)
- * 2. Fallback: Client-Captured Live Real-Time Speech Transcript
- * 3. Step B: Gemini 1.5 Flash (or GPT-4o-mini) Text Polishing & Script Matching
+ * Multi-Lingual Architecture with Indian Regional Languages:
+ * Supports: Marathi, Marathish (Eng), Hindi, Hinglish, English, Gujarati, Punjabi, Bengali, Tamil, Telugu, Kannada, Malayalam
  */
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +16,7 @@ export async function POST(req: NextRequest) {
     let rawTranscript = '';
     let liveFallbackText = '';
     let audioFile: Blob | File | null = null;
+    let selectedLanguage = 'mr-IN'; // default to Marathi or user choice
     let outputFormat: 'auto' | 'hinglish' | 'native' | 'english' = 'auto';
 
     const contentType = req.headers.get('content-type') || '';
@@ -25,6 +24,7 @@ export async function POST(req: NextRequest) {
       const body = await req.json().catch(() => ({}));
       if (body.rawText) rawTranscript = String(body.rawText).trim();
       if (body.liveText) liveFallbackText = String(body.liveText).trim();
+      if (body.selectedLanguage) selectedLanguage = String(body.selectedLanguage);
       if (body.outputFormat) outputFormat = body.outputFormat;
     } else {
       const formData = await req.formData();
@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
 
       const liveTextVal = formData.get('liveText');
       if (liveTextVal) liveFallbackText = String(liveTextVal).trim();
+
+      const langVal = formData.get('selectedLanguage');
+      if (langVal) selectedLanguage = String(langVal);
 
       audioFile = formData.get('audio') as Blob | File | null;
 
@@ -57,6 +60,28 @@ export async function POST(req: NextRequest) {
             groqFormData.append('file', fileObj);
             groqFormData.append('model', 'whisper-large-v3');
             groqFormData.append('temperature', '0');
+
+            // Pass language hint if available
+            const whisperLangMap: Record<string, string> = {
+              'mr-IN': 'mr',
+              'mr-ENG': 'mr',
+              'hi-IN': 'hi',
+              'hi-ENG': 'hi',
+              'en-IN': 'en',
+              'gu-IN': 'gu',
+              'pa-IN': 'pa',
+              'bn-IN': 'bn',
+              'ta-IN': 'ta',
+              'te-IN': 'te',
+              'kn-IN': 'kn',
+              'ml-IN': 'ml',
+            };
+
+            const whisperCode = whisperLangMap[selectedLanguage];
+            if (whisperCode && whisperCode !== 'en') {
+              groqFormData.append('language', whisperCode);
+            }
+
             groqFormData.append(
               'prompt',
               'StudioCore Wedding Photography Client Notes in Marathi, Hindi, Hinglish, Gujarati, Bengali, Tamil, Telugu, and English.'
@@ -129,27 +154,49 @@ export async function POST(req: NextRequest) {
     // Step B: Text Cleanup & Formatting via Google Gemini 1.5 Flash (or GPT-4o fallback)
     let cleanedComment = rawTranscript;
 
-    let formatGuideline = '';
-    if (outputFormat === 'hinglish') {
-      formatGuideline = `OUTPUT SCRIPT RULE: Output in clean, natural HINGLISH or MARATHISH using English/Latin alphabet (e.g. "Client ne bola ki Haldi aur Sangeet ke photos 7 days me chahiye"). Do NOT use Devanagari script.`;
-    } else if (outputFormat === 'native') {
-      formatGuideline = `OUTPUT SCRIPT RULE: Output in authentic Indian Script (Devanagari for Hindi/Marathi, e.g. "लग्नाचे आणि रिसेप्शनचे फोटो वेळेवर द्यावे" or "क्लाइंट ने टोकन अमाउंट दे दिया है"). Preserve the exact native language script.`;
-    } else if (outputFormat === 'english') {
-      formatGuideline = `OUTPUT SCRIPT RULE: Translate and output in clean, professional ENGLISH text (e.g. "The client requested delivery of wedding and reception photos on time").`;
+    let languageRule = '';
+    if (selectedLanguage === 'mr-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic MARATHI (मराठी) in pure Devanagari script.
+Examples: "क्लायंटने सांगितले की हळद आणि संगीताचे फोटो वेळेवर द्यावे.", "टोकन रक्कम ₹५०,००० जमा झाली आहे."`;
+    } else if (selectedLanguage === 'mr-ENG') {
+      languageRule = `TARGET LANGUAGE: MARATHISH (Marathi written in English ABC Latin script).
+Examples: "Client ne sangitle ki Haldi aani Sangeet che photos time var dya.", "Token amount 50,000 receive zali aahe."`;
+    } else if (selectedLanguage === 'hi-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic HINDI (हिंदी) in pure Devanagari script.
+Examples: "क्लाइंट ने कहा कि हल्दी और संगीत के फोटो समय पर दें.", "टोकन अमाउंट ₹50,000 प्राप्त हो गया है."`;
+    } else if (selectedLanguage === 'hi-ENG') {
+      languageRule = `TARGET LANGUAGE: HINGLISH (Hindi written in English ABC Latin script).
+Examples: "Client ne bola ki Haldi aur Sangeet ke photos 7 days me chahiye.", "Token amount 50,000 received ho gaya hai."`;
+    } else if (selectedLanguage === 'en-IN') {
+      languageRule = `TARGET LANGUAGE: Clean, professional ENGLISH.
+Examples: "Client requested delivery of Haldi and Sangeet photos within 7 days.", "Advance token of 50,000 received."`;
+    } else if (selectedLanguage === 'gu-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic GUJARATI (ગુજરાતી) in native Gujarati script.`;
+    } else if (selectedLanguage === 'pa-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic PUNJABI (ਪੰਜਾਬੀ) in Gurmukhi script.`;
+    } else if (selectedLanguage === 'bn-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic BENGALI (বাংলা) in Bengali script.`;
+    } else if (selectedLanguage === 'ta-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic TAMIL (தமிழ்) in Tamil script.`;
+    } else if (selectedLanguage === 'te-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic TELUGU (తెలుగు) in Telugu script.`;
+    } else if (selectedLanguage === 'kn-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic KANNADA (ಕನ್ನಡ) in Kannada script.`;
+    } else if (selectedLanguage === 'ml-IN') {
+      languageRule = `TARGET LANGUAGE: Authentic MALAYALAM (മലയാളം) in Malayalam script.`;
     } else {
-      // auto
-      formatGuideline = `OUTPUT SCRIPT RULE: Preserve the user's natural spoken language and script. If spoken in Hindi/Marathi script or Hinglish, clean grammar and punctuation while keeping the original language style.`;
+      languageRule = `TARGET LANGUAGE: Preserve the exact spoken language and script cleanly.`;
     }
 
     const systemInstruction = `You are an elite StudioCore AI voice assistant for wedding photography studios.
 Clean up and format this raw voice transcript into a polished quotation/lead comment.
 
-${formatGuideline}
+${languageRule}
 
 TERMINOLOGY & POLISHING RULES:
-1. Fix any phonetic slips, stutters, and background noise typos.
-2. Standardize wedding photography terms (Haldi, Mehendi, Sangeet, Wedding, Pre-Wedding, Candid Photography, Traditional Video, Cinematography, Drone Operator, Teaser Film, 2 Albums, Advance Token Amount, GST, Deliverables).
-3. Return ONLY the final polished comment text. Do NOT wrap in quotes, do NOT add conversational filler like "Here is your note:".`;
+1. Fix any phonetic slips, background noise glitches, or stutters.
+2. Standardize wedding photography terms (Haldi, Mehendi, Sangeet, Wedding, Pre-Wedding, Candid Photography, Cinematography, Drone, Album, Teaser, Deliverables, Token Advance, GST).
+3. Return ONLY the final polished comment text. Do NOT wrap in quotes, do NOT add introductory conversational filler like "Here is your text:".`;
 
     if (geminiKey) {
       try {
@@ -171,7 +218,7 @@ TERMINOLOGY & POLISHING RULES:
                 },
               ],
               generationConfig: {
-                temperature: 0.15,
+                temperature: 0.1,
               },
             }),
           }
@@ -207,7 +254,7 @@ TERMINOLOGY & POLISHING RULES:
               { role: 'system', content: systemInstruction },
               { role: 'user', content: rawTranscript },
             ],
-            temperature: 0.15,
+            temperature: 0.1,
           }),
         });
 
@@ -228,6 +275,7 @@ TERMINOLOGY & POLISHING RULES:
       text: cleanedComment,
       rawTranscript,
       cleanedComment,
+      selectedLanguage,
       outputFormat,
     });
   } catch (error: any) {
