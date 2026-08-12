@@ -81,19 +81,24 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
 
   const loadAvailableTemplates = async () => {
     try {
-      const res = await fetch('/api/quotation-templates');
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const email = session?.user?.email || '';
+      const currentUserId = session?.user?.id || '';
+
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (email) headers['x-user-email'] = email;
+
+      const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
       const json = await res.json();
       if (json.success && Array.isArray(json.templates)) {
-        // Filter out system templates so user only sees their own custom templates
-        const userTemplates = json.templates.filter((t: StudioTemplateItem) => !t.is_system_template);
-        const listToDisplay = userTemplates.length > 0 ? userTemplates : json.templates;
+        setAvailableTemplates(json.templates);
 
-        setAvailableTemplates(listToDisplay);
-
-        // Pre-select user's own active default template
-        const userDefault = listToDisplay.find((t: StudioTemplateItem) => t.is_default) || listToDisplay[0];
-        if (userDefault) {
-          setSelectedTemplateId(userDefault.id);
+        // Pre-select the user's active default template (the one marked is_default === true on /workspace/quotations)
+        const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
+        if (activeDefault) {
+          setSelectedTemplateId(activeDefault.id);
         }
       }
     } catch (e) {
