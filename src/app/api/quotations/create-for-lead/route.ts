@@ -40,9 +40,14 @@ export async function POST(req: NextRequest) {
         .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`)
     ]);
 
-    if (!lead) {
-      return NextResponse.json({ error: 'Lead not found in database' }, { status: 404 });
-    }
+    const clientNameInput = body.clientName || body.leadName || 'Valued Client';
+    const effectiveLead = lead || {
+      id: leadId,
+      name: clientNameInput,
+      client_name: clientNameInput,
+      location: 'Mumbai',
+      raw_payload: {}
+    };
 
     if (profile?.id) workspaceId = profile.id;
 
@@ -75,7 +80,7 @@ export async function POST(req: NextRequest) {
     });
 
     const nextVersion = maxVersion + 1;
-    const leadName = lead.name || (lead as any).client_name || 'Valued Client';
+    const leadName = effectiveLead.name || (effectiveLead as any).client_name || 'Valued Client';
     const groomName = leadName.includes('&') ? leadName.split('&')[0].trim() : leadName;
     const brideName = leadName.includes('&') ? leadName.split('&')[1].trim() : 'Partner';
 
@@ -92,8 +97,8 @@ export async function POST(req: NextRequest) {
     clonedDoc.cover.groomName = groomName || clonedDoc.cover.groomName || 'Rahul';
     clonedDoc.cover.brideName = brideName || clonedDoc.cover.brideName || 'Neha';
 
-    if (lead.raw_payload?.venue || lead.raw_payload?.location || lead.location) {
-      clonedDoc.cover.locationName = lead.raw_payload?.venue || lead.raw_payload?.location || lead.location;
+    if (effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location) {
+      clonedDoc.cover.locationName = effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location;
     }
 
     if (Array.isArray(clonedDoc.pages)) {
