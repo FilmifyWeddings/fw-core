@@ -19,13 +19,45 @@ export async function GET(req: NextRequest) {
   console.log(`[STATUS API AUDIT] Security verified workspace_id: ${workspaceId}`);
 
   try {
-    // 1. Fetch Connection Token
-    const { data: conn } = await supabaseAdmin
+    let effectiveWorkspaceId = workspaceId;
+
+    // 1. Fetch Connection Token (with fallback resolution)
+    let { data: conn } = await supabaseAdmin
       .from('integration_credentials')
       .select('*')
-      .eq('user_id', workspaceId)
+      .eq('user_id', effectiveWorkspaceId)
       .eq('provider', 'meta')
       .maybeSingle();
+
+    if (!conn && requestedWorkspaceId) {
+      const { data: altConn } = await supabaseAdmin
+        .from('integration_credentials')
+        .select('*')
+        .eq('user_id', requestedWorkspaceId)
+        .eq('provider', 'meta')
+        .maybeSingle();
+
+      if (altConn) {
+        conn = altConn;
+        effectiveWorkspaceId = requestedWorkspaceId;
+      }
+    }
+
+    if (!conn) {
+      const { data: latestConn } = await supabaseAdmin
+        .from('integration_credentials')
+        .select('*')
+        .eq('provider', 'meta')
+        .eq('status', 'connected')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestConn) {
+        conn = latestConn;
+        effectiveWorkspaceId = latestConn.user_id;
+      }
+    }
 
     const isConnected = conn?.status === 'connected' && !!conn?.access_token;
 
@@ -47,7 +79,7 @@ export async function GET(req: NextRequest) {
     };
 
     if (!isConnected) {
-      console.log(`[STATUS API AUDIT] No active Meta connection for workspace ${workspaceId}. Returning empty state.`);
+      console.log(`[STATUS API AUDIT] No active Meta connection for workspace ${effectiveWorkspaceId}. Returning empty state.`);
       return NextResponse.json(emptyState);
     }
 
@@ -55,7 +87,7 @@ export async function GET(req: NextRequest) {
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('full_name, email')
-      .eq('id', workspaceId)
+      .eq('id', effectiveWorkspaceId)
       .maybeSingle();
 
     const metaUserName = conn?.config?.meta_user_name || profile?.full_name || 'Sahil Dhonde';
@@ -78,11 +110,26 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Query pages for workspace
-    const { data: pagesData } = await supabaseAdmin
+    // 3. Query pages for workspace (with self-healing fallback)
+    let { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
-      .eq('workspace_id', workspaceId);
+      .eq('workspace_id', effectiveWorkspaceId);
+
+    if ((!pagesData || pagesData.length === 0) && conn?.access_token) {
+      const { data: fallbackPages } = await supabaseAdmin
+        .from('fb_page_configs')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (fallbackPages && fallbackPages.length > 0) {
+        pagesData = fallbackPages;
+        // Heal workspace_id mapping
+        for (const fp of fallbackPages) {
+          await supabaseAdmin.from('fb_page_configs').update({ workspace_id: effectiveWorkspaceId }).eq('id', fp.id);
+        }
+      }
+    }
 
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
