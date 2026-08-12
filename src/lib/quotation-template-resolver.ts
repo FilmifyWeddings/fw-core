@@ -43,13 +43,23 @@ export async function resolveUserDefaultQuotationTemplate(
         .eq('template_id', requestedTemplateId)
         .maybeSingle();
 
-      const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
+      let docJson = doc?.content_json || doc?.document_json || null;
+
+      if (!docJson) {
+        const { data: qRec } = await supabaseAdmin
+          .from('quotations')
+          .select('content_json, canvas_data')
+          .or(`id.eq.${requestedTemplateId},quotation_number.eq.${requestedTemplateId}`)
+          .maybeSingle();
+
+        docJson = qRec?.content_json || qRec?.canvas_data || null;
+      }
 
       if (tmpl || docJson) {
         return {
           templateId: requestedTemplateId,
           template: tmpl || { id: requestedTemplateId, title: 'Quotation Template', is_system_template: false, is_default: false },
-          document: docJson,
+          document: docJson || DEFAULT_AIRY_PROPOSAL,
           isSystemTemplate: !!tmpl?.is_system_template,
           isDefault: !!tmpl?.is_default,
           resolutionReason: 'EXPLICIT_REQUESTED',

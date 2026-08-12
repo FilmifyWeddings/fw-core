@@ -51,26 +51,10 @@ export async function POST(req: NextRequest) {
 
     if (profile?.id) workspaceId = profile.id;
 
-    // 2. Resolve default template
-    let templateDoc: any = null;
-    let sourceTemplateId = '';
-
-    if (explicitTemplateId) {
-      const { data: doc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json, document_json')
-        .eq('template_id', explicitTemplateId)
-        .maybeSingle();
-
-      templateDoc = doc?.content_json || doc?.document_json;
-      if (templateDoc) sourceTemplateId = explicitTemplateId;
-    }
-
-    if (!templateDoc) {
-      const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId);
-      sourceTemplateId = resolved.templateId;
-      templateDoc = resolved.document || DEFAULT_AIRY_PROPOSAL;
-    }
+    // 2. Resolve template (explicitly chosen template or user default fallback)
+    const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);
+    const sourceTemplateId = resolved.templateId;
+    const templateDoc = resolved.document || DEFAULT_AIRY_PROPOSAL;
 
     // Calculate max version
     let maxVersion = 0;
