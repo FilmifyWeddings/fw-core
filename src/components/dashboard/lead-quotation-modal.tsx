@@ -138,8 +138,16 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       if (json.success && (json.quotationId || json.templateId)) {
         const qId = json.quotationId || json.templateId;
         setOpeningQuotation({ id: qId, title: `Quotation V${json.version || ''}`, step: 'Hydrating Builder Canvas...' });
+
+        if (json.document) {
+          try {
+            const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+            cacheDocumentLocal(qId, json.document, json.version || 1);
+          } catch (e) {}
+        }
+
         router.push(`/workspace/quotations/builder/templet/${qId}`);
-        setTimeout(() => onClose(), 800);
+        setTimeout(() => onClose(), 600);
       } else {
         setErrorMsg(json.error || 'Failed to create new quotation for lead.');
         setOpeningQuotation(null);
