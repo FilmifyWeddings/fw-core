@@ -255,7 +255,77 @@ async function handleUpdate(
       });
     }
 
-    // Normal User editing their own template
+    // ── LEAD QUOTATION VERSION AUTO-FORKING ENGINE ──
+    // If editing a document linked to a lead (e.g. FW-Q-* or document.lead_id), auto-fork into a NEW version (V3)!
+    const targetDocRes = await supabaseAdmin
+      .from('quotation_documents')
+      .select('lead_id, lead_version, version, content_json')
+      .eq('template_id', id)
+      .maybeSingle();
+
+    const targetDoc = targetDocRes?.data;
+    const targetLeadId = document?.lead_id || targetDoc?.lead_id || (id.startsWith('FW-Q-') || id.startsWith('FW-L-') ? id.split('-')[2] : null);
+
+    if (targetLeadId) {
+      const leadShortId = targetLeadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+
+      const { data: existingDocs } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('version, lead_version, content_json')
+        .or(`lead_id.eq.${targetLeadId},template_id.ilike.%${leadShortId}%`);
+
+      let maxVersion = 0;
+      (existingDocs || []).forEach((d: any) => {
+        const v = d.lead_version || d.content_json?.lead_version || d.version || 0;
+        if (v > maxVersion) maxVersion = v;
+      });
+
+      const nextVersion = maxVersion + 1;
+      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newVersionTemplateId = `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
+
+      const clonedDoc = JSON.parse(JSON.stringify(document || { meta: {}, pages: [] }));
+      clonedDoc.lead_id = targetLeadId;
+      clonedDoc.lead_version = nextVersion;
+
+      await supabaseAdmin
+        .from('quotation_documents')
+        .insert({
+          template_id: newVersionTemplateId,
+          workspace_id: workspaceId,
+          user_id: userId,
+          lead_id: targetLeadId,
+          lead_version: nextVersion,
+          version: nextVersion,
+          content_json: clonedDoc,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+      (async () => {
+        try {
+          await supabaseAdmin.from('quotations').insert({
+            quotation_number: newVersionTemplateId,
+            workspace_id: workspaceId,
+            user_id: userId,
+            title: title || clonedDoc.designName || 'Wedding Quotation',
+            client_name: clonedDoc.cover?.coupleName || 'Valued Client',
+            status: 'draft',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        } catch (e) {}
+      })();
+
+      return NextResponse.json({
+        success: true,
+        isAutoCloned: true,
+        newTemplateId: newVersionTemplateId,
+        version: nextVersion
+      });
+    }
+
+    // Normal User editing their master/standalone template
     const newTitle = title || document?.designName || targetTmpl?.title || 'Wedding - Design 1';
 
     await supabaseAdmin
