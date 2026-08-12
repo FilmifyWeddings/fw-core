@@ -258,7 +258,7 @@ export async function GET(
 
     const { data: matchedDocs } = await supabaseAdmin
       .from('quotation_documents')
-      .select('id, template_id, lead_id, version, lead_version, created_at, updated_at, content_json')
+      .select('id, template_id, lead_id, version, lead_version, created_at, updated_at')
       .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
 
     // 3. Fetch client response metadata & quotations in parallel

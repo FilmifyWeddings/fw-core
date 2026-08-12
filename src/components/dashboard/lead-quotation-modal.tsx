@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, FileText, Plus, ExternalLink, Calendar, RefreshCw, AlertCircle, 
-  Send, Download, CheckCircle2, DollarSign, Copy, Check, Sparkles
+  Send, Download, CheckCircle2, DollarSign, Copy, Check, Sparkles, Loader2, ArrowRight
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -40,6 +40,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   const [quotations, setQuotations] = useState<QuotationVersionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [openingQuotation, setOpeningQuotation] = useState<{ id: string; title: string; step: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // AI Quotation Modal state
@@ -58,13 +59,29 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       setQuotations([]);
       setErrorMsg(null);
       setActiveShareModal(null);
+      setOpeningQuotation(null);
     }
   }, [isOpen, lead?.id]);
 
   const loadQuotations = async () => {
     if (!lead?.id) return;
-    setLoading(true);
     setErrorMsg(null);
+
+    // 1. INSTANT SESSION SWR CACHE HYDRATION (<1ms)
+    const cacheKey = `lead_quotes_cache_${lead.id}`;
+    const cachedData = sessionStorage.getItem(cacheKey);
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setQuotations(parsed);
+          setLoading(false);
+        }
+      } catch (e) {}
+    } else {
+      setLoading(true);
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -78,7 +95,9 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const json = await res.json();
       if (json.success && Array.isArray(json.quotations)) {
         setQuotations(json.quotations);
-        // Pre-warm Next.js route bundle for instant sub-second opening
+        sessionStorage.setItem(cacheKey, JSON.stringify(json.quotations));
+
+        // Pre-warm Next.js route bundle for sub-second opening
         json.quotations.forEach((q: QuotationVersionItem) => {
           if (q.template_id) router.prefetch(`/workspace/quotations/builder/templet/${q.template_id}`);
         });
@@ -87,7 +106,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       }
     } catch (err: any) {
       console.error('[LeadQuotationModal] Fetch error:', err);
-      setErrorMsg('Failed to load quotation history.');
+      if (!cachedData) setErrorMsg('Failed to load quotation history.');
     } finally {
       setLoading(false);
     }
@@ -97,6 +116,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
     if (!lead?.id || creating) return;
     setCreating(true);
     setErrorMsg(null);
+    setOpeningQuotation({ id: 'NEW', title: 'Creating New Quotation Version...', step: 'Resolving Studio Default Template...' });
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -116,22 +137,36 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const json = await res.json();
       if (json.success && (json.quotationId || json.templateId)) {
         const qId = json.quotationId || json.templateId;
-        onClose();
+        setOpeningQuotation({ id: qId, title: `Quotation V${json.version || ''}`, step: 'Hydrating Builder Canvas...' });
         router.push(`/workspace/quotations/builder/templet/${qId}`);
+        setTimeout(() => onClose(), 800);
       } else {
         setErrorMsg(json.error || 'Failed to create new quotation for lead.');
+        setOpeningQuotation(null);
       }
     } catch (err: any) {
       console.error('[LeadQuotationModal] Create error:', err);
       setErrorMsg('Network error while creating quotation.');
+      setOpeningQuotation(null);
     } finally {
       setCreating(false);
     }
   };
 
-  const handleOpenQuotation = (templateId: string) => {
-    onClose();
-    router.push(`/workspace/quotations/builder/templet/${templateId}`);
+  const handleOpenQuotation = (templateId: string, versionTitle?: string) => {
+    setOpeningQuotation({
+      id: templateId,
+      title: versionTitle || 'Quotation Document',
+      step: 'Loading Design Tokens & Page Sequence...'
+    });
+
+    router.prefetch(`/workspace/quotations/builder/templet/${templateId}`);
+    fetch(`/api/templates/${templateId}`).catch(() => {});
+
+    setTimeout(() => {
+      router.push(`/workspace/quotations/builder/templet/${templateId}`);
+      setTimeout(() => onClose(), 600);
+    }, 150);
   };
 
   const handleSendLink = async (q: QuotationVersionItem) => {
@@ -183,63 +218,30 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
     }, 200);
 
     try {
-      // 1. Fetch exact document snapshot if content_json is missing
-      let fullContent = q.content_json;
-      if (!fullContent) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const userAccessToken = session?.access_token;
-          const templateRes = await fetch(`/api/templates/${templateId}`, {
-            headers: {
-              'Authorization': `Bearer ${userAccessToken || ''}`
-            }
-          });
-          if (templateRes.ok) {
-            const templateJson = await templateRes.json();
-            fullContent = templateJson.document?.content_json || templateJson.document?.document_json || templateJson.document;
-          }
-        } catch (e) {
-          console.warn('[Snapshot fetch notice]:', e);
-        }
-      }
+      const { downloadServerChromiumPdf } = await import('@/lib/pdf-export-engine');
+      setExportStatusText('Rendering HD Chromium PDF Pages...');
 
-      setExportProgress(45);
-      setExportStatusText('Generating Server-Side Vector PDF...');
-
-      // 2. Execute POST /api/quotations/pdf (exact working builder pipeline)
-      const res = await fetch('/api/quotations/pdf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          templateId,
-          documentJson: fullContent
-        })
+      const blobUrl = await downloadServerChromiumPdf({
+        templateId,
+        filename: `${q.title || 'Quotation'}_V${q.version}.pdf`,
       });
 
+      setExportProgress(100);
+      setExportStatusText('Download Complete!');
       clearInterval(progressTimer);
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Failed to export PDF (HTTP ${res.status})`);
+      if (typeof blobUrl === 'string') {
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${q.title || 'Quotation'}_V${q.version}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+        }, 15000);
       }
-
-      const blob = await res.blob();
-      setExportProgress(100);
-      setExportStatusText('100% Complete! Downloading PDF...');
-
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = `${q.title || 'Quotation'}-${q.version_label || `V${q.version}`}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      setTimeout(() => {
-        URL.revokeObjectURL(blobUrl);
-      }, 15000);
     } catch (err: any) {
       clearInterval(progressTimer);
       console.error('[Download PDF Error]:', err);
@@ -270,7 +272,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="w-full max-w-md bg-white dark:bg-[#1C1A18] rounded-3xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh]"
+          className="relative w-full max-w-md bg-white dark:bg-[#1C1A18] rounded-3xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh]"
         >
           {/* Header */}
           <div className="p-4 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border-b border-amber-500/20 dark:border-zinc-800 flex items-center justify-between shrink-0">
@@ -297,6 +299,38 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
             </button>
           </div>
 
+          {/* Opening Quotation Screen Overlay Skeleton */}
+          {openingQuotation && (
+            <div className="absolute inset-0 z-50 bg-white/95 dark:bg-[#1C1A18]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-5 animate-in fade-in duration-150">
+              <div className="relative flex items-center justify-center">
+                <div className="absolute w-20 h-20 rounded-full bg-amber-500/20 animate-ping" />
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xl z-10">
+                  <Sparkles className="w-7 h-7 animate-pulse text-amber-100" />
+                </div>
+              </div>
+
+              {/* Skeleton Canvas Preview Card */}
+              <div className="w-full p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-2.5 animate-pulse">
+                <div className="flex items-center justify-between">
+                  <div className="w-24 h-4 rounded-md bg-amber-500/30" />
+                  <div className="w-12 h-3 rounded-md bg-zinc-300 dark:bg-zinc-700" />
+                </div>
+                <div className="w-48 h-5 rounded-md bg-zinc-300 dark:bg-zinc-700" />
+                <div className="w-32 h-3 rounded-md bg-zinc-200 dark:bg-zinc-800" />
+              </div>
+
+              <div className="text-center space-y-1">
+                <h4 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-wider">
+                  {openingQuotation.title}
+                </h4>
+                <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{openingQuotation.step}</span>
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Quotations List Body */}
           <div className="p-4 overflow-y-auto flex-1 space-y-3">
             {errorMsg && (
@@ -306,10 +340,33 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
               </div>
             )}
 
+            {/* SKELETON LOADING STATE FOR VERSIONS LIST */}
             {loading ? (
-              <div className="py-12 flex flex-col items-center justify-center gap-2 text-zinc-400">
-                <RefreshCw className="w-6 h-6 animate-spin text-amber-500" />
-                <span className="text-xs font-semibold">Loading quotations...</span>
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="p-3.5 rounded-2xl bg-zinc-100/80 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800 animate-pulse space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-7 rounded-lg bg-amber-500/20" />
+                        <div className="space-y-1.5">
+                          <div className="w-36 h-3.5 rounded-md bg-zinc-300 dark:bg-zinc-700" />
+                          <div className="w-24 h-2.5 rounded-md bg-zinc-200 dark:bg-zinc-800" />
+                        </div>
+                      </div>
+                      <div className="w-16 h-5 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="w-28 h-7 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                      <div className="flex gap-2">
+                        <div className="w-7 h-7 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                        <div className="w-7 h-7 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : quotations.length === 0 ? (
               <div className="py-12 text-center flex flex-col items-center justify-center gap-2 text-zinc-500 dark:text-zinc-400">
@@ -334,136 +391,82 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                   return (
                     <div
                       key={q.template_id}
-                      className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/50 transition-all space-y-2.5"
+                      onMouseEnter={() => {
+                        router.prefetch(`/workspace/quotations/builder/templet/${q.template_id}`);
+                        fetch(`/api/templates/${q.template_id}`).catch(() => {});
+                      }}
+                      className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/50 transition-all space-y-2.5 group"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-start gap-3 min-w-0 flex-1">
-                          <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-black font-black text-xs shrink-0 shadow-xs mt-0.5">
-                            {q.version_label || `V${q.version}`}
+                          <span className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-black shrink-0">
+                            V{q.version}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate">
-                              {q.title || 'Wedding Quotation'}
+                            <h4 className="text-xs font-black text-zinc-900 dark:text-white truncate">
+                              {q.title || `Quotation V${q.version}`}
                             </h4>
-                            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1 mt-0.5">
-                              <Calendar className="w-3 h-3 text-zinc-400" />
+                            <div className="flex items-center gap-1 text-[10px] text-zinc-400 mt-0.5">
+                              <Calendar className="w-3 h-3" />
                               <span>{updatedDateStr}</span>
-                            </p>
-
-                            {/* Detailed Response Cards under Date & Time (Renders both Accepted & Budget Discussion if both exist) */}
-                            {(() => {
-                              const responsesList = (q as any).responses && (q as any).responses.length > 0 
-                                ? (q as any).responses 
-                                : (q.responseBadge ? [q.responseBadge] : []);
-
-                              if (responsesList.length === 0) return null;
-
-                              return (
-                                <div className="mt-2.5 space-y-2 text-xs">
-                                  {responsesList.map((resp: any, idx: number) => (
-                                    <React.Fragment key={idx}>
-                                      {resp.type === 'accepted' ? (
-                                        <div className="p-3 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200 space-y-1 shadow-2xs">
-                                          <div className="flex items-center gap-1.5 font-extrabold text-emerald-800 dark:text-emerald-400">
-                                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                            <span>✓ Proposal Accepted by Client</span>
-                                          </div>
-                                          {resp.clientName && (
-                                            <p className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200">
-                                              Client: {resp.clientName}
-                                            </p>
-                                          )}
-                                          {resp.clientNotes && (
-                                            <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 bg-emerald-100/60 dark:bg-emerald-900/30 p-2 rounded-xl border border-emerald-200/60 mt-1 whitespace-pre-wrap">
-                                              {resp.clientNotes}
-                                            </p>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <div className="p-3 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-200 space-y-1 shadow-2xs">
-                                          <div className="flex items-center justify-between font-extrabold text-amber-900 dark:text-amber-300">
-                                            <div className="flex items-center gap-1.5">
-                                              <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                                              <span>Budget Discussion Requested</span>
-                                            </div>
-                                            {resp.budgetAmount && (
-                                              <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-black font-black text-[11px]">
-                                                ₹{Number(resp.budgetAmount).toLocaleString('en-IN')}
-                                              </span>
-                                            )}
-                                          </div>
-                                          {resp.clientNotes && (
-                                            <p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 bg-amber-100/60 dark:bg-amber-900/30 p-2 rounded-xl border border-amber-200/60 mt-1 whitespace-pre-wrap">
-                                              {resp.clientNotes}
-                                            </p>
-                                          )}
-                                        </div>
-                                      )}
-                                    </React.Fragment>
-                                  ))}
-                                </div>
-                              );
-                            })()}
+                            </div>
                           </div>
                         </div>
+
+                        {/* Client Response Badges */}
+                        {q.responseBadge && (
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                              q.responseBadge.type === 'accepted'
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                            }`}
+                          >
+                            {q.responseBadge.label}
+                          </span>
+                        )}
                       </div>
 
-                      {/* Action Buttons: SEND | DOWNLOAD PDF | OPEN */}
-                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-200/50 dark:border-zinc-800/80">
+                      {/* Version Action Buttons */}
+                      <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-800/60">
                         <button
                           type="button"
-                          onClick={() => handleSendLink(q)}
-                          disabled={generatingLink === q.template_id}
-                          className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                          onClick={() => handleOpenQuotation(q.template_id, q.title || `Quotation V${q.version}`)}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-[11px] uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
                         >
-                          {generatingLink === q.template_id ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Send className="w-3 h-3 text-amber-500" />
-                          )}
-                          <span>SEND</span>
+                          <span>Open Builder</span>
+                          <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadPDF(q)}
-                          disabled={downloadingPdf === q.template_id}
-                          className="px-3 py-1.5 rounded-xl bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                        >
-                          {downloadingPdf === q.template_id ? (
-                            <>
-                              <RefreshCw className="w-3 h-3 animate-spin text-cyan-500" />
-                              <span>Generating PDF...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Download className="w-3 h-3 text-cyan-500" />
-                              <span>DOWNLOAD PDF</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSendLink(q)}
+                            disabled={generatingLink === q.template_id}
+                            title="Generate Shareable Link"
+                            className="p-1.5 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-colors"
+                          >
+                            {generatingLink === q.template_id ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                            ) : (
+                              <Send className="w-3.5 h-3.5" />
+                            )}
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAiTargetQuotationId(q.template_id);
-                            setAiModalOpen(true);
-                          }}
-                          className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-extrabold text-xs flex items-center gap-1 transition-all active:scale-95 shrink-0 cursor-pointer border border-amber-500/20"
-                          title="Auto-fill this quotation draft with AI"
-                        >
-                          <Sparkles className="w-3 h-3 text-amber-500" />
-                          <span>AI Fill</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenQuotation(q.template_id)}
-                          className="px-3 py-1.5 rounded-xl bg-black dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-black font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shrink-0 cursor-pointer"
-                        >
-                          <span>Open</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadPDF(q)}
+                            disabled={downloadingPdf === q.template_id}
+                            title="Download PDF"
+                            className="p-1.5 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-colors"
+                          >
+                            {downloadingPdf === q.template_id ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                            ) : (
+                              <Download className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -472,25 +475,22 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
             )}
           </div>
 
-          {/* Footer Actions */}
-          <div className="p-3.5 bg-zinc-50 dark:bg-[#161412] border-t border-zinc-200/80 dark:border-zinc-800 shrink-0 grid grid-cols-2 gap-2">
+          {/* Modal Footer Actions */}
+          <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex items-center justify-between gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => {
-                setAiTargetQuotationId(null);
-                setAiModalOpen(true);
-              }}
-              className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-900 dark:text-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 border border-amber-500/30 active:scale-98 transition-all cursor-pointer"
+              onClick={() => setAiModalOpen(true)}
+              className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>✨ Create with AI</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+              <span>Create with AI</span>
             </button>
 
             <button
               type="button"
               onClick={handleCreateNewQuotation}
               disabled={creating}
-              className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-98 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all disabled:opacity-50 cursor-pointer"
+              className="px-4 py-2 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center gap-1.5"
             >
               {creating ? (
                 <>
@@ -500,137 +500,58 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
               ) : (
                 <>
                   <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>+ Standard Draft</span>
+                  <span>New Version</span>
                 </>
               )}
             </button>
           </div>
         </motion.div>
-
-        {/* ── AI QUOTATION EXTRACTION & PREVIEW MODAL ── */}
-        {aiModalOpen && (
-          <AiQuotationModal
-            isOpen={aiModalOpen}
-            onClose={() => setAiModalOpen(false)}
-            lead={lead}
-            quotationId={aiTargetQuotationId}
-            onApplied={async (updatedDoc, targetQId) => {
-              await loadQuotations();
-              router.push(`/workspace/quotations/builder/templet/${targetQId}`);
-              onClose();
-            }}
-          />
-        )}
-
-        {/* ── SHARE LINK POPUP MODAL ── */}
-        <AnimatePresence>
-          {activeShareModal && (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-sm bg-white dark:bg-[#1C1A18] rounded-3xl p-5 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4"
-              >
-                <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <Send className="w-4 h-4 text-amber-500" />
-                    <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">
-                      Client Preview Link
-                    </h4>
-                  </div>
-                  <button onClick={() => setActiveShareModal(null)} className="text-zinc-400 hover:text-white">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <p className="text-xs text-zinc-600 dark:text-zinc-300">
-                  Share this secure preview link with {lead.name} to allow them to view, accept, or discuss budget for this quotation version.
-                </p>
-
-                <div className="p-2.5 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={activeShareModal.url}
-                    className="bg-transparent text-xs font-mono text-amber-600 dark:text-amber-400 truncate w-full outline-none"
-                  />
-                  <button
-                    onClick={handleCopyLink}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-bold text-xs shrink-0 flex items-center gap-1"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? 'Copied!' : 'Copy'}</span>
-                  </button>
-                </div>
-
-                <div className="pt-2 flex justify-end">
-                  <button
-                    onClick={() => setActiveShareModal(null)}
-                    className="px-4 py-2 rounded-xl bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-bold"
-                  >
-                    Close
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* ── BUILDER-IDENTICAL PDF PROGRESS OVERLAY MODAL ── */}
-        <AnimatePresence>
-          {isExportingPdf && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[20000] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4"
-            >
-              <motion.div
-                initial={{ scale: 0.9, y: 10 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 10 }}
-                className="w-full max-w-sm bg-white dark:bg-[#141210] rounded-3xl p-6 border border-amber-500/30 shadow-[0_20px_60px_rgba(245,158,11,0.2)] text-center space-y-5"
-              >
-                <div className="flex items-center justify-center gap-2 text-amber-500 font-black text-xs uppercase tracking-widest">
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-500" />
-                  <span>Generating StudioCore Vector PDF...</span>
-                </div>
-
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium h-5">
-                  {exportStatusText}
-                </p>
-
-                {/* 4-Pill Segmented Progress Bar */}
-                <div className="flex items-center justify-center gap-2">
-                  {[1, 2, 3, 4].map((segmentIndex) => {
-                    const segmentProgress = Math.min(100, Math.max(0, (exportProgress - (segmentIndex - 1) * 25) * 4));
-                    return (
-                      <div
-                        key={segmentIndex}
-                        className="flex-1 h-3 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden relative border border-zinc-300/40 dark:border-zinc-700/40 shadow-inner"
-                      >
-                        <motion.div
-                          className="h-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.6)]"
-                          initial={{ width: '0%' }}
-                          animate={{ width: `${segmentProgress}%` }}
-                          transition={{ duration: 0.25, ease: 'easeInOut' }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center justify-between text-xs font-mono font-bold text-zinc-500 dark:text-zinc-400">
-                  <span>Progress</span>
-                  <span className="text-amber-500 font-extrabold text-sm">{exportProgress}%</span>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
       </div>
+
+      {/* AI Quotation Creator Modal */}
+      <AiQuotationModal
+        isOpen={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        lead={lead}
+        quotationId={aiTargetQuotationId}
+      />
+
+      {/* Share Link Drawer Modal */}
+      {activeShareModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="w-full max-w-sm bg-white dark:bg-[#1C1A18] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 text-center">
+            <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <h4 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-wider">
+              Shareable Link Ready
+            </h4>
+            <input
+              type="text"
+              readOnly
+              value={activeShareModal.url}
+              className="w-full p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-700 dark:text-zinc-300 focus:outline-none"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveShareModal(null)}
+                className="flex-1 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs uppercase flex items-center justify-center gap-1.5"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AnimatePresence>
   );
 }
