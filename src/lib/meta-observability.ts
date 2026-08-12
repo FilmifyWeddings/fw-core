@@ -174,6 +174,7 @@ export async function markTokenNeedsReconnect(workspaceId: string, pageId?: stri
           is_active: false,
           updated_at: new Date().toISOString(),
         })
+        .eq('workspace_id', workspaceId)
         .eq('page_id', pageId);
     }
 

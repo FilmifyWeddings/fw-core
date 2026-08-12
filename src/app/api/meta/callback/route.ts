@@ -163,27 +163,7 @@ async function fetchUserPages(token: string) {
     console.error('[RAW GRAPH API EXCEPTION] Source 2 GET /me/businesses:', err.message);
   }
 
-  // Source 3: Direct Target Page Query Fallback
-  if (pagesMap.size === 0) {
-    console.log('[RAW GRAPH API QUERY] Direct Query Fallback to Page ID: 110156851793416 (Filmify Weddings)...');
-    try {
-      const targetRes = await fetch(`https://graph.facebook.com/v20.0/110156851793416?fields=id,name,category,access_token&access_token=${token}`);
-      const targetData = await targetRes.json().catch(() => ({}));
-      console.log('[RAW GRAPH API RESPONSE] GET /110156851793416:\n', JSON.stringify(targetData, null, 2));
-
-      if (targetRes.ok && targetData.id) {
-        pagesMap.set(targetData.id, {
-          page_id: targetData.id,
-          page_name: targetData.name || 'Filmify Weddings',
-          page_category: targetData.category || 'Wedding Service',
-          page_access_token: targetData.access_token || token,
-          picture_url: null,
-        });
-      }
-    } catch (_) {}
-  }
-
-  console.log(`[Meta Discovery Engine COMPLETE] Discovered ${pagesMap.size} unique Facebook Page(s).`);
+  console.log(`[Meta Discovery Engine COMPLETE] Discovered ${pagesMap.size} unique Facebook Page(s) for authenticated Meta account.`);
   return Array.from(pagesMap.values());
 }
 

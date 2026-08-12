@@ -48,27 +48,15 @@ export async function verifyMetaAuth(
       }
     }
 
-    // 4. DATABASE WORKSPACE PROFILE RESOLUTION (If Bearer token not in header)
-    if (!authenticatedUserId && clientSuppliedWorkspaceId && clientSuppliedWorkspaceId !== '00000000-0000-0000-0000-000000000000') {
-      const { data: prof } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('id', clientSuppliedWorkspaceId)
-        .maybeSingle();
-
-      if (prof?.id) {
-        authenticatedUserId = prof.id;
-      }
-    }
-
-    // 5. UNAUTHENTICATED REJECTION (401 Unauthorized)
+    // 4. UNAUTHENTICATED REJECTION (401 Unauthorized)
+    // A valid session token is strictly required. Client-supplied workspace_id alone cannot authenticate.
     if (!authenticatedUserId) {
       return {
         authorized: false,
         workspaceId: '',
         userId: '',
         errorResponse: NextResponse.json(
-          { error: 'Unauthorized: A valid Supabase authentication session or workspace ID is required.' },
+          { error: 'Unauthorized: A valid Supabase authentication session is required.' },
           { status: 401 }
         ),
       };

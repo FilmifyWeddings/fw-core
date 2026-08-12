@@ -386,9 +386,9 @@ export default function MetaIntegrationPage() {
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'logs'>('forms');
 
   // Account Information
-  const [connectedAccountName, setConnectedAccountName] = useState('Sahil Dhonde');
+  const [connectedAccountName, setConnectedAccountName] = useState('Meta User');
   const [connectedUserEmail, setConnectedUserEmail] = useState('');
-  const [businessName, setBusinessName] = useState('Filmify Weddings');
+  const [businessName, setBusinessName] = useState('Meta Business');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
   const [pages, setPages] = useState<ConnectedPage[]>([]);
@@ -443,9 +443,9 @@ export default function MetaIntegrationPage() {
       const data = await res.json();
       if (data.success && data.connection?.is_connected) {
         setIsConnected(true);
-        setConnectedAccountName(data.connection.user_name || 'Sahil Dhonde');
-        setConnectedUserEmail(data.connection.user_email || 'dhondesanty1760@gmail.com');
-        setBusinessName(data.connection.business_name || 'Filmify Weddings');
+        setConnectedAccountName(data.connection.user_name || 'Meta User');
+        setConnectedUserEmail(data.connection.user_email || '');
+        setBusinessName(data.connection.business_name || 'Meta Business');
         setPages(data.pages || []);
         setLeadForms(data.forms || []);
         setRealSyncLogs(data.sync_logs || []);

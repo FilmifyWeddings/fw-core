@@ -42,13 +42,18 @@ export async function POST(req: NextRequest) {
 
       console.log(`[RETRY ENGINE] Retrying item ID: ${item.id} (Attempt ${currentAttempts}/3)...`);
 
-      // 2. Query strict fb_page_configs mapping
+      // 2. Query strict fb_page_configs mapping scoped to item workspace
       const pageId = item.page_id;
-      const { data: pageConfig } = await supabaseAdmin
+      let pageQuery = supabaseAdmin
         .from('fb_page_configs')
         .select('workspace_id, page_access_token, page_name')
-        .eq('page_id', pageId)
-        .maybeSingle();
+        .eq('page_id', pageId);
+
+      if (item.workspace_id) {
+        pageQuery = pageQuery.eq('workspace_id', item.workspace_id);
+      }
+
+      const { data: pageConfig } = await pageQuery.maybeSingle();
 
       if (!pageConfig || !pageConfig.workspace_id) {
         // Unrecoverable configuration error

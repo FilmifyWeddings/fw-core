@@ -3,8 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
- * GET /api/meta/status?workspace_id=XXX
+ * GET /api/meta/status
  * Returns Meta Connection Status, Profile Info, Pages Count, Lead Forms List, Real Meta Lead Ingestion Logs.
+ * Strictly scoped to the authenticated user's workspace.
+ * PURE READ-ONLY: Never mutates the database.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -16,50 +18,31 @@ export async function GET(req: NextRequest) {
   }
 
   const workspaceId = authResult.workspaceId;
-  console.log(`[STATUS API AUDIT] Security verified workspace_id: ${workspaceId}`);
 
   try {
-    let effectiveWorkspaceId = workspaceId;
-
-    // 1. Fetch Connection Token (with fallback resolution)
-    let { data: conn } = await supabaseAdmin
+    // 1. Fetch Connection Token strictly for the authenticated workspace
+    const { data: conn } = await supabaseAdmin
       .from('integration_credentials')
       .select('*')
-      .eq('user_id', effectiveWorkspaceId)
+      .eq('user_id', workspaceId)
       .eq('provider', 'meta')
       .maybeSingle();
 
-    if (!conn && requestedWorkspaceId) {
-      const { data: altConn } = await supabaseAdmin
-        .from('integration_credentials')
-        .select('*')
-        .eq('user_id', requestedWorkspaceId)
-        .eq('provider', 'meta')
-        .maybeSingle();
+    let metaAccessToken = (conn?.status === 'connected' && conn?.access_token) ? conn.access_token : null;
 
-      if (altConn) {
-        conn = altConn;
-        effectiveWorkspaceId = requestedWorkspaceId;
+    // Check profiles table fallback strictly for THIS workspace
+    if (!metaAccessToken) {
+      const { data: profToken } = await supabaseAdmin
+        .from('profiles')
+        .select('meta_access_token')
+        .eq('id', workspaceId)
+        .maybeSingle();
+      if (profToken?.meta_access_token) {
+        metaAccessToken = profToken.meta_access_token;
       }
     }
 
-    if (!conn) {
-      const { data: latestConn } = await supabaseAdmin
-        .from('integration_credentials')
-        .select('*')
-        .eq('provider', 'meta')
-        .eq('status', 'connected')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (latestConn) {
-        conn = latestConn;
-        effectiveWorkspaceId = latestConn.user_id;
-      }
-    }
-
-    const isConnected = conn?.status === 'connected' && !!conn?.access_token;
+    const isConnected = !!metaAccessToken && (conn?.status === 'connected' || !!conn);
 
     const emptyState = {
       success: true,
@@ -79,19 +62,18 @@ export async function GET(req: NextRequest) {
     };
 
     if (!isConnected) {
-      console.log(`[STATUS API AUDIT] No active Meta connection for workspace ${effectiveWorkspaceId}. Returning empty state.`);
       return NextResponse.json(emptyState);
     }
 
-    // 2. Fetch User Profile
+    // 2. Fetch User Profile strictly for THIS workspace
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('full_name, email')
-      .eq('id', effectiveWorkspaceId)
+      .select('full_name, email, workspace_name')
+      .eq('id', workspaceId)
       .maybeSingle();
 
-    const metaUserName = conn?.config?.meta_user_name || profile?.full_name || 'Sahil Dhonde';
-    const metaUserEmail = conn?.config?.meta_user_email || profile?.email || 'dhondesanty1760@gmail.com';
+    const metaUserName = conn?.config?.meta_user_name || profile?.full_name || 'Meta User';
+    const metaUserEmail = conn?.config?.meta_user_email || profile?.email || '';
     const connectedDate = conn?.updated_at || conn?.created_at || new Date().toISOString();
     let tokenStatus: 'ACTIVE' | 'EXPIRED' | 'NEEDS_RECONNECT' | 'DISCONNECTED' = 'ACTIVE';
 
@@ -110,94 +92,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Query pages for workspace (with self-healing fallback)
-    let { data: pagesData } = await supabaseAdmin
+    // 3. Query pages strictly for THIS workspace (ZERO global fallbacks, ZERO DB mutations)
+    const { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
-      .select('*')
-      .eq('workspace_id', effectiveWorkspaceId);
-
-    if ((!pagesData || pagesData.length === 0) && conn?.access_token) {
-      const { data: fallbackPages } = await supabaseAdmin
-        .from('fb_page_configs')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
-      if (fallbackPages && fallbackPages.length > 0) {
-        pagesData = fallbackPages;
-        // Heal workspace_id mapping
-        for (const fp of fallbackPages) {
-          await supabaseAdmin.from('fb_page_configs').update({ workspace_id: effectiveWorkspaceId }).eq('id', fp.id);
-        }
-      }
-    }
+      .select('page_id, page_name, page_category, page_access_token, is_active')
+      .eq('workspace_id', workspaceId);
 
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
-      page_name: p.page_name || 'Filmify Weddings',
-      page_category: p.page_category || 'Photography and videography',
+      page_name: p.page_name || 'Facebook Page',
+      page_category: p.page_category || 'Business Page',
       page_access_token: p.page_access_token || '',
       is_active: p.is_active ?? true,
     }));
 
     const pageMap = new Map((pagesData || []).map((p: any) => [p.page_id, p.page_name]));
-    const businessName = pages[0]?.page_name || metaUserName || 'Filmify Weddings';
+    const businessName = pages[0]?.page_name || profile?.workspace_name || metaUserName || 'Meta Business';
 
-    // 4. Query forms for workspace
+    // 4. Query forms strictly for THIS workspace (ZERO global fallbacks, ZERO DB mutations)
     const { data: rawFormsData } = await supabaseAdmin
       .from('fb_lead_forms')
       .select('*')
       .eq('workspace_id', workspaceId);
 
-    let formsData = rawFormsData || [];
-
-    // Live Graph API Fallback: If DB forms count is 0, query Meta live for each connected page
-    if (formsData.length === 0 && pages.length > 0) {
-      console.log(`[STATUS API AUDIT] 0 forms in DB for workspace ${workspaceId}. Querying Graph API live for ${pages.length} page(s)...`);
-      for (const page of pages) {
-        if (!page.page_access_token) continue;
-        try {
-          const graphRes = await fetch(
-            `https://graph.facebook.com/v20.0/${page.page_id}/leadgen_forms?fields=id,name,status,leads_count,created_time,questions&access_token=${page.page_access_token}`
-          );
-          const graphData = await graphRes.json().catch(() => ({}));
-          if (graphRes.ok && graphData.data && graphData.data.length > 0) {
-            for (const f of graphData.data) {
-              const { data: savedF } = await supabaseAdmin
-                .from('fb_lead_forms')
-                .upsert({
-                  workspace_id: workspaceId,
-                  page_id: page.page_id,
-                  form_id: f.id,
-                  form_name: f.name || 'Instant Lead Form',
-                  questions: f.questions || [],
-                  status: f.status || 'ACTIVE',
-                  leads_count: f.leads_count || 0,
-                  created_time: f.created_time || new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id,form_id' })
-                .select('*')
-                .single();
-
-              await supabaseAdmin
-                .from('fb_form_mappings')
-                .upsert({
-                  workspace_id: workspaceId,
-                  page_id: page.page_id,
-                  form_id: f.id,
-                  form_name: f.name || 'Instant Lead Form',
-                  is_active: true,
-                  is_tagging_enabled: true,
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id,form_id' });
-
-              if (savedF) formsData.push(savedF);
-            }
-          }
-        } catch (err: any) {
-          console.error(`[STATUS API Graph Fallback Error] Page ${page.page_id}:`, err.message);
-        }
-      }
-    }
+    const formsData = rawFormsData || [];
 
     const { data: mappingsData } = await supabaseAdmin
       .from('fb_form_mappings')
@@ -206,6 +124,7 @@ export async function GET(req: NextRequest) {
 
     const mappingMap = new Map((mappingsData || []).map((m: any) => [m.form_id, m]));
 
+    // 5. Query Leads strictly for THIS workspace
     const { data: leadsData } = await supabaseAdmin
       .from('leads')
       .select('id, name, phone, email, created_at, source, raw_payload')
@@ -218,7 +137,7 @@ export async function GET(req: NextRequest) {
       !!l.raw_payload?.form_id
     );
 
-    const totalLeadsCount = metaLeads.length || leadsData?.length || 0;
+    const totalLeadsCount = metaLeads.length;
     let lastLeadTime: string | null = null;
     if (metaLeads.length > 0) {
       const sorted = [...metaLeads].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -227,7 +146,7 @@ export async function GET(req: NextRequest) {
 
     const formMap = new Map((formsData || []).map((f: any) => [f.form_id, f.form_name]));
 
-    const forms = (formsData || []).map((f: any) => {
+    const forms = formsData.map((f: any) => {
       const formLeads = metaLeads.filter((l: any) => l.raw_payload?.form_id === f.form_id || l.raw_payload?.lead_form_id === f.form_id);
       const syncedCount = Math.max(formLeads.length, f.leads_count || 0, f.sync_count || 0);
 
@@ -245,7 +164,7 @@ export async function GET(req: NextRequest) {
         page_name: pageMap.get(f.page_id) || businessName,
         form_name: f.form_name || 'Instant Lead Form',
         status: (f.status || 'ACTIVE').toUpperCase(),
-        questions_count: f.questions_count || 5,
+        questions_count: Array.isArray(f.questions) ? f.questions.length : (f.questions_count || 0),
         total_received: syncedCount,
         synced_count: syncedCount,
         sync_count: syncedCount,
@@ -267,7 +186,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 5. Query STRICT META LEAD INGESTION LOGS (Excludes internal CRM stage drags)
+    // 6. Query Live Logs strictly for THIS workspace
     const { data: dbLiveLogs } = await supabaseAdmin
       .from('live_logs')
       .select('*')
@@ -276,9 +195,9 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(30);
 
-    const leadActivityLogs = (metaLeads || []).map((l: any) => {
+    const leadActivityLogs = metaLeads.map((l: any) => {
       const fId = l.raw_payload?.form_id || l.raw_payload?.lead_form_id;
-      const fName = formMap.get(fId) || 'Instant Lead Form';
+      const fName = formMap.get(fId) || (fId ? `Form ${fId}` : 'Meta Lead Form');
       const pName = pageMap.get(l.raw_payload?.page_id) || businessName;
 
       return {
@@ -287,9 +206,9 @@ export async function GET(req: NextRequest) {
         lead_name: l.name || 'Meta Instant Lead',
         lead_phone: l.phone || 'Phone Captured',
         lead_email: l.email || '',
-        form_id: fId || '1193618092947278',
+        form_id: fId || '',
         form_name: fName,
-        page_id: l.raw_payload?.page_id || pages[0]?.page_id || '110156851793416',
+        page_id: l.raw_payload?.page_id || pages[0]?.page_id || '',
         page_name: pName,
         status: 'IMPORTED' as const,
         reason: 'Successfully Ingested to CRM ✓',
@@ -306,9 +225,9 @@ export async function GET(req: NextRequest) {
                  'Meta Lead Webhook Event',
       lead_phone: log.event_type,
       lead_email: '',
-      form_id: log.metadata?.form_id || 'Form',
+      form_id: log.metadata?.form_id || '',
       form_name: formMap.get(log.metadata?.form_id) || 'Meta Lead Form',
-      page_id: log.metadata?.page_id || pages[0]?.page_id || 'Page',
+      page_id: log.metadata?.page_id || pages[0]?.page_id || '',
       page_name: businessName,
       status: log.event_type === 'leadgen_duplicate_skipped' ? 'DUPLICATE' as const :
               log.event_type === 'leadgen_ingestion_failed' ? 'FAILED' as const : 'IMPORTED' as const,
@@ -358,3 +277,4 @@ export async function GET(req: NextRequest) {
     }, { status: 500 });
   }
 }
+
