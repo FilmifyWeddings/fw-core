@@ -134,6 +134,12 @@ export async function GET(req: NextRequest) {
         is_active: saved?.is_active ?? false,
         is_tagging_enabled: saved?.is_tagging_enabled ?? false,
         mapping_config: saved?.mapping_config ?? {},
+        distribution_config: saved?.mapping_config?.distribution_config || saved?.distribution_config || {
+          enabled: false,
+          strategy: 'round_robin',
+          owners: [],
+          last_assigned_index: -1
+        },
         contact_group_id: saved?.contact_group_id ?? null,
         is_saved: !!saved,
       };
@@ -148,7 +154,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/facebook/forms
- * Body: { workspace_id, page_id, form_id, form_name, is_active, is_tagging_enabled, mapping_config }
+ * Body: { workspace_id, page_id, form_id, form_name, is_active, is_tagging_enabled, mapping_config, distribution_config }
  *
  * Form mapping config ko Supabase mein upsert karta hai.
  */
@@ -158,12 +164,17 @@ export async function POST(req: NextRequest) {
     const {
       workspace_id, page_id, form_id, form_name,
       is_active, is_tagging_enabled, mapping_config,
-      contact_group_id,
+      distribution_config, contact_group_id,
     } = body;
 
     if (!workspace_id || !page_id || !form_id) {
       return NextResponse.json({ error: 'workspace_id, page_id, form_id required' }, { status: 400 });
     }
+
+    const mergedMappingConfig = {
+      ...(mapping_config || {}),
+      ...(distribution_config ? { distribution_config } : {})
+    };
 
     const { data, error } = await supabaseAdmin
       .from('fb_form_mappings')
@@ -174,7 +185,7 @@ export async function POST(req: NextRequest) {
         form_name: form_name || null,
         is_active: is_active ?? true,
         is_tagging_enabled: is_tagging_enabled ?? false,
-        mapping_config: mapping_config || {},
+        mapping_config: mergedMappingConfig,
         contact_group_id: contact_group_id || null,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id,form_id' })

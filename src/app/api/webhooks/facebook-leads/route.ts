@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
       if (resolvedFormId) {
         const { data: formMapping } = await supabaseAdmin
           .from('fb_form_mappings')
-          .select('mapping_config, is_tagging_enabled, form_name, is_active, contact_group_id')
+          .select('id, mapping_config, is_tagging_enabled, form_name, is_active, contact_group_id')
           .eq('workspace_id', workspaceId)
           .eq('form_id', resolvedFormId)
           .maybeSingle();
@@ -190,6 +190,27 @@ export async function POST(req: NextRequest) {
           isTaggingEnabled = formMapping.is_tagging_enabled ?? false;
           formName         = formMapping.form_name || null;
           leadData.whatsapp_group_id = formMapping.contact_group_id || null;
+
+          // ── Round-Robin Lead Owner Auto-Distribution Engine ──
+          const distConfig = (formMapping.mapping_config as any)?.distribution_config || (formMapping as any).distribution_config;
+          if (distConfig?.enabled && Array.isArray(distConfig.owners) && distConfig.owners.length > 0) {
+            const owners: string[] = distConfig.owners;
+            const lastIdx: number = typeof distConfig.last_assigned_index === 'number' ? distConfig.last_assigned_index : -1;
+            const nextIdx = (lastIdx + 1) % owners.length;
+            const assignedOwner = owners[nextIdx];
+
+            console.log(`[FB Webhook Round-Robin] Assigning lead to owner [${nextIdx + 1}/${owners.length}]: ${assignedOwner}`);
+
+            (leadData as any).assigned_lead_owner = assignedOwner;
+
+            const updatedDistConfig = { ...distConfig, last_assigned_index: nextIdx };
+            const updatedMappingConfig = { ...mappingConfig, distribution_config: updatedDistConfig };
+
+            await supabaseAdmin
+              .from('fb_form_mappings')
+              .update({ mapping_config: updatedMappingConfig })
+              .eq('form_id', resolvedFormId);
+          }
         }
       }
 
@@ -223,6 +244,9 @@ export async function POST(req: NextRequest) {
 
       rawPayload.form_name = formName || (resolvedFormId ? `Form ${resolvedFormId}` : 'Meta Lead Form');
       rawPayload.form_id   = resolvedFormId;
+      if ((leadData as any).assigned_lead_owner) {
+        rawPayload.lead_owner = (leadData as any).assigned_lead_owner;
+      }
       leadData.raw_payload      = rawPayload;
       leadData.raw_meta_payload = fullRawMeta;
 

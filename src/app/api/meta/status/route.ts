@@ -103,10 +103,10 @@ export async function GET(req: NextRequest) {
 
     const { data: mappingsData } = await supabaseAdmin
       .from('fb_form_mappings')
-      .select('form_id, contact_group_id')
+      .select('form_id, contact_group_id, mapping_config')
       .eq('workspace_id', workspaceId);
 
-    const mappingMap = new Map((mappingsData || []).map((m: any) => [m.form_id, m.contact_group_id]));
+    const mappingMap = new Map((mappingsData || []).map((m: any) => [m.form_id, m]));
 
     const { data: leadsData } = await supabaseAdmin
       .from('leads')
@@ -139,6 +139,8 @@ export async function GET(req: NextRequest) {
         formLastLeadTime = sorted[0].created_at;
       }
 
+      const mObj = mappingMap.get(f.form_id);
+
       return {
         form_id: f.form_id,
         page_id: f.page_id,
@@ -155,7 +157,13 @@ export async function GET(req: NextRequest) {
         duplicate_count: 0,
         is_active: true,
         is_enabled: f.is_enabled ?? true,
-        contact_group_id: mappingMap.get(f.form_id) || null,
+        contact_group_id: mObj?.contact_group_id || null,
+        distribution_config: mObj?.mapping_config?.distribution_config || {
+          enabled: false,
+          strategy: 'round_robin',
+          owners: [],
+          last_assigned_index: -1
+        },
         last_lead_received: formLastLeadTime || lastLeadTime,
         created_time: f.created_time || f.created_at || new Date().toISOString(),
       };

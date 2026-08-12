@@ -234,6 +234,7 @@ export async function POST(req: NextRequest) {
           // ── 2. FORM TOGGLE CHECK (checks both fb_lead_forms.is_enabled and fb_form_mappings.is_active) ──
           let contactGroupId: string | null = null;
           let resolvedFormName: string | null = null;
+          let assignedLeadOwner: string | null = null;
 
           if (form_id) {
             // Primary check: fb_lead_forms.is_enabled (the new UI toggle)
@@ -244,16 +245,33 @@ export async function POST(req: NextRequest) {
               .eq('form_id', form_id)
               .maybeSingle();
 
-            // Also check legacy fb_form_mappings.is_active
+            // Also check legacy fb_form_mappings.is_active & distribution_config
             const { data: formSetting } = await supabaseAdmin
               .from('fb_form_mappings')
-              .select('is_active, form_name, contact_group_id')
+              .select('id, is_active, form_name, contact_group_id, mapping_config')
               .eq('workspace_id', targetWorkspaceId)
               .eq('form_id', form_id)
               .maybeSingle();
 
             if (formSetting) {
               contactGroupId = formSetting.contact_group_id || null;
+              const distConfig = (formSetting.mapping_config as any)?.distribution_config || (formSetting as any).distribution_config;
+              if (distConfig?.enabled && Array.isArray(distConfig.owners) && distConfig.owners.length > 0) {
+                const owners: string[] = distConfig.owners;
+                const lastIdx: number = typeof distConfig.last_assigned_index === 'number' ? distConfig.last_assigned_index : -1;
+                const nextIdx = (lastIdx + 1) % owners.length;
+                assignedLeadOwner = owners[nextIdx];
+
+                console.log(`[Meta-Leads Webhook Round-Robin] Assigning lead to owner [${nextIdx + 1}/${owners.length}]: ${assignedLeadOwner}`);
+
+                const updatedDistConfig = { ...distConfig, last_assigned_index: nextIdx };
+                const updatedMappingConfig = { ...((formSetting.mapping_config as any) || {}), distribution_config: updatedDistConfig };
+
+                await supabaseAdmin
+                  .from('fb_form_mappings')
+                  .update({ mapping_config: updatedMappingConfig })
+                  .eq('id', formSetting.id);
+              }
             }
             resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
 
@@ -436,6 +454,7 @@ export async function POST(req: NextRequest) {
               campaign_name: campaignName,
               adset_name: adsetName,
               ad_name: adName,
+              ...(assignedLeadOwner ? { lead_owner: assignedLeadOwner } : {}),
               ...leadFields
             },
           };
