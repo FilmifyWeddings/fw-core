@@ -84,10 +84,17 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const res = await fetch('/api/quotation-templates');
       const json = await res.json();
       if (json.success && Array.isArray(json.templates)) {
-        setAvailableTemplates(json.templates);
-        // Find default template
-        const def = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
-        if (def) setSelectedTemplateId(def.id);
+        // Filter out system templates so user only sees their own custom templates
+        const userTemplates = json.templates.filter((t: StudioTemplateItem) => !t.is_system_template);
+        const listToDisplay = userTemplates.length > 0 ? userTemplates : json.templates;
+
+        setAvailableTemplates(listToDisplay);
+
+        // Pre-select user's own active default template
+        const userDefault = listToDisplay.find((t: StudioTemplateItem) => t.is_default) || listToDisplay[0];
+        if (userDefault) {
+          setSelectedTemplateId(userDefault.id);
+        }
       }
     } catch (e) {
       console.warn('[LeadQuotationModal] Templates fetch warning:', e);
