@@ -536,19 +536,18 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
 
           {/* Main Layout containing sidebar and content area */}
           <div className="flex-1 flex overflow-hidden">
-            {/* Sidebar Navigation */}
-            <div className="w-64 border-r border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/40 p-4 overflow-y-auto space-y-6 select-none">
+            {/* Sidebar Navigation - Page-Wise Modular Settings */}
+            <div className="w-64 border-r border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/40 p-4 overflow-y-auto space-y-5 select-none">
               
-              {/* Category 1: Master Data */}
+              {/* Page 1: Leads Page Settings */}
               <div className="space-y-1">
-                <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-650 tracking-wider block px-2.5 mb-1.5">Master Configurations</span>
+                <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-400 tracking-wider block px-2.5 mb-1.5 flex items-center gap-1">
+                  📱 LEADS PAGE SETTINGS
+                </span>
                 {[
-                  { id: 'sequences', label: 'Sequence IDs', icon: FileSpreadsheet },
-                  { id: 'leads', label: 'Leads Config', icon: User },
-                  { id: 'team_members', label: 'Team Members & Access', icon: User },
-                  { id: 'projects', label: 'Projects & Clients', icon: Briefcase },
-                  { id: 'invoices', label: 'Invoices & Orders', icon: Coins },
-                  { id: 'expenses', label: 'Expenses & Policies', icon: BarChart2 }
+                  { id: 'leads', label: 'Leads Config & Sources', icon: User },
+                  { id: 'workflow', label: 'Kanban Pipeline Stages', icon: Layers },
+                  { id: 'team_members', label: 'Lead Owners & Access', icon: User }
                 ].map(item => {
                   const Icon = item.icon;
                   const active = activeMenu === item.id;
@@ -556,26 +555,28 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
                     <button
                       key={item.id}
                       onClick={() => setActiveMenu(item.id as any)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-xl transition-all ${
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
                         active 
-                          ? 'bg-slate-900 dark:bg-zinc-905 text-white shadow-sm border border-transparent' 
-                          : 'text-slate-550 dark:text-zinc-450 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-800 dark:hover:text-zinc-200'
+                          ? 'bg-slate-900 dark:bg-zinc-900 text-white shadow-sm border border-amber-500/30' 
+                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-900 dark:hover:text-zinc-200'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 ${active ? 'text-orange-500' : 'text-zinc-550'}`} />
+                      <Icon className={`w-4 h-4 ${active ? 'text-amber-500' : 'text-zinc-400'}`} />
                       <span>{item.label}</span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Category 2: Core Catalogs */}
+              {/* Page 2: Quotations Page Settings */}
               <div className="space-y-1">
-                <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-650 tracking-wider block px-2.5 mb-1.5">Studio Catalogs</span>
+                <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-400 tracking-wider block px-2.5 mb-1.5 flex items-center gap-1">
+                  📄 QUOTATIONS PAGE SETTINGS
+                </span>
                 {[
-                  { id: 'services', label: 'Services Catalog', icon: Tag },
-                  { id: 'packages', label: 'Packages Matrix', icon: Tag },
-                  { id: 'deliverables', label: 'Deliverables List', icon: ClipboardList }
+                  { id: 'pdf_quote', label: 'Quotation Theme & Layout', icon: FileText },
+                  { id: 'deliverables', label: 'Deliverables List', icon: ClipboardList },
+                  { id: 'packages', label: 'Packages Matrix', icon: Tag }
                 ].map(item => {
                   const Icon = item.icon;
                   const active = activeMenu === item.id;
@@ -583,26 +584,28 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
                     <button
                       key={item.id}
                       onClick={() => setActiveMenu(item.id as any)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-xl transition-all ${
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
                         active 
-                          ? 'bg-slate-900 dark:bg-zinc-905 text-white shadow-sm border border-transparent' 
-                          : 'text-slate-550 dark:text-zinc-450 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-800 dark:hover:text-zinc-200'
+                          ? 'bg-slate-900 dark:bg-zinc-900 text-white shadow-sm border border-amber-500/30' 
+                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-900 dark:hover:text-zinc-200'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 ${active ? 'text-orange-500' : 'text-zinc-550'}`} />
+                      <Icon className={`w-4 h-4 ${active ? 'text-amber-500' : 'text-zinc-400'}`} />
                       <span>{item.label}</span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Category 3: Document Templates */}
+              {/* Page 3: Invoices Page Settings */}
               <div className="space-y-1">
-                <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-650 tracking-wider block px-2.5 mb-1.5">PDF Document Layouts</span>
+                <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-400 tracking-wider block px-2.5 mb-1.5 flex items-center gap-1">
+                  💰 INVOICES PAGE SETTINGS
+                </span>
                 {[
-                  { id: 'pdf_quote', label: 'Quotation Canvas', icon: FileText },
-                  { id: 'pdf_invoice', label: 'Invoice Layout', icon: FileCheck },
-                  { id: 'pdf_contract', label: 'Contract Clauses', icon: FileText }
+                  { id: 'pdf_invoice', label: 'Invoice Layout & Terms', icon: FileCheck },
+                  { id: 'sequences', label: 'Invoice Sequence IDs', icon: FileSpreadsheet },
+                  { id: 'services', label: 'Services Catalog', icon: Coins }
                 ].map(item => {
                   const Icon = item.icon;
                   const active = activeMenu === item.id;
@@ -610,33 +613,72 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
                     <button
                       key={item.id}
                       onClick={() => setActiveMenu(item.id as any)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-xl transition-all ${
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
                         active 
-                          ? 'bg-slate-900 dark:bg-zinc-905 text-white shadow-sm border border-transparent' 
-                          : 'text-slate-550 dark:text-zinc-450 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-800 dark:hover:text-zinc-200'
+                          ? 'bg-slate-900 dark:bg-zinc-900 text-white shadow-sm border border-amber-500/30' 
+                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-900 dark:hover:text-zinc-200'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 ${active ? 'text-orange-500' : 'text-zinc-550'}`} />
+                      <Icon className={`w-4 h-4 ${active ? 'text-amber-500' : 'text-zinc-400'}`} />
                       <span>{item.label}</span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Category 4: Pipeline */}
+              {/* Page 4: Projects & Shoots Page Settings */}
               <div className="space-y-1">
-                <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-650 tracking-wider block px-2.5 mb-1.5">CRM Pipeline</span>
-                <button
-                  onClick={() => setActiveMenu('workflow')}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-xl transition-all ${
-                    activeMenu === 'workflow' 
-                      ? 'bg-slate-900 dark:bg-zinc-905 text-white shadow-sm border border-transparent' 
-                      : 'text-slate-550 dark:text-zinc-450 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-800 dark:hover:text-zinc-200'
-                  }`}
-                >
-                  <Layers className={`w-4 h-4 ${activeMenu === 'workflow' ? 'text-orange-500' : 'text-zinc-550'}`} />
-                  <span>Workflow Stages</span>
-                </button>
+                <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-400 tracking-wider block px-2.5 mb-1.5 flex items-center gap-1">
+                  📁 PROJECTS & SHOOTS SETTINGS
+                </span>
+                {[
+                  { id: 'projects', label: 'Project Categories', icon: Briefcase },
+                  { id: 'pdf_contract', label: 'Contract Terms & Clauses', icon: FileText }
+                ].map(item => {
+                  const Icon = item.icon;
+                  const active = activeMenu === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveMenu(item.id as any)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
+                        active 
+                          ? 'bg-slate-900 dark:bg-zinc-900 text-white shadow-sm border border-amber-500/30' 
+                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-900 dark:hover:text-zinc-200'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${active ? 'text-amber-500' : 'text-zinc-400'}`} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Page 5: Expenses & Policies Settings */}
+              <div className="space-y-1">
+                <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-400 tracking-wider block px-2.5 mb-1.5 flex items-center gap-1">
+                  📊 EXPENSES & POLICIES SETTINGS
+                </span>
+                {[
+                  { id: 'expenses', label: 'Expenses & Cancellation', icon: BarChart2 }
+                ].map(item => {
+                  const Icon = item.icon;
+                  const active = activeMenu === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveMenu(item.id as any)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
+                        active 
+                          ? 'bg-slate-900 dark:bg-zinc-900 text-white shadow-sm border border-amber-500/30' 
+                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-900 dark:hover:text-zinc-200'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${active ? 'text-amber-500' : 'text-zinc-400'}`} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
 
             </div>

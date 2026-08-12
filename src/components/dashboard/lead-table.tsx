@@ -2644,9 +2644,29 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'lead_owner':
+                                const currentAssignedOwner = lead.raw_payload?.lead_owner || getMockOwner(lead).name || 'Unassigned';
                                 return (
-                                  <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-amber-700 dark:text-amber-400 font-bold whitespace-nowrap">
-                                    {lead.raw_payload?.lead_owner || '—'}
+                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                                    <CRMDropdown
+                                      value={currentAssignedOwner}
+                                      placeholder="Select owner"
+                                      allowCustomAdd={true}
+                                      customAddTitle="Add Custom Lead Owner"
+                                      options={teamMembers.map(m => ({
+                                        value: m.name,
+                                        label: `👤 ${m.name}`,
+                                        color: '#d97706'
+                                      }))}
+                                      onAddCustomOption={(name) => {
+                                        if (!name.trim()) return;
+                                        const newTeam = [...teamMembers, { id: 't_' + Date.now(), name: name.trim(), email: '', role: 'Lead Owner' }];
+                                        setTeamMembers(newTeam);
+                                        handleInlineRawPayloadEdit('lead_owner', name.trim(), lead.id);
+                                      }}
+                                      onChange={(val) => {
+                                        handleInlineRawPayloadEdit('lead_owner', val, lead.id);
+                                      }}
+                                    />
                                   </MotionTd>
                                 );
                               case 'groom_name':
