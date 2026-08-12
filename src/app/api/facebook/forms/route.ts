@@ -111,6 +111,31 @@ export async function GET(req: NextRequest) {
     const metaData = await metaRes.json();
     const metaForms = metaData.data || [];
 
+    // Auto-save fetched Meta forms into fb_lead_forms & fb_form_mappings
+    for (const form of metaForms) {
+      await supabaseAdmin.from('fb_lead_forms').upsert({
+        workspace_id: workspaceId,
+        page_id: pageId,
+        form_id: form.id,
+        form_name: form.name,
+        questions: form.questions || [],
+        status: form.status,
+        leads_count: form.leads_count || 0,
+        created_time: form.created_time,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'workspace_id,form_id' });
+
+      await supabaseAdmin.from('fb_form_mappings').upsert({
+        workspace_id: workspaceId,
+        page_id: pageId,
+        form_id: form.id,
+        form_name: form.name,
+        is_active: true,
+        is_tagging_enabled: true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'workspace_id,form_id' });
+    }
+
     // Existing form mappings from DB
     const { data: savedMappings } = await supabaseAdmin
       .from('fb_form_mappings')
