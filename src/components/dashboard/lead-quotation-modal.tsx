@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, FileText, Plus, ExternalLink, Calendar, RefreshCw, AlertCircle, 
-  Send, Download, CheckCircle2, DollarSign, Copy, Check, Sparkles, Loader2, ArrowRight
+  Send, Download, CheckCircle2, DollarSign, Copy, Check, Sparkles, Loader2, ArrowRight, ChevronDown, LayoutTemplate
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +29,15 @@ interface QuotationVersionItem {
   content_json?: any;
 }
 
+interface StudioTemplateItem {
+  id: string;
+  title: string;
+  category?: string;
+  is_default?: boolean;
+  is_system_template?: boolean;
+  content_json?: any;
+}
+
 interface LeadQuotationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,6 +52,11 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   const [openingQuotation, setOpeningQuotation] = useState<{ id: string; title: string; step: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Template Picker state
+  const [availableTemplates, setAvailableTemplates] = useState<StudioTemplateItem[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+
   // AI Quotation Modal state
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiTargetQuotationId, setAiTargetQuotationId] = useState<string | null>(null);
@@ -55,13 +69,30 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   useEffect(() => {
     if (isOpen && lead?.id) {
       loadQuotations();
+      loadAvailableTemplates();
     } else {
       setQuotations([]);
       setErrorMsg(null);
       setActiveShareModal(null);
       setOpeningQuotation(null);
+      setShowTemplateMenu(false);
     }
   }, [isOpen, lead?.id]);
+
+  const loadAvailableTemplates = async () => {
+    try {
+      const res = await fetch('/api/quotation-templates');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.templates)) {
+        setAvailableTemplates(json.templates);
+        // Find default template
+        const def = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
+        if (def) setSelectedTemplateId(def.id);
+      }
+    } catch (e) {
+      console.warn('[LeadQuotationModal] Templates fetch warning:', e);
+    }
+  };
 
   const loadQuotations = async () => {
     if (!lead?.id) return;
@@ -116,7 +147,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
     if (!lead?.id || creating) return;
     setCreating(true);
     setErrorMsg(null);
-    setOpeningQuotation({ id: 'NEW', title: 'Creating New Quotation Version...', step: 'Resolving Studio Default Template...' });
+    setShowTemplateMenu(false);
+    setOpeningQuotation({ id: 'NEW', title: 'Creating New Quotation Version...', step: 'Resolving Selected Studio Template...' });
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -130,7 +162,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
         },
         body: JSON.stringify({
           leadId: lead.id,
-          clientName: lead.name
+          clientName: lead.name,
+          explicitTemplateId: selectedTemplateId || undefined
         })
       });
 
@@ -271,6 +304,12 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   };
 
   if (!isOpen || !lead) return null;
+
+  const currentSelectedTemplate = availableTemplates.find(t => t.id === selectedTemplateId) || availableTemplates[0] || {
+    id: 'DEFAULT',
+    title: 'Studio Default Template',
+    is_default: true
+  };
 
   return (
     <AnimatePresence>
@@ -482,6 +521,64 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
               </div>
             )}
           </div>
+
+          {/* TEMPLATE PICKER DROPDOWN BAR */}
+          {availableTemplates.length > 0 && (
+            <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-800/80 bg-amber-500/5 relative">
+              <div className="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                <span className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <LayoutTemplate className="w-3.5 h-3.5" /> Template to Use:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+                  className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-amber-500 text-zinc-900 dark:text-white flex items-center gap-1.5 transition-all text-xs"
+                >
+                  <span className="truncate max-w-[170px] font-bold">
+                    {currentSelectedTemplate.title} {currentSelectedTemplate.is_default ? '(Default)' : ''}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                </button>
+              </div>
+
+              {/* Template Selection Dropdown Menu */}
+              {showTemplateMenu && (
+                <div className="absolute left-4 right-4 bottom-full mb-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-2xl shadow-2xl p-2 z-50 space-y-1 max-h-48 overflow-y-auto">
+                  <span className="text-[9px] uppercase font-black text-zinc-400 block px-2 mb-1">
+                    Select Studio Template to Fork:
+                  </span>
+                  {availableTemplates.map((tmpl) => {
+                    const isSel = tmpl.id === selectedTemplateId;
+                    return (
+                      <button
+                        key={tmpl.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTemplateId(tmpl.id);
+                          setShowTemplateMenu(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all ${
+                          isSel
+                            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black border border-amber-500/30'
+                            : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span className="truncate">{tmpl.title}</span>
+                        </div>
+                        {tmpl.is_default && (
+                          <span className="text-[9px] bg-amber-500/20 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-extrabold uppercase">
+                            Default
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Modal Footer Actions */}
           <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex items-center justify-between gap-2 shrink-0">
