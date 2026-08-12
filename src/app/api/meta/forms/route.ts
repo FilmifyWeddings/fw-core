@@ -49,7 +49,27 @@ export async function GET(req: NextRequest) {
       .from('fb_lead_forms').select('*').eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false });
 
-    const forms = (dbForms || []).map(f => ({
+    const { data: dbMappings } = await supabaseAdmin
+      .from('fb_form_mappings').select('*').eq('workspace_id', workspaceId);
+
+    const formsByFormId = new Map((dbForms || []).map((f: any) => [f.form_id, f]));
+    const allForms = [...(dbForms || [])];
+    for (const m of (dbMappings || [])) {
+      if (m.form_id && !formsByFormId.has(m.form_id)) {
+        allForms.push({
+          workspace_id: workspaceId,
+          page_id: m.page_id,
+          form_id: m.form_id,
+          form_name: m.form_name || 'Instant Lead Form',
+          status: 'ACTIVE',
+          leads_count: 0,
+          created_time: m.created_at,
+          is_enabled: m.is_active ?? true,
+        });
+      }
+    }
+
+    const forms = allForms.map(f => ({
       form_id: f.form_id,
       name: f.form_name,
       form_name: f.form_name,

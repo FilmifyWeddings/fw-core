@@ -126,10 +126,10 @@ export async function GET(req: NextRequest) {
         page_id: pageId,
         form_id: form.id,
         form_name: form.name,
-        questions: form.questions || [],
-        status: form.status,
+        status: form.status || 'ACTIVE',
         leads_count: form.leads_count || 0,
-        created_time: form.created_time,
+        created_time: form.created_time || new Date().toISOString(),
+        is_enabled: true,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id,form_id' });
 
@@ -140,6 +140,7 @@ export async function GET(req: NextRequest) {
         form_name: form.name,
         is_active: true,
         is_tagging_enabled: true,
+        mapping_config: { questions: form.questions || [] },
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id,form_id' });
     }

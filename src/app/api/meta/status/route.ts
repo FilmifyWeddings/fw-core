@@ -115,14 +115,30 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('workspace_id', workspaceId);
 
-    const formsData = rawFormsData || [];
-
     const { data: mappingsData } = await supabaseAdmin
       .from('fb_form_mappings')
-      .select('form_id, contact_group_id, mapping_config')
+      .select('*')
       .eq('workspace_id', workspaceId);
 
     const mappingMap = new Map((mappingsData || []).map((m: any) => [m.form_id, m]));
+    const formsByFormId = new Map((rawFormsData || []).map((f: any) => [f.form_id, f]));
+
+    // Merge any forms from fb_form_mappings for THIS workspace
+    const formsData = [...(rawFormsData || [])];
+    for (const m of (mappingsData || [])) {
+      if (m.form_id && !formsByFormId.has(m.form_id)) {
+        formsData.push({
+          workspace_id: workspaceId,
+          page_id: m.page_id,
+          form_id: m.form_id,
+          form_name: m.form_name || 'Instant Lead Form',
+          status: 'ACTIVE',
+          leads_count: 0,
+          created_at: m.created_at || new Date().toISOString(),
+          is_enabled: m.is_active ?? true,
+        });
+      }
+    }
 
     // 5. Query Leads strictly for THIS workspace
     const { data: leadsData } = await supabaseAdmin
@@ -144,7 +160,7 @@ export async function GET(req: NextRequest) {
       lastLeadTime = sorted[0].created_at;
     }
 
-    const formMap = new Map((formsData || []).map((f: any) => [f.form_id, f.form_name]));
+    const formMap = new Map(formsData.map((f: any) => [f.form_id, f.form_name]));
 
     const forms = formsData.map((f: any) => {
       const formLeads = metaLeads.filter((l: any) => l.raw_payload?.form_id === f.form_id || l.raw_payload?.lead_form_id === f.form_id);
