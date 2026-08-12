@@ -96,10 +96,61 @@ export async function GET(req: NextRequest) {
     const businessName = pages[0]?.page_name || metaUserName || 'Filmify Weddings';
 
     // 4. Query forms for workspace
-    const { data: formsData } = await supabaseAdmin
+    const { data: rawFormsData } = await supabaseAdmin
       .from('fb_lead_forms')
       .select('*')
       .eq('workspace_id', workspaceId);
+
+    let formsData = rawFormsData || [];
+
+    // Live Graph API Fallback: If DB forms count is 0, query Meta live for each connected page
+    if (formsData.length === 0 && pages.length > 0) {
+      console.log(`[STATUS API AUDIT] 0 forms in DB for workspace ${workspaceId}. Querying Graph API live for ${pages.length} page(s)...`);
+      for (const page of pages) {
+        if (!page.page_access_token) continue;
+        try {
+          const graphRes = await fetch(
+            `https://graph.facebook.com/v20.0/${page.page_id}/leadgen_forms?fields=id,name,status,leads_count,created_time,questions&access_token=${page.page_access_token}`
+          );
+          const graphData = await graphRes.json().catch(() => ({}));
+          if (graphRes.ok && graphData.data && graphData.data.length > 0) {
+            for (const f of graphData.data) {
+              const { data: savedF } = await supabaseAdmin
+                .from('fb_lead_forms')
+                .upsert({
+                  workspace_id: workspaceId,
+                  page_id: page.page_id,
+                  form_id: f.id,
+                  form_name: f.name || 'Instant Lead Form',
+                  questions: f.questions || [],
+                  status: f.status || 'ACTIVE',
+                  leads_count: f.leads_count || 0,
+                  created_time: f.created_time || new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id,form_id' })
+                .select('*')
+                .single();
+
+              await supabaseAdmin
+                .from('fb_form_mappings')
+                .upsert({
+                  workspace_id: workspaceId,
+                  page_id: page.page_id,
+                  form_id: f.id,
+                  form_name: f.name || 'Instant Lead Form',
+                  is_active: true,
+                  is_tagging_enabled: true,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id,form_id' });
+
+              if (savedF) formsData.push(savedF);
+            }
+          }
+        } catch (err: any) {
+          console.error(`[STATUS API Graph Fallback Error] Page ${page.page_id}:`, err.message);
+        }
+      }
+    }
 
     const { data: mappingsData } = await supabaseAdmin
       .from('fb_form_mappings')
