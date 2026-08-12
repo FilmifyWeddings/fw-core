@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { toPng, toJpeg } from 'html-to-image';
-import { PDFDocument } from 'pdf-lib';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,11 +16,15 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
-import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
-import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady } from '@/lib/font-loader';
+import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
+
+const MasterMediaModal = dynamic(
+  () => import('@/components/MasterMediaModal').then(m => m.MasterMediaModal),
+  { ssr: false }
+);
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';

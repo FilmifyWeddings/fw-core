@@ -78,6 +78,10 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const json = await res.json();
       if (json.success && Array.isArray(json.quotations)) {
         setQuotations(json.quotations);
+        // Pre-warm Next.js route bundle for instant sub-second opening
+        json.quotations.forEach((q: QuotationVersionItem) => {
+          if (q.template_id) router.prefetch(`/workspace/quotations/builder/templet/${q.template_id}`);
+        });
       } else {
         setQuotations([]);
       }
@@ -112,9 +116,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const json = await res.json();
       if (json.success && (json.quotationId || json.templateId)) {
         const qId = json.quotationId || json.templateId;
-        await loadQuotations();
-        router.push(`/workspace/quotations/builder/templet/${qId}`);
         onClose();
+        router.push(`/workspace/quotations/builder/templet/${qId}`);
       } else {
         setErrorMsg(json.error || 'Failed to create new quotation for lead.');
       }
@@ -127,8 +130,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   };
 
   const handleOpenQuotation = (templateId: string) => {
-    router.push(`/workspace/quotations/builder/templet/${templateId}`);
     onClose();
+    router.push(`/workspace/quotations/builder/templet/${templateId}`);
   };
 
   const handleSendLink = async (q: QuotationVersionItem) => {

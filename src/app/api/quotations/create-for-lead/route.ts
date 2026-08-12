@@ -268,8 +268,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       quotationId,
-      templateId: quotationId,
-      document: clonedDoc
+      templateId: quotationId
     });
   } catch (error: any) {
     console.error('Error in create-for-lead API:', error);

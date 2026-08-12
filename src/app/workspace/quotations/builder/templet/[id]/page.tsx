@@ -13,16 +13,19 @@ import {
   ZoomIn, ZoomOut, Maximize2, Menu, ArrowUp, ArrowDown, Circle, MoveVertical, MoveHorizontal, AlignVerticalSpaceAround, AlignCenter, Clock,
   Gift, CreditCard, PackageCheck, Heart, Phone, Mail, Globe, GripVertical, CopyPlus, PlusCircle, Tag
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
-import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
-import { toPng, toJpeg } from 'html-to-image';
-import { PDFDocument } from 'pdf-lib';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
+
+const MasterMediaModal = dynamic(
+  () => import('@/components/MasterMediaModal').then(m => m.MasterMediaModal),
+  { ssr: false }
+);
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
