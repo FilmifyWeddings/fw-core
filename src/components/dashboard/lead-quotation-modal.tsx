@@ -80,6 +80,20 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   }, [isOpen, lead?.id]);
 
   const loadAvailableTemplates = async () => {
+    // 1. INSTANT SESSION STORAGE CACHE HYDRATION (<1ms)
+    const cacheKey = 'studio_templates_cache';
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAvailableTemplates(parsed);
+          const activeDefault = parsed.find((t: StudioTemplateItem) => t.is_default) || parsed[0];
+          if (activeDefault) setSelectedTemplateId(activeDefault.id);
+        }
+      } catch (e) {}
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -94,6 +108,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const json = await res.json();
       if (json.success && Array.isArray(json.templates)) {
         setAvailableTemplates(json.templates);
+        sessionStorage.setItem(cacheKey, JSON.stringify(json.templates));
 
         // Pre-select the user's active default template (the one marked is_default === true on /workspace/quotations)
         const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
@@ -435,7 +450,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
               </div>
             ) : (
               <div className="space-y-3">
-                {quotations.map((q) => {
+                {quotations.map((q, idx) => {
                   const formatDateTime = (dateStr?: string) => {
                     if (!dateStr) return 'Recent';
                     const d = new Date(dateStr);
@@ -446,13 +461,16 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                   };
 
                   const updatedDateStr = formatDateTime(q.updated_at || q.created_at);
+                  const itemKey = q.template_id || q.id || `quote_ver_${q.version || idx}_${idx}`;
 
                   return (
                     <div
-                      key={q.template_id}
+                      key={itemKey}
                       onMouseEnter={() => {
-                        router.prefetch(`/workspace/quotations/builder/templet/${q.template_id}`);
-                        fetch(`/api/templates/${q.template_id}`).catch(() => {});
+                        if (q.template_id) {
+                          router.prefetch(`/workspace/quotations/builder/templet/${q.template_id}`);
+                          fetch(`/api/templates/${q.template_id}`).catch(() => {});
+                        }
                       }}
                       className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/50 transition-all space-y-2.5 group"
                     >
@@ -559,11 +577,12 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                   <span className="text-[9px] uppercase font-black text-zinc-400 block px-2 mb-1">
                     Select Studio Template to Fork:
                   </span>
-                  {availableTemplates.map((tmpl) => {
+                  {availableTemplates.map((tmpl, idx) => {
                     const isSel = tmpl.id === selectedTemplateId;
+                    const tmplKey = tmpl.id || `tmpl_item_${idx}`;
                     return (
                       <button
-                        key={tmpl.id}
+                        key={tmplKey}
                         type="button"
                         onClick={() => {
                           setSelectedTemplateId(tmpl.id);
