@@ -22,7 +22,21 @@ export async function GET(req: NextRequest) {
   const requestedWorkspaceId = searchParams.get('workspace_id');
 
   const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
-  const workspaceId = authResult.workspaceId || '00000000-0000-0000-0000-000000000000';
+  let workspaceId = authResult.workspaceId;
+
+  if (!workspaceId && requestedWorkspaceId && requestedWorkspaceId !== '00000000-0000-0000-0000-000000000000') {
+    const { data: validProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', requestedWorkspaceId)
+      .maybeSingle();
+
+    if (validProfile?.id) {
+      workspaceId = validProfile.id;
+    }
+  }
+
+  workspaceId = workspaceId || '00000000-0000-0000-0000-000000000000';
 
   const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
   const baseUrl = getBaseUrl(req);

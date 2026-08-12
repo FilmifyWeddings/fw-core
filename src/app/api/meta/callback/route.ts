@@ -243,13 +243,27 @@ export async function GET(req: NextRequest) {
     } catch (_) {}
   }
 
+  let workspaceId: string | null = null;
   const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
-  if (!authResult.authorized) {
+  if (authResult.authorized && authResult.workspaceId) {
+    workspaceId = authResult.workspaceId;
+  } else if (requestedWorkspaceId && requestedWorkspaceId !== '00000000-0000-0000-0000-000000000000') {
+    const { data: validProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', requestedWorkspaceId)
+      .maybeSingle();
+
+    if (validProfile?.id) {
+      workspaceId = validProfile.id;
+    }
+  }
+
+  if (!workspaceId) {
     console.error('[Meta Callback Security Failure] Could not resolve authenticated workspace_id.');
     return NextResponse.redirect(`${targetRedirect}?meta_error=${encodeURIComponent('Authentication failure: workspace could not be verified')}`);
   }
 
-  const workspaceId = authResult.workspaceId;
   console.log(`[Meta OAuth Callback] Storing connection for Workspace ID: ${workspaceId}`);
 
   try {
