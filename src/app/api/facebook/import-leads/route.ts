@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
 import { classifyLead } from '@/lib/classification';
 import { LeadStatus } from '@/types';
+import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
 
 // Fuzzy auto-mapper: Meta field key se system field guess karo
 function fuzzyMapField(key: string): string | null {
@@ -157,6 +158,13 @@ export async function POST(req: NextRequest) {
       if (!leadPhone) {
         continue;
       }
+
+      // Determine lead owner via auto-distribution
+      let assignedOwner: string | null = null;
+      try {
+        assignedOwner = await getNextDistributedLeadOwner(workspaceId, form_id);
+      } catch (_) {}
+      rawPayload.lead_owner = assignedOwner || 'Unassigned';
 
       // Score and classify lead
       const scoringResult = classifyLead(rawPayload);

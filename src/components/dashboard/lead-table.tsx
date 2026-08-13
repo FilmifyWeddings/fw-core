@@ -1232,7 +1232,7 @@ export function LeadTable({
       const stage = stages.find(s => s.id === (lead.stage_id || lead.status));
       return stage ? stage.name : lead.status;
     }
-    if (colId === 'owner') return lead.raw_payload?.lead_owner || 'Chad Thunderclock';
+    if (colId === 'owner' || colId === 'lead_owner') return lead.raw_payload?.lead_owner || 'Unassigned';
     if (colId === 'company') return lead.raw_payload?.company || '-';
     if (colId === 'date') {
       return new Date(lead.created_at).toLocaleDateString('en-IN', {
@@ -1397,6 +1397,7 @@ export function LeadTable({
 
   // Filter lists configuration
   const uniqueOwners = Array.from(new Set([
+    'Unassigned',
     ...teamMembers.map(m => m.name as string),
     ...leads.map(l => (l.raw_payload?.lead_owner) as string).filter(Boolean)
   ]));
@@ -1412,7 +1413,7 @@ export function LeadTable({
     const matchesSource = sourceFilter === 'all' || lead.source.toLowerCase() === sourceFilter.toLowerCase();
     const matchesScore = scoreFilter === 'all' || lead.score === scoreFilter;
     
-    const owner = lead.raw_payload?.lead_owner || 'Chad Thunderclock';
+    const owner = lead.raw_payload?.lead_owner || 'Unassigned';
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
     // Sidebar Filter logic
@@ -2215,7 +2216,7 @@ export function LeadTable({
         paginatedLeads.map((lead) => {
           const isSelected = selectedLeadIds.includes(lead.id);
           const currentStage = stages.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
-          const stBadgeStyle = (() => {
+              const stBadgeStyle = (() => {
             const s = (currentStage.name || '').toLowerCase();
             if (s.includes('hot') || s.includes('proposal')) return { bg: 'bg-red-500/15 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-300 font-extrabold', border: 'border-red-500/40 shadow-red-500/20', dot: 'bg-red-500' };
             if (s.includes('cool') || s.includes('warm') || s.includes('meeting')) return { bg: 'bg-cyan-500/15 dark:bg-cyan-900/30', text: 'text-cyan-600 dark:text-cyan-300 font-extrabold', border: 'border-cyan-500/40 shadow-cyan-500/20', dot: 'bg-cyan-500' };
@@ -2225,7 +2226,7 @@ export function LeadTable({
             return { bg: 'bg-indigo-500/15 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-300 font-extrabold', border: 'border-indigo-500/40', dot: 'bg-indigo-500' };
           })();
 
-          const currentAssignedOwner = lead.raw_payload?.lead_owner || getMockOwner(lead).name || 'Unassigned';
+          const currentAssignedOwner = lead.raw_payload?.lead_owner || 'Unassigned';
           const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Form';
 
           return (
@@ -2239,24 +2240,64 @@ export function LeadTable({
                 isSelected ? 'ring-2 ring-orange-500' : ''
               }`}
             >
-              {/* Header: Name, Avatar, Form Name */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white font-black text-sm flex items-center justify-center shadow-md shrink-0">
-                    {(lead.name || 'L').charAt(0).toUpperCase()}
-                  </div>
+              {/* Top Bar: Contact Info & Action Buttons */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectRow(lead.id, e);
+                    }}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 transition-colors"
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="w-5 h-5 text-orange-500 fill-orange-500/20" />
+                    ) : (
+                      <Square className="w-5 h-5" />
+                    )}
+                  </button>
                   <div>
-                    <h4 className="font-black text-slate-900 dark:text-white text-sm leading-snug">{lead.name || 'Unspecified Lead'}</h4>
-                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5">
-                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white leading-tight">
+                      {lead.name || 'Unspecified Lead'}
+                    </h4>
+                    <p className="text-xs font-mono text-slate-500 dark:text-zinc-400 mt-0.5">
+                      {lead.phone}
                     </p>
                   </div>
                 </div>
 
-                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shrink-0">
-                  <Globe className="w-3 h-3 text-blue-500" />
-                  {formNameVal}
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${stBadgeStyle.dot}`} />
+                  {stages.find(s => s.id === (lead.stage_id || lead.status))?.name || lead.status}
                 </span>
+              </div>
+
+              {/* Middle Bar: Owner Dropdown & Meta Form Tag */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-zinc-850" onClick={(e) => e.stopPropagation()}>
+                <div>
+                  <span className="text-[9px] uppercase font-black text-slate-400 block">Lead Owner</span>
+                  <CRMDropdown
+                    value={currentAssignedOwner}
+                    placeholder="Select owner"
+                    allowCustomAdd={false}
+                    options={[
+                      { value: 'Unassigned', label: '👤 Unassigned', color: '#94a3b8' },
+                      ...teamMembers.filter(m => m.name !== 'Unassigned').map(m => ({
+                        value: m.name,
+                        label: `👤 ${m.name}`,
+                        color: m.color || '#10b981'
+                      }))
+                    ]}
+                    onChange={(val) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: val } }, lead.id)}
+                  />
+                </div>
+                
+                <div className="flex justify-end items-end pb-1">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shrink-0 text-[10px] font-black uppercase tracking-wider">
+                    <Globe className="w-3 h-3 text-blue-500" />
+                    {formNameVal}
+                  </span>
+                </div>
               </div>
 
               {/* Direct 1-Tap Quick Action Row */}
@@ -2777,7 +2818,7 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'lead_owner':
-                                const currentAssignedOwner = lead.raw_payload?.lead_owner || getMockOwner(lead).name || 'Unassigned';
+                                const currentAssignedOwner = lead.raw_payload?.lead_owner || 'Unassigned';
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                                     <CRMDropdown
@@ -2785,11 +2826,14 @@ export function LeadTable({
                                       placeholder="Select owner"
                                       allowCustomAdd={true}
                                       customAddTitle="Add Custom Lead Owner"
-                                      options={teamMembers.map(m => ({
-                                        value: m.name,
-                                        label: `👤 ${m.name}`,
-                                        color: m.color || '#10b981'
-                                      }))}
+                                      options={[
+                                        { value: 'Unassigned', label: '👤 Unassigned', color: '#94a3b8' },
+                                        ...teamMembers.filter(m => m.name !== 'Unassigned').map(m => ({
+                                          value: m.name,
+                                          label: `👤 ${m.name}`,
+                                          color: m.color || '#10b981'
+                                        }))
+                                      ]}
                                       onAddCustomOption={(name) => {
                                         if (!name.trim()) return;
                                         const newTeam = [...teamMembers, { id: 't_' + Date.now(), name: name.trim(), email: '', role: 'Lead Owner' }];

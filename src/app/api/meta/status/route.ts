@@ -385,6 +385,12 @@ export async function GET(req: NextRequest) {
       }
 
       const mObj = mappingMap.get(f.form_id);
+      const formDist = mObj?.mapping_config?.distribution_config || {
+        enabled: false,
+        strategy: 'round_robin',
+        owners: [],
+        last_assigned_index: -1
+      };
 
       return {
         form_id: f.form_id,
@@ -403,12 +409,7 @@ export async function GET(req: NextRequest) {
         is_active: true,
         is_enabled: f.is_enabled ?? true,
         contact_group_id: mObj?.contact_group_id || null,
-        distribution_config: mObj?.mapping_config?.distribution_config || {
-          enabled: false,
-          strategy: 'round_robin',
-          owners: [],
-          last_assigned_index: -1
-        },
+        distribution_config: formDist,
         last_lead_received: formLastLeadTime || lastLeadTime,
         created_time: f.created_time || f.created_at || new Date().toISOString(),
       };
