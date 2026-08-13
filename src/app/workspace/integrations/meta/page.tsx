@@ -1563,6 +1563,7 @@ export default function MetaIntegrationPage() {
                 </div>
                 <FacebookToggleSwitch
                   enabled={distEnabled}
+                  loading={false}
                   onChange={() => setDistEnabled(!distEnabled)}
                 />
               </div>
