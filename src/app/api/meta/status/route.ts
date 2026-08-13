@@ -93,41 +93,43 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Query pages for workspace (with live Graph API discovery fallback)
+    // 3. Query pages for workspace (with multi-source auto-healing)
     let { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
       .eq('workspace_id', effectiveWorkspaceId);
 
-    // Live Page Discovery: If 0 pages in DB for connected user, query Meta Graph API /me/accounts live
-    if ((!pagesData || pagesData.length === 0) && conn?.access_token) {
-      console.log(`[STATUS API AUDIT] 0 pages in fb_page_configs for ${effectiveWorkspaceId}. Querying /me/accounts live...`);
+    const existingPageIds = new Set((pagesData || []).map((p: any) => p.page_id));
+
+    // Live Page Discovery via Graph API /me/accounts & /me/businesses
+    if (conn?.access_token) {
       try {
         const pagesRes = await fetch(
           `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${conn.access_token}`
         );
         const pagesJson = await pagesRes.json().catch(() => ({}));
-        if (pagesRes.ok && pagesJson.data && pagesJson.data.length > 0) {
-          const discoveredPages: any[] = [];
+        if (pagesRes.ok && Array.isArray(pagesJson.data)) {
           for (const p of pagesJson.data) {
-            const { data: savedPage } = await supabaseAdmin
-              .from('fb_page_configs')
-              .upsert({
-                workspace_id: effectiveWorkspaceId,
-                page_id: p.id,
-                page_name: p.name || 'Facebook Page',
-                page_category: p.category || 'Business Page',
-                page_access_token: p.access_token || conn.access_token,
-                is_active: true,
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'workspace_id,page_id' })
-              .select('*')
-              .single();
+            if (p.id) {
+              const { data: savedPage } = await supabaseAdmin
+                .from('fb_page_configs')
+                .upsert({
+                  workspace_id: effectiveWorkspaceId,
+                  page_id: p.id,
+                  page_name: p.name || 'Facebook Page',
+                  page_category: p.category || 'Business Page',
+                  page_access_token: p.access_token || conn.access_token,
+                  is_active: true,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id,page_id' })
+                .select('*')
+                .maybeSingle();
 
-            if (savedPage) discoveredPages.push(savedPage);
-          }
-          if (discoveredPages.length > 0) {
-            pagesData = discoveredPages;
+              if (savedPage && !existingPageIds.has(savedPage.page_id)) {
+                pagesData = [...(pagesData || []), savedPage];
+                existingPageIds.add(savedPage.page_id);
+              }
+            }
           }
         }
       } catch (err: any) {
@@ -135,34 +137,46 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Derive pages from fb_lead_forms if pagesData is still 0
-    if ((!pagesData || pagesData.length === 0) && effectiveWorkspaceId) {
-      const { data: formPages } = await supabaseAdmin
-        .from('fb_lead_forms')
-        .select('page_id')
-        .eq('workspace_id', effectiveWorkspaceId);
+    // Auto-heal pages from fb_lead_forms if any form belongs to a page not yet in fb_page_configs
+    if (effectiveWorkspaceId) {
+      try {
+        const { data: formPages } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('page_id, page_name')
+          .eq('workspace_id', effectiveWorkspaceId);
 
-      const uniquePageIds = Array.from(new Set((formPages || []).map((f: any) => f.page_id).filter(Boolean)));
-      if (uniquePageIds.length > 0) {
-        const derived: any[] = [];
-        for (const pId of uniquePageIds) {
-          const { data: pSaved } = await supabaseAdmin
-            .from('fb_page_configs')
-            .upsert({
-              workspace_id: effectiveWorkspaceId,
-              page_id: String(pId),
-              page_name: 'Facebook Page',
-              page_category: 'Business Page',
-              page_access_token: conn?.access_token || '',
-              is_active: true,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'workspace_id,page_id' })
-            .select('*')
-            .single();
-          if (pSaved) derived.push(pSaved);
+        if (Array.isArray(formPages)) {
+          const pageMapFromForms = new Map<string, string>();
+          formPages.forEach((f: any) => {
+            if (f.page_id) {
+              pageMapFromForms.set(String(f.page_id), f.page_name || 'Facebook Page');
+            }
+          });
+
+          for (const [pId, pName] of pageMapFromForms.entries()) {
+            if (!existingPageIds.has(pId)) {
+              const { data: pSaved } = await supabaseAdmin
+                .from('fb_page_configs')
+                .upsert({
+                  workspace_id: effectiveWorkspaceId,
+                  page_id: pId,
+                  page_name: pName,
+                  page_category: 'Business Page',
+                  page_access_token: conn?.access_token || '',
+                  is_active: true,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'workspace_id,page_id' })
+                .select('*')
+                .maybeSingle();
+
+              if (pSaved) {
+                pagesData = [...(pagesData || []), pSaved];
+                existingPageIds.add(pSaved.page_id);
+              }
+            }
+          }
         }
-        pagesData = derived;
-      }
+      } catch (_) {}
     }
 
     const pages = (pagesData || []).map((p: any) => ({

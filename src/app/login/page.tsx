@@ -109,24 +109,50 @@ export default function LoginPage() {
           window.location.href = '/dashboard/integrations/whatsapp-web';
         }
       } else {
-        // Log In Flow
-        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-          email: targetEmail,
-          password,
-        });
-
-        if (signInErr) throw signInErr;
-
-        if (signInData?.session) {
-          const maxAge = 60 * 60 * 24 * 7;
-          const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
-          document.cookie = `sb-access-token=${signInData.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
-          document.cookie = `sb-refresh-token=${signInData.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
-        }
-
+        // Log In Flow via Server-Side API (Sets HTTP Cookies reliably)
         const searchParams = new URLSearchParams(window.location.search);
         const redirectTo = searchParams.get('redirectTo') || '/workspace';
-        window.location.href = redirectTo;
+
+        let loginSuccess = false;
+        try {
+          const apiRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: targetEmail, password }),
+          });
+
+          const apiJson = await apiRes.json().catch(() => ({}));
+
+          if (apiRes.ok && apiJson.success) {
+            loginSuccess = true;
+            // Also sync client-side Supabase state
+            await supabase.auth.signInWithPassword({ email: targetEmail, password }).catch(() => {});
+            window.location.href = redirectTo;
+            return;
+          } else if (apiJson.error) {
+            setError(apiJson.error);
+            return;
+          }
+        } catch (_) {}
+
+        // Client-side fallback if server API is unreachable
+        if (!loginSuccess) {
+          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+            email: targetEmail,
+            password,
+          });
+
+          if (signInErr) throw signInErr;
+
+          if (signInData?.session) {
+            const maxAge = 60 * 60 * 24 * 7;
+            const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+            document.cookie = `sb-access-token=${signInData.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
+            document.cookie = `sb-refresh-token=${signInData.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
+          }
+
+          window.location.href = redirectTo;
+        }
       }
     } catch (err: any) {
       console.error(err);
