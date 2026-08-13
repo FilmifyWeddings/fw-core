@@ -485,11 +485,11 @@ export default function MetaIntegrationPage() {
     setSelectedFormForDistribution(form);
     const existing = formDistributions.get(form.form_id);
     if (existing) {
-      setDistEnabled(existing.enabled !== false);
+      setDistEnabled(existing.enabled === true);
       setSelectedOwners(existing.owners || []);
     } else {
-      setDistEnabled(true);
-      setSelectedOwners(teamOwners.map(o => o.name));
+      setDistEnabled(false); // Default OFF
+      setSelectedOwners([]); // Default 0 checked
     }
   };
 
@@ -1094,7 +1094,7 @@ export default function MetaIntegrationPage() {
 
                       const dist = formDistributions.get(form.form_id);
                       const assignedCount = dist?.owners?.length || 0;
-                      const isDistActive = dist?.enabled !== false && assignedCount > 0;
+                      const isDistActive = dist?.enabled === true && assignedCount > 0;
 
                       return (
                         <tr key={form.form_id} className="hover:bg-slate-50/80 transition-colors">
@@ -1119,14 +1119,14 @@ export default function MetaIntegrationPage() {
                           <td className="py-3.5 px-4 text-center">
                             <button
                               onClick={() => openDistributionModal(form)}
-                              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 mx-auto cursor-pointer ${
+                              className={`px-3 py-1.5 rounded-xl border text-xs transition-all flex items-center justify-center gap-1.5 mx-auto cursor-pointer ${
                                 isDistActive
-                                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-700 shadow-2xs'
-                                  : 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-700'
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-400 text-emerald-800 font-extrabold shadow-xs ring-2 ring-emerald-500/20'
+                                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600 font-bold opacity-80 hover:opacity-100'
                               }`}
                             >
-                              <Users className="w-3.5 h-3.5" />
-                              {isDistActive ? `${assignedCount} Owners Checked` : 'Configure Owners'}
+                              <Users className={`w-3.5 h-3.5 ${isDistActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                              {isDistActive ? `🟢 ON (${assignedCount} Owners)` : '⚙️ Configure Owners (OFF)'}
                             </button>
                           </td>
 
@@ -1243,17 +1243,17 @@ export default function MetaIntegrationPage() {
                       {(() => {
                         const dist = formDistributions.get(form.form_id);
                         const assignedCount = dist?.owners?.length || 0;
-                        const isDistActive = dist?.enabled !== false && assignedCount > 0;
+                        const isDistActive = dist?.enabled === true && assignedCount > 0;
                         return (
                           <button
                             onClick={() => openDistributionModal(form)}
-                            className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                            className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                               isDistActive
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                                : 'bg-amber-50 border-amber-300 text-amber-700'
+                                ? 'bg-emerald-50 border-emerald-400 text-emerald-800 font-extrabold ring-1 ring-emerald-500/20'
+                                : 'bg-slate-50 border-slate-200 text-slate-600'
                             }`}
                           >
-                            {isDistActive ? `🎯 ${assignedCount} Checked` : '⚙️ Configure'}
+                            {isDistActive ? `🟢 ON (${assignedCount} Checked)` : '⚙️ Configure (OFF)'}
                           </button>
                         );
                       })()}
