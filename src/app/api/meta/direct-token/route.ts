@@ -127,9 +127,23 @@ export async function POST(req: NextRequest) {
     // ── 3. Multi-Level Lead Forms Discovery ─────────────────────────────────────
     console.log(`[Direct Token Sync] Multi-level form discovery for Page canonical:${canonicalPageId} / input:${page_id}...`);
     const formsMap = new Map<string, any>();
+    const discoveryWarnings: string[] = [];
     const explicitFormId = (body.form_id || '').trim();
 
-    // 1. Explicit Form ID Query
+    // Step A: Check token details via debug_token
+    let isPageToken = true;
+    try {
+      const debugRes = await fetch(
+        `https://graph.facebook.com/v20.0/debug_token?input_token=${effectiveToken}&access_token=${effectiveToken}`
+      );
+      const debugJson = await debugRes.json().catch(() => ({}));
+      if (debugRes.ok && debugJson.data?.type) {
+        isPageToken = debugJson.data.type.toUpperCase() === 'PAGE';
+        console.log(`[Direct Token Sync] Token type detected: ${debugJson.data.type}`);
+      }
+    } catch (_) {}
+
+    // Step B: Explicit Form ID Query
     if (explicitFormId) {
       try {
         const formRes = await fetch(
@@ -139,14 +153,16 @@ export async function POST(req: NextRequest) {
         if (formRes.ok && formJson.id) {
           formsMap.set(formJson.id, formJson);
         } else if (formJson?.error) {
-          console.warn(`[Multi-Level Discovery Warning] Explicit Form ID ${explicitFormId}:`, formJson.error.message);
+          const msg = formJson.error.message || 'Error querying explicit form_id';
+          discoveryWarnings.push(`Explicit Form ID (${explicitFormId}): ${msg}`);
+          console.warn(`[Multi-Level Discovery Warning] Explicit Form ID ${explicitFormId}:`, msg);
         }
       } catch (err: any) {
         console.warn(`[Multi-Level Discovery Exception] Explicit Form ID ${explicitFormId}:`, err.message);
       }
     }
 
-    // 2. Prepare parallel discovery endpoints
+    // Step C: Prepare parallel discovery endpoints
     const discoveryEndpoints: { name: string; url: string }[] = [];
 
     // Page Level Endpoints (for canonical and user-provided page IDs)
@@ -154,7 +170,7 @@ export async function POST(req: NextRequest) {
       discoveryEndpoints.push(
         { name: `GET /${pid}/leadgen_forms`, url: `https://graph.facebook.com/v20.0/${pid}/leadgen_forms?fields=id,name,status,leads_count,created_time&limit=100&access_token=${effectiveToken}` },
         { name: `GET /${pid}/promotable_leadgen_forms`, url: `https://graph.facebook.com/v20.0/${pid}/promotable_leadgen_forms?fields=id,name,status,leads_count,created_time&limit=100&access_token=${effectiveToken}` },
-        { name: `GET /${pid} (nested forms)`, url: `https://graph.facebook.com/v20.0/${pid}?fields=leadgen_forms{id,name,status,leads_count},promotable_leadgen_forms{id,name,status,leads_count}&access_token=${effectiveToken}` }
+        { name: `GET /${pid} (nested adaccounts & forms)`, url: `https://graph.facebook.com/v20.0/${pid}?fields=adaccounts{id,name,account_id,leadgen_forms{id,name,status,leads_count}},leadgen_forms{id,name,status,leads_count},promotable_leadgen_forms{id,name,status,leads_count}&access_token=${effectiveToken}` }
       );
     }
 
@@ -162,11 +178,11 @@ export async function POST(req: NextRequest) {
     discoveryEndpoints.push(
       { name: 'GET /me/leadgen_forms', url: `https://graph.facebook.com/v20.0/me/leadgen_forms?fields=id,name,status,leads_count,created_time&limit=100&access_token=${effectiveToken}` },
       { name: 'GET /me (nested forms)', url: `https://graph.facebook.com/v20.0/me?fields=leadgen_forms{id,name,status,leads_count},promotable_leadgen_forms{id,name,status,leads_count}&access_token=${effectiveToken}` },
-      { name: 'GET /me/adaccounts', url: `https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,leadgen_forms{id,name,status,leads_count}&access_token=${effectiveToken}` },
+      { name: 'GET /me/adaccounts', url: `https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,account_id,leadgen_forms{id,name,status,leads_count}&access_token=${effectiveToken}` },
       { name: 'GET /me/businesses', url: `https://graph.facebook.com/v20.0/me/businesses?fields=id,name,leadgen_forms{id,name,status,leads_count}&access_token=${effectiveToken}` }
     );
 
-    // 3. Execute parallel discovery requests
+    // Step D: Execute parallel discovery requests
     const discoveryResults = await Promise.allSettled(
       discoveryEndpoints.map(async (endpoint) => {
         const res = await fetch(endpoint.url);
@@ -175,18 +191,31 @@ export async function POST(req: NextRequest) {
       })
     );
 
+    const discoveredAdAccountIds = new Set<string>();
+
     for (const result of discoveryResults) {
       if (result.status === 'fulfilled') {
-        const { name, ok, json } = result.value;
+        const { name, ok, status, json } = result.value;
         if (ok && json) {
           const items: any[] = [];
           if (Array.isArray(json.data)) items.push(...json.data);
           if (json.leadgen_forms?.data) items.push(...json.leadgen_forms.data);
           if (json.promotable_leadgen_forms?.data) items.push(...json.promotable_leadgen_forms.data);
 
+          // Extract adaccounts & forms from data array
           if (Array.isArray(json.data)) {
             json.data.forEach((accOrBiz: any) => {
+              if (accOrBiz.id) discoveredAdAccountIds.add(accOrBiz.id);
+              if (accOrBiz.account_id) discoveredAdAccountIds.add(`act_${accOrBiz.account_id}`);
               if (accOrBiz.leadgen_forms?.data) items.push(...accOrBiz.leadgen_forms.data);
+            });
+          }
+
+          if (json.adaccounts?.data) {
+            json.adaccounts.data.forEach((acc: any) => {
+              if (acc.id) discoveredAdAccountIds.add(acc.id);
+              if (acc.account_id) discoveredAdAccountIds.add(`act_${acc.account_id}`);
+              if (acc.leadgen_forms?.data) items.push(...acc.leadgen_forms.data);
             });
           }
 
@@ -196,7 +225,39 @@ export async function POST(req: NextRequest) {
             }
           });
         } else if (json?.error) {
-          console.warn(`[Multi-Level Discovery Log] ${name} (${json.error.code}): ${json.error.message}`);
+          const errMsg = `${name} (${json.error.code}): ${json.error.message}`;
+          console.warn(`[Multi-Level Discovery Log] ${errMsg}`);
+          if (status === 400 || status === 403 || json.error.code === 200 || json.error.code === 100) {
+            discoveryWarnings.push(`${name}: ${json.error.message}`);
+          }
+        }
+      }
+    }
+
+    // Step E: Traverse discovered Ad Accounts directly
+    if (discoveredAdAccountIds.size > 0) {
+      console.log(`[Direct Token Sync] Traversing ${discoveredAdAccountIds.size} discovered Ad Account(s)...`);
+      const adAccountPromises = Array.from(discoveredAdAccountIds).map(async (adId) => {
+        const url = `https://graph.facebook.com/v20.0/${adId}/leadgen_forms?fields=id,name,status,leads_count,created_time&limit=100&access_token=${effectiveToken}`;
+        const res = await fetch(url);
+        const json = await res.json().catch(() => ({}));
+        return { adId, ok: res.ok, status: res.status, json };
+      });
+
+      const adAccountResults = await Promise.allSettled(adAccountPromises);
+      for (const res of adAccountResults) {
+        if (res.status === 'fulfilled') {
+          const { adId, ok, status, json } = res.value;
+          if (ok && Array.isArray(json.data)) {
+            json.data.forEach((f: any) => {
+              if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
+            });
+          } else if (json?.error) {
+            console.warn(`[Ad Account Discovery Log] ${adId} (${json.error.code}): ${json.error.message}`);
+            if (status === 400 || status === 403) {
+              discoveryWarnings.push(`Ad Account ${adId}: ${json.error.message}`);
+            }
+          }
         }
       }
     }
@@ -231,6 +292,7 @@ export async function POST(req: NextRequest) {
           meta_user_name: pageName,
           meta_user_email: `${page_id}@facebook.pages`,
           webhook_subscribed: webhookSubscribed,
+          discovery_warnings: discoveryWarnings,
           updated_at: now,
         },
         updated_at: now,
@@ -283,7 +345,7 @@ export async function POST(req: NextRequest) {
         workspace_id: workspaceId,
         event_type: 'meta_direct_token_connected',
         message: `Connected Page "${pageName}" (ID: ${page_id}) via Direct Token Sync. Fetched ${savedForms.length} forms.`,
-        metadata: { page_id, page_name: pageName, forms_count: savedForms.length, webhook_subscribed: webhookSubscribed },
+        metadata: { page_id, page_name: pageName, forms_count: savedForms.length, webhook_subscribed: webhookSubscribed, discovery_warnings: discoveryWarnings },
       });
     } catch (_) {}
 
@@ -298,6 +360,7 @@ export async function POST(req: NextRequest) {
       },
       forms_count: savedForms.length,
       forms: savedForms,
+      discovery_warnings: discoveryWarnings,
     });
   } catch (err: any) {
     console.error('[Direct Token Sync Error]:', err);
