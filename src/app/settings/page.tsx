@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
   FileText, Coins, Clock, Globe, Users, Plus, Trash2,
-  ChevronDown, GripVertical, CheckCircle2, Table, ChevronRight
+  ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -38,7 +38,6 @@ export default function SettingsPage() {
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
 
   // 1. Leads Page Settings
-  const [leadPrefix, setLeadPrefix] = useState('LD-2026-');
   const [leadOwners, setLeadOwners] = useState<DropdownItem[]>([
     { id: '1', name: 'Unassigned', color: '#137333' },
     { id: '2', name: 'Sahil Dhonde', color: '#1A73E8' },
@@ -92,11 +91,15 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // Sync settings to localStorage
+  // Sync settings to localStorage so every page reads fresh values immediately
   const syncToLocalStorage = (wId: string, settingsObj: any) => {
     try {
       const ownerNames = (settingsObj.lead_owners || []).map((o: any) => typeof o === 'string' ? o : o.name);
       localStorage.setItem(`settings_owners_${wId}`, JSON.stringify(ownerNames));
+      localStorage.setItem(`settings_owners_full_${wId}`, JSON.stringify(leadOwners));
+      localStorage.setItem('leads_workspace_team_members', JSON.stringify(
+        leadOwners.map((o, idx) => ({ id: o.id || String(idx + 1), name: o.name, email: '', role: 'Lead Owner', color: o.color }))
+      ));
       localStorage.setItem(`settings_currency_${wId}`, settingsObj.quotation_currency || currency);
       localStorage.setItem(`settings_gst_${wId}`, String(settingsObj.invoice_gst_percent ?? gstPercent));
       localStorage.setItem(`settings_upi_${wId}`, settingsObj.invoice_upi_id || upiId);
@@ -125,8 +128,7 @@ export default function SettingsPage() {
         if (data.success && data.settings) {
           const s = data.settings;
 
-          // Leads
-          setLeadPrefix(s.sequence_leads_prefix || 'LD-2026-');
+          // Leads Owners
           if (Array.isArray(s.lead_owners) && s.lead_owners.length > 0) {
             setLeadOwners(s.lead_owners.map((o: any, idx: number) => {
               if (typeof o === 'string') {
@@ -199,8 +201,7 @@ export default function SettingsPage() {
       const headers = await getAuthHeaders();
 
       const payloadSettings = {
-        sequence_leads_prefix: leadPrefix,
-        lead_owners: leadOwners.map(o => o.name),
+        lead_owners: leadOwners.map(o => ({ id: o.id, name: o.name, color: o.color })),
         lead_budget_ranges: budgetRanges.map(b => b.name),
 
         quotation_pdf_theme: pdfTheme,
@@ -236,7 +237,7 @@ export default function SettingsPage() {
 
       if (res.ok) {
         syncToLocalStorage(wId, payloadSettings);
-        setSaveToast('Settings saved to Supabase & synchronized live across Studio Core! ✓');
+        setSaveToast('Settings saved & synchronized live across all pages! ✓');
         setTimeout(() => setSaveToast(null), 3500);
       } else {
         const errJson = await res.json().catch(() => ({}));
@@ -287,6 +288,32 @@ export default function SettingsPage() {
     setList([...list, { id: `${prefix}_${Date.now()}`, name: `Option ${nextIdx}`, color: newColor }]);
   };
 
+  const handleMoveItemUp = (
+    list: DropdownItem[],
+    setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
+    index: number
+  ) => {
+    if (index <= 0) return;
+    const copy = [...list];
+    const temp = copy[index];
+    copy[index] = copy[index - 1];
+    copy[index - 1] = temp;
+    setList(copy);
+  };
+
+  const handleMoveItemDown = (
+    list: DropdownItem[],
+    setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
+    index: number
+  ) => {
+    if (index >= list.length - 1) return;
+    const copy = [...list];
+    const temp = copy[index];
+    copy[index] = copy[index + 1];
+    copy[index + 1] = temp;
+    setList(copy);
+  };
+
   // Render Google Sheets Style Dropdown Item List Component
   const renderGoogleOptionList = (
     list: DropdownItem[],
@@ -295,11 +322,33 @@ export default function SettingsPage() {
     addLabel: string = "Add another item"
   ) => (
     <div className="space-y-2.5 pt-2">
-      {list.map((item) => (
+      {list.map((item, index) => (
         <div key={item.id} className="flex items-center gap-2 sm:gap-3 group">
           {/* Grip Handle */}
           <div className="cursor-grab text-slate-300 hover:text-slate-500 transition-colors p-1">
             <GripVertical className="w-5 h-5" />
+          </div>
+
+          {/* Up / Down Reorder Buttons */}
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => handleMoveItemUp(list, setList, index)}
+              disabled={index === 0}
+              className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 cursor-pointer"
+              title="Move Up"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMoveItemDown(list, setList, index)}
+              disabled={index === list.length - 1}
+              className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 cursor-pointer"
+              title="Move Down"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Color Picker Pill Dropdown */}
@@ -459,26 +508,12 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-slate-900">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners dropdown options & Lead ID sequence prefix</p>
+                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners dropdown options & colors with up/down reordering</p>
                   </div>
                 </div>
 
-                {/* Lead Prefix Single Input */}
-                <div>
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                    Lead ID Sequence Prefix
-                  </label>
-                  <input
-                    type="text"
-                    value={leadPrefix}
-                    onChange={e => setLeadPrefix(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:border-[#0F9D58] focus:ring-1 focus:ring-[#0F9D58]"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">Format: `LD-2026-001`</p>
-                </div>
-
                 {/* Lead Owners Google Sheets Style Dropdown Builder */}
-                <div className="pt-4 border-t border-slate-100 space-y-2">
+                <div className="space-y-2">
                   <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
                     Manage Lead Owners (Dropdown Options in Leads Page)
                   </label>

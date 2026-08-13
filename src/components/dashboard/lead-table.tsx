@@ -687,9 +687,23 @@ export function LeadTable({
           const parsed = JSON.parse(local);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setTeamMembers(parsed);
+            return;
           }
         } catch (_) {}
       }
+      // Fallback to fetch from settings API
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.settings?.lead_owners)) {
+            const mapped = data.settings.lead_owners.map((o: any, idx: number) => {
+              if (typeof o === 'string') return { id: String(idx + 1), name: o, color: '#10b981' };
+              return o;
+            });
+            setTeamMembers(mapped);
+          }
+        })
+        .catch(() => {});
     }
   }, []);
   const [showAddStatusModal, setShowAddStatusModal] = useState(false);
@@ -2655,7 +2669,7 @@ export function LeadTable({
                                       options={teamMembers.map(m => ({
                                         value: m.name,
                                         label: `👤 ${m.name}`,
-                                        color: '#d97706'
+                                        color: m.color || '#10b981'
                                       }))}
                                       onAddCustomOption={(name) => {
                                         if (!name.trim()) return;
