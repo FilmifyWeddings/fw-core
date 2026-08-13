@@ -196,12 +196,47 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('workspace_id', workspaceId);
 
-    // Live Forms Discovery: If 0 forms in DB for connected workspace, query Graph API for all pages
+    // Live Forms Discovery & DB Auto-Recovery
     if ((!rawFormsData || rawFormsData.length === 0) && pagesData && pagesData.length > 0) {
       console.log(`[STATUS API AUDIT] 0 forms in fb_lead_forms for ${workspaceId}. Live discovering forms from pages...`);
       const discoveredForms: any[] = [];
       const now = new Date().toISOString();
 
+      const pageIds = pagesData.map((p: any) => p.page_id).filter(Boolean);
+      const pageNames = pagesData.map((p: any) => p.page_name).filter(Boolean);
+
+      // Auto-Recovery Step A: Claim forms from fb_lead_forms matching connected page_ids or page_names
+      try {
+        const { data: existingFormsInDb } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('*')
+          .or(`page_id.in.(${pageIds.join(',')})`);
+
+        if (Array.isArray(existingFormsInDb) && existingFormsInDb.length > 0) {
+          for (const f of existingFormsInDb) {
+            const { data: claimed } = await supabaseAdmin
+              .from('fb_lead_forms')
+              .upsert({
+                workspace_id: workspaceId,
+                page_id: f.page_id,
+                form_id: f.form_id,
+                form_name: f.form_name,
+                status: f.status || 'ACTIVE',
+                leads_count: f.leads_count || 0,
+                questions_count: f.questions_count || 0,
+                questions: f.questions || [],
+                is_enabled: true,
+                updated_at: now,
+              }, { onConflict: 'workspace_id,form_id' })
+              .select('*')
+              .maybeSingle();
+
+            if (claimed) discoveredForms.push(claimed);
+          }
+        }
+      } catch (_) {}
+
+      // Auto-Recovery Step B: Query Graph API live for each page
       for (const page of pagesData) {
         const pageToken = page.page_access_token || conn?.access_token;
         if (!pageToken) continue;
@@ -247,7 +282,10 @@ export async function GET(req: NextRequest) {
       }
 
       if (discoveredForms.length > 0) {
-        rawFormsData = discoveredForms;
+        // Deduplicate forms by form_id
+        const formMapById = new Map<string, any>();
+        discoveredForms.forEach((f: any) => formMapById.set(f.form_id, f));
+        rawFormsData = Array.from(formMapById.values());
       }
     }
 
