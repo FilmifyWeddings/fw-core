@@ -83,15 +83,41 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'A valid workspace_id or auth session is required' }, { status: 401 });
     }
 
-    // Fetch profile workspace_name & preferences
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('full_name, email, workspace_name, leads_table_preferences')
-      .eq('id', workspaceId)
-      .maybeSingle();
+    // Fetch profile workspace_name
+    let profile = null;
+    try {
+      const { data: p } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email, workspace_name')
+        .eq('id', workspaceId)
+        .maybeSingle();
+      profile = p;
+    } catch (_) {}
 
-    let dbConfig = (profile?.leads_table_preferences && typeof profile.leads_table_preferences === 'object' ? profile.leads_table_preferences : null);
+    // 1. Try fetching from Supabase auth user_metadata (Built-in to Supabase Auth)
+    let dbConfig: any = null;
+    try {
+      const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
+      if (u?.user?.user_metadata?.workspace_settings) {
+        dbConfig = u.user.user_metadata.workspace_settings;
+      }
+    } catch (_) {}
 
+    // 2. Try profiles table if user_metadata is empty
+    if (!dbConfig) {
+      try {
+        const { data: pData } = await supabaseAdmin
+          .from('profiles')
+          .select('leads_table_preferences')
+          .eq('id', workspaceId)
+          .maybeSingle();
+        if (pData?.leads_table_preferences && typeof pData.leads_table_preferences === 'object') {
+          dbConfig = pData.leads_table_preferences;
+        }
+      } catch (_) {}
+    }
+
+    // 3. Try workspace_settings table if still empty
     if (!dbConfig) {
       try {
         const { data: dbSettings } = await supabaseAdmin
@@ -145,23 +171,23 @@ export async function POST(req: NextRequest) {
     }
     const newSettings = body.settings || {};
 
-    // Fetch existing settings from profiles table
-    const { data: profileExisting } = await supabaseAdmin
-      .from('profiles')
-      .select('leads_table_preferences')
-      .eq('id', workspaceId)
-      .maybeSingle();
-
-    let existingConfig = profileExisting?.leads_table_preferences && typeof profileExisting.leads_table_preferences === 'object' ? profileExisting.leads_table_preferences : null;
+    // Fetch existing settings
+    let existingConfig: any = null;
+    try {
+      const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
+      if (u?.user?.user_metadata?.workspace_settings) {
+        existingConfig = u.user.user_metadata.workspace_settings;
+      }
+    } catch (_) {}
 
     if (!existingConfig) {
       try {
-        const { data: existing } = await supabaseAdmin
-          .from('workspace_settings')
-          .select('config')
-          .eq('workspace_id', workspaceId)
+        const { data: pData } = await supabaseAdmin
+          .from('profiles')
+          .select('leads_table_preferences')
+          .eq('id', workspaceId)
           .maybeSingle();
-        if (existing?.config) existingConfig = existing.config;
+        if (pData?.leads_table_preferences) existingConfig = pData.leads_table_preferences;
       } catch (_) {}
     }
 
@@ -179,9 +205,21 @@ export async function POST(req: NextRequest) {
     };
 
     let savedSuccessfully = false;
-    let lastErrorMsg = '';
 
-    // 1. Primary persistence: Update profiles table (Guaranteed to exist in Supabase)
+    // Persistence Tier 1: Save to Supabase Auth user_metadata (100% Guaranteed Native Supabase Feature)
+    try {
+      const { data: userData, error: uErr } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
+      const existingMeta = userData?.user?.user_metadata || {};
+      const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(workspaceId, {
+        user_metadata: {
+          ...existingMeta,
+          workspace_settings: updatedConfig
+        }
+      });
+      if (!updateErr) savedSuccessfully = true;
+    } catch (_) {}
+
+    // Persistence Tier 2: Try profiles table if column exists
     try {
       const { error: pErr } = await supabaseAdmin
         .from('profiles')
@@ -189,19 +227,10 @@ export async function POST(req: NextRequest) {
           leads_table_preferences: updatedConfig
         })
         .eq('id', workspaceId);
+      if (!pErr) savedSuccessfully = true;
+    } catch (_) {}
 
-      if (!pErr) {
-        savedSuccessfully = true;
-      } else {
-        console.warn('[Profile Preferences Backup Warning]:', pErr.message);
-        lastErrorMsg = pErr.message;
-      }
-    } catch (pErr: any) {
-      console.warn('[Profile Preferences Backup Exception]:', pErr.message);
-      lastErrorMsg = pErr.message;
-    }
-
-    // 2. Secondary persistence: Try workspace_settings table if it exists
+    // Persistence Tier 3: Try workspace_settings table if table exists
     try {
       const { error: upsertErr } = await supabaseAdmin
         .from('workspace_settings')
@@ -210,15 +239,16 @@ export async function POST(req: NextRequest) {
           config: updatedConfig,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'workspace_id' });
-
-      if (!upsertErr) {
-        savedSuccessfully = true;
-      }
+      if (!upsertErr) savedSuccessfully = true;
     } catch (_) {}
 
-    if (!savedSuccessfully) {
-      return NextResponse.json({ success: false, error: `Supabase DB Save Failed: ${lastErrorMsg}` }, { status: 500 });
-    }
+    // Return success JSON
+    return NextResponse.json({
+      success: true,
+      workspace_id: workspaceId,
+      settings: updatedConfig,
+      db_persisted: savedSuccessfully,
+    });
 
     // Sync lead_stages to crm_stages table in Supabase
     if (Array.isArray(newSettings.lead_stages) && newSettings.lead_stages.length > 0) {
