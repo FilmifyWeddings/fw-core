@@ -242,14 +242,6 @@ export async function POST(req: NextRequest) {
       if (!upsertErr) savedSuccessfully = true;
     } catch (_) {}
 
-    // Return success JSON
-    return NextResponse.json({
-      success: true,
-      workspace_id: workspaceId,
-      settings: updatedConfig,
-      db_persisted: savedSuccessfully,
-    });
-
     // Sync lead_stages to crm_stages table in Supabase
     if (Array.isArray(newSettings.lead_stages) && newSettings.lead_stages.length > 0) {
       try {
@@ -281,10 +273,13 @@ export async function POST(req: NextRequest) {
         .eq('id', workspaceId);
     }
 
+    // Return success JSON
     return NextResponse.json({
       success: true,
+      workspace_id: workspaceId,
       message: 'Settings saved successfully',
       settings: updatedConfig,
+      db_persisted: savedSuccessfully,
     });
   } catch (err: any) {
     console.error('[Settings POST API Error]:', err.message);

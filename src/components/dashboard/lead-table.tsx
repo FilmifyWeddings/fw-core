@@ -14,7 +14,7 @@ import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadInsiderDrawer } from './lead-insider-drawer';
 import { TeamTasksManager } from './team-tasks-manager';
-import { CRMDropdown } from './crm-dropdown';
+import { CRMDropdown, getDynamicBadgeStyle } from './crm-dropdown';
 import { LeadQuotationModal } from './lead-quotation-modal';
 
 const MotionDiv = motionImport.div;
@@ -215,21 +215,45 @@ export function LeadTable({
 
   useEffect(() => {
     if (stages && stages.length > 0) {
-      const hasBooked = stages.some((s: any) => s.id === 'booked' || s.name?.toLowerCase() === 'booked');
-      const merged = hasBooked ? stages : [...stages, { id: 'booked', name: 'Booked', color: '#10b981', position: 4 }];
-      setStagesState(merged);
-    } else {
-      setStagesState([
-        { id: 'new', name: 'Inquiry / New', color: '#6366f1', position: 0 },
-        { id: 'contacted', name: 'Contacted', color: '#8b5cf6', position: 1 },
-        { id: 'cool', name: 'Cool / Warm', color: '#06b6d4', position: 2 },
-        { id: 'hot', name: 'Hot 🔥', color: '#ef4444', position: 3 },
-        { id: 'booked', name: 'Booked', color: '#10b981', position: 4 },
-        { id: 'won', name: 'Won 🎉', color: '#10b981', position: 5 },
-        { id: 'lost', name: 'Lost ❌', color: '#f43f5e', position: 6 }
-      ]);
+      setStagesState(stages);
     }
   }, [stages]);
+
+  useEffect(() => {
+    const handleSettingsSync = () => {
+      const local = localStorage.getItem('leads_workspace_stages');
+      if (local) {
+        try {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setStagesState(parsed);
+            return;
+          }
+        } catch (_) {}
+      }
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.settings?.lead_stages) && data.settings.lead_stages.length > 0) {
+            setStagesState(data.settings.lead_stages);
+          }
+        })
+        .catch(() => {});
+    };
+
+    handleSettingsSync();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('settings_updated', handleSettingsSync);
+      window.addEventListener('storage', handleSettingsSync);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('settings_updated', handleSettingsSync);
+        window.removeEventListener('storage', handleSettingsSync);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (activeLeadId) {
@@ -1409,7 +1433,12 @@ export function LeadTable({
       lead.phone.includes(search) ||
       (lead.email?.toLowerCase() || '').includes(search.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' || 
+      lead.stage_id === statusFilter || 
+      lead.status === statusFilter ||
+      (stagesState.find(s => s.id === statusFilter)?.name?.toLowerCase() === lead.status?.toLowerCase()) ||
+      (stagesState.find(s => s.id === statusFilter)?.name?.toLowerCase() === lead.stage_id?.toLowerCase()) ||
+      (stagesState.find(s => s.name?.toLowerCase() === statusFilter?.toLowerCase())?.id?.toLowerCase() === lead.stage_id?.toLowerCase());
     const matchesSource = sourceFilter === 'all' || lead.source.toLowerCase() === sourceFilter.toLowerCase();
     const matchesScore = scoreFilter === 'all' || lead.score === scoreFilter;
     
@@ -2005,12 +2034,11 @@ export function LeadTable({
               allowCustomAdd={false}
               options={[
                 { value: 'all', label: 'Stages: All' },
-                { value: 'new', label: 'New' },
-                { value: 'contacted', label: 'Open' },
-                { value: 'warm', label: 'In Progress' },
-                { value: 'hot', label: 'Priority' },
-                { value: 'closed', label: 'Won' },
-                { value: 'lost', label: 'Lost' },
+                ...stagesState.map(s => ({
+                  value: s.id,
+                  label: s.name,
+                  color: s.color,
+                }))
               ]}
               onChange={(val) => setStatusFilter(val)}
             />
@@ -2215,16 +2243,8 @@ export function LeadTable({
       ) : (
         paginatedLeads.map((lead) => {
           const isSelected = selectedLeadIds.includes(lead.id);
-          const currentStage = stages.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
-              const stBadgeStyle = (() => {
-            const s = (currentStage.name || '').toLowerCase();
-            if (s.includes('hot') || s.includes('proposal')) return { bg: 'bg-red-500/15 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-300 font-extrabold', border: 'border-red-500/40 shadow-red-500/20', dot: 'bg-red-500' };
-            if (s.includes('cool') || s.includes('warm') || s.includes('meeting')) return { bg: 'bg-cyan-500/15 dark:bg-cyan-900/30', text: 'text-cyan-600 dark:text-cyan-300 font-extrabold', border: 'border-cyan-500/40 shadow-cyan-500/20', dot: 'bg-cyan-500' };
-            if (s.includes('won') || s.includes('signed') || s.includes('closed')) return { bg: 'bg-emerald-500/15 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-300 font-extrabold', border: 'border-emerald-500/40 shadow-emerald-500/20', dot: 'bg-emerald-500' };
-            if (s.includes('lost')) return { bg: 'bg-rose-950/20 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400 font-extrabold', border: 'border-rose-800/40', dot: 'bg-rose-500' };
-            if (s.includes('contacted')) return { bg: 'bg-violet-500/15 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-300 font-extrabold', border: 'border-violet-500/40', dot: 'bg-violet-500' };
-            return { bg: 'bg-indigo-500/15 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-300 font-extrabold', border: 'border-indigo-500/40', dot: 'bg-indigo-500' };
-          })();
+          const currentStage = stagesState.find(s => s.id === (lead.stage_id || lead.status) || s.name?.toLowerCase() === (lead.status || lead.stage_id)?.toLowerCase()) || { name: lead.status, color: '#3b82f6' };
+          const dynamicBadge = getDynamicBadgeStyle(currentStage.color);
 
           const currentAssignedOwner = lead.raw_payload?.lead_owner || 'Unassigned';
           const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Form';
@@ -2266,9 +2286,16 @@ export function LeadTable({
                   </div>
                 </div>
 
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${stBadgeStyle.bg} ${stBadgeStyle.text} ${stBadgeStyle.border}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${stBadgeStyle.dot}`} />
-                  {stages.find(s => s.id === (lead.stage_id || lead.status))?.name || lead.status}
+                <span 
+                  style={{
+                    backgroundColor: dynamicBadge.light.backgroundColor,
+                    borderColor: dynamicBadge.light.borderColor,
+                    color: dynamicBadge.light.color,
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: dynamicBadge.dot }} />
+                  {currentStage.name || lead.status}
                 </span>
               </div>
 
@@ -2353,7 +2380,7 @@ export function LeadTable({
                       const foundStage = stagesState.find(s => s.id === val || s.name === val);
                       if (onLeadUpdate) {
                         onLeadUpdate(lead.id, {
-                          stage_id: val,
+                          stage_id: foundStage?.id || val,
                           status: (foundStage?.name || val) as any
                         });
                       }
@@ -2781,7 +2808,7 @@ export function LeadTable({
                                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
                                         if (onLeadUpdate) {
                                           onLeadUpdate(lead.id, {
-                                            stage_id: val,
+                                            stage_id: foundStage?.id || val,
                                             status: (foundStage?.name || val) as any
                                           });
                                         }

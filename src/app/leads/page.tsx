@@ -354,37 +354,62 @@ export default function LeadsPage() {
       }
 
       if (pageNum === 0) {
-        // Load CRM Stages
-        const { data: dbStages, error: stagesErr } = await supabase
-          .from('crm_stages')
-          .select('*')
-          .eq('workspace_id', targetUserId)
-          .order('position', { ascending: true });
+        // Load CRM Stages synchronized with Settings
+        let loadedStages: any[] = [];
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token || '';
+          const res = await fetch(`/api/settings?workspace_id=${targetUserId}`, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.settings?.lead_stages) && data.settings.lead_stages.length > 0) {
+              loadedStages = data.settings.lead_stages.map((st: any, idx: number) => ({
+                id: st.id || `st_${idx}`,
+                name: st.name,
+                color: st.color || '#3b82f6',
+                position: typeof st.position === 'number' ? st.position : idx,
+              }));
+            }
+          }
+        } catch (_) {}
 
-        if (!stagesErr && dbStages && dbStages.length > 0) {
-          const hasBooked = dbStages.some((s: any) => s.id === 'booked' || s.name.toLowerCase() === 'booked');
-          const mergedStages = hasBooked 
-            ? dbStages 
-            : [...dbStages, { id: 'booked', name: 'Booked', color: '#10b981', position: 4 }];
-          setStages(mergedStages);
-        } else {
-          // Fallback to localStorage settings or API
+        if (loadedStages.length === 0) {
+          const { data: dbStages } = await supabase
+            .from('crm_stages')
+            .select('*')
+            .eq('workspace_id', targetUserId)
+            .order('position', { ascending: true });
+
+          if (dbStages && dbStages.length > 0) {
+            loadedStages = dbStages;
+          }
+        }
+
+        if (loadedStages.length === 0) {
           const localStages = localStorage.getItem('leads_workspace_stages') || localStorage.getItem(`settings_stages_${targetUserId}`);
           if (localStages) {
             try {
               const parsed = JSON.parse(localStages);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                setStages(parsed);
-              } else {
-                setStages(DEFAULT_STAGES);
+                loadedStages = parsed;
               }
-            } catch (_) {
-              setStages(DEFAULT_STAGES);
-            }
-          } else {
-            setStages(DEFAULT_STAGES);
+            } catch (_) {}
           }
         }
+
+        if (loadedStages.length === 0) {
+          loadedStages = DEFAULT_STAGES;
+        }
+
+        setStages(loadedStages);
+        try {
+          localStorage.setItem('leads_workspace_stages', JSON.stringify(loadedStages));
+        } catch (_) {}
 
         // Load Layout Configurations (try table_layouts first, fallback to profiles)
         const { data: layout, error: layoutErr } = await supabase
