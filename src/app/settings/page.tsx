@@ -74,15 +74,26 @@ export default function SettingsPage() {
   ]);
 
   // Lead Action Buttons Checkboxes (Default for new users: quotation, call, mail, comments)
-  const [quickActions, setQuickActions] = useState<{ [key: string]: boolean }>({
-    quotation: true,
-    call: true,
-    mail: true,
-    comments: true,
-    google_contact: false,
-    wgl_alert: false,
-    whatsapp: false,
-    followup: false,
+  const [quickActions, setQuickActions] = useState<{ [key: string]: boolean }>(() => {
+    if (typeof window !== 'undefined') {
+      const local = localStorage.getItem('leads_quick_actions');
+      if (local) {
+        try {
+          const parsed = JSON.parse(local);
+          if (parsed && typeof parsed === 'object') return parsed;
+        } catch (_) {}
+      }
+    }
+    return {
+      quotation: true,
+      call: true,
+      mail: true,
+      comments: true,
+      google_contact: false,
+      wgl_alert: false,
+      whatsapp: false,
+      followup: false,
+    };
   });
 
   // 2. Quotations Page Settings
@@ -149,7 +160,10 @@ export default function SettingsPage() {
       }))));
 
       // Sync Quick Actions
-      localStorage.setItem('leads_quick_actions', JSON.stringify(quickActions));
+      if (settingsObj.lead_quick_actions && typeof settingsObj.lead_quick_actions === 'object') {
+        localStorage.setItem('leads_quick_actions', JSON.stringify(settingsObj.lead_quick_actions));
+        localStorage.setItem(`settings_quick_actions_${wId}`, JSON.stringify(settingsObj.lead_quick_actions));
+      }
 
       localStorage.setItem(`settings_currency_${wId}`, settingsObj.quotation_currency || currency);
       localStorage.setItem(`settings_gst_${wId}`, String(settingsObj.invoice_gst_percent ?? gstPercent));
