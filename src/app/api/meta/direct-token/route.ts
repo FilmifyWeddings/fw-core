@@ -227,7 +227,6 @@ export async function POST(req: NextRequest) {
       const formName = f.name || 'Instant Lead Form';
       const status = f.status || 'ACTIVE';
       const leadsCount = f.leads_count || 0;
-      const questions = f.questions || [];
 
       const { data: savedForm } = await supabaseAdmin
         .from('fb_lead_forms')
@@ -238,11 +237,9 @@ export async function POST(req: NextRequest) {
           form_name: formName,
           status,
           leads_count: leadsCount,
-          questions_count: questions.length,
-          questions,
           is_enabled: status === 'ACTIVE',
           updated_at: now,
-        }, { onConflict: 'workspace_id,form_id' })
+        }, { onConflict: 'form_id' })
         .select('*')
         .single();
 

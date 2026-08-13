@@ -244,11 +244,9 @@ export async function GET(req: NextRequest) {
                 form_name: f.form_name,
                 status: f.status || 'ACTIVE',
                 leads_count: f.leads_count || 0,
-                questions_count: f.questions_count || 0,
-                questions: f.questions || [],
                 is_enabled: true,
                 updated_at: now,
-              }, { onConflict: 'workspace_id,form_id' })
+              }, { onConflict: 'form_id' })
               .select('*')
               .maybeSingle();
 
@@ -276,7 +274,6 @@ export async function GET(req: NextRequest) {
             const formName = f.name || 'Instant Lead Form';
             const status = f.status || 'ACTIVE';
             const leadsCount = f.leads_count || 0;
-            const questions = f.questions || [];
 
             const { data: savedForm } = await supabaseAdmin
               .from('fb_lead_forms')
@@ -287,11 +284,9 @@ export async function GET(req: NextRequest) {
                 form_name: formName,
                 status,
                 leads_count: leadsCount,
-                questions_count: questions.length,
-                questions,
                 is_enabled: true,
                 updated_at: now,
-              }, { onConflict: 'workspace_id,form_id' })
+              }, { onConflict: 'form_id' })
               .select('*')
               .maybeSingle();
 
@@ -315,11 +310,9 @@ export async function GET(req: NextRequest) {
             form_name: `${p.page_name || 'Facebook Page'} Lead Form`,
             status: 'ACTIVE',
             leads_count: 0,
-            questions_count: 0,
-            questions: [],
             is_enabled: true,
             updated_at: now,
-          }, { onConflict: 'workspace_id,form_id' })
+          }, { onConflict: 'form_id' })
           .select('*')
           .maybeSingle();
 
