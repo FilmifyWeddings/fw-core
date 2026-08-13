@@ -940,7 +940,50 @@ export function LeadTable({
     return () => container.removeEventListener('scroll', handleScroll);
   }, [onLoadMore, loadingMore, hasMore]);
 
+  const [quickActionsConfig, setQuickActionsConfig] = useState<{ [key: string]: boolean }>({
+    quotation: true,
+    call: true,
+    mail: true,
+    comments: true,
+    followup: true,
+    whatsapp: true,
+    delete: false,
+  });
+
   // Load configuration preferences
+  useEffect(() => {
+    const loadActions = () => {
+      const localActions = localStorage.getItem('leads_quick_actions');
+      if (localActions) {
+        try {
+          setQuickActionsConfig(JSON.parse(localActions));
+        } catch (_) {}
+      } else {
+        fetch('/api/settings')
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.settings?.lead_quick_actions) {
+              setQuickActionsConfig(data.settings.lead_quick_actions);
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
+    loadActions();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('settings_updated', loadActions);
+      window.addEventListener('storage', loadActions);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('settings_updated', loadActions);
+        window.removeEventListener('storage', loadActions);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const localSources = localStorage.getItem('leads_workspace_sources') || localStorage.getItem('leads_custom_sources');
     if (localSources) {
@@ -3053,32 +3096,36 @@ export function LeadTable({
                           <div className="flex items-center justify-end gap-1 w-full">
                             
                             {/* Lead Quotations Management Action */}
-                            <PremiumTooltip content="Quotations">
-                              <MotionButton 
-                                whileHover={{ scale: 1.1 }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setQuotationModalLead(lead);
-                                }}
-                                className="p-1.5 rounded-lg border border-amber-300/80 dark:border-amber-700/60 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-400 transition-all cursor-pointer shadow-2xs"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                              </MotionButton>
-                            </PremiumTooltip>
+                            {quickActionsConfig.quotation !== false && (
+                              <PremiumTooltip content="Quotations">
+                                <MotionButton 
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setQuotationModalLead(lead);
+                                  }}
+                                  className="p-1.5 rounded-lg border border-amber-300/80 dark:border-amber-700/60 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-400 transition-all cursor-pointer shadow-2xs"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </MotionButton>
+                              </PremiumTooltip>
+                            )}
 
                             {/* WA Welcome Msg Quick Action */}
-                            <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
-                              <button
-                                onClick={() => handleWhatsappWelcomeDispatch(lead)}
-                                className={`p-1.5 rounded-lg border transition-all ${
-                                  (lead as any).wa_welcome_sent 
-                                    ? 'bg-emerald-100 dark:bg-emerald-950 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' 
-                                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600'
-                                }`}
-                              >
-                                <Send className="w-3.5 h-3.5" />
-                              </button>
-                            </PremiumTooltip>
+                            {quickActionsConfig.whatsapp !== false && (
+                              <PremiumTooltip content={(lead as any).wa_welcome_sent ? "WA Welcome Msg Sent" : "Send WA Welcome Msg"}>
+                                <button
+                                  onClick={() => handleWhatsappWelcomeDispatch(lead)}
+                                  className={`p-1.5 rounded-lg border transition-all ${
+                                    (lead as any).wa_welcome_sent 
+                                      ? 'bg-emerald-100 dark:bg-emerald-950 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' 
+                                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600'
+                                  }`}
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                </button>
+                              </PremiumTooltip>
+                            )}
 
                             {/* Google Contact Sync Quick Action */}
                             <PremiumTooltip content={(lead as any).google_synced ? "Google Contact Synced" : syncingLeadId === lead.id ? "Syncing..." : "Sync Google Contact"}>
@@ -3116,87 +3163,95 @@ export function LeadTable({
                             </PremiumTooltip>
 
                             {/* Followups Timeline Quick Action */}
-                            <PremiumTooltip content="Open Followup Timeline">
-                              <button
-                                onClick={() => setTimelineLead(lead)}
-                                className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-amber-600 transition-all"
-                              >
-                                <Clock className="w-3.5 h-3.5" />
-                              </button>
-                            </PremiumTooltip>
+                            {quickActionsConfig.followup !== false && (
+                              <PremiumTooltip content="Open Followup Timeline">
+                                <button
+                                  onClick={() => setTimelineLead(lead)}
+                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-amber-600 transition-all"
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                </button>
+                              </PremiumTooltip>
+                            )}
 
                             <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-800 mx-1 shrink-0" />
 
                             {/* PhoneCall Selector */}
-                            <div className="relative">
-                              <PremiumTooltip content="Call / WhatsApp Options">
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
-                                  }}
-                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600 transition-all"
-                                >
-                                  <PhoneCall className="w-3.5 h-3.5" />
-                                </button>
-                              </PremiumTooltip>
-                              {phoneActionMenuLeadId === lead.id && (
-                                <div className="absolute right-0 bottom-8 mt-2 w-52 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
-                                  <a 
-                                    href={`tel:${lead.phone}`}
-                                    onClick={() => setPhoneActionMenuLeadId(null)}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
-                                  >
-                                    <Phone className="w-3.5 h-3.5 text-blue-500" />
-                                    Device Dialer Call
-                                  </a>
+                            {quickActionsConfig.call !== false && (
+                              <div className="relative">
+                                <PremiumTooltip content="Call / WhatsApp Options">
                                   <button 
-                                    onClick={() => {
-                                      setPhoneActionMenuLeadId(null);
-                                      handleWhatsappWelcomeDispatch(lead);
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
                                     }}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600 transition-all"
                                   >
-                                    <Send className="w-3.5 h-3.5 text-green-500" />
-                                    Baileys WA Welcome
+                                    <PhoneCall className="w-3.5 h-3.5" />
                                   </button>
-                                </div>
-                              )}
-                            </div>
+                                </PremiumTooltip>
+                                {phoneActionMenuLeadId === lead.id && (
+                                  <div className="absolute right-0 bottom-8 mt-2 w-52 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
+                                    <a 
+                                      href={`tel:${lead.phone}`}
+                                      onClick={() => setPhoneActionMenuLeadId(null)}
+                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+                                    >
+                                      <Phone className="w-3.5 h-3.5 text-blue-500" />
+                                      Device Dialer Call
+                                    </a>
+                                    <button 
+                                      onClick={() => {
+                                        setPhoneActionMenuLeadId(null);
+                                        handleWhatsappWelcomeDispatch(lead);
+                                      }}
+                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+                                    >
+                                      <Send className="w-3.5 h-3.5 text-green-500" />
+                                      Baileys WA Welcome
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {/* Mail Lead */}
-                            <PremiumTooltip content={lead.email ? "Email Lead" : "No Email Address"}>
-                              {lead.email ? (
-                                <a 
-                                  href={`mailto:${lead.email}`}
-                                  className="inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500 transition-all"
-                                >
-                                  <Mail className="w-3.5 h-3.5" />
-                                </a>
-                              ) : (
-                                <button 
-                                  disabled
-                                  className="p-1.5 rounded-lg border border-slate-200/50 dark:border-zinc-800 bg-slate-100/50 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
-                                >
-                                  <Mail className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </PremiumTooltip>
+                            {quickActionsConfig.mail !== false && (
+                              <PremiumTooltip content={lead.email ? "Email Lead" : "No Email Address"}>
+                                {lead.email ? (
+                                  <a 
+                                    href={`mailto:${lead.email}`}
+                                    className="inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500 transition-all"
+                                  >
+                                    <Mail className="w-3.5 h-3.5" />
+                                  </a>
+                                ) : (
+                                  <button 
+                                    disabled
+                                    className="p-1.5 rounded-lg border border-slate-200/50 dark:border-zinc-800 bg-slate-100/50 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
+                                  >
+                                    <Mail className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </PremiumTooltip>
+                            )}
 
                             {/* Comments Logger Quick Action */}
-                            <PremiumTooltip content="Comments & Reminders Timeline">
-                              <MotionButton 
-                                whileHover={{ scale: 1.1 }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedLead(lead);
-                                  setDrawerMode('comments');
-                                }}
-                                className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
-                              >
-                                <MessageSquare className="w-3.5 h-3.5" />
-                              </MotionButton>
-                            </PremiumTooltip>
+                            {quickActionsConfig.comments !== false && (
+                              <PremiumTooltip content="Comments & Reminders Timeline">
+                                <MotionButton 
+                                  whileHover={{ scale: 1.1 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedLead(lead);
+                                    setDrawerMode('comments');
+                                  }}
+                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                </MotionButton>
+                              </PremiumTooltip>
+                            )}
 
                             {/* Proper 3-Dots Dropdown Context Menu */}
                             <div className="relative">
@@ -3260,26 +3315,30 @@ export function LeadTable({
                                       Archive Lead
                                     </button>
                                   )}
-                                  <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
-                                  <button 
-                                    onClick={async () => {
-                                      setRowActionMenuLeadId(null);
-                                      if (confirm('Are you sure you want to delete this lead?')) {
-                                        try {
-                                          const { error } = await supabase.from('client_leads').delete().eq('id', lead.id);
-                                          if (error) throw error;
-                                          alert('Lead deleted successfully.');
-                                          window.location.reload();
-                                        } catch (err: any) {
-                                          alert('Error deleting lead: ' + err.message);
-                                        }
-                                      }
-                                    }}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-md text-xs font-semibold text-red-600 dark:text-red-400 transition-colors"
-                                  >
-                                    <Trash className="w-3.5 h-3.5 text-red-500" />
-                                    Delete Lead
-                                  </button>
+                                  {quickActionsConfig.delete === true && (
+                                    <>
+                                      <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
+                                      <button 
+                                        onClick={async () => {
+                                          setRowActionMenuLeadId(null);
+                                          if (confirm('Are you sure you want to delete this lead?')) {
+                                            try {
+                                              const { error } = await supabase.from('client_leads').delete().eq('id', lead.id);
+                                              if (error) throw error;
+                                              alert('Lead deleted successfully.');
+                                              window.location.reload();
+                                            } catch (err: any) {
+                                              alert('Error deleting lead: ' + err.message);
+                                            }
+                                          }
+                                        }}
+                                        className="w-full flex items-center gap-2 p-2 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-md text-xs font-semibold text-red-600 dark:text-red-400 transition-colors"
+                                      >
+                                        <Trash className="w-3.5 h-3.5 text-red-500" />
+                                        Delete Lead
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </div>

@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
-  FileText, Coins, Clock, Globe, Users, Plus, Trash2,
+  FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send,
   ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -73,6 +73,17 @@ export default function SettingsPage() {
     { id: 'b4', name: '₹5L+', color: '#f43f5e' },
   ]);
 
+  // Lead Action Buttons Checkboxes (Default for new users: quotation, call, mail, comments)
+  const [quickActions, setQuickActions] = useState<{ [key: string]: boolean }>({
+    quotation: true,
+    call: true,
+    mail: true,
+    comments: true,
+    followup: true,
+    whatsapp: true,
+    delete: false,
+  });
+
   // 2. Quotations Page Settings
   const [pdfTheme, setPdfTheme] = useState('royal_gold');
   const [quoteTerms, setQuoteTerms] = useState('Deliverables will be compiled and sent within 45 days of wedding event completion.');
@@ -135,6 +146,9 @@ export default function SettingsPage() {
         color: st.color,
         position: pos
       }))));
+
+      // Sync Quick Actions
+      localStorage.setItem('leads_quick_actions', JSON.stringify(quickActions));
 
       localStorage.setItem(`settings_currency_${wId}`, settingsObj.quotation_currency || currency);
       localStorage.setItem(`settings_gst_${wId}`, String(settingsObj.invoice_gst_percent ?? gstPercent));
@@ -204,6 +218,11 @@ export default function SettingsPage() {
             }));
           }
 
+          // Quick Actions
+          if (s.lead_quick_actions && typeof s.lead_quick_actions === 'object') {
+            setQuickActions(s.lead_quick_actions);
+          }
+
           // Quotes
           setPdfTheme(s.quotation_pdf_theme || 'royal_gold');
           setQuoteTerms(s.quotation_pdf_terms || '');
@@ -263,6 +282,7 @@ export default function SettingsPage() {
         lead_sources: leadSources.map(s => ({ id: s.id, name: s.name, color: s.color })),
         lead_stages: leadStages.map((st, idx) => ({ id: st.id || `st_${idx}`, name: st.name, color: st.color, position: idx })),
         lead_budget_ranges: budgetRanges.map(b => b.name),
+        lead_quick_actions: quickActions,
 
         quotation_pdf_theme: pdfTheme,
         quotation_pdf_terms: quoteTerms,
@@ -578,12 +598,60 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-slate-900">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners, Lead Sources, and Pipeline Stages dropdown options with colors & order</p>
+                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners, Lead Sources, Pipeline Stages, and Action Buttons</p>
+                  </div>
+                </div>
+
+                {/* Lead Action Buttons Checkboxes */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block">
+                      Manage Lead Action Column Buttons (Visible on `/leads` Page)
+                    </label>
+                    <p className="text-xs text-slate-500 mt-0.5">Select which quick action icons appear in the Action column for each lead (Quotation, Call, Mail & Comments enabled by default)</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+                    {[
+                      { key: 'quotation', label: 'Quotation / Proposal', icon: FileText, desc: 'Generate & send PDF quotes', isDefault: true },
+                      { key: 'call', label: 'Device Dialer Call', icon: Phone, desc: 'Click-to-call lead phone number', isDefault: true },
+                      { key: 'mail', label: 'Email Lead', icon: Mail, desc: 'Send email to lead', isDefault: true },
+                      { key: 'comments', label: 'Comments & Reminders', icon: MessageSquare, desc: 'Open lead discussion drawer', isDefault: true },
+                      { key: 'whatsapp', label: 'WhatsApp Direct', icon: Send, desc: 'Send WhatsApp message', isDefault: true },
+                      { key: 'followup', label: 'Followup Calendar', icon: Clock, desc: 'Schedule followups & tasks', isDefault: true },
+                      { key: 'delete', label: 'Delete Lead Button', icon: Trash2, desc: 'Trash / delete lead button', isDefault: false },
+                    ].map(item => (
+                      <label
+                        key={item.key}
+                        className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                          quickActions[item.key] 
+                            ? 'bg-emerald-50/60 border-emerald-300 text-slate-900 shadow-2xs' 
+                            : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!quickActions[item.key]}
+                          onChange={e => setQuickActions({ ...quickActions, [item.key]: e.target.checked })}
+                          className="mt-0.5 w-4 h-4 rounded text-[#0F9D58] focus:ring-[#0F9D58] border-slate-300 cursor-pointer"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <item.icon className="w-3.5 h-3.5 text-[#0F9D58]" />
+                            {item.label}
+                            {item.isDefault && (
+                              <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-[#0F9D58] px-1.5 py-0.2 rounded-md">Default</span>
+                            )}
+                          </span>
+                          <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                        </div>
+                      </label>
+                    ))}
                   </div>
                 </div>
 
                 {/* Lead Owners Google Sheets Style Dropdown Builder */}
-                <div className="space-y-2">
+                <div className="pt-4 border-t border-slate-100 space-y-2">
                   <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
                     Manage Lead Owners (Dropdown Options in Leads Page)
                   </label>
