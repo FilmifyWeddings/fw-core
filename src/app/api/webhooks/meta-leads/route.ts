@@ -174,22 +174,21 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // ── 1. PAGE MAPPING VALIDATION ────────────────────────────────────
-          const { data: pageConfig, error: pageConfigErr } = await supabaseAdmin
+          // ── 1. PAGE MAPPING & WORKSPACE OWNERSHIP VALIDATION ────────────
+          const { data: pageConfigs, error: pageConfigErr } = await supabaseAdmin
             .from('fb_page_configs')
             .select('workspace_id, page_access_token, page_name, is_active')
-            .eq('page_id', page_id)
-            .maybeSingle();
+            .eq('page_id', page_id);
 
-          if (pageConfigErr || !pageConfig || !pageConfig.workspace_id) {
-            const errReason = `Unmapped Page ID ${page_id}. No active fb_page_configs row found for any workspace.`;
+          if (pageConfigErr || !pageConfigs || pageConfigs.length === 0) {
+            const errReason = `Unmapped Page ID ${page_id}. No fb_page_configs record found for any workspace.`;
             
             await triggerAlert({
               alert_type: 'INVALID_PAGE_MAPPING',
               severity: 'CRITICAL',
               title: 'Unmapped Facebook Page Webhook Received',
               message: errReason,
-              resolution_hint: 'Go to Settings → Integrations → Meta Ads and reconnect the Facebook Page.',
+              resolution_hint: 'Verify the Facebook Page is connected in StudioCore Meta Integration.',
               metadata: { page_id, leadgen_id, form_id },
             });
 
@@ -207,8 +206,44 @@ export async function POST(req: NextRequest) {
               raw_payload: payload,
             });
 
+            continue; // REJECT LEAD - DO NOT GUESS
+          }
+
+          // Check if multiple active workspaces have claimed the exact same page_id
+          const activeConfigs = pageConfigs.filter((c: any) => c.is_active !== false && !!c.workspace_id);
+          const distinctWorkspaces = Array.from(new Set(activeConfigs.map((c: any) => c.workspace_id)));
+
+          if (distinctWorkspaces.length > 1) {
+            const ambigReason = `Ambiguous page ownership: Page ${page_id} is claimed by multiple active workspaces (${distinctWorkspaces.join(', ')}). Rejecting to prevent cross-tenant leak.`;
+            console.error(`[CRITICAL SECURITY ALERT] ${ambigReason}`);
+
+            await triggerAlert({
+              alert_type: 'INVALID_PAGE_MAPPING',
+              severity: 'CRITICAL',
+              title: 'Ambiguous Multi-Tenant Page Claim',
+              message: ambigReason,
+              resolution_hint: 'Ensure each Facebook page is associated with only one active StudioCore workspace.',
+              metadata: { page_id, leadgen_id, distinctWorkspaces },
+            });
+
+            await logWebhookRequest({
+              request_id: requestId,
+              page_id,
+              form_id,
+              leadgen_id,
+              event_type: 'leadgen_security_rejected',
+              http_method: 'POST',
+              client_ip: clientIp,
+              duration_ms: performance.now() - startTime,
+              status: 'FAILED',
+              error_message: ambigReason,
+              raw_payload: payload,
+            });
+
             continue; // REJECT LEAD
           }
+
+          const pageConfig = activeConfigs[0] || pageConfigs[0];
 
           if (pageConfig.is_active === false) {
             await logWebhookRequest({

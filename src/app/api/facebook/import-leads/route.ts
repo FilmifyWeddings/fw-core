@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { verifyMetaAuth } from '@/lib/meta-auth';
 import { classifyLead } from '@/lib/classification';
 import { LeadStatus } from '@/types';
 
@@ -18,25 +19,30 @@ function fuzzyMapField(key: string): string | null {
 
 /**
  * POST /api/facebook/import-leads
- * Body: { workspace_id, page_id, form_id }
+ * Body: { page_id, form_id }
  *
- * Pulls historical leads from Meta Graph API for a specific form,
- * maps them to our schema, and imports them into Supabase leads table.
+ * Pulls historical leads from Meta Graph API for a specific form belonging to authenticated workspace.
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { workspace_id, page_id, form_id } = body;
-
-    if (!workspace_id || !page_id || !form_id) {
-      return NextResponse.json({ error: 'workspace_id, page_id, form_id required' }, { status: 400 });
+    const authResult = await verifyMetaAuth(req, body.workspace_id);
+    if (!authResult.authorized && authResult.errorResponse) {
+      return authResult.errorResponse;
     }
 
-    // 1. Fetch Page Access Token from fb_page_configs
+    const workspaceId = authResult.workspaceId;
+    const { page_id, form_id } = body;
+
+    if (!page_id || !form_id) {
+      return NextResponse.json({ error: 'page_id and form_id required' }, { status: 400 });
+    }
+
+    // 1. Fetch Page Access Token from fb_page_configs strictly for this workspace
     const { data: pageConfig } = await supabaseAdmin
       .from('fb_page_configs')
       .select('page_access_token, page_name')
-      .eq('workspace_id', workspace_id)
+      .eq('workspace_id', workspaceId)
       .eq('page_id', page_id)
       .maybeSingle();
 
@@ -48,7 +54,7 @@ export async function POST(req: NextRequest) {
     const { data: formMapping } = await supabaseAdmin
       .from('fb_form_mappings')
       .select('mapping_config, is_tagging_enabled, form_name')
-      .eq('workspace_id', workspace_id)
+      .eq('workspace_id', workspaceId)
       .eq('form_id', form_id)
       .maybeSingle();
 
@@ -110,7 +116,7 @@ export async function POST(req: NextRequest) {
       const { data: existingLead } = await supabaseAdmin
         .from('leads')
         .select('id')
-        .eq('workspace_id', workspace_id)
+        .eq('workspace_id', workspaceId)
         .eq('meta_lead_id', leadgenId)
         .maybeSingle();
 
@@ -159,7 +165,7 @@ export async function POST(req: NextRequest) {
       const { error: insertErr } = await supabaseAdmin
         .from('leads')
         .insert({
-          workspace_id:      workspace_id,
+          workspace_id:      workspaceId,
           name:              leadName  || null,
           email:             leadEmail || null,
           phone:             leadPhone,
@@ -186,7 +192,7 @@ export async function POST(req: NextRequest) {
     // Log the import event
     if (importedCount > 0) {
       await supabaseAdmin.from('live_logs').insert({
-        workspace_id,
+        workspace_id: workspaceId,
         event_type: 'leads_imported',
         message: `Imported ${importedCount} historical leads for form: "${formName || form_id}". Duplicates skipped: ${duplicateCount}.`,
       });

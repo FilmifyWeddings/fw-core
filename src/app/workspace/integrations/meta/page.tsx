@@ -386,9 +386,9 @@ export default function MetaIntegrationPage() {
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'logs'>('forms');
 
   // Account Information
-  const [connectedAccountName, setConnectedAccountName] = useState('Sahil Dhonde');
+  const [connectedAccountName, setConnectedAccountName] = useState('Meta User');
   const [connectedUserEmail, setConnectedUserEmail] = useState('');
-  const [businessName, setBusinessName] = useState('Filmify Weddings');
+  const [businessName, setBusinessName] = useState('Meta Business');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
   const [pages, setPages] = useState<ConnectedPage[]>([]);
@@ -437,15 +437,17 @@ export default function MetaIntegrationPage() {
   const fetchMetaSyncData = useCallback(async () => {
     setIsSyncing(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/meta/status?nocache=${Date.now()}`, { headers });
+      const res = await fetch(`/api/meta/status?workspace_id=${wsId}&nocache=${Date.now()}`, { headers });
       if (!res.ok) throw new Error(`Status ${res.status}`);
       const data = await res.json();
       if (data.success && data.connection?.is_connected) {
         setIsConnected(true);
-        setConnectedAccountName(data.connection.user_name || 'Sahil Dhonde');
-        setConnectedUserEmail(data.connection.user_email || 'dhondesanty1760@gmail.com');
-        setBusinessName(data.connection.business_name || 'Filmify Weddings');
+        setConnectedAccountName(data.connection.user_name || 'Meta User');
+        setConnectedUserEmail(data.connection.user_email || '');
+        setBusinessName(data.connection.business_name || 'Meta Business');
         setPages(data.pages || []);
         setLeadForms(data.forms || []);
         setRealSyncLogs(data.sync_logs || []);
@@ -489,8 +491,14 @@ export default function MetaIntegrationPage() {
     setShowDisconnectModal(false);
     setIsSyncing(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
-      const res = await fetch('/api/meta/disconnect', { method: 'POST', headers, body: '{}' });
+      const res = await fetch('/api/meta/disconnect', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ workspace_id: wsId }),
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         setIsConnected(false); setPages([]); setLeadForms([]); setRealSyncLogs([]); setTotalLeadsSynced(0);
@@ -511,11 +519,13 @@ export default function MetaIntegrationPage() {
     setLeadForms(prev => prev.map(f => f.form_id === formId ? { ...f, is_enabled: newState } : f));
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
       const res = await fetch('/api/meta/forms/toggle', {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ form_id: formId, is_enabled: newState }),
+        body: JSON.stringify({ form_id: formId, is_enabled: newState, workspace_id: wsId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
@@ -538,11 +548,13 @@ export default function MetaIntegrationPage() {
     setLeadForms(prev => prev.map(f => f.form_id === formId ? { ...f, contact_group_id: groupId } : f));
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
       const res = await fetch('/api/meta/forms/mapping', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ form_id: formId, contact_group_id: groupId }),
+        body: JSON.stringify({ form_id: formId, contact_group_id: groupId, workspace_id: wsId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
@@ -565,11 +577,13 @@ export default function MetaIntegrationPage() {
     setPages(prev => prev.map(p => p.page_id === pageId ? { ...p, is_active: nextState } : p));
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
       const res = await fetch('/api/facebook/pages', {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ page_id: pageId, is_active: nextState }),
+        body: JSON.stringify({ page_id: pageId, is_active: nextState, workspace_id: wsId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
@@ -595,11 +609,13 @@ export default function MetaIntegrationPage() {
     setSyncStates(prev => new Map(prev).set(formId, { phase: 'fetching', imported: 0, skipped: 0, failed: 0, total: 0, current: 0, message: 'Starting…' }));
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
       const res = await fetch('/api/meta/forms/sync', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ form_id: formId, page_id: pageId }),
+        body: JSON.stringify({ form_id: formId, page_id: pageId, workspace_id: wsId }),
         signal: controller.signal,
       });
 

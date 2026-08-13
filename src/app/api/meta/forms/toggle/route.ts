@@ -79,12 +79,12 @@ export async function PATCH(req: NextRequest) {
       try {
         const { data: formRow } = await supabaseAdmin
           .from('fb_lead_forms')
-          .select('page_id, questions')
+          .select('page_id')
           .eq('workspace_id', workspaceId)
           .eq('form_id', form_id)
           .maybeSingle();
 
-        if (formRow?.page_id && (!formRow.questions || (Array.isArray(formRow.questions) && formRow.questions.length === 0))) {
+        if (formRow?.page_id) {
           const { data: pageRow } = await supabaseAdmin
             .from('fb_page_configs')
             .select('page_access_token')
@@ -98,10 +98,17 @@ export async function PATCH(req: NextRequest) {
             const gData = await res.json();
             if (gData?.questions && Array.isArray(gData.questions)) {
               await supabaseAdmin
-                .from('fb_lead_forms')
-                .update({ questions: gData.questions, updated_at: now })
-                .eq('workspace_id', workspaceId)
-                .eq('form_id', form_id);
+                .from('fb_form_mappings')
+                .upsert({
+                  workspace_id: workspaceId,
+                  form_id,
+                  page_id: formRow.page_id,
+                  form_name: data?.form_name || form_id,
+                  is_active: true,
+                  is_tagging_enabled: true,
+                  mapping_config: { questions: gData.questions },
+                  updated_at: now,
+                }, { onConflict: 'workspace_id,form_id' });
             }
           }
         }

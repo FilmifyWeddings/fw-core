@@ -243,13 +243,27 @@ export async function GET(req: NextRequest) {
     } catch (_) {}
   }
 
+  let workspaceId: string | null = null;
   const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
-  if (!authResult.authorized) {
+  if (authResult.authorized && authResult.workspaceId) {
+    workspaceId = authResult.workspaceId;
+  } else if (requestedWorkspaceId && requestedWorkspaceId !== '00000000-0000-0000-0000-000000000000') {
+    const { data: validProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', requestedWorkspaceId)
+      .maybeSingle();
+
+    if (validProfile?.id) {
+      workspaceId = validProfile.id;
+    }
+  }
+
+  if (!workspaceId) {
     console.error('[Meta Callback Security Failure] Could not resolve authenticated workspace_id.');
     return NextResponse.redirect(`${targetRedirect}?meta_error=${encodeURIComponent('Authentication failure: workspace could not be verified')}`);
   }
 
-  const workspaceId = authResult.workspaceId;
   console.log(`[Meta OAuth Callback] Storing connection for Workspace ID: ${workspaceId}`);
 
   try {
@@ -327,7 +341,7 @@ export async function GET(req: NextRequest) {
       for (const form of forms) {
         console.log(`[Supabase DB Write Audit] Upserting form "${form.form_name}" (${form.form_id}) into fb_lead_forms & fb_form_mappings...`);
 
-        // SAVE FORM INTO fb_lead_forms
+        // SAVE FORM INTO fb_lead_forms (with only valid columns)
         const { data: formResult, error: formErr } = await supabaseAdmin
           .from('fb_lead_forms')
           .upsert({
@@ -335,8 +349,11 @@ export async function GET(req: NextRequest) {
             page_id: page.page_id,
             form_id: form.form_id,
             form_name: form.form_name,
-            questions: form.questions || [],
-            status: form.status, leads_count: form.sync_count || 0, created_time: form.created_time, updated_at: new Date().toISOString(),
+            status: form.status || 'ACTIVE',
+            leads_count: form.sync_count || 0,
+            created_time: form.created_time || new Date().toISOString(),
+            is_enabled: true,
+            updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' })
           .select('*');
 
@@ -355,6 +372,7 @@ export async function GET(req: NextRequest) {
             form_name: form.form_name,
             is_active: true,
             is_tagging_enabled: true,
+            mapping_config: { questions: form.questions || [] },
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' });
       }

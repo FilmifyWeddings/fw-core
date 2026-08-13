@@ -1,24 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { verifyMetaAuth } from '@/lib/meta-auth';
 
 /**
- * GET /api/facebook/forms?workspace_id=XXX&page_id=YYY
+ * GET /api/facebook/forms?page_id=YYY
  *
- * Ek specific Facebook Page ke saare Lead Forms fetch karta hai.
+ * Fetches Lead Forms for a specific Facebook Page belonging to the authenticated workspace.
  * Meta Graph API: GET /{page-id}/leadgen_forms
- * DB se existing mappings bhi merge karta hai.
+ * Merges with existing DB mappings.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspace_id');
+  const requestedWorkspaceId = searchParams.get('workspace_id');
   const pageId = searchParams.get('page_id');
 
-  if (!workspaceId || !pageId) {
-    return NextResponse.json({ error: 'workspace_id and page_id required' }, { status: 400 });
+  const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
+  if (!authResult.authorized && authResult.errorResponse) {
+    return authResult.errorResponse;
+  }
+
+  const workspaceId = authResult.workspaceId;
+
+  if (!pageId) {
+    return NextResponse.json({ error: 'page_id required' }, { status: 400 });
   }
 
   try {
-    // Page Access Token fetch karo from fb_page_configs
+    // Page Access Token fetch strictly for authenticated workspace and page_id
     const { data: pageConfig } = await supabaseAdmin
       .from('fb_page_configs')
       .select('page_access_token, page_name')
@@ -29,9 +37,9 @@ export async function GET(req: NextRequest) {
     if (!pageConfig?.page_access_token) {
       return NextResponse.json({
         success: false,
-        error: 'Page not connected. Pehle page save karo.',
+        error: 'Page not connected to your workspace. Please connect this page first.',
         forms: [],
-      });
+      }, { status: 404 });
     }
 
     // Mock bypass check for forms
@@ -111,17 +119,17 @@ export async function GET(req: NextRequest) {
     const metaData = await metaRes.json();
     const metaForms = metaData.data || [];
 
-    // Auto-save fetched Meta forms into fb_lead_forms & fb_form_mappings
+    // Auto-save fetched Meta forms strictly with authenticated workspace_id
     for (const form of metaForms) {
       await supabaseAdmin.from('fb_lead_forms').upsert({
         workspace_id: workspaceId,
         page_id: pageId,
         form_id: form.id,
         form_name: form.name,
-        questions: form.questions || [],
-        status: form.status,
+        status: form.status || 'ACTIVE',
         leads_count: form.leads_count || 0,
-        created_time: form.created_time,
+        created_time: form.created_time || new Date().toISOString(),
+        is_enabled: true,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id,form_id' });
 
@@ -132,11 +140,12 @@ export async function GET(req: NextRequest) {
         form_name: form.name,
         is_active: true,
         is_tagging_enabled: true,
+        mapping_config: { questions: form.questions || [] },
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id,form_id' });
     }
 
-    // Existing form mappings from DB
+    // Existing form mappings strictly from DB for this workspace
     const { data: savedMappings } = await supabaseAdmin
       .from('fb_form_mappings')
       .select('*')
@@ -155,7 +164,6 @@ export async function GET(req: NextRequest) {
         leads_count: form.leads_count || 0,
         created_time: form.created_time,
         questions: form.questions || [],
-        // From DB
         is_active: saved?.is_active ?? false,
         is_tagging_enabled: saved?.is_tagging_enabled ?? false,
         mapping_config: saved?.mapping_config ?? {},
@@ -179,21 +187,39 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/facebook/forms
- * Body: { workspace_id, page_id, form_id, form_name, is_active, is_tagging_enabled, mapping_config, distribution_config }
+ * Body: { page_id, form_id, form_name, is_active, is_tagging_enabled, mapping_config, distribution_config }
  *
- * Form mapping config ko Supabase mein upsert karta hai.
+ * Saves form mapping strictly for the authenticated workspace.
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const authResult = await verifyMetaAuth(req, body.workspace_id);
+    if (!authResult.authorized && authResult.errorResponse) {
+      return authResult.errorResponse;
+    }
+
+    const workspaceId = authResult.workspaceId;
     const {
-      workspace_id, page_id, form_id, form_name,
+      page_id, form_id, form_name,
       is_active, is_tagging_enabled, mapping_config,
       distribution_config, contact_group_id,
     } = body;
 
-    if (!workspace_id || !page_id || !form_id) {
-      return NextResponse.json({ error: 'workspace_id, page_id, form_id required' }, { status: 400 });
+    if (!page_id || !form_id) {
+      return NextResponse.json({ error: 'page_id and form_id required' }, { status: 400 });
+    }
+
+    // Verify page_id actually belongs to this workspace
+    const { data: pageRecord } = await supabaseAdmin
+      .from('fb_page_configs')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('page_id', page_id)
+      .maybeSingle();
+
+    if (!pageRecord) {
+      return NextResponse.json({ error: 'Page not found in your workspace' }, { status: 403 });
     }
 
     const mergedMappingConfig = {
@@ -204,7 +230,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabaseAdmin
       .from('fb_form_mappings')
       .upsert({
-        workspace_id,
+        workspace_id: workspaceId,
         page_id,
         form_id,
         form_name: form_name || null,
@@ -224,3 +250,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+
