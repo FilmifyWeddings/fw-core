@@ -42,7 +42,8 @@ import {
   AlertTriangle,
   ChevronDown,
   Sparkles,
-  User
+  User,
+  Key
 } from 'lucide-react';
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
@@ -431,6 +432,12 @@ export default function MetaIntegrationPage() {
   const [distSaving, setDistSaving] = useState(false);
   const [distEnabled, setDistEnabled] = useState(true);
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
+
+  // Direct Token Sync States
+  const [showDirectTokenModal, setShowDirectTokenModal] = useState(false);
+  const [directPageId, setDirectPageId] = useState('');
+  const [directPageToken, setDirectPageToken] = useState('');
+  const [directTokenConnecting, setDirectTokenConnecting] = useState(false);
 
   // Auth Header helper
   const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
@@ -888,15 +895,23 @@ export default function MetaIntegrationPage() {
                 <button
                   onClick={fetchMetaSyncData}
                   disabled={isSyncing}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1"
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                   Refresh
                 </button>
 
                 <button
+                  onClick={() => setShowDirectTokenModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Key className="w-3.5 h-3.5 text-emerald-600" />
+                  Connect via Page Token
+                </button>
+
+                <button
                   onClick={handleConnectFacebook}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1"
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <UserCheck className="w-3.5 h-3.5" />
                   Switch Account
@@ -904,7 +919,7 @@ export default function MetaIntegrationPage() {
 
                 <button
                   onClick={() => setShowDisconnectModal(true)}
-                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all flex items-center gap-1"
+                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <Unplug className="w-3.5 h-3.5" />
                   Disconnect
@@ -912,7 +927,7 @@ export default function MetaIntegrationPage() {
               </div>
             </div>
           ) : (
-            /* PROMINENT DISCONNECTED STATE WITH OFFICIAL FACEBOOK LOGO BUTTON */
+            /* PROMINENT DISCONNECTED STATE WITH OFFICIAL FACEBOOK LOGO BUTTON & DIRECT TOKEN SYNC */
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-2 sm:p-4 bg-gradient-to-r from-blue-50/50 via-white to-slate-50 rounded-2xl border border-blue-100">
               <div className="flex items-center gap-3 text-center sm:text-left">
                 <FacebookMetaLogo size="lg" />
@@ -922,14 +937,23 @@ export default function MetaIntegrationPage() {
                 </div>
               </div>
 
-              <button
-                onClick={handleConnectFacebook}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs shadow-lg shadow-[#0866FF]/25 transition-all flex items-center justify-center gap-2.5 active:scale-95 shrink-0"
-              >
-                <FacebookMetaLogo size="sm" />
-                <span>Connect Facebook Page</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
+                <button
+                  onClick={handleConnectFacebook}
+                  className="px-4 py-2.5 rounded-2xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs shadow-md shadow-[#0866FF]/25 transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                >
+                  <FacebookMetaLogo size="sm" />
+                  <span>OAuth Connect</span>
+                </button>
+
+                <button
+                  onClick={() => setShowDirectTokenModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-extrabold text-xs shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Key className="w-4 h-4 text-emerald-600" />
+                  <span>Connect via Page Token</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -1674,6 +1698,145 @@ export default function MetaIntegrationPage() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── FACEBOOK DIRECT TOKEN SYNC MODAL ───────────────────────────────────── */}
+      {showDirectTokenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden flex flex-col">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-5 flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 flex items-center justify-center font-bold">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold flex items-center gap-2">
+                    Facebook Direct Token Sync
+                  </h3>
+                  <p className="text-xs text-slate-300 font-medium">
+                    Meta Token Connection Alternative
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDirectTokenModal(false)}
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!directPageId.trim() || !directPageToken.trim()) {
+                  showToast('Both Page ID and Page Access Token are required.', 'error');
+                  return;
+                }
+                setDirectTokenConnecting(true);
+                try {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const wsId = session?.user?.id || '';
+                  const headers = await getAuthHeaders();
+                  const res = await fetch('/api/meta/direct-token', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                      workspace_id: wsId,
+                      page_id: directPageId.trim(),
+                      page_access_token: directPageToken.trim(),
+                    }),
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (res.ok && data.success) {
+                    showToast(`🎯 Connected Page "${data.page?.page_name || directPageId}"! Fetched ${data.forms_count || 0} forms.`);
+                    setShowDirectTokenModal(false);
+                    setDirectPageId('');
+                    setDirectPageToken('');
+                    fetchMetaSyncData();
+                  } else {
+                    showToast(data.error || 'Direct Token Connection failed.', 'error');
+                  }
+                } catch (err: any) {
+                  showToast('Connection Error: ' + err.message, 'error');
+                } finally {
+                  setDirectTokenConnecting(false);
+                }
+              }}
+              className="p-5 space-y-4 text-slate-800"
+            >
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-slate-600">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] leading-relaxed">
+                  Enter your <strong>Facebook Page ID</strong> and <strong>Page Access Token</strong>. This connects your Page directly via Graph API, fetches lead forms, and subscribes to leadgen Webhooks.
+                </p>
+              </div>
+
+              {/* Input 1: Page ID */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
+                  <span>Facebook Page ID (page_id)</span>
+                  <span className="text-[10px] text-slate-400 font-mono">Numeric ID</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 335849269615110"
+                  value={directPageId}
+                  onChange={(e) => setDirectPageId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Input 2: Page Access Token */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
+                  <span>Page Access Token (page_access_token)</span>
+                  <span className="text-[10px] text-slate-400 font-mono">EAA... Token</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="e.g. EAAXXXXXX..."
+                  value={directPageToken}
+                  onChange={(e) => setDirectPageToken(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+
+              {/* Submit Footer */}
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowDirectTokenModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={directTokenConnecting}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {directTokenConnecting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Testing Token & Connecting…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Fetch Forms & Connect</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
 
           </div>
         </div>
