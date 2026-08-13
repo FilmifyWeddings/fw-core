@@ -62,54 +62,91 @@ export async function GET(req: NextRequest) {
 
     const workspaceId = authResult.workspaceId;
 
-    // Get form + page access token from DB
-    const { data: formRow, error: formErr } = await supabaseAdmin
+    // 1. Get form row from fb_lead_forms (try matching workspace_id first, fallback to form_id)
+    let { data: formRow } = await supabaseAdmin
       .from('fb_lead_forms')
-      .select('form_id, form_name, page_id, status, leads_count, created_time, is_enabled')
+      .select('*')
       .eq('workspace_id', workspaceId)
       .eq('form_id', formId)
-      .single();
+      .maybeSingle();
 
-    if (formErr || !formRow) {
-      return NextResponse.json({ success: false, error: 'Form not found in database' }, { status: 404 });
+    if (!formRow) {
+      const { data: fallbackRow } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('*')
+        .eq('form_id', formId)
+        .maybeSingle();
+      if (fallbackRow) formRow = fallbackRow;
     }
 
-    const { data: pageRow } = await supabaseAdmin
-      .from('fb_page_configs')
-      .select('page_name, page_access_token')
-      .eq('workspace_id', workspaceId)
-      .eq('page_id', formRow.page_id)
-      .single();
+    // 2. Resolve access token & page info
+    let pageToken = '';
+    let pageName = 'Facebook Page';
+    let pageId = formRow?.page_id || '';
 
-    const pageToken = pageRow?.page_access_token;
-    const pageName = pageRow?.page_name || 'Facebook Page';
+    if (pageId) {
+      const { data: pageRow } = await supabaseAdmin
+        .from('fb_page_configs')
+        .select('page_name, page_access_token')
+        .eq('page_id', pageId)
+        .maybeSingle();
+
+      if (pageRow?.page_access_token) {
+        pageToken = pageRow.page_access_token;
+        pageName = pageRow.page_name || 'Facebook Page';
+      }
+    }
 
     if (!pageToken) {
-      return NextResponse.json({ success: false, error: 'Page access token not found. Please re-authenticate.' }, { status: 403 });
+      const { data: conn } = await supabaseAdmin
+        .from('integration_credentials')
+        .select('access_token')
+        .eq('provider', 'meta')
+        .eq('status', 'connected')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (conn?.access_token) {
+        pageToken = conn.access_token;
+      }
     }
 
-    // Fetch real form definition from Meta Graph API
-    const graphUrl = `https://graph.facebook.com/v20.0/${formId}?fields=id,name,status,questions,leads_count,created_time&access_token=${pageToken}`;
-    const graphRes = await fetch(graphUrl);
-    const graphData = await graphRes.json();
+    let rawQuestions: any[] = formRow?.questions || [];
+    let formName = formRow?.form_name || 'Instant Lead Form';
+    let formStatus = (formRow?.status || 'ACTIVE').toUpperCase();
+    let leadsCount = formRow?.leads_count || 0;
+    let createdTime = formRow?.created_time || new Date().toISOString();
 
-    if (graphData.error) {
-      console.error('[Forms Preview API] Graph API Error:', JSON.stringify(graphData.error, null, 2));
-      return NextResponse.json({
-        success: false,
-        error: `Meta Graph API Error: ${graphData.error.message}`,
-        graph_error: graphData.error,
-      }, { status: 502 });
+    // 3. Try fetching live form definition from Meta Graph API if pageToken is available
+    if (pageToken) {
+      try {
+        const graphUrl = `https://graph.facebook.com/v20.0/${formId}?fields=id,name,status,questions,leads_count,created_time&access_token=${pageToken}`;
+        const graphRes = await fetch(graphUrl);
+        const graphData = await graphRes.json().catch(() => ({}));
+
+        if (!graphData.error && graphData.id) {
+          if (graphData.questions && graphData.questions.length > 0) {
+            rawQuestions = graphData.questions;
+          }
+          if (graphData.name) formName = graphData.name;
+          if (graphData.status) formStatus = graphData.status.toUpperCase();
+          if (graphData.leads_count !== undefined) leadsCount = graphData.leads_count;
+          if (graphData.created_time) createdTime = graphData.created_time;
+        }
+      } catch (err: any) {
+        console.warn('[Forms Preview API Graph Query Warning]:', err.message);
+      }
     }
 
-    // Map questions to CRM fields
-    const questions = (graphData.questions || []).map((q: any, idx: number) => {
+    // 4. Map questions to CRM fields
+    const questions = rawQuestions.map((q: any, idx: number) => {
       const mapping = mapToCrmField(q.type || 'CUSTOM', q.key || '', q.label || '');
       return {
         index: idx + 1,
-        question_id: q.id,
-        key: q.key,
-        label: q.label,
+        question_id: q.id || `q_${idx}`,
+        key: q.key || `key_${idx}`,
+        label: q.label || q.key || `Question ${idx + 1}`,
         type: q.type || 'CUSTOM',
         options: q.options || [],
         crm_field: mapping.crm_field,
@@ -121,14 +158,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       form: {
-        form_id: graphData.id || formRow.form_id,
-        form_name: graphData.name || formRow.form_name,
-        status: (graphData.status || formRow.status || 'ACTIVE').toUpperCase(),
-        page_id: formRow.page_id,
+        form_id: formId,
+        form_name: formName,
+        status: formStatus,
+        page_id: pageId,
         page_name: pageName,
-        leads_count: graphData.leads_count || formRow.leads_count || 0,
-        created_time: graphData.created_time || formRow.created_time,
-        is_enabled: formRow.is_enabled ?? true,
+        leads_count: leadsCount,
+        created_time: createdTime,
+        is_enabled: formRow?.is_enabled ?? true,
         questions,
         questions_count: questions.length,
       },

@@ -19,9 +19,9 @@ export async function GET(req: NextRequest) {
   console.log(`[STATUS API AUDIT] Security verified workspace_id: ${workspaceId}`);
 
   try {
-    let effectiveWorkspaceId = workspaceId;
+    const effectiveWorkspaceId = workspaceId;
 
-    // 1. Fetch Connection Token (with fallback resolution)
+    // 1. Fetch Connection Token (strictly scoped to effectiveWorkspaceId)
     let { data: conn } = await supabaseAdmin
       .from('integration_credentials')
       .select('*')
@@ -39,23 +39,6 @@ export async function GET(req: NextRequest) {
 
       if (altConn) {
         conn = altConn;
-        effectiveWorkspaceId = requestedWorkspaceId;
-      }
-    }
-
-    if (!conn) {
-      const { data: latestConn } = await supabaseAdmin
-        .from('integration_credentials')
-        .select('*')
-        .eq('provider', 'meta')
-        .eq('status', 'connected')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (latestConn) {
-        conn = latestConn;
-        effectiveWorkspaceId = latestConn.user_id;
       }
     }
 
@@ -90,8 +73,8 @@ export async function GET(req: NextRequest) {
       .eq('id', effectiveWorkspaceId)
       .maybeSingle();
 
-    const metaUserName = conn?.config?.meta_user_name || profile?.full_name || 'Sahil Dhonde';
-    const metaUserEmail = conn?.config?.meta_user_email || profile?.email || 'dhondesanty1760@gmail.com';
+    const metaUserName = conn?.config?.meta_user_name || profile?.full_name || 'Facebook User';
+    const metaUserEmail = conn?.config?.meta_user_email || profile?.email || '';
     const connectedDate = conn?.updated_at || conn?.created_at || new Date().toISOString();
     let tokenStatus: 'ACTIVE' | 'EXPIRED' | 'NEEDS_RECONNECT' | 'DISCONNECTED' = 'ACTIVE';
 
@@ -110,37 +93,22 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Query pages for workspace (with self-healing fallback)
-    let { data: pagesData } = await supabaseAdmin
+    // 3. Query pages for workspace (strictly for effectiveWorkspaceId)
+    const { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
       .eq('workspace_id', effectiveWorkspaceId);
 
-    if ((!pagesData || pagesData.length === 0) && conn?.access_token) {
-      const { data: fallbackPages } = await supabaseAdmin
-        .from('fb_page_configs')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
-      if (fallbackPages && fallbackPages.length > 0) {
-        pagesData = fallbackPages;
-        // Heal workspace_id mapping
-        for (const fp of fallbackPages) {
-          await supabaseAdmin.from('fb_page_configs').update({ workspace_id: effectiveWorkspaceId }).eq('id', fp.id);
-        }
-      }
-    }
-
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
-      page_name: p.page_name || 'Filmify Weddings',
-      page_category: p.page_category || 'Photography and videography',
+      page_name: p.page_name || 'Facebook Page',
+      page_category: p.page_category || 'Business Page',
       page_access_token: p.page_access_token || '',
       is_active: p.is_active ?? true,
     }));
 
     const pageMap = new Map((pagesData || []).map((p: any) => [p.page_id, p.page_name]));
-    const businessName = pages[0]?.page_name || metaUserName || 'Filmify Weddings';
+    const businessName = pages[0]?.page_name || metaUserName || 'Facebook Business';
 
     // 4. Query forms for workspace
     const { data: rawFormsData } = await supabaseAdmin
