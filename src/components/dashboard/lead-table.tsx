@@ -622,7 +622,13 @@ export function LeadTable({
   const [newColOptionsText, setNewColOptionsText] = useState(''); // comma-separated for custom dropdowns
 
   // Dynamic custom Lead Sources
-  const [customSources, setCustomSources] = useState<string[]>(['Facebook', 'Google', 'Instagram', 'Manual', 'Ref']);
+  const [customSources, setCustomSources] = useState<any[]>([
+    { id: 's1', name: 'Facebook', color: '#3b82f6' },
+    { id: 's2', name: 'Google', color: '#f43f5e' },
+    { id: 's3', name: 'Instagram', color: '#ec4899' },
+    { id: 's4', name: 'Manual', color: '#10b981' },
+    { id: 's5', name: 'Ref', color: '#f59e0b' },
+  ]);
   const [newSourceText, setNewSourceText] = useState('');
   const [showAddSourceModal, setShowAddSourceModal] = useState(false);
 
@@ -936,11 +942,23 @@ export function LeadTable({
 
   // Load configuration preferences
   useEffect(() => {
-    const localSources = localStorage.getItem('leads_custom_sources');
+    const localSources = localStorage.getItem('leads_workspace_sources') || localStorage.getItem('leads_custom_sources');
     if (localSources) {
       try {
-        setCustomSources(JSON.parse(localSources));
+        const parsed = JSON.parse(localSources);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCustomSources(parsed);
+        }
       } catch (_) {}
+    } else {
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.settings?.lead_sources)) {
+            setCustomSources(data.settings.lead_sources);
+          }
+        })
+        .catch(() => {});
     }
 
     const subtextPref = localStorage.getItem('leads_table_contact_subtext');
@@ -2536,12 +2554,18 @@ export function LeadTable({
                                       value={lead.source}
                                       placeholder="Select source"
                                       customAddTitle="Add Custom Lead Source"
-                                      options={customSources.map(src => ({ value: src, label: src, color: '#f97316' }))}
-                                      onAddCustomOption={(name) => {
+                                      options={customSources.map(src => {
+                                        const isObj = typeof src === 'object' && src !== null;
+                                        const val = isObj ? (src.name || src.value) : String(src);
+                                        const col = isObj ? (src.color || '#3b82f6') : '#3b82f6';
+                                        return { value: val, label: val, color: col };
+                                      })}
+                                      onAddCustomOption={(name, color) => {
                                         if (!name.trim()) return;
-                                        const updated = [name.trim(), ...customSources];
-                                        setCustomSources(updated);
-                                        localStorage.setItem('leads_custom_sources', JSON.stringify(updated));
+                                        const newObj = { id: 'src_' + Date.now(), name: name.trim(), color: color || '#3b82f6' };
+                                        const updated = [newObj, ...customSources];
+                                        setCustomSources(updated as any);
+                                        localStorage.setItem('leads_workspace_sources', JSON.stringify(updated));
                                         handleInlineLeadEdit({ source: name.trim() }, lead.id);
                                       }}
                                       onChange={(val) => {
