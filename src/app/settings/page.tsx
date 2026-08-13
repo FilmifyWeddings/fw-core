@@ -4,13 +4,29 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
-  FileText, Coins, Clock, Globe, Users, Plus, Trash2, Edit2,
-  ChevronDown, Sparkles, Building2, Sliders, ToggleLeft, ToggleRight,
-  Sheet, CheckCircle2, ShieldCheck, Database, Table, HelpCircle
+  FileText, Coins, Clock, Globe, Users, Plus, Trash2,
+  ChevronDown, GripVertical, CheckCircle2, Table, ChevronRight
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type SettingsTab = 'leads' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
+
+interface DropdownItem {
+  id: string;
+  name: string;
+  color: string;
+}
+
+const GOOGLE_PRESET_COLORS = [
+  '#C5221F', // Red
+  '#FDE293', // Yellow
+  '#137333', // Green
+  '#1A73E8', // Blue
+  '#8E24AA', // Purple
+  '#F4511E', // Orange
+  '#00ATC4', // Cyan
+  '#616161', // Dark Gray
+];
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -19,45 +35,51 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState('');
+  const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
 
-  // 1. General & Studio Settings
-  const [studioName, setStudioName] = useState('Studio Core Workspace');
-  const [studioEmail, setStudioEmail] = useState('');
-
-  // 2. Leads Page Settings
+  // 1. Leads Page Settings
   const [leadPrefix, setLeadPrefix] = useState('LD-2026-');
-  const [leadDefaultOwner, setLeadDefaultOwner] = useState('Unassigned');
-  const [leadOwners, setLeadOwners] = useState<string[]>(['Unassigned', 'Sahil Dhonde', 'Sushant Nawale', 'Production Team']);
-  const [newOwnerName, setNewOwnerName] = useState('');
-  const [leadAutoAssignEnabled, setLeadAutoAssignEnabled] = useState(false);
-  const [leadAssignStrategy, setLeadAssignStrategy] = useState('round_robin');
-  const [budgetRanges, setBudgetRanges] = useState<string[]>(['₹50k - ₹1L', '₹1L - ₹2.5L', '₹2.5L - ₹5L', '₹5L+']);
-  const [newBudgetRange, setNewBudgetRange] = useState('');
+  const [leadOwners, setLeadOwners] = useState<DropdownItem[]>([
+    { id: '1', name: 'Unassigned', color: '#137333' },
+    { id: '2', name: 'Sahil Dhonde', color: '#1A73E8' },
+    { id: '3', name: 'Sushant Nawale', color: '#8E24AA' },
+    { id: '4', name: 'Production Team', color: '#C5221F' },
+  ]);
+  const [budgetRanges, setBudgetRanges] = useState<DropdownItem[]>([
+    { id: 'b1', name: '₹50k - ₹1L', color: '#137333' },
+    { id: 'b2', name: '₹1L - ₹2.5L', color: '#1A73E8' },
+    { id: 'b3', name: '₹2.5L - ₹5L', color: '#F4511E' },
+    { id: 'b4', name: '₹5L+', color: '#C5221F' },
+  ]);
 
-  // 3. Quotations Page Settings
+  // 2. Quotations Page Settings
   const [pdfTheme, setPdfTheme] = useState('royal_gold');
   const [quoteTerms, setQuoteTerms] = useState('Deliverables will be compiled and sent within 45 days of wedding event completion.');
   const [quoteExpiryDays, setQuoteExpiryDays] = useState(14);
   const [currency, setCurrency] = useState('INR');
   const [contractClauses, setContractClauses] = useState('1. Standard contract terms apply for all assignments.\n2. Final deliverables delivered post clearance.');
 
-  // 4. Finance & Invoice Settings
+  // 3. Finance & Invoice Settings
   const [invoicePrefix, setInvoicePrefix] = useState('INV-2026-');
   const [projectPrefix, setProjectPrefix] = useState('PRJ-2026-');
   const [gstPercent, setGstPercent] = useState(18);
   const [paymentTerms, setPaymentTerms] = useState('50% Retainer for booking lock, 50% on Event Date');
   const [upiId, setUpiId] = useState('studio@upi');
   const [bankDetails, setBankDetails] = useState('HDFC Bank, Acc: 50100987654321, IFSC: HDFC0001234');
-  const [expenseCategories, setExpenseCategories] = useState<string[]>(['Marketing', 'Crew Travel', 'Equipment', 'Editor Pay', 'Misc']);
-  const [newExpenseCat, setNewExpenseCat] = useState('');
+  const [expenseCategories, setExpenseCategories] = useState<DropdownItem[]>([
+    { id: 'e1', name: 'Marketing', color: '#1A73E8' },
+    { id: 'e2', name: 'Crew Travel', color: '#F4511E' },
+    { id: 'e3', name: 'Equipment', color: '#8E24AA' },
+    { id: 'e4', name: 'Editor Pay', color: '#137333' },
+  ]);
 
-  // 5. Attendance & Geofence Settings
+  // 4. Attendance Settings
   const [geofenceRadius, setGeofenceRadius] = useState(100);
   const [shiftStart, setShiftStart] = useState('09:30');
   const [graceMinutes, setGraceMinutes] = useState(15);
   const [breakLimitMinutes, setBreakLimitMinutes] = useState(60);
 
-  // 6. Meta & Integrations Settings
+  // 5. Meta Settings
   const [metaAutoSync, setMetaAutoSync] = useState(true);
 
   // Get Auth Headers helper
@@ -70,11 +92,11 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // Sync settings to localStorage so every page reads fresh values immediately
+  // Sync settings to localStorage
   const syncToLocalStorage = (wId: string, settingsObj: any) => {
     try {
-      localStorage.setItem(`settings_studio_${wId}`, settingsObj.studio_name || studioName);
-      localStorage.setItem(`settings_owners_${wId}`, JSON.stringify(settingsObj.lead_owners || leadOwners));
+      const ownerNames = (settingsObj.lead_owners || []).map((o: any) => typeof o === 'string' ? o : o.name);
+      localStorage.setItem(`settings_owners_${wId}`, JSON.stringify(ownerNames));
       localStorage.setItem(`settings_currency_${wId}`, settingsObj.quotation_currency || currency);
       localStorage.setItem(`settings_gst_${wId}`, String(settingsObj.invoice_gst_percent ?? gstPercent));
       localStorage.setItem(`settings_upi_${wId}`, settingsObj.invoice_upi_id || upiId);
@@ -82,7 +104,7 @@ export default function SettingsPage() {
     } catch (_) {}
   };
 
-  // Auth & Load Settings from Supabase
+  // Load Settings from Supabase
   const loadWorkspaceSettings = useCallback(async () => {
     setLoading(true);
     try {
@@ -102,16 +124,25 @@ export default function SettingsPage() {
         const data = await res.json();
         if (data.success && data.settings) {
           const s = data.settings;
-          setStudioName(s.studio_name || 'Studio Core Workspace');
-          setStudioEmail(s.studio_email || session.user.email || '');
 
           // Leads
           setLeadPrefix(s.sequence_leads_prefix || 'LD-2026-');
-          setLeadDefaultOwner(s.lead_default_owner || 'Unassigned');
-          if (Array.isArray(s.lead_owners) && s.lead_owners.length > 0) setLeadOwners(s.lead_owners);
-          setLeadAutoAssignEnabled(!!s.lead_auto_assign_enabled);
-          setLeadAssignStrategy(s.lead_auto_assign_strategy || 'round_robin');
-          if (Array.isArray(s.lead_budget_ranges)) setBudgetRanges(s.lead_budget_ranges);
+          if (Array.isArray(s.lead_owners) && s.lead_owners.length > 0) {
+            setLeadOwners(s.lead_owners.map((o: any, idx: number) => {
+              if (typeof o === 'string') {
+                return { id: String(idx + 1), name: o, color: GOOGLE_PRESET_COLORS[idx % GOOGLE_PRESET_COLORS.length] };
+              }
+              return o;
+            }));
+          }
+          if (Array.isArray(s.lead_budget_ranges)) {
+            setBudgetRanges(s.lead_budget_ranges.map((b: any, idx: number) => {
+              if (typeof b === 'string') {
+                return { id: `b_${idx}`, name: b, color: GOOGLE_PRESET_COLORS[idx % GOOGLE_PRESET_COLORS.length] };
+              }
+              return b;
+            }));
+          }
 
           // Quotes
           setPdfTheme(s.quotation_pdf_theme || 'royal_gold');
@@ -127,7 +158,14 @@ export default function SettingsPage() {
           setPaymentTerms(s.invoice_payment_terms || '');
           setUpiId(s.invoice_upi_id || '');
           setBankDetails(s.invoice_bank_details || '');
-          if (Array.isArray(s.expense_categories)) setExpenseCategories(s.expense_categories);
+          if (Array.isArray(s.expense_categories)) {
+            setExpenseCategories(s.expense_categories.map((c: any, idx: number) => {
+              if (typeof c === 'string') {
+                return { id: `e_${idx}`, name: c, color: GOOGLE_PRESET_COLORS[idx % GOOGLE_PRESET_COLORS.length] };
+              }
+              return c;
+            }));
+          }
 
           // Attendance
           setGeofenceRadius(s.geofence_radius_meters || 100);
@@ -161,13 +199,9 @@ export default function SettingsPage() {
       const headers = await getAuthHeaders();
 
       const payloadSettings = {
-        studio_name: studioName,
         sequence_leads_prefix: leadPrefix,
-        lead_default_owner: leadDefaultOwner,
-        lead_owners: leadOwners,
-        lead_auto_assign_enabled: leadAutoAssignEnabled,
-        lead_auto_assign_strategy: leadAssignStrategy,
-        lead_budget_ranges: budgetRanges,
+        lead_owners: leadOwners.map(o => o.name),
+        lead_budget_ranges: budgetRanges.map(b => b.name),
 
         quotation_pdf_theme: pdfTheme,
         quotation_pdf_terms: quoteTerms,
@@ -181,7 +215,7 @@ export default function SettingsPage() {
         invoice_payment_terms: paymentTerms,
         invoice_upi_id: upiId,
         invoice_bank_details: bankDetails,
-        expense_categories: expenseCategories,
+        expense_categories: expenseCategories.map(c => c.name),
 
         geofence_radius_meters: geofenceRadius,
         shift_start_time: shiftStart,
@@ -215,43 +249,118 @@ export default function SettingsPage() {
     }
   };
 
-  // Helper Array Modifiers
-  const handleAddOwner = () => {
-    if (!newOwnerName.trim()) return;
-    if (!leadOwners.includes(newOwnerName.trim())) {
-      setLeadOwners([...leadOwners, newOwnerName.trim()]);
-    }
-    setNewOwnerName('');
+  // Google Sheets Option Item Handlers
+  const handleUpdateItemName = (
+    list: DropdownItem[],
+    setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
+    id: string,
+    newName: string
+  ) => {
+    setList(list.map(item => item.id === id ? { ...item, name: newName } : item));
   };
 
-  const handleRemoveOwner = (name: string) => {
-    if (name === 'Unassigned') return;
-    setLeadOwners(leadOwners.filter(o => o !== name));
+  const handleUpdateItemColor = (
+    list: DropdownItem[],
+    setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
+    id: string,
+    newColor: string
+  ) => {
+    setList(list.map(item => item.id === id ? { ...item, color: newColor } : item));
+    setActiveColorPickerId(null);
   };
 
-  const handleAddBudgetRange = () => {
-    if (!newBudgetRange.trim()) return;
-    if (!budgetRanges.includes(newBudgetRange.trim())) {
-      setBudgetRanges([...budgetRanges, newBudgetRange.trim()]);
-    }
-    setNewBudgetRange('');
+  const handleRemoveItem = (
+    list: DropdownItem[],
+    setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
+    id: string
+  ) => {
+    setList(list.filter(item => item.id !== id));
   };
 
-  const handleRemoveBudgetRange = (range: string) => {
-    setBudgetRanges(budgetRanges.filter(b => b !== range));
+  const handleAddItem = (
+    list: DropdownItem[],
+    setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
+    prefix: string
+  ) => {
+    const nextIdx = list.length + 1;
+    const newColor = GOOGLE_PRESET_COLORS[(list.length) % GOOGLE_PRESET_COLORS.length];
+    setList([...list, { id: `${prefix}_${Date.now()}`, name: `Option ${nextIdx}`, color: newColor }]);
   };
 
-  const handleAddExpenseCat = () => {
-    if (!newExpenseCat.trim()) return;
-    if (!expenseCategories.includes(newExpenseCat.trim())) {
-      setExpenseCategories([...expenseCategories, newExpenseCat.trim()]);
-    }
-    setNewExpenseCat('');
-  };
+  // Render Google Sheets Style Dropdown Item List Component
+  const renderGoogleOptionList = (
+    list: DropdownItem[],
+    setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
+    prefix: string,
+    addLabel: string = "Add another item"
+  ) => (
+    <div className="space-y-2.5 pt-2">
+      {list.map((item) => (
+        <div key={item.id} className="flex items-center gap-2 sm:gap-3 group">
+          {/* Grip Handle */}
+          <div className="cursor-grab text-slate-300 hover:text-slate-500 transition-colors p-1">
+            <GripVertical className="w-5 h-5" />
+          </div>
 
-  const handleRemoveExpenseCat = (cat: string) => {
-    setExpenseCategories(expenseCategories.filter(c => c !== cat));
-  };
+          {/* Color Picker Pill Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setActiveColorPickerId(activeColorPickerId === item.id ? null : item.id)}
+              className="flex items-center gap-1.5 px-2.5 py-2 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-all shadow-xs cursor-pointer"
+            >
+              <span className="w-4 h-4 rounded-full shadow-inner" style={{ backgroundColor: item.color }} />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {/* Color Palette Popover */}
+            {activeColorPickerId === item.id && (
+              <div className="absolute left-0 top-11 z-30 p-2 bg-white border border-slate-200 rounded-xl shadow-xl flex gap-1.5">
+                {GOOGLE_PRESET_COLORS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => handleUpdateItemColor(list, setList, item.id, c)}
+                    className="w-5 h-5 rounded-full hover:scale-115 transition-transform cursor-pointer border border-black/10"
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Text Input Box */}
+          <input
+            type="text"
+            value={item.name}
+            onChange={e => handleUpdateItemName(list, setList, item.id, e.target.value)}
+            className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-none focus:border-[#0F9D58] focus:ring-1 focus:ring-[#0F9D58] shadow-xs"
+            placeholder="Option Name..."
+          />
+
+          {/* Trash Icon Button */}
+          <button
+            type="button"
+            onClick={() => handleRemoveItem(list, setList, item.id)}
+            className="p-2 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+            title="Delete option"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      ))}
+
+      {/* Add another item button */}
+      <button
+        type="button"
+        onClick={() => handleAddItem(list, setList, prefix)}
+        className="mt-2 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-[#0F9D58] font-bold text-xs rounded-xl transition-all shadow-xs border-dashed flex items-center gap-1.5 cursor-pointer"
+      >
+        <Plus className="w-4 h-4" />
+        <span>{addLabel}</span>
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50/80 text-slate-900 p-4 sm:p-6 md:p-8 font-sans">
@@ -264,13 +373,13 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Header Bar - Google Sheets Light Aesthetic */}
+      {/* Header Bar */}
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.back()}
-              className="p-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 transition-all shadow-sm"
+              className="p-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 transition-all shadow-xs"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -305,37 +414,7 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {/* Studio General Overview Card */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-              Studio / Business Name
-            </label>
-            <div className="relative">
-              <Building2 className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
-              <input
-                type="text"
-                value={studioName}
-                onChange={e => setStudioName(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] focus:bg-white transition-all"
-                placeholder="Enter Studio Name"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-              Primary Account Email (Supabase User ID)
-            </label>
-            <input
-              type="text"
-              readOnly
-              value={studioEmail}
-              className="w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-slate-500 cursor-not-allowed"
-            />
-          </div>
-        </div>
-
-        {/* Page-Wise Settings Tabs Header - Google Sheets Filter Style */}
+        {/* Page-Wise Settings Tabs Header */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 scrollbar-none">
           {[
             { id: 'leads', label: '🎯 Leads & Pipeline', icon: Target },
@@ -352,7 +431,7 @@ export default function SettingsPage() {
                 onClick={() => setActiveTab(tab.id as SettingsTab)}
                 className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
                   isActive 
-                    ? 'bg-[#0F9D58] text-white shadow-sm border border-[#0B8043]' 
+                    ? 'bg-[#0F9D58] text-white shadow-xs border border-[#0B8043]' 
                     : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
                 }`}
               >
@@ -364,7 +443,7 @@ export default function SettingsPage() {
 
         {/* Content Panel */}
         {loading ? (
-          <div className="py-20 text-center text-slate-500 space-y-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div className="py-20 text-center text-slate-500 space-y-3 bg-white rounded-2xl border border-slate-200 shadow-xs">
             <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#0F9D58]" />
             <p className="text-sm font-semibold">Loading user settings from Supabase Database...</p>
           </div>
@@ -373,139 +452,52 @@ export default function SettingsPage() {
 
             {/* 1. LEADS PAGE SETTINGS */}
             {activeTab === 'leads' && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
                 <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#0F9D58] flex items-center justify-center font-bold">
                     <Target className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-slate-900">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners, Auto-Assignment, and Lead ID Prefix</p>
+                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners dropdown options & Lead ID sequence prefix</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Lead Prefix */}
-                  <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      Lead ID Sequence Prefix
-                    </label>
-                    <input
-                      type="text"
-                      value={leadPrefix}
-                      onChange={e => setLeadPrefix(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] focus:bg-white"
-                    />
-                    <p className="text-[11px] text-slate-400 mt-1">Format: `LD-2026-001`</p>
-                  </div>
-
-                  {/* Auto Assign Toggle */}
-                  <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      Lead Auto-Distribution Engine
-                    </label>
-                    <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-300 rounded-xl">
-                      <span className="text-xs font-bold text-slate-800">Round-Robin Auto Assign</span>
-                      <button
-                        onClick={() => setLeadAutoAssignEnabled(!leadAutoAssignEnabled)}
-                        className="transition-all cursor-pointer"
-                      >
-                        {leadAutoAssignEnabled ? (
-                          <ToggleRight className="w-8 h-8 text-[#0F9D58]" />
-                        ) : (
-                          <ToggleLeft className="w-8 h-8 text-slate-400" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                {/* Lead Prefix Single Input */}
+                <div>
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                    Lead ID Sequence Prefix
+                  </label>
+                  <input
+                    type="text"
+                    value={leadPrefix}
+                    onChange={e => setLeadPrefix(e.target.value)}
+                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:border-[#0F9D58] focus:ring-1 focus:ring-[#0F9D58]"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Format: `LD-2026-001`</p>
                 </div>
 
-                {/* Lead Owners Manager - Google Sheets Select Style */}
-                <div className="space-y-3 pt-4 border-t border-slate-100">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">
+                {/* Lead Owners Google Sheets Style Dropdown Builder */}
+                <div className="pt-4 border-t border-slate-100 space-y-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
                     Manage Lead Owners (Dropdown Options in Leads Page)
                   </label>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Add new Lead Owner Name..."
-                      value={newOwnerName}
-                      onChange={e => setNewOwnerName(e.target.value)}
-                      className="flex-1 px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
-                    />
-                    <button
-                      onClick={handleAddOwner}
-                      className="px-4 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add Owner
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {leadOwners.map(owner => (
-                      <span
-                        key={owner}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-2 shadow-xs"
-                      >
-                        <span>👤 {owner}</span>
-                        {owner !== 'Unassigned' && (
-                          <button
-                            onClick={() => handleRemoveOwner(owner)}
-                            className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                  </div>
+                  {renderGoogleOptionList(leadOwners, setLeadOwners, 'owner', 'Add another item')}
                 </div>
 
-                {/* Budget Ranges */}
-                <div className="space-y-3 pt-4 border-t border-slate-100">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">
-                    Lead Budget Filter Options (Google Sheets Style Pills)
+                {/* Lead Budget Ranges Google Sheets Style Dropdown Builder */}
+                <div className="pt-4 border-t border-slate-100 space-y-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                    Lead Budget Filter Options
                   </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Add budget range e.g. ₹5L - ₹10L..."
-                      value={newBudgetRange}
-                      onChange={e => setNewBudgetRange(e.target.value)}
-                      className="flex-1 px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
-                    />
-                    <button
-                      onClick={handleAddBudgetRange}
-                      className="px-4 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add Range
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {budgetRanges.map(range => (
-                      <span
-                        key={range}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-2"
-                      >
-                        <span>💰 {range}</span>
-                        <button
-                          onClick={() => handleRemoveBudgetRange(range)}
-                          className="text-emerald-500 hover:text-rose-600 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+                  {renderGoogleOptionList(budgetRanges, setBudgetRanges, 'budget', 'Add another item')}
                 </div>
               </div>
             )}
 
             {/* 2. QUOTATIONS PAGE SETTINGS */}
             {activeTab === 'quotations' && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
                 <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                     <FileText className="w-5 h-5" />
@@ -517,7 +509,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* PDF Theme Google Sheet Dropdown */}
+                  {/* PDF Theme Dropdown */}
                   <div>
                     <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       PDF Document Theme
@@ -526,7 +518,7 @@ export default function SettingsPage() {
                       <select
                         value={pdfTheme}
                         onChange={e => setPdfTheme(e.target.value)}
-                        className="w-full appearance-none px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] cursor-pointer"
+                        className="w-full appearance-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
                       >
                         <option value="royal_gold">👑 Royal Gold & Obsidian</option>
                         <option value="minimal_dark">🖤 Minimal Dark Studio</option>
@@ -545,11 +537,11 @@ export default function SettingsPage() {
                       type="number"
                       value={quoteExpiryDays}
                       onChange={e => setQuoteExpiryDays(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
 
-                  {/* Currency Google Sheet Dropdown */}
+                  {/* Currency Dropdown */}
                   <div>
                     <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Default Currency
@@ -558,7 +550,7 @@ export default function SettingsPage() {
                       <select
                         value={currency}
                         onChange={e => setCurrency(e.target.value)}
-                        className="w-full appearance-none px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] cursor-pointer"
+                        className="w-full appearance-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
                       >
                         <option value="INR">₹ INR (Indian Rupee)</option>
                         <option value="USD">$ USD (US Dollar)</option>
@@ -578,7 +570,7 @@ export default function SettingsPage() {
                     rows={3}
                     value={quoteTerms}
                     onChange={e => setQuoteTerms(e.target.value)}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                   />
                 </div>
 
@@ -591,7 +583,7 @@ export default function SettingsPage() {
                     rows={4}
                     value={contractClauses}
                     onChange={e => setContractClauses(e.target.value)}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                   />
                 </div>
               </div>
@@ -599,7 +591,7 @@ export default function SettingsPage() {
 
             {/* 3. FINANCE & INVOICES SETTINGS */}
             {activeTab === 'finance' && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
                 <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
                     <Coins className="w-5 h-5" />
@@ -620,7 +612,7 @@ export default function SettingsPage() {
                       type="text"
                       value={invoicePrefix}
                       onChange={e => setInvoicePrefix(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
 
@@ -633,7 +625,7 @@ export default function SettingsPage() {
                       type="number"
                       value={gstPercent}
                       onChange={e => setGstPercent(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
 
@@ -646,7 +638,7 @@ export default function SettingsPage() {
                       type="text"
                       value={upiId}
                       onChange={e => setUpiId(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
                 </div>
@@ -660,54 +652,23 @@ export default function SettingsPage() {
                     rows={2}
                     value={bankDetails}
                     onChange={e => setBankDetails(e.target.value)}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                   />
                 </div>
 
-                {/* Expense Categories */}
-                <div className="space-y-3 pt-4 border-t border-slate-100">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">
-                    Expense Categories (Finance Page Dropdowns)
+                {/* Expense Categories Google Sheets Option Builder */}
+                <div className="pt-4 border-t border-slate-100 space-y-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                    Expense Categories Options
                   </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Add expense category e.g. Drone Rental..."
-                      value={newExpenseCat}
-                      onChange={e => setNewExpenseCat(e.target.value)}
-                      className="flex-1 px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
-                    />
-                    <button
-                      onClick={handleAddExpenseCat}
-                      className="px-4 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add Category
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {expenseCategories.map(cat => (
-                      <span
-                        key={cat}
-                        className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 flex items-center gap-2"
-                      >
-                        <span>🏷️ {cat}</span>
-                        <button
-                          onClick={() => handleRemoveExpenseCat(cat)}
-                          className="text-amber-500 hover:text-rose-600 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+                  {renderGoogleOptionList(expenseCategories, setExpenseCategories, 'expense', 'Add another item')}
                 </div>
               </div>
             )}
 
             {/* 4. ATTENDANCE & GEOFENCE SETTINGS */}
             {activeTab === 'attendance' && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
                 <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
                     <Clock className="w-5 h-5" />
@@ -728,7 +689,7 @@ export default function SettingsPage() {
                       type="number"
                       value={geofenceRadius}
                       onChange={e => setGeofenceRadius(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
 
@@ -741,7 +702,7 @@ export default function SettingsPage() {
                       type="time"
                       value={shiftStart}
                       onChange={e => setShiftStart(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
 
@@ -754,7 +715,7 @@ export default function SettingsPage() {
                       type="number"
                       value={graceMinutes}
                       onChange={e => setGraceMinutes(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
 
@@ -767,7 +728,7 @@ export default function SettingsPage() {
                       type="number"
                       value={breakLimitMinutes}
                       onChange={e => setBreakLimitMinutes(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
                 </div>
@@ -776,7 +737,7 @@ export default function SettingsPage() {
 
             {/* 5. META & INTEGRATIONS SETTINGS */}
             {activeTab === 'integrations' && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
                 <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold">
                     <Globe className="w-5 h-5" />
@@ -793,14 +754,13 @@ export default function SettingsPage() {
                     <p className="text-xs text-slate-500 mt-0.5">Automatically ingest Facebook Instant Leads into CRM instantly</p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setMetaAutoSync(!metaAutoSync)}
-                    className="transition-all cursor-pointer"
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      metaAutoSync ? 'bg-[#0F9D58] text-white' : 'bg-slate-200 text-slate-600'
+                    }`}
                   >
-                    {metaAutoSync ? (
-                      <ToggleRight className="w-9 h-9 text-[#0F9D58]" />
-                    ) : (
-                      <ToggleLeft className="w-9 h-9 text-slate-400" />
-                    )}
+                    {metaAutoSync ? 'Active' : 'Disabled'}
                   </button>
                 </div>
               </div>
@@ -808,7 +768,7 @@ export default function SettingsPage() {
 
             {/* 6. TEAM & OWNERS SETTINGS */}
             {activeTab === 'team' && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
                 <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
                     <Users className="w-5 h-5" />
@@ -823,11 +783,11 @@ export default function SettingsPage() {
                   <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#0F9D58] flex items-center justify-center font-bold text-sm">
-                        SD
+                        WS
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-slate-900">{studioName} (You)</h4>
-                        <p className="text-xs text-slate-500">{studioEmail || 'Workspace Owner'}</p>
+                        <h4 className="text-sm font-bold text-slate-900">Workspace User Account</h4>
+                        <p className="text-xs text-slate-500">Active Supabase Workspace ID: {workspaceId.slice(0, 8)}...</p>
                       </div>
                     </div>
                     <span className="px-3 py-1 rounded-full bg-emerald-50 text-[#0F9D58] border border-emerald-200 text-xs font-bold">
