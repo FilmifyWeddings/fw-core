@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: any = {
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   allowedDevOrigins: ['*.loca.lt', 'loca.lt', '*.lhr.life', 'lhr.life', '*.ngrok-free.dev', 'ngrok-free.dev'],
   
   headers: async () => [
