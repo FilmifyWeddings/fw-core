@@ -1979,7 +1979,11 @@ export function LeadTable({
               allowCustomAdd={false}
               options={[
                 { value: 'all', label: 'Sources: All' },
-                ...customSources.map(src => ({ value: src, label: src }))
+                ...customSources.map(src => {
+                  const val = typeof src === 'object' && src !== null ? (src.name || src.value) : String(src);
+                  const col = typeof src === 'object' && src !== null ? (src.color || '#3b82f6') : '#3b82f6';
+                  return { value: val, label: val, color: col };
+                })
               ]}
               onChange={(val) => setSourceFilter(val)}
             />
@@ -3590,9 +3594,14 @@ export function LeadTable({
                           onChange={(e) => setManualLeadSource(e.target.value)}
                           className="w-full appearance-none bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 pr-8 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs cursor-pointer"
                         >
-                          {customSources.map(src => (
-                            <option key={src} value={src} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">{src}</option>
-                          ))}
+                          {customSources.map((src, idx) => {
+                            const val = typeof src === 'object' && src !== null ? (src.name || src.value) : String(src);
+                            return (
+                              <option key={val + '_' + idx} value={val} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">
+                                {val}
+                              </option>
+                            );
+                          })}
                         </select>
                         <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-3" />
                       </div>
@@ -3628,9 +3637,12 @@ export function LeadTable({
                           onChange={(e) => setManualLeadOwner(e.target.value)}
                           className="w-full appearance-none bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 pr-8 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs cursor-pointer"
                         >
-                          {teamMembers.map(m => (
-                            <option key={m.name} value={m.name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">👤 {m.name}</option>
-                          ))}
+                          {teamMembers.map(m => {
+                            const name = typeof m === 'object' && m !== null ? (m.name || m.value) : String(m);
+                            return (
+                              <option key={name} value={name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">👤 {name}</option>
+                            );
+                          })}
                         </select>
                         <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-3" />
                       </div>
