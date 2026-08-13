@@ -17,15 +17,17 @@ interface DropdownItem {
   color: string;
 }
 
+// 9 Exact Colors matching user's screenshot
 const GOOGLE_PRESET_COLORS = [
-  '#1A73E8', // Blue
-  '#8E24AA', // Purple
-  '#C5221F', // Red
-  '#137333', // Green
-  '#F4511E', // Orange
-  '#FDE293', // Yellow
-  '#00ATC4', // Cyan
-  '#616161', // Dark Gray
+  '#3b82f6', // 1. Sky Blue
+  '#06b6d4', // 2. Cyan / Turquoise
+  '#10b981', // 3. Teal / Mint Green
+  '#84cc16', // 4. Lime Green
+  '#f43f5e', // 5. Red / Coral
+  '#f59e0b', // 6. Yellow / Gold
+  '#8b5cf6', // 7. Purple
+  '#ec4899', // 8. Pink / Magenta
+  '#f97316', // 9. Bright Orange
 ];
 
 export default function SettingsPage() {
@@ -39,36 +41,36 @@ export default function SettingsPage() {
 
   // 1. Leads Page Settings
   const [leadOwners, setLeadOwners] = useState<DropdownItem[]>([
-    { id: '1', name: 'Unassigned', color: '#137333' },
-    { id: '2', name: 'Sahil Dhonde', color: '#1A73E8' },
-    { id: '3', name: 'Sushant Nawale', color: '#8E24AA' },
-    { id: '4', name: 'Production Team', color: '#C5221F' },
+    { id: '1', name: 'Unassigned', color: '#10b981' },
+    { id: '2', name: 'Sahil Dhonde', color: '#3b82f6' },
+    { id: '3', name: 'Sushant Nawale', color: '#8b5cf6' },
+    { id: '4', name: 'Production Team', color: '#f43f5e' },
   ]);
 
   const [leadSources, setLeadSources] = useState<DropdownItem[]>([
-    { id: 's1', name: 'Facebook Ads', color: '#1A73E8' },
-    { id: 's2', name: 'Instagram Ads', color: '#8E24AA' },
-    { id: 's3', name: 'Google Ads', color: '#C5221F' },
-    { id: 's4', name: 'Website', color: '#137333' },
-    { id: 's5', name: 'Referral', color: '#F4511E' },
-    { id: 's6', name: 'WhatsApp Direct', color: '#137333' },
+    { id: 's1', name: 'Facebook Ads', color: '#3b82f6' },
+    { id: 's2', name: 'Instagram Ads', color: '#ec4899' },
+    { id: 's3', name: 'Google Ads', color: '#f43f5e' },
+    { id: 's4', name: 'Website', color: '#10b981' },
+    { id: 's5', name: 'Referral', color: '#f59e0b' },
+    { id: 's6', name: 'WhatsApp Direct', color: '#84cc16' },
   ]);
 
   const [leadStages, setLeadStages] = useState<DropdownItem[]>([
-    { id: 'new', name: 'Inquiry / New', color: '#1A73E8' },
-    { id: 'contacted', name: 'Contacted', color: '#8E24AA' },
-    { id: 'cool', name: 'Cool / Warm', color: '#F4511E' },
-    { id: 'hot', name: 'Hot 🔥', color: '#C5221F' },
-    { id: 'booked', name: 'Booked', color: '#137333' },
-    { id: 'won', name: 'Won 🎉', color: '#137333' },
-    { id: 'lost', name: 'Lost ❌', color: '#616161' },
+    { id: 'new', name: 'Inquiry / New', color: '#3b82f6' },
+    { id: 'contacted', name: 'Contacted', color: '#8b5cf6' },
+    { id: 'cool', name: 'Cool / Warm', color: '#06b6d4' },
+    { id: 'hot', name: 'Hot 🔥', color: '#f43f5e' },
+    { id: 'booked', name: 'Booked', color: '#84cc16' },
+    { id: 'won', name: 'Won 🎉', color: '#10b981' },
+    { id: 'lost', name: 'Lost ❌', color: '#f43f5e' },
   ]);
 
   const [budgetRanges, setBudgetRanges] = useState<DropdownItem[]>([
-    { id: 'b1', name: '₹50k - ₹1L', color: '#137333' },
-    { id: 'b2', name: '₹1L - ₹2.5L', color: '#1A73E8' },
-    { id: 'b3', name: '₹2.5L - ₹5L', color: '#F4511E' },
-    { id: 'b4', name: '₹5L+', color: '#C5221F' },
+    { id: 'b1', name: '₹50k - ₹1L', color: '#10b981' },
+    { id: 'b2', name: '₹1L - ₹2.5L', color: '#3b82f6' },
+    { id: 'b3', name: '₹2.5L - ₹5L', color: '#f59e0b' },
+    { id: 'b4', name: '₹5L+', color: '#f43f5e' },
   ]);
 
   // 2. Quotations Page Settings
@@ -86,10 +88,10 @@ export default function SettingsPage() {
   const [upiId, setUpiId] = useState('studio@upi');
   const [bankDetails, setBankDetails] = useState('HDFC Bank, Acc: 50100987654321, IFSC: HDFC0001234');
   const [expenseCategories, setExpenseCategories] = useState<DropdownItem[]>([
-    { id: 'e1', name: 'Marketing', color: '#1A73E8' },
-    { id: 'e2', name: 'Crew Travel', color: '#F4511E' },
-    { id: 'e3', name: 'Equipment', color: '#8E24AA' },
-    { id: 'e4', name: 'Editor Pay', color: '#137333' },
+    { id: 'e1', name: 'Marketing', color: '#3b82f6' },
+    { id: 'e2', name: 'Crew Travel', color: '#f97316' },
+    { id: 'e3', name: 'Equipment', color: '#8b5cf6' },
+    { id: 'e4', name: 'Editor Pay', color: '#10b981' },
   ]);
 
   // 4. Attendance Settings
@@ -111,7 +113,7 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // Sync settings to localStorage so every page reads fresh values immediately
+  // Sync settings to localStorage
   const syncToLocalStorage = (wId: string, settingsObj: any) => {
     try {
       const ownerNames = (settingsObj.lead_owners || []).map((o: any) => typeof o === 'string' ? o : o.name);
@@ -372,7 +374,7 @@ export default function SettingsPage() {
     setList(copy);
   };
 
-  // Render Google Sheets Style Dropdown Item List Component
+  // Render Google Sheets Style Dropdown Item List Component matching image palette
   const renderGoogleOptionList = (
     list: DropdownItem[],
     setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
@@ -381,7 +383,7 @@ export default function SettingsPage() {
   ) => (
     <div className="space-y-2.5 pt-2">
       {list.map((item, index) => (
-        <div key={item.id} className="flex items-center gap-2 sm:gap-3 group">
+        <div key={item.id} className="flex items-center gap-2 sm:gap-3 group relative">
           {/* Grip Handle */}
           <div className="cursor-grab text-slate-300 hover:text-slate-500 transition-colors p-1">
             <GripVertical className="w-5 h-5" />
@@ -416,22 +418,29 @@ export default function SettingsPage() {
               onClick={() => setActiveColorPickerId(activeColorPickerId === item.id ? null : item.id)}
               className="flex items-center gap-1.5 px-2.5 py-2 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-all shadow-xs cursor-pointer"
             >
-              <span className="w-4 h-4 rounded-full shadow-inner" style={{ backgroundColor: item.color }} />
+              <span className="w-4 h-4 rounded-md shadow-inner" style={{ backgroundColor: item.color }} />
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
-            {/* Color Palette Popover */}
+            {/* Exact Color Palette Popover matching image */}
             {activeColorPickerId === item.id && (
-              <div className="absolute left-0 top-11 z-30 p-2 bg-white border border-slate-200 rounded-xl shadow-xl flex gap-1.5">
-                {GOOGLE_PRESET_COLORS.map(c => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => handleUpdateItemColor(list, setList, item.id, c)}
-                    className="w-5 h-5 rounded-full hover:scale-115 transition-transform cursor-pointer border border-black/10"
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
+              <div className="absolute left-0 top-11 z-50 p-3 bg-white border border-slate-200 rounded-2xl shadow-2xl space-y-2 min-w-[280px]">
+                <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Select Color</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {GOOGLE_PRESET_COLORS.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => handleUpdateItemColor(list, setList, item.id, c)}
+                      className="w-7 h-7 rounded-lg transition-transform hover:scale-110 flex items-center justify-center cursor-pointer shadow-xs border border-black/10 relative"
+                      style={{ backgroundColor: c }}
+                    >
+                      {item.color.toLowerCase() === c.toLowerCase() && (
+                        <Check className="w-4 h-4 text-white stroke-[3]" />
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
