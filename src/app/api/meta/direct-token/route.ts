@@ -33,23 +33,59 @@ export async function POST(req: NextRequest) {
 
     // ── 1. Validate Token & Test Page Info via Graph API ────────────────────
     console.log(`[Direct Token Sync] Testing Page ID: ${page_id} against Meta Graph API...`);
-    const pageRes = await fetch(
-      `https://graph.facebook.com/v20.0/${page_id}?fields=id,name,category,access_token&access_token=${page_access_token}`
-    );
+    let pageName = `Facebook Page ${page_id}`;
+    let pageCategory = 'Business Page';
+    let effectiveToken = page_access_token;
+    let isValid = false;
 
-    const pageJson = await pageRes.json().catch(() => ({}));
-
-    if (!pageRes.ok || pageJson.error) {
-      const msg = pageJson?.error?.message || `Graph API HTTP ${pageRes.status}`;
-      return NextResponse.json(
-        { success: false, error: `Facebook Graph API Error: ${msg}. Please check Page ID & Token.` },
-        { status: 400 }
+    // Test Attempt A: Query Page directly with fields=id,name,category (Note: Page tokens error if fields=access_token is requested)
+    try {
+      const pageRes = await fetch(
+        `https://graph.facebook.com/v20.0/${page_id}?fields=id,name,category&access_token=${page_access_token}`
       );
+      const pageJson = await pageRes.json().catch(() => ({}));
+      if (pageRes.ok && pageJson.id) {
+        isValid = true;
+        pageName = pageJson.name || pageName;
+        pageCategory = pageJson.category || pageCategory;
+      }
+    } catch (_) {}
+
+    // Test Attempt B: Query /me/accounts if token is a User Access Token or page_id is 'me'
+    if (!isValid) {
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token&access_token=${page_access_token}`
+        );
+        const meJson = await meRes.json().catch(() => ({}));
+        if (meRes.ok && Array.isArray(meJson.data) && meJson.data.length > 0) {
+          const matched = meJson.data.find((p: any) => p.id === page_id) || meJson.data[0];
+          isValid = true;
+          pageName = matched.name || pageName;
+          pageCategory = matched.category || pageCategory;
+          effectiveToken = matched.access_token || page_access_token;
+        }
+      } catch (_) {}
     }
 
-    const pageName = pageJson.name || `Facebook Page ${page_id}`;
-    const pageCategory = pageJson.category || 'Business Page';
-    const effectiveToken = pageJson.access_token || page_access_token;
+    // Test Attempt C: Directly query /leadgen_forms endpoint for page_id
+    if (!isValid) {
+      try {
+        const testFormsRes = await fetch(
+          `https://graph.facebook.com/v20.0/${page_id}/leadgen_forms?fields=id,name&access_token=${page_access_token}`
+        );
+        const testFormsJson = await testFormsRes.json().catch(() => ({}));
+        if (testFormsRes.ok && !testFormsJson.error) {
+          isValid = true;
+        } else if (testFormsJson?.error) {
+          const msg = testFormsJson.error.message || 'Invalid Token or Page ID';
+          return NextResponse.json(
+            { success: false, error: `Facebook Graph API Error: ${msg}. Please check Page ID & Token.` },
+            { status: 400 }
+          );
+        }
+      } catch (_) {}
+    }
 
     // ── 2. Direct Webhook Subscription ──────────────────────────────────────
     console.log(`[Direct Token Sync] Subscribing Page ${page_id} to leadgen webhooks...`);
