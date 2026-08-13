@@ -4,9 +4,25 @@ import { verifyMetaAuth } from '@/lib/meta-auth';
 
 const DEFAULT_SETTINGS = {
   // Leads & Pipeline
-  sequence_leads_prefix: 'LD-2026-',
   lead_default_owner: 'Unassigned',
   lead_budget_ranges: ['₹50k - ₹1L', '₹1L - ₹2.5L', '₹2.5L - ₹5L', '₹5L+'],
+  lead_sources: [
+    { id: 's1', name: 'Facebook Ads', color: '#1A73E8' },
+    { id: 's2', name: 'Instagram Ads', color: '#8E24AA' },
+    { id: 's3', name: 'Google Ads', color: '#C5221F' },
+    { id: 's4', name: 'Website', color: '#137333' },
+    { id: 's5', name: 'Referral', color: '#F4511E' },
+    { id: 's6', name: 'WhatsApp Direct', color: '#137333' },
+  ],
+  lead_stages: [
+    { id: 'new', name: 'Inquiry / New', color: '#1A73E8' },
+    { id: 'contacted', name: 'Contacted', color: '#8E24AA' },
+    { id: 'cool', name: 'Cool / Warm', color: '#F4511E' },
+    { id: 'hot', name: 'Hot 🔥', color: '#C5221F' },
+    { id: 'booked', name: 'Booked', color: '#137333' },
+    { id: 'won', name: 'Won 🎉', color: '#137333' },
+    { id: 'lost', name: 'Lost ❌', color: '#616161' },
+  ],
   lead_auto_assign_strategy: 'round_robin',
   lead_auto_assign_enabled: false,
 

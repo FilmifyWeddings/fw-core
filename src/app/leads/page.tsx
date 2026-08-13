@@ -349,7 +349,22 @@ export default function LeadsPage() {
             : [...dbStages, { id: 'booked', name: 'Booked', color: '#10b981', position: 4 }];
           setStages(mergedStages);
         } else {
-          setStages(DEFAULT_STAGES);
+          // Fallback to localStorage settings or API
+          const localStages = localStorage.getItem('leads_workspace_stages') || localStorage.getItem(`settings_stages_${targetUserId}`);
+          if (localStages) {
+            try {
+              const parsed = JSON.parse(localStages);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setStages(parsed);
+              } else {
+                setStages(DEFAULT_STAGES);
+              }
+            } catch (_) {
+              setStages(DEFAULT_STAGES);
+            }
+          } else {
+            setStages(DEFAULT_STAGES);
+          }
         }
 
         // Load Layout Configurations (try table_layouts first, fallback to profiles)

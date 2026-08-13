@@ -18,12 +18,12 @@ interface DropdownItem {
 }
 
 const GOOGLE_PRESET_COLORS = [
-  '#C5221F', // Red
-  '#FDE293', // Yellow
-  '#137333', // Green
   '#1A73E8', // Blue
   '#8E24AA', // Purple
+  '#C5221F', // Red
+  '#137333', // Green
   '#F4511E', // Orange
+  '#FDE293', // Yellow
   '#00ATC4', // Cyan
   '#616161', // Dark Gray
 ];
@@ -44,6 +44,26 @@ export default function SettingsPage() {
     { id: '3', name: 'Sushant Nawale', color: '#8E24AA' },
     { id: '4', name: 'Production Team', color: '#C5221F' },
   ]);
+
+  const [leadSources, setLeadSources] = useState<DropdownItem[]>([
+    { id: 's1', name: 'Facebook Ads', color: '#1A73E8' },
+    { id: 's2', name: 'Instagram Ads', color: '#8E24AA' },
+    { id: 's3', name: 'Google Ads', color: '#C5221F' },
+    { id: 's4', name: 'Website', color: '#137333' },
+    { id: 's5', name: 'Referral', color: '#F4511E' },
+    { id: 's6', name: 'WhatsApp Direct', color: '#137333' },
+  ]);
+
+  const [leadStages, setLeadStages] = useState<DropdownItem[]>([
+    { id: 'new', name: 'Inquiry / New', color: '#1A73E8' },
+    { id: 'contacted', name: 'Contacted', color: '#8E24AA' },
+    { id: 'cool', name: 'Cool / Warm', color: '#F4511E' },
+    { id: 'hot', name: 'Hot 🔥', color: '#C5221F' },
+    { id: 'booked', name: 'Booked', color: '#137333' },
+    { id: 'won', name: 'Won 🎉', color: '#137333' },
+    { id: 'lost', name: 'Lost ❌', color: '#616161' },
+  ]);
+
   const [budgetRanges, setBudgetRanges] = useState<DropdownItem[]>([
     { id: 'b1', name: '₹50k - ₹1L', color: '#137333' },
     { id: 'b2', name: '₹1L - ₹2.5L', color: '#1A73E8' },
@@ -100,6 +120,20 @@ export default function SettingsPage() {
       localStorage.setItem('leads_workspace_team_members', JSON.stringify(
         leadOwners.map((o, idx) => ({ id: o.id || String(idx + 1), name: o.name, email: '', role: 'Lead Owner', color: o.color }))
       ));
+
+      // Sync Sources
+      localStorage.setItem(`settings_sources_${wId}`, JSON.stringify(leadSources));
+      localStorage.setItem('leads_workspace_sources', JSON.stringify(leadSources));
+
+      // Sync Stages
+      localStorage.setItem(`settings_stages_${wId}`, JSON.stringify(leadStages));
+      localStorage.setItem('leads_workspace_stages', JSON.stringify(leadStages.map((st, pos) => ({
+        id: st.id || st.name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+        name: st.name,
+        color: st.color,
+        position: pos
+      }))));
+
       localStorage.setItem(`settings_currency_${wId}`, settingsObj.quotation_currency || currency);
       localStorage.setItem(`settings_gst_${wId}`, String(settingsObj.invoice_gst_percent ?? gstPercent));
       localStorage.setItem(`settings_upi_${wId}`, settingsObj.invoice_upi_id || upiId);
@@ -137,6 +171,28 @@ export default function SettingsPage() {
               return o;
             }));
           }
+
+          // Lead Sources
+          if (Array.isArray(s.lead_sources) && s.lead_sources.length > 0) {
+            setLeadSources(s.lead_sources.map((src: any, idx: number) => {
+              if (typeof src === 'string') {
+                return { id: `src_${idx}`, name: src, color: GOOGLE_PRESET_COLORS[idx % GOOGLE_PRESET_COLORS.length] };
+              }
+              return src;
+            }));
+          }
+
+          // Lead Stages
+          if (Array.isArray(s.lead_stages) && s.lead_stages.length > 0) {
+            setLeadStages(s.lead_stages.map((st: any, idx: number) => {
+              if (typeof st === 'string') {
+                return { id: `st_${idx}`, name: st, color: GOOGLE_PRESET_COLORS[idx % GOOGLE_PRESET_COLORS.length] };
+              }
+              return st;
+            }));
+          }
+
+          // Budget Ranges
           if (Array.isArray(s.lead_budget_ranges)) {
             setBudgetRanges(s.lead_budget_ranges.map((b: any, idx: number) => {
               if (typeof b === 'string') {
@@ -202,6 +258,8 @@ export default function SettingsPage() {
 
       const payloadSettings = {
         lead_owners: leadOwners.map(o => ({ id: o.id, name: o.name, color: o.color })),
+        lead_sources: leadSources.map(s => ({ id: s.id, name: s.name, color: s.color })),
+        lead_stages: leadStages.map((st, idx) => ({ id: st.id || `st_${idx}`, name: st.name, color: st.color, position: idx })),
         lead_budget_ranges: budgetRanges.map(b => b.name),
 
         quotation_pdf_theme: pdfTheme,
@@ -508,7 +566,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-slate-900">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners dropdown options & colors with up/down reordering</p>
+                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners, Lead Sources, and Pipeline Stages dropdown options with colors & order</p>
                   </div>
                 </div>
 
@@ -518,6 +576,22 @@ export default function SettingsPage() {
                     Manage Lead Owners (Dropdown Options in Leads Page)
                   </label>
                   {renderGoogleOptionList(leadOwners, setLeadOwners, 'owner', 'Add another item')}
+                </div>
+
+                {/* Lead Sources Google Sheets Style Dropdown Builder */}
+                <div className="pt-4 border-t border-slate-100 space-y-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                    Manage Lead Sources (Dropdown Options in Leads Page)
+                  </label>
+                  {renderGoogleOptionList(leadSources, setLeadSources, 'source', 'Add another item')}
+                </div>
+
+                {/* Lead Stages Google Sheets Style Dropdown Builder */}
+                <div className="pt-4 border-t border-slate-100 space-y-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                    Manage Pipeline Stages (Kanban Columns in Leads Page)
+                  </label>
+                  {renderGoogleOptionList(leadStages, setLeadStages, 'stage', 'Add another item')}
                 </div>
 
                 {/* Lead Budget Ranges Google Sheets Style Dropdown Builder */}
