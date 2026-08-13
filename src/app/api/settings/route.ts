@@ -156,14 +156,18 @@ export async function POST(req: NextRequest) {
     const updatedConfig = {
       ...currentConfig,
       ...newSettings,
-      lead_quick_actions: {
-        ...(currentConfig.lead_quick_actions || DEFAULT_SETTINGS.lead_quick_actions),
-        ...(newSettings.lead_quick_actions || {}),
-      },
+      lead_quick_actions: newSettings.lead_quick_actions ? {
+        ...DEFAULT_SETTINGS.lead_quick_actions,
+        ...(currentConfig.lead_quick_actions || {}),
+        ...newSettings.lead_quick_actions,
+      } : (currentConfig.lead_quick_actions || DEFAULT_SETTINGS.lead_quick_actions),
       updated_at: new Date().toISOString(),
     };
 
     // 1. Upsert into workspace_settings
+    let savedSuccessfully = false;
+    let lastErrorMsg = '';
+
     const { error: upsertErr } = await supabaseAdmin
       .from('workspace_settings')
       .upsert({
@@ -172,20 +176,34 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'workspace_id' });
 
-    if (upsertErr) {
+    if (!upsertErr) {
+      savedSuccessfully = true;
+    } else {
       console.warn('[Workspace Settings Upsert Warning]:', upsertErr.message);
+      lastErrorMsg = upsertErr.message;
     }
 
     // 2. Also update profiles table as guaranteed fallback
     try {
-      await supabaseAdmin
+      const { error: pErr } = await supabaseAdmin
         .from('profiles')
         .update({
           leads_table_preferences: updatedConfig
         })
         .eq('id', workspaceId);
+
+      if (!pErr) {
+        savedSuccessfully = true;
+      } else {
+        console.warn('[Profile Preferences Backup Warning]:', pErr.message);
+        if (!lastErrorMsg) lastErrorMsg = pErr.message;
+      }
     } catch (pErr: any) {
       console.warn('[Profile Preferences Backup Warning]:', pErr.message);
+    }
+
+    if (!savedSuccessfully) {
+      return NextResponse.json({ success: false, error: `Supabase DB Save Failed: ${lastErrorMsg}` }, { status: 500 });
     }
 
     // Sync lead_stages to crm_stages table in Supabase
