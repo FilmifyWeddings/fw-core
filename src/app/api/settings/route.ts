@@ -83,21 +83,28 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'A valid workspace_id or auth session is required' }, { status: 401 });
     }
 
-    // Fetch from workspace_settings
-    const { data: dbSettings } = await supabaseAdmin
-      .from('workspace_settings')
-      .select('config')
-      .eq('workspace_id', workspaceId)
-      .maybeSingle();
-
-    // Fetch profile workspace_name & preferences fallback
+    // Fetch profile workspace_name & preferences
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('full_name, email, workspace_name, leads_table_preferences')
       .eq('id', workspaceId)
       .maybeSingle();
 
-    const dbConfig = dbSettings?.config || (profile?.leads_table_preferences && typeof profile.leads_table_preferences === 'object' ? profile.leads_table_preferences : {}) || {};
+    let dbConfig = (profile?.leads_table_preferences && typeof profile.leads_table_preferences === 'object' ? profile.leads_table_preferences : null);
+
+    if (!dbConfig) {
+      try {
+        const { data: dbSettings } = await supabaseAdmin
+          .from('workspace_settings')
+          .select('config')
+          .eq('workspace_id', workspaceId)
+          .maybeSingle();
+        if (dbSettings?.config) dbConfig = dbSettings.config;
+      } catch (_) {}
+    }
+
+    if (!dbConfig) dbConfig = {};
+
     const mergedSettings = {
       ...DEFAULT_SETTINGS,
       ...dbConfig,
@@ -138,20 +145,27 @@ export async function POST(req: NextRequest) {
     }
     const newSettings = body.settings || {};
 
-    // Fetch existing settings
-    const { data: existing } = await supabaseAdmin
-      .from('workspace_settings')
-      .select('config')
-      .eq('workspace_id', workspaceId)
-      .maybeSingle();
-
+    // Fetch existing settings from profiles table
     const { data: profileExisting } = await supabaseAdmin
       .from('profiles')
       .select('leads_table_preferences')
       .eq('id', workspaceId)
       .maybeSingle();
 
-    const currentConfig = existing?.config || profileExisting?.leads_table_preferences || DEFAULT_SETTINGS;
+    let existingConfig = profileExisting?.leads_table_preferences && typeof profileExisting.leads_table_preferences === 'object' ? profileExisting.leads_table_preferences : null;
+
+    if (!existingConfig) {
+      try {
+        const { data: existing } = await supabaseAdmin
+          .from('workspace_settings')
+          .select('config')
+          .eq('workspace_id', workspaceId)
+          .maybeSingle();
+        if (existing?.config) existingConfig = existing.config;
+      } catch (_) {}
+    }
+
+    const currentConfig = existingConfig || DEFAULT_SETTINGS;
 
     const updatedConfig = {
       ...currentConfig,
@@ -164,26 +178,10 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // 1. Upsert into workspace_settings
     let savedSuccessfully = false;
     let lastErrorMsg = '';
 
-    const { error: upsertErr } = await supabaseAdmin
-      .from('workspace_settings')
-      .upsert({
-        workspace_id: workspaceId,
-        config: updatedConfig,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id' });
-
-    if (!upsertErr) {
-      savedSuccessfully = true;
-    } else {
-      console.warn('[Workspace Settings Upsert Warning]:', upsertErr.message);
-      lastErrorMsg = upsertErr.message;
-    }
-
-    // 2. Also update profiles table as guaranteed fallback
+    // 1. Primary persistence: Update profiles table (Guaranteed to exist in Supabase)
     try {
       const { error: pErr } = await supabaseAdmin
         .from('profiles')
@@ -196,11 +194,27 @@ export async function POST(req: NextRequest) {
         savedSuccessfully = true;
       } else {
         console.warn('[Profile Preferences Backup Warning]:', pErr.message);
-        if (!lastErrorMsg) lastErrorMsg = pErr.message;
+        lastErrorMsg = pErr.message;
       }
     } catch (pErr: any) {
-      console.warn('[Profile Preferences Backup Warning]:', pErr.message);
+      console.warn('[Profile Preferences Backup Exception]:', pErr.message);
+      lastErrorMsg = pErr.message;
     }
+
+    // 2. Secondary persistence: Try workspace_settings table if it exists
+    try {
+      const { error: upsertErr } = await supabaseAdmin
+        .from('workspace_settings')
+        .upsert({
+          workspace_id: workspaceId,
+          config: updatedConfig,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id' });
+
+      if (!upsertErr) {
+        savedSuccessfully = true;
+      }
+    } catch (_) {}
 
     if (!savedSuccessfully) {
       return NextResponse.json({ success: false, error: `Supabase DB Save Failed: ${lastErrorMsg}` }, { status: 500 });
