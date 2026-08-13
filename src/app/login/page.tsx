@@ -125,12 +125,19 @@ export default function LoginPage() {
 
           if (apiRes.ok && apiJson.success) {
             loginSuccess = true;
-            // Also sync client-side Supabase state
-            await supabase.auth.signInWithPassword({ email: targetEmail, password }).catch(() => {});
+            // Also sync client-side Supabase state and cookies directly
+            const signInRes = await supabase.auth.signInWithPassword({ email: targetEmail, password }).catch(() => null);
+            if (signInRes?.data?.session) {
+              const maxAge = 60 * 60 * 24 * 7;
+              const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+              document.cookie = `sb-access-token=${signInRes.data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
+              document.cookie = `sb-refresh-token=${signInRes.data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
+            }
             window.location.href = redirectTo;
             return;
           } else if (apiJson.error) {
             setError(apiJson.error);
+            setLoading(false);
             return;
           }
         } catch (_) {}

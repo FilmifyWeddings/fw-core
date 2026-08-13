@@ -103,7 +103,7 @@ export async function proxy(request: NextRequest) {
 
   // 2. PROTECTED ROUTE & STAGING AUTHORIZATION CHECK
   const host = request.headers.get('host') || '';
-  const isStagingDomain = host.includes('staging') || process.env.IS_STAGING === 'true';
+  const isStagingDomain = (host.includes('staging') || process.env.IS_STAGING === 'true') && !host.includes('localhost') && !host.includes('127.0.0.1');
 
   const allowedStagingEmailsRaw = 
     process.env.NEXT_PUBLIC_ALLOWED_STAGING_EMAILS ||

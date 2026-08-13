@@ -42,12 +42,14 @@ export async function POST(req: NextRequest) {
       redirectUrl: '/workspace',
     });
 
+    const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
+
     // Set auth cookies directly on HTTP Response Headers
     res.cookies.set('sb-access-token', session.access_token, {
       path: '/',
       maxAge,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production' || req.nextUrl.protocol === 'https:',
+      secure: isHttps,
       httpOnly: false,
     });
 
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
       path: '/',
       maxAge,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production' || req.nextUrl.protocol === 'https:',
+      secure: isHttps,
       httpOnly: false,
     });
 
