@@ -114,12 +114,13 @@ export default function LoginPage() {
 
         if (signInData?.session) {
           const maxAge = 60 * 60 * 24 * 7;
-          document.cookie = `sb-access-token=${signInData.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
-          document.cookie = `sb-refresh-token=${signInData.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+          const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+          document.cookie = `sb-access-token=${signInData.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
+          document.cookie = `sb-refresh-token=${signInData.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
         }
 
         const searchParams = new URLSearchParams(window.location.search);
-        const redirectTo = searchParams.get('redirectTo') || '/dashboard/integrations/whatsapp-web';
+        const redirectTo = searchParams.get('redirectTo') || '/workspace';
         window.location.href = redirectTo;
       }
     } catch (err: any) {

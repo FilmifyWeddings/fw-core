@@ -68,9 +68,24 @@ export async function middleware(request: NextRequest) {
     /* ignore */
   }
 
-  // Fallback: If SSR client didn't find user, verify sb-access-token cookie directly
+  // Fallback: If SSR client didn't find user, verify sb-access-token or Supabase auth cookies directly
   if (!user) {
-    const accessToken = request.cookies.get('sb-access-token')?.value;
+    let accessToken = request.cookies.get('sb-access-token')?.value;
+
+    if (!accessToken) {
+      // Check chunked / default Supabase SSR cookies
+      const allCookies = request.cookies.getAll();
+      const authCookie = allCookies.find(c => c.name.includes('-auth-token'));
+      if (authCookie?.value) {
+        try {
+          const parsed = JSON.parse(authCookie.value);
+          accessToken = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
+        } catch (_) {
+          accessToken = authCookie.value;
+        }
+      }
+    }
+
     if (accessToken) {
       try {
         const client = createClient(supabaseUrl, supabaseAnonKey);
@@ -83,6 +98,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. PROTECTED ROUTE & STAGING AUTHORIZATION CHECK
+  const host = request.headers.get('host') || '';
+  const isStagingDomain = host.includes('staging') || process.env.IS_STAGING === 'true';
+
   const allowedStagingEmailsRaw = 
     process.env.NEXT_PUBLIC_ALLOWED_STAGING_EMAILS ||
     process.env.ALLOWED_EMAILS ||
@@ -94,8 +112,8 @@ export async function middleware(request: NextRequest) {
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
 
-  // If user is authenticated, verify staging email permission
-  if (user && allowedStagingEmails.length > 0) {
+  // If user is authenticated on staging environment, verify staging email permission
+  if (isStagingDomain && user && allowedStagingEmails.length > 0) {
     const userEmail = (user.email || '').trim().toLowerCase();
     const isAllowed = allowedStagingEmails.includes(userEmail);
 
