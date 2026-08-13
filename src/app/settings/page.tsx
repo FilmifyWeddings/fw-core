@@ -4,8 +4,9 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
-  FileText, Coins, Clock, Globe, Users, ShieldCheck, Plus, Trash2, Edit2,
-  ChevronRight, Sparkles, AlertCircle, Building2, Sliders, ToggleLeft, ToggleRight
+  FileText, Coins, Clock, Globe, Users, Plus, Trash2, Edit2,
+  ChevronDown, Sparkles, Building2, Sliders, ToggleLeft, ToggleRight,
+  Sheet, CheckCircle2, ShieldCheck, Database, Table, HelpCircle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -59,7 +60,29 @@ export default function SettingsPage() {
   // 6. Meta & Integrations Settings
   const [metaAutoSync, setMetaAutoSync] = useState(true);
 
-  // Auth & Load Settings
+  // Get Auth Headers helper
+  const getAuthHeaders = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+  }, []);
+
+  // Sync settings to localStorage so every page reads fresh values immediately
+  const syncToLocalStorage = (wId: string, settingsObj: any) => {
+    try {
+      localStorage.setItem(`settings_studio_${wId}`, settingsObj.studio_name || studioName);
+      localStorage.setItem(`settings_owners_${wId}`, JSON.stringify(settingsObj.lead_owners || leadOwners));
+      localStorage.setItem(`settings_currency_${wId}`, settingsObj.quotation_currency || currency);
+      localStorage.setItem(`settings_gst_${wId}`, String(settingsObj.invoice_gst_percent ?? gstPercent));
+      localStorage.setItem(`settings_upi_${wId}`, settingsObj.invoice_upi_id || upiId);
+      localStorage.setItem(`settings_geofence_${wId}`, String(settingsObj.geofence_radius_meters || geofenceRadius));
+    } catch (_) {}
+  };
+
+  // Auth & Load Settings from Supabase
   const loadWorkspaceSettings = useCallback(async () => {
     setLoading(true);
     try {
@@ -72,13 +95,15 @@ export default function SettingsPage() {
       const wId = session.user.id;
       setWorkspaceId(wId);
 
-      const res = await fetch(`/api/settings?workspace_id=${wId}`);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/settings?workspace_id=${wId}`, { headers });
+
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.settings) {
           const s = data.settings;
           setStudioName(s.studio_name || 'Studio Core Workspace');
-          setStudioEmail(s.studio_email || '');
+          setStudioEmail(s.studio_email || session.user.email || '');
 
           // Leads
           setLeadPrefix(s.sequence_leads_prefix || 'LD-2026-');
@@ -112,6 +137,8 @@ export default function SettingsPage() {
 
           // Integrations
           setMetaAutoSync(s.meta_auto_sync_enabled !== false);
+
+          syncToLocalStorage(wId, s);
         }
       }
     } catch (err) {
@@ -119,7 +146,7 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, getAuthHeaders]);
 
   useEffect(() => {
     loadWorkspaceSettings();
@@ -129,52 +156,57 @@ export default function SettingsPage() {
   const handleSaveSettings = async () => {
     setSaving(true);
     try {
-      const payload = {
-        workspace_id: workspaceId,
-        settings: {
-          studio_name: studioName,
-          sequence_leads_prefix: leadPrefix,
-          lead_default_owner: leadDefaultOwner,
-          lead_owners: leadOwners,
-          lead_auto_assign_enabled: leadAutoAssignEnabled,
-          lead_auto_assign_strategy: leadAssignStrategy,
-          lead_budget_ranges: budgetRanges,
+      const { data: { session } } = await supabase.auth.getSession();
+      const wId = session?.user?.id || workspaceId;
+      const headers = await getAuthHeaders();
 
-          quotation_pdf_theme: pdfTheme,
-          quotation_pdf_terms: quoteTerms,
-          quotation_default_expiry_days: quoteExpiryDays,
-          quotation_currency: currency,
-          contract_clauses: contractClauses,
+      const payloadSettings = {
+        studio_name: studioName,
+        sequence_leads_prefix: leadPrefix,
+        lead_default_owner: leadDefaultOwner,
+        lead_owners: leadOwners,
+        lead_auto_assign_enabled: leadAutoAssignEnabled,
+        lead_auto_assign_strategy: leadAssignStrategy,
+        lead_budget_ranges: budgetRanges,
 
-          sequence_invoices_prefix: invoicePrefix,
-          sequence_projects_prefix: projectPrefix,
-          invoice_gst_percent: gstPercent,
-          invoice_payment_terms: paymentTerms,
-          invoice_upi_id: upiId,
-          invoice_bank_details: bankDetails,
-          expense_categories: expenseCategories,
+        quotation_pdf_theme: pdfTheme,
+        quotation_pdf_terms: quoteTerms,
+        quotation_default_expiry_days: quoteExpiryDays,
+        quotation_currency: currency,
+        contract_clauses: contractClauses,
 
-          geofence_radius_meters: geofenceRadius,
-          shift_start_time: shiftStart,
-          grace_period_minutes: graceMinutes,
-          break_limit_minutes: breakLimitMinutes,
+        sequence_invoices_prefix: invoicePrefix,
+        sequence_projects_prefix: projectPrefix,
+        invoice_gst_percent: gstPercent,
+        invoice_payment_terms: paymentTerms,
+        invoice_upi_id: upiId,
+        invoice_bank_details: bankDetails,
+        expense_categories: expenseCategories,
 
-          meta_auto_sync_enabled: metaAutoSync,
-        },
+        geofence_radius_meters: geofenceRadius,
+        shift_start_time: shiftStart,
+        grace_period_minutes: graceMinutes,
+        break_limit_minutes: breakLimitMinutes,
+
+        meta_auto_sync_enabled: metaAutoSync,
       };
 
       const res = await fetch('/api/settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers,
+        body: JSON.stringify({
+          workspace_id: wId,
+          settings: payloadSettings,
+        }),
       });
 
       if (res.ok) {
-        setSaveToast('Settings saved & applied live across Studio Core! ✓');
+        syncToLocalStorage(wId, payloadSettings);
+        setSaveToast('Settings saved to Supabase & synchronized live across Studio Core! ✓');
         setTimeout(() => setSaveToast(null), 3500);
       } else {
         const errJson = await res.json().catch(() => ({}));
-        alert('Save Failed: ' + (errJson.error || 'Unknown error'));
+        alert('Save Failed: ' + (errJson.error || 'Unknown server error'));
       }
     } catch (err: any) {
       alert('Error saving settings: ' + err.message);
@@ -222,34 +254,34 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 md:p-8 font-sans">
+    <div className="min-h-screen bg-slate-50/80 text-slate-900 p-4 sm:p-6 md:p-8 font-sans">
       
       {/* Toast Notification */}
       {saveToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-emerald-500 text-slate-950 font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2 animate-bounce">
-          <Check className="w-5 h-5" />
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0F9D58] text-white font-bold px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-bounce text-sm">
+          <CheckCircle2 className="w-5 h-5 text-white" />
           <span>{saveToast}</span>
         </div>
       )}
 
-      {/* Header Bar */}
+      {/* Header Bar - Google Sheets Light Aesthetic */}
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.back()}
-              className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-all"
+              className="p-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 transition-all shadow-sm"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black tracking-widest text-emerald-400 uppercase bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                  STUDIO CORE HUB
+                <span className="text-[10px] font-black tracking-widest text-[#0F9D58] uppercase bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <Table className="w-3 h-3" /> GOOGLE SHEETS DYNAMIC SYNC
                 </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mt-1 flex items-center gap-2">
-                Workspace & Page-Wise Settings
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mt-1 flex items-center gap-2">
+                Master Page-Wise Settings Dashboard
               </h1>
             </div>
           </div>
@@ -257,12 +289,12 @@ export default function SettingsPage() {
           <button
             onClick={handleSaveSettings}
             disabled={saving}
-            className="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 disabled:opacity-50"
+            className="px-6 py-2.5 rounded-xl bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-sm transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
           >
             {saving ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Saving...</span>
+                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                <span>Saving to Supabase...</span>
               </>
             ) : (
               <>
@@ -274,58 +306,56 @@ export default function SettingsPage() {
         </div>
 
         {/* Studio General Overview Card */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 backdrop-blur-md grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+            <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
               Studio / Business Name
             </label>
             <div className="relative">
-              <Building2 className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+              <Building2 className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
               <input
                 type="text"
                 value={studioName}
                 onChange={e => setStudioName(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-emerald-500/50"
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] focus:bg-white transition-all"
                 placeholder="Enter Studio Name"
               />
             </div>
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-              Primary Account Email
+            <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+              Primary Account Email (Supabase User ID)
             </label>
             <input
               type="text"
               readOnly
               value={studioEmail}
-              className="w-full px-4 py-2.5 bg-slate-950/50 border border-slate-800/60 rounded-xl text-sm text-slate-400 focus:outline-none cursor-not-allowed"
+              className="w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-xl text-sm font-medium text-slate-500 cursor-not-allowed"
             />
           </div>
         </div>
 
-        {/* Page-Wise Settings Tabs Header */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-800 scrollbar-none">
+        {/* Page-Wise Settings Tabs Header - Google Sheets Filter Style */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 scrollbar-none">
           {[
-            { id: 'leads', label: 'Leads & Pipeline', icon: Target },
-            { id: 'quotations', label: 'Quotations & Proposals', icon: FileText },
-            { id: 'finance', label: 'Finance & Invoices', icon: Coins },
-            { id: 'attendance', label: 'Attendance & Geofence', icon: Clock },
-            { id: 'integrations', label: 'Meta & Integrations', icon: Globe },
-            { id: 'team', label: 'Team & Owners', icon: Users },
+            { id: 'leads', label: '🎯 Leads & Pipeline', icon: Target },
+            { id: 'quotations', label: '📄 Quotations & Proposals', icon: FileText },
+            { id: 'finance', label: '💰 Finance & Invoices', icon: Coins },
+            { id: 'attendance', label: '⏰ Attendance & Geofence', icon: Clock },
+            { id: 'integrations', label: '🔌 Meta & Integrations', icon: Globe },
+            { id: 'team', label: '👥 Team & Owners', icon: Users },
           ].map(tab => {
-            const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as SettingsTab)}
-                className={`px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all flex items-center gap-2 ${
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
                   isActive 
-                    ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' 
-                    : 'bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800'
+                    ? 'bg-[#0F9D58] text-white shadow-sm border border-[#0B8043]' 
+                    : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
                 }`}
               >
-                <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>
               </button>
             );
@@ -334,64 +364,66 @@ export default function SettingsPage() {
 
         {/* Content Panel */}
         {loading ? (
-          <div className="py-20 text-center text-slate-500 space-y-3">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-emerald-500" />
-            <p className="text-sm font-medium">Loading workspace configuration settings...</p>
+          <div className="py-20 text-center text-slate-500 space-y-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#0F9D58]" />
+            <p className="text-sm font-semibold">Loading user settings from Supabase Database...</p>
           </div>
         ) : (
           <div className="space-y-6">
 
             {/* 1. LEADS PAGE SETTINGS */}
             {activeTab === 'leads' && (
-              <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
-                  <Target className="w-6 h-6 text-emerald-400" />
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#0F9D58] flex items-center justify-center font-bold">
+                    <Target className="w-5 h-5" />
+                  </div>
                   <div>
-                    <h2 className="text-lg font-extrabold text-white">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs text-slate-400">Configure Lead Owners, Auto-Assignment, and Lead Prefix</p>
+                    <h2 className="text-lg font-extrabold text-slate-900">Leads Page Settings (`/leads`)</h2>
+                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners, Auto-Assignment, and Lead ID Prefix</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Lead Prefix */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Lead ID Sequence Prefix
                     </label>
                     <input
                       type="text"
                       value={leadPrefix}
                       onChange={e => setLeadPrefix(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] focus:bg-white"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1">Example: `LD-2026-001`</p>
+                    <p className="text-[11px] text-slate-400 mt-1">Format: `LD-2026-001`</p>
                   </div>
 
                   {/* Auto Assign Toggle */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Lead Auto-Distribution Engine
                     </label>
-                    <div className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                      <span className="text-xs font-semibold text-slate-300">Round-Robin Auto Assign</span>
+                    <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-300 rounded-xl">
+                      <span className="text-xs font-bold text-slate-800">Round-Robin Auto Assign</span>
                       <button
                         onClick={() => setLeadAutoAssignEnabled(!leadAutoAssignEnabled)}
-                        className="transition-all"
+                        className="transition-all cursor-pointer"
                       >
                         {leadAutoAssignEnabled ? (
-                          <ToggleRight className="w-8 h-8 text-emerald-400" />
+                          <ToggleRight className="w-8 h-8 text-[#0F9D58]" />
                         ) : (
-                          <ToggleLeft className="w-8 h-8 text-slate-600" />
+                          <ToggleLeft className="w-8 h-8 text-slate-400" />
                         )}
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Lead Owners Manager */}
-                <div className="space-y-3 pt-4 border-t border-slate-800/80">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                    Manage Lead Owners (Assigned Teammates)
+                {/* Lead Owners Manager - Google Sheets Select Style */}
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">
+                    Manage Lead Owners (Dropdown Options in Leads Page)
                   </label>
 
                   <div className="flex items-center gap-2">
@@ -400,13 +432,13 @@ export default function SettingsPage() {
                       placeholder="Add new Lead Owner Name..."
                       value={newOwnerName}
                       onChange={e => setNewOwnerName(e.target.value)}
-                      className="flex-1 px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="flex-1 px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                     <button
                       onClick={handleAddOwner}
-                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all flex items-center gap-1"
+                      className="px-4 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Add
+                      <Plus className="w-3.5 h-3.5" /> Add Owner
                     </button>
                   </div>
 
@@ -414,15 +446,15 @@ export default function SettingsPage() {
                     {leadOwners.map(owner => (
                       <span
                         key={owner}
-                        className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-2"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-2 shadow-xs"
                       >
-                        <span>{owner}</span>
+                        <span>👤 {owner}</span>
                         {owner !== 'Unassigned' && (
                           <button
                             onClick={() => handleRemoveOwner(owner)}
-                            className="text-slate-500 hover:text-rose-400 transition-colors"
+                            className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </span>
@@ -431,9 +463,9 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Budget Ranges */}
-                <div className="space-y-3 pt-4 border-t border-slate-800/80">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                    Lead Budget Filter Options
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">
+                    Lead Budget Filter Options (Google Sheets Style Pills)
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -441,13 +473,13 @@ export default function SettingsPage() {
                       placeholder="Add budget range e.g. ₹5L - ₹10L..."
                       value={newBudgetRange}
                       onChange={e => setNewBudgetRange(e.target.value)}
-                      className="flex-1 px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="flex-1 px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                     <button
                       onClick={handleAddBudgetRange}
-                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all flex items-center gap-1"
+                      className="px-4 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Add
+                      <Plus className="w-3.5 h-3.5" /> Add Range
                     </button>
                   </div>
 
@@ -455,14 +487,14 @@ export default function SettingsPage() {
                     {budgetRanges.map(range => (
                       <span
                         key={range}
-                        className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-2"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-2"
                       >
-                        <span>{range}</span>
+                        <span>💰 {range}</span>
                         <button
                           onClick={() => handleRemoveBudgetRange(range)}
-                          className="text-slate-500 hover:text-rose-400 transition-colors"
+                          className="text-emerald-500 hover:text-rose-600 transition-colors cursor-pointer"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </span>
                     ))}
@@ -473,85 +505,93 @@ export default function SettingsPage() {
 
             {/* 2. QUOTATIONS PAGE SETTINGS */}
             {activeTab === 'quotations' && (
-              <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
-                  <FileText className="w-6 h-6 text-emerald-400" />
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <FileText className="w-5 h-5" />
+                  </div>
                   <div>
-                    <h2 className="text-lg font-extrabold text-white">Quotations & Proposals Settings (`/workspace/quotations`)</h2>
-                    <p className="text-xs text-slate-400">Configure PDF themes, default terms, expiry duration, and contract clauses</p>
+                    <h2 className="text-lg font-extrabold text-slate-900">Quotations & Proposals Settings (`/workspace/quotations`)</h2>
+                    <p className="text-xs font-medium text-slate-500">Configure PDF themes, default terms, expiry duration, and contract clauses</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* PDF Theme */}
+                  {/* PDF Theme Google Sheet Dropdown */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       PDF Document Theme
                     </label>
-                    <select
-                      value={pdfTheme}
-                      onChange={e => setPdfTheme(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value="royal_gold">👑 Royal Gold & Obsidian</option>
-                      <option value="minimal_dark">🖤 Minimal Dark Studio</option>
-                      <option value="airy_clean">✨ Airy Clean White</option>
-                    </select>
+                    <div className="relative">
+                      <select
+                        value={pdfTheme}
+                        onChange={e => setPdfTheme(e.target.value)}
+                        className="w-full appearance-none px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] cursor-pointer"
+                      >
+                        <option value="royal_gold">👑 Royal Gold & Obsidian</option>
+                        <option value="minimal_dark">🖤 Minimal Dark Studio</option>
+                        <option value="airy_clean">✨ Airy Clean White</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                    </div>
                   </div>
 
                   {/* Expiry Days */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Quotation Validity (Days)
                     </label>
                     <input
                       type="number"
                       value={quoteExpiryDays}
                       onChange={e => setQuoteExpiryDays(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
 
-                  {/* Currency */}
+                  {/* Currency Google Sheet Dropdown */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Default Currency
                     </label>
-                    <select
-                      value={currency}
-                      onChange={e => setCurrency(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value="INR">₹ INR (Indian Rupee)</option>
-                      <option value="USD">$ USD (US Dollar)</option>
-                      <option value="AED">AED (UAE Dirham)</option>
-                    </select>
+                    <div className="relative">
+                      <select
+                        value={currency}
+                        onChange={e => setCurrency(e.target.value)}
+                        className="w-full appearance-none px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58] cursor-pointer"
+                      >
+                        <option value="INR">₹ INR (Indian Rupee)</option>
+                        <option value="USD">$ USD (US Dollar)</option>
+                        <option value="AED">AED (UAE Dirham)</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                    </div>
                   </div>
                 </div>
 
                 {/* Terms */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                     Default Quotation Terms & Conditions
                   </label>
                   <textarea
                     rows={3}
                     value={quoteTerms}
                     onChange={e => setQuoteTerms(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                   />
                 </div>
 
                 {/* Contract Clauses */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                     Standard Contract Clauses
                   </label>
                   <textarea
                     rows={4}
                     value={contractClauses}
                     onChange={e => setContractClauses(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                   />
                 </div>
               </div>
@@ -559,73 +599,75 @@ export default function SettingsPage() {
 
             {/* 3. FINANCE & INVOICES SETTINGS */}
             {activeTab === 'finance' && (
-              <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
-                  <Coins className="w-6 h-6 text-emerald-400" />
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                    <Coins className="w-5 h-5" />
+                  </div>
                   <div>
-                    <h2 className="text-lg font-extrabold text-white">Finance & Invoices Settings (`/workspace/finance`)</h2>
-                    <p className="text-xs text-slate-400">Configure Invoice prefixes, GST %, Bank & UPI Details, and Expense Categories</p>
+                    <h2 className="text-lg font-extrabold text-slate-900">Finance & Invoices Settings (`/workspace/finance`)</h2>
+                    <p className="text-xs font-medium text-slate-500">Configure Invoice prefixes, GST %, Bank & UPI Details, and Expense Categories</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Invoice Prefix */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Invoice ID Prefix
                     </label>
                     <input
                       type="text"
                       value={invoicePrefix}
                       onChange={e => setInvoicePrefix(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
 
                   {/* GST % */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Default GST / Tax Rate (%)
                     </label>
                     <input
                       type="number"
                       value={gstPercent}
                       onChange={e => setGstPercent(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
 
                   {/* UPI ID */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Studio UPI ID
                     </label>
                     <input
                       type="text"
                       value={upiId}
                       onChange={e => setUpiId(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
                 </div>
 
                 {/* Bank Details */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                     Bank Account Transfer Details
                   </label>
                   <textarea
                     rows={2}
                     value={bankDetails}
                     onChange={e => setBankDetails(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                   />
                 </div>
 
                 {/* Expense Categories */}
-                <div className="space-y-3 pt-4 border-t border-slate-800/80">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                    Expense Categories
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">
+                    Expense Categories (Finance Page Dropdowns)
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -633,13 +675,13 @@ export default function SettingsPage() {
                       placeholder="Add expense category e.g. Drone Rental..."
                       value={newExpenseCat}
                       onChange={e => setNewExpenseCat(e.target.value)}
-                      className="flex-1 px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="flex-1 px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                     <button
                       onClick={handleAddExpenseCat}
-                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all flex items-center gap-1"
+                      className="px-4 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Add
+                      <Plus className="w-3.5 h-3.5" /> Add Category
                     </button>
                   </div>
 
@@ -647,14 +689,14 @@ export default function SettingsPage() {
                     {expenseCategories.map(cat => (
                       <span
                         key={cat}
-                        className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-2"
+                        className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 flex items-center gap-2"
                       >
-                        <span>{cat}</span>
+                        <span>🏷️ {cat}</span>
                         <button
                           onClick={() => handleRemoveExpenseCat(cat)}
-                          className="text-slate-500 hover:text-rose-400 transition-colors"
+                          className="text-amber-500 hover:text-rose-600 transition-colors cursor-pointer"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </span>
                     ))}
@@ -665,65 +707,67 @@ export default function SettingsPage() {
 
             {/* 4. ATTENDANCE & GEOFENCE SETTINGS */}
             {activeTab === 'attendance' && (
-              <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
-                  <Clock className="w-6 h-6 text-emerald-400" />
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                    <Clock className="w-5 h-5" />
+                  </div>
                   <div>
-                    <h2 className="text-lg font-extrabold text-white">Attendance & Geofence Settings (`/workspace/attendance`)</h2>
-                    <p className="text-xs text-slate-400">Configure Geofence radius, Shift start time, and break limits</p>
+                    <h2 className="text-lg font-extrabold text-slate-900">Attendance & Geofence Settings (`/workspace/attendance`)</h2>
+                    <p className="text-xs font-medium text-slate-500">Configure Geofence radius, Shift start time, and break limits</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Geofence Radius */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Geofence Radius (Meters)
                     </label>
                     <input
                       type="number"
                       value={geofenceRadius}
                       onChange={e => setGeofenceRadius(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
 
                   {/* Shift Start */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Default Shift Start Time
                     </label>
                     <input
                       type="time"
                       value={shiftStart}
                       onChange={e => setShiftStart(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
 
                   {/* Grace Period */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Grace Period (Minutes)
                     </label>
                     <input
                       type="number"
                       value={graceMinutes}
                       onChange={e => setGraceMinutes(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
 
                   {/* Break Limit */}
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
                       Break Limit (Minutes)
                     </label>
                     <input
                       type="number"
                       value={breakLimitMinutes}
                       onChange={e => setBreakLimitMinutes(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0F9D58]"
                     />
                   </div>
                 </div>
@@ -732,28 +776,30 @@ export default function SettingsPage() {
 
             {/* 5. META & INTEGRATIONS SETTINGS */}
             {activeTab === 'integrations' && (
-              <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
-                  <Globe className="w-6 h-6 text-emerald-400" />
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold">
+                    <Globe className="w-5 h-5" />
+                  </div>
                   <div>
-                    <h2 className="text-lg font-extrabold text-white">Meta & Integrations Settings (`/workspace/integrations/meta`)</h2>
-                    <p className="text-xs text-slate-400">Configure Meta auto-sync interval and default WhatsApp triggers</p>
+                    <h2 className="text-lg font-extrabold text-slate-900">Meta & Integrations Settings (`/workspace/integrations/meta`)</h2>
+                    <p className="text-xs font-medium text-slate-500">Configure Meta auto-sync interval and default WhatsApp triggers</p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded-2xl">
+                <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Real-Time Meta Lead Webhook Sync</h4>
-                    <p className="text-xs text-slate-400 mt-0.5">Automatically ingest Facebook Instant Leads into CRM instantly</p>
+                    <h4 className="text-sm font-bold text-slate-900">Real-Time Meta Lead Webhook Sync</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Automatically ingest Facebook Instant Leads into CRM instantly</p>
                   </div>
                   <button
                     onClick={() => setMetaAutoSync(!metaAutoSync)}
-                    className="transition-all"
+                    className="transition-all cursor-pointer"
                   >
                     {metaAutoSync ? (
-                      <ToggleRight className="w-9 h-9 text-emerald-400" />
+                      <ToggleRight className="w-9 h-9 text-[#0F9D58]" />
                     ) : (
-                      <ToggleLeft className="w-9 h-9 text-slate-600" />
+                      <ToggleLeft className="w-9 h-9 text-slate-400" />
                     )}
                   </button>
                 </div>
@@ -762,27 +808,29 @@ export default function SettingsPage() {
 
             {/* 6. TEAM & OWNERS SETTINGS */}
             {activeTab === 'team' && (
-              <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
-                  <Users className="w-6 h-6 text-emerald-400" />
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <Users className="w-5 h-5" />
+                  </div>
                   <div>
-                    <h2 className="text-lg font-extrabold text-white">Team & Access Control Settings (`/workspace/team`)</h2>
-                    <p className="text-xs text-slate-400">Manage team members, roles, and access rules</p>
+                    <h2 className="text-lg font-extrabold text-slate-900">Team & Access Control Settings (`/workspace/team`)</h2>
+                    <p className="text-xs font-medium text-slate-500">Manage team members, roles, and access rules</p>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded-2xl">
+                  <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#0F9D58] flex items-center justify-center font-bold text-sm">
                         SD
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-white">{studioName} (You)</h4>
-                        <p className="text-xs text-slate-400">{studioEmail || 'Workspace Owner'}</p>
+                        <h4 className="text-sm font-bold text-slate-900">{studioName} (You)</h4>
+                        <p className="text-xs text-slate-500">{studioEmail || 'Workspace Owner'}</p>
                       </div>
                     </div>
-                    <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold">
+                    <span className="px-3 py-1 rounded-full bg-emerald-50 text-[#0F9D58] border border-emerald-200 text-xs font-bold">
                       Super Admin
                     </span>
                   </div>

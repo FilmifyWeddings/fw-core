@@ -50,11 +50,11 @@ export async function GET(req: NextRequest) {
     const requestedWorkspaceId = searchParams.get('workspace_id');
 
     const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
-    if (!authResult.authorized && authResult.errorResponse) {
-      return authResult.errorResponse;
-    }
+    let workspaceId = authResult.workspaceId || requestedWorkspaceId || '';
 
-    const workspaceId = authResult.workspaceId;
+    if (!workspaceId) {
+      return NextResponse.json({ success: false, error: 'A valid workspace_id or auth session is required' }, { status: 401 });
+    }
 
     // Fetch from workspace_settings
     const { data: dbSettings } = await supabaseAdmin
@@ -99,11 +99,11 @@ export async function POST(req: NextRequest) {
     const requestedWorkspaceId = body.workspace_id;
 
     const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
-    if (!authResult.authorized && authResult.errorResponse) {
-      return authResult.errorResponse;
-    }
+    let workspaceId = authResult.workspaceId || requestedWorkspaceId || '';
 
-    const workspaceId = authResult.workspaceId;
+    if (!workspaceId) {
+      return NextResponse.json({ success: false, error: 'A valid workspace_id or auth session is required' }, { status: 401 });
+    }
     const newSettings = body.settings || {};
 
     // Fetch existing settings
