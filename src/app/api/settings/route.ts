@@ -97,9 +97,14 @@ export async function GET(req: NextRequest) {
       .eq('id', workspaceId)
       .maybeSingle();
 
+    const dbConfig = dbSettings?.config || {};
     const mergedSettings = {
       ...DEFAULT_SETTINGS,
-      ...(dbSettings?.config || {}),
+      ...dbConfig,
+      lead_quick_actions: {
+        ...DEFAULT_SETTINGS.lead_quick_actions,
+        ...(dbConfig.lead_quick_actions || {}),
+      },
       studio_name: profile?.workspace_name || 'Studio Core Workspace',
       studio_email: profile?.email || '',
     };

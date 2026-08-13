@@ -3201,39 +3201,43 @@ export function LeadTable({
                             )}
 
                             {/* Google Contact Sync Quick Action */}
-                            <PremiumTooltip content={(lead as any).google_synced ? "Google Contact Synced" : syncingLeadId === lead.id ? "Syncing..." : "Sync Google Contact"}>
-                              <button
-                                onClick={() => handleGoogleContactsSync(lead)}
-                                disabled={syncingLeadId === lead.id}
-                                className={`p-1.5 rounded-lg border transition-all ${
-                                  (lead as any).google_synced 
-                                    ? 'bg-blue-100 dark:bg-blue-950 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-400' 
-                                    : syncingLeadId === lead.id 
-                                      ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
-                                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500'
-                                }`}
-                              >
-                                {syncingLeadId === lead.id ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <UserCheck className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </PremiumTooltip>
+                            {quickActionsConfig.google_contact === true && (
+                              <PremiumTooltip content={(lead as any).google_synced ? "Google Contact Synced" : syncingLeadId === lead.id ? "Syncing..." : "Sync Google Contact"}>
+                                <button
+                                  onClick={() => handleGoogleContactsSync(lead)}
+                                  disabled={syncingLeadId === lead.id}
+                                  className={`p-1.5 rounded-lg border transition-all ${
+                                    (lead as any).google_synced 
+                                      ? 'bg-blue-100 dark:bg-blue-950 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-400' 
+                                      : syncingLeadId === lead.id 
+                                        ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
+                                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500'
+                                  }`}
+                                >
+                                  {syncingLeadId === lead.id ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <UserCheck className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </PremiumTooltip>
+                            )}
 
                             {/* WGL Status / Dispatch Quick Action */}
-                            <PremiumTooltip content={(lead as any).wgl_dispatched ? "WGL Alert Active" : "Dispatch WGL Alert"}>
-                              <button
-                                onClick={() => handleWglDispatch(lead)}
-                                className={`p-1.5 rounded-lg border transition-all ${
-                                  (lead as any).wgl_dispatched 
-                                    ? 'bg-amber-100 dark:bg-amber-950 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400' 
-                                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-amber-600'
-                                }`}
-                              >
-                                <AlertCircle className="w-3.5 h-3.5" />
-                              </button>
-                            </PremiumTooltip>
+                            {quickActionsConfig.wgl_alert === true && (
+                              <PremiumTooltip content={(lead as any).wgl_dispatched ? "WGL Alert Active" : "Dispatch WGL Alert"}>
+                                <button
+                                  onClick={() => handleWglDispatch(lead)}
+                                  className={`p-1.5 rounded-lg border transition-all ${
+                                    (lead as any).wgl_dispatched 
+                                      ? 'bg-amber-100 dark:bg-amber-950 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400' 
+                                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-amber-600'
+                                  }`}
+                                >
+                                  <AlertCircle className="w-3.5 h-3.5" />
+                                </button>
+                              </PremiumTooltip>
+                            )}
 
                             {/* Followups Timeline Quick Action */}
                             {quickActionsConfig.followup !== false && (
