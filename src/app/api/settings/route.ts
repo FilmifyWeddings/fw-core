@@ -148,6 +148,29 @@ export async function POST(req: NextRequest) {
       console.warn('[Workspace Settings Upsert Warning]:', upsertErr.message);
     }
 
+    // Sync lead_stages to crm_stages table in Supabase
+    if (Array.isArray(newSettings.lead_stages) && newSettings.lead_stages.length > 0) {
+      try {
+        await supabaseAdmin
+          .from('crm_stages')
+          .delete()
+          .eq('workspace_id', workspaceId);
+
+        const stagesToInsert = newSettings.lead_stages.map((st: any, idx: number) => ({
+          workspace_id: workspaceId,
+          name: st.name,
+          color: st.color || '#3b82f6',
+          position: typeof st.position === 'number' ? st.position : idx,
+        }));
+
+        await supabaseAdmin
+          .from('crm_stages')
+          .insert(stagesToInsert);
+      } catch (stErr: any) {
+        console.warn('[Settings Stages DB Sync Warning]:', stErr.message);
+      }
+    }
+
     // Update profile workspace_name if provided
     if (newSettings.studio_name) {
       await supabaseAdmin

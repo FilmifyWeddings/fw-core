@@ -297,6 +297,9 @@ export default function SettingsPage() {
 
       if (res.ok) {
         syncToLocalStorage(wId, payloadSettings);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('settings_updated'));
+        }
         setSaveToast('Settings saved & synchronized live across all pages! ✓');
         setTimeout(() => setSaveToast(null), 3500);
       } else {

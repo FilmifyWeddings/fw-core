@@ -178,6 +178,25 @@ export default function LeadsPage() {
     checkAuth();
   }, [router]);
 
+  // Settings sync listener
+  useEffect(() => {
+    const handleSync = () => {
+      if (userId) {
+        loadLeadsAndPreferences(userId);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('settings_updated', handleSync);
+      window.addEventListener('storage', handleSync);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('settings_updated', handleSync);
+        window.removeEventListener('storage', handleSync);
+      }
+    };
+  }, [userId]);
+
   // Realtime subscription for leads (INSERT, UPDATE, DELETE)
   useEffect(() => {
     if (!userId || isDemoMode) return;
