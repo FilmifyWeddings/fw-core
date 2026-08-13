@@ -93,11 +93,77 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Query pages for workspace (strictly for effectiveWorkspaceId)
-    const { data: pagesData } = await supabaseAdmin
+    // 3. Query pages for workspace (with live Graph API discovery fallback)
+    let { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
       .select('*')
       .eq('workspace_id', effectiveWorkspaceId);
+
+    // Live Page Discovery: If 0 pages in DB for connected user, query Meta Graph API /me/accounts live
+    if ((!pagesData || pagesData.length === 0) && conn?.access_token) {
+      console.log(`[STATUS API AUDIT] 0 pages in fb_page_configs for ${effectiveWorkspaceId}. Querying /me/accounts live...`);
+      try {
+        const pagesRes = await fetch(
+          `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${conn.access_token}`
+        );
+        const pagesJson = await pagesRes.json().catch(() => ({}));
+        if (pagesRes.ok && pagesJson.data && pagesJson.data.length > 0) {
+          const discoveredPages: any[] = [];
+          for (const p of pagesJson.data) {
+            const { data: savedPage } = await supabaseAdmin
+              .from('fb_page_configs')
+              .upsert({
+                workspace_id: effectiveWorkspaceId,
+                page_id: p.id,
+                page_name: p.name || 'Facebook Page',
+                page_category: p.category || 'Business Page',
+                page_access_token: p.access_token || conn.access_token,
+                is_active: true,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id,page_id' })
+              .select('*')
+              .single();
+
+            if (savedPage) discoveredPages.push(savedPage);
+          }
+          if (discoveredPages.length > 0) {
+            pagesData = discoveredPages;
+          }
+        }
+      } catch (err: any) {
+        console.error('[STATUS API Live Page Discovery Error]:', err.message);
+      }
+    }
+
+    // Derive pages from fb_lead_forms if pagesData is still 0
+    if ((!pagesData || pagesData.length === 0) && effectiveWorkspaceId) {
+      const { data: formPages } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('page_id')
+        .eq('workspace_id', effectiveWorkspaceId);
+
+      const uniquePageIds = Array.from(new Set((formPages || []).map((f: any) => f.page_id).filter(Boolean)));
+      if (uniquePageIds.length > 0) {
+        const derived: any[] = [];
+        for (const pId of uniquePageIds) {
+          const { data: pSaved } = await supabaseAdmin
+            .from('fb_page_configs')
+            .upsert({
+              workspace_id: effectiveWorkspaceId,
+              page_id: String(pId),
+              page_name: 'Facebook Page',
+              page_category: 'Business Page',
+              page_access_token: conn?.access_token || '',
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id,page_id' })
+            .select('*')
+            .single();
+          if (pSaved) derived.push(pSaved);
+        }
+        pagesData = derived;
+      }
+    }
 
     const pages = (pagesData || []).map((p: any) => ({
       page_id: p.page_id,
