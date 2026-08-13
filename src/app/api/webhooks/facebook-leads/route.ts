@@ -192,24 +192,52 @@ export async function POST(req: NextRequest) {
           leadData.whatsapp_group_id = formMapping.contact_group_id || null;
 
           // ── Round-Robin Lead Owner Auto-Distribution Engine ──
-          const distConfig = (formMapping.mapping_config as any)?.distribution_config || (formMapping as any).distribution_config;
-          if (distConfig?.enabled && Array.isArray(distConfig.owners) && distConfig.owners.length > 0) {
+          let distConfig = (formMapping?.mapping_config as any)?.distribution_config || (formMapping as any)?.distribution_config;
+
+          // Fallback to Supabase auth user_metadata form_distributions
+          if (!distConfig && workspaceId && resolvedFormId) {
+            try {
+              const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
+              distConfig = u?.user?.user_metadata?.form_distributions?.[resolvedFormId];
+            } catch (_) {}
+          }
+
+          if (distConfig?.enabled !== false && Array.isArray(distConfig?.owners) && distConfig.owners.length > 0) {
             const owners: string[] = distConfig.owners;
             const lastIdx: number = typeof distConfig.last_assigned_index === 'number' ? distConfig.last_assigned_index : -1;
             const nextIdx = (lastIdx + 1) % owners.length;
             const assignedOwner = owners[nextIdx];
 
-            console.log(`[FB Webhook Round-Robin] Assigning lead to owner [${nextIdx + 1}/${owners.length}]: ${assignedOwner}`);
+            console.log(`[FB Webhook Round-Robin] Assigning lead for form ${resolvedFormId} to owner [${nextIdx + 1}/${owners.length}]: ${assignedOwner}`);
 
             (leadData as any).assigned_lead_owner = assignedOwner;
 
             const updatedDistConfig = { ...distConfig, last_assigned_index: nextIdx };
-            const updatedMappingConfig = { ...mappingConfig, distribution_config: updatedDistConfig };
 
-            await supabaseAdmin
-              .from('fb_form_mappings')
-              .update({ mapping_config: updatedMappingConfig })
-              .eq('form_id', resolvedFormId);
+            if (resolvedFormId) {
+              try {
+                const updatedMappingConfig = { ...(mappingConfig || {}), distribution_config: updatedDistConfig };
+                await supabaseAdmin
+                  .from('fb_form_mappings')
+                  .update({ mapping_config: updatedMappingConfig })
+                  .eq('form_id', resolvedFormId);
+              } catch (_) {}
+
+              try {
+                const { data: uData } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
+                const existingMeta = uData?.user?.user_metadata || {};
+                const existingDists = existingMeta.form_distributions || {};
+                await supabaseAdmin.auth.admin.updateUserById(workspaceId, {
+                  user_metadata: {
+                    ...existingMeta,
+                    form_distributions: {
+                      ...existingDists,
+                      [resolvedFormId]: updatedDistConfig
+                    }
+                  }
+                });
+              } catch (_) {}
+            }
           }
         }
       }
@@ -300,6 +328,8 @@ export async function POST(req: NextRequest) {
         source_form_id:    leadData.source_form_id,
         form_tag:          leadData.form_tag,
         whatsapp_group_id: leadData.whatsapp_group_id,
+        owner:             (leadData as any).assigned_lead_owner || null,
+        lead_owner:        (leadData as any).assigned_lead_owner || null,
       })
       .select()
       .single();
