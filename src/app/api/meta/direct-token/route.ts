@@ -68,7 +68,22 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    // Test Attempt C: Directly query /leadgen_forms endpoint for page_id
+    // Test Attempt C: Query /me to get Canonical Page Node ID & Name
+    let canonicalPageId = page_id;
+    try {
+      const meRes = await fetch(
+        `https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${effectiveToken}`
+      );
+      const meJson = await meRes.json().catch(() => ({}));
+      if (meRes.ok && meJson.id) {
+        isValid = true;
+        canonicalPageId = meJson.id;
+        pageName = meJson.name || pageName;
+        pageCategory = meJson.category || pageCategory;
+      }
+    } catch (_) {}
+
+    // Test Attempt D: Directly query /leadgen_forms endpoint for page_id
     if (!isValid) {
       try {
         const testFormsRes = await fetch(
@@ -88,30 +103,29 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 2. Direct Webhook Subscription ──────────────────────────────────────
-    console.log(`[Direct Token Sync] Subscribing Page ${page_id} to leadgen webhooks...`);
+    console.log(`[Direct Token Sync] Subscribing Page ${canonicalPageId} (User ID: ${page_id}) to leadgen webhooks...`);
     let webhookSubscribed = false;
-    try {
-      const subRes = await fetch(
-        `https://graph.facebook.com/v20.0/${page_id}/subscribed_apps`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `subscribed_fields=leadgen&access_token=${encodeURIComponent(effectiveToken)}`,
+    const targetSubscribePageIds = Array.from(new Set([canonicalPageId, page_id]));
+    for (const pid of targetSubscribePageIds) {
+      try {
+        const subRes = await fetch(
+          `https://graph.facebook.com/v20.0/${pid}/subscribed_apps`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `subscribed_fields=leadgen&access_token=${encodeURIComponent(effectiveToken)}`,
+          }
+        );
+        const subJson = await subRes.json().catch(() => ({}));
+        if (subRes.ok && subJson.success) {
+          webhookSubscribed = true;
+          console.log(`[Direct Token Sync] Webhook subscribed successfully for Page ${pid}`);
         }
-      );
-      const subJson = await subRes.json().catch(() => ({}));
-      if (subRes.ok && subJson.success) {
-        webhookSubscribed = true;
-        console.log(`[Direct Token Sync] Webhook subscribed successfully for Page ${page_id}`);
-      } else {
-        console.warn(`[Direct Token Sync] Webhook subscription warning:`, subJson);
-      }
-    } catch (wErr: any) {
-      console.warn(`[Direct Token Sync] Webhook subscription exception:`, wErr.message);
+      } catch (_) {}
     }
 
     // ── 3. Multi-Endpoint Lead Forms Discovery ─────────────────────────────
-    console.log(`[Direct Token Sync] Fetching leadgen_forms for Page ${page_id}...`);
+    console.log(`[Direct Token Sync] Fetching leadgen_forms for Page canonical:${canonicalPageId} / input:${page_id}...`);
     const formsMap = new Map<string, any>();
     const explicitFormId = (body.form_id || '').trim();
 
@@ -119,7 +133,7 @@ export async function POST(req: NextRequest) {
     if (explicitFormId) {
       try {
         const formRes = await fetch(
-          `https://graph.facebook.com/v20.0/${explicitFormId}?fields=id,name,status,leads_count,questions,created_time&access_token=${effectiveToken}`
+          `https://graph.facebook.com/v20.0/${explicitFormId}?fields=id,name,status,leads_count,created_time&access_token=${effectiveToken}`
         );
         const formJson = await formRes.json().catch(() => ({}));
         if (formRes.ok && formJson.id) {
@@ -128,46 +142,49 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    // Endpoint B: Nested fields on Page node
-    try {
-      const pageNodeRes = await fetch(
-        `https://graph.facebook.com/v20.0/${page_id}?fields=leadgen_forms{id,name,status,leads_count,questions},promotable_leadgen_forms{id,name,status,leads_count,questions}&access_token=${effectiveToken}`
-      );
-      const pageNodeJson = await pageNodeRes.json().catch(() => ({}));
-      if (pageNodeRes.ok) {
-        const list1 = pageNodeJson.leadgen_forms?.data || [];
-        const list2 = pageNodeJson.promotable_leadgen_forms?.data || [];
-        [...list1, ...list2].forEach((f: any) => {
-          if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
-        });
-      }
-    } catch (_) {}
+    // Loop through all candidate Page Node IDs (both canonical ID and user-provided ID)
+    for (const pid of targetSubscribePageIds) {
+      // Endpoint B: Nested fields on Page node
+      try {
+        const pageNodeRes = await fetch(
+          `https://graph.facebook.com/v20.0/${pid}?fields=leadgen_forms{id,name,status,leads_count},promotable_leadgen_forms{id,name,status,leads_count}&access_token=${effectiveToken}`
+        );
+        const pageNodeJson = await pageNodeRes.json().catch(() => ({}));
+        if (pageNodeRes.ok) {
+          const list1 = pageNodeJson.leadgen_forms?.data || [];
+          const list2 = pageNodeJson.promotable_leadgen_forms?.data || [];
+          [...list1, ...list2].forEach((f: any) => {
+            if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
+          });
+        }
+      } catch (_) {}
 
-    // Endpoint C: Standard leadgen_forms
-    try {
-      const fRes = await fetch(
-        `https://graph.facebook.com/v20.0/${page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${effectiveToken}`
-      );
-      const fJson = await fRes.json().catch(() => ({}));
-      if (fRes.ok && Array.isArray(fJson.data)) {
-        fJson.data.forEach((f: any) => {
-          if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
-        });
-      }
-    } catch (_) {}
+      // Endpoint C: Standard leadgen_forms
+      try {
+        const fRes = await fetch(
+          `https://graph.facebook.com/v20.0/${pid}/leadgen_forms?fields=id,name,status,leads_count,created_time&limit=100&access_token=${effectiveToken}`
+        );
+        const fJson = await fRes.json().catch(() => ({}));
+        if (fRes.ok && Array.isArray(fJson.data)) {
+          fJson.data.forEach((f: any) => {
+            if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
+          });
+        }
+      } catch (_) {}
 
-    // Endpoint D: Promotable leadgen_forms
-    try {
-      const pRes = await fetch(
-        `https://graph.facebook.com/v20.0/${page_id}/promotable_leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${effectiveToken}`
-      );
-      const pJson = await pRes.json().catch(() => ({}));
-      if (pRes.ok && Array.isArray(pJson.data)) {
-        pJson.data.forEach((f: any) => {
-          if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
-        });
-      }
-    } catch (_) {}
+      // Endpoint D: Promotable leadgen_forms
+      try {
+        const pRes = await fetch(
+          `https://graph.facebook.com/v20.0/${pid}/promotable_leadgen_forms?fields=id,name,status,leads_count,created_time&limit=100&access_token=${effectiveToken}`
+        );
+        const pJson = await pRes.json().catch(() => ({}));
+        if (pRes.ok && Array.isArray(pJson.data)) {
+          pJson.data.forEach((f: any) => {
+            if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
+          });
+        }
+      } catch (_) {}
+    }
 
     // Fallback: If Meta Graph API returned 0 forms automatically and user didn't specify form_id, create a default Lead Form entry for this Page
     if (formsMap.size === 0) {
@@ -206,19 +223,19 @@ export async function POST(req: NextRequest) {
       }, { onConflict: 'user_id,provider' });
 
     // ── 5. Save Page Config in DB ────────────────────────────────────────────
-    const { data: savedPage } = await supabaseAdmin
-      .from('fb_page_configs')
-      .upsert({
-        workspace_id: workspaceId,
-        page_id,
-        page_name: pageName,
-        page_category: pageCategory,
-        page_access_token: effectiveToken,
-        is_active: true,
-        updated_at: now,
-      }, { onConflict: 'workspace_id,page_id' })
-      .select('*')
-      .single();
+    for (const pid of targetSubscribePageIds) {
+      await supabaseAdmin
+        .from('fb_page_configs')
+        .upsert({
+          workspace_id: workspaceId,
+          page_id: pid,
+          page_name: pageName,
+          page_category: pageCategory,
+          page_access_token: effectiveToken,
+          is_active: true,
+          updated_at: now,
+        }, { onConflict: 'workspace_id,page_id' });
+    }
 
     // ── 6. Save Lead Forms in DB ─────────────────────────────────────────────
     const savedForms: any[] = [];
@@ -232,7 +249,7 @@ export async function POST(req: NextRequest) {
         .from('fb_lead_forms')
         .upsert({
           workspace_id: workspaceId,
-          page_id,
+          page_id: canonicalPageId || page_id,
           form_id: formId,
           form_name: formName,
           status,
