@@ -61,16 +61,61 @@ export async function GET(req: NextRequest) {
 // ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspace_id');
+  let workspaceId = searchParams.get('workspace_id');
+
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+  }
+
+  console.log('[FB Webhook] Incoming payload:', JSON.stringify(body, null, 2));
+
+  // Resolve workspace_id if missing from URL query
+  if (!workspaceId) {
+    const targetPageId = body?.entry?.[0]?.changes?.[0]?.value?.page_id || body?.entry?.[0]?.id;
+    const targetFormId = body?.entry?.[0]?.changes?.[0]?.value?.form_id;
+
+    if (targetPageId) {
+      try {
+        const { data: pageConfig } = await supabaseAdmin
+          .from('fb_page_configs')
+          .select('workspace_id')
+          .eq('page_id', targetPageId)
+          .maybeSingle();
+        if (pageConfig?.workspace_id) workspaceId = pageConfig.workspace_id;
+      } catch (_) {}
+    }
+
+    if (!workspaceId && targetFormId) {
+      try {
+        const { data: formConfig } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('workspace_id')
+          .eq('form_id', targetFormId)
+          .maybeSingle();
+        if (formConfig?.workspace_id) workspaceId = formConfig.workspace_id;
+      } catch (_) {}
+    }
+
+    if (!workspaceId) {
+      try {
+        const { data: profiles } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .not('meta_access_token', 'is', null)
+          .limit(1);
+        if (profiles?.[0]?.id) workspaceId = profiles[0].id;
+      } catch (_) {}
+    }
+  }
 
   if (!workspaceId) {
-    return NextResponse.json({ error: 'Missing workspace_id parameter' }, { status: 400 });
+    return NextResponse.json({ error: 'Could not resolve workspace_id for incoming webhook' }, { status: 400 });
   }
 
   try {
-    const body = await req.json();
-    console.log('[FB Webhook] Incoming payload:', JSON.stringify(body, null, 2));
-
     // ── Parsed lead data container ──────────────────────────
     let leadData: {
       name: string;
