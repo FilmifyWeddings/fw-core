@@ -437,6 +437,7 @@ export default function MetaIntegrationPage() {
   const [showDirectTokenModal, setShowDirectTokenModal] = useState(false);
   const [directPageId, setDirectPageId] = useState('');
   const [directPageToken, setDirectPageToken] = useState('');
+  const [directFormId, setDirectFormId] = useState('');
   const [directTokenConnecting, setDirectTokenConnecting] = useState(false);
 
   // Auth Header helper
@@ -1750,6 +1751,7 @@ export default function MetaIntegrationPage() {
                       workspace_id: wsId,
                       page_id: directPageId.trim(),
                       page_access_token: directPageToken.trim(),
+                      form_id: directFormId.trim(),
                     }),
                   });
                   const data = await res.json().catch(() => ({}));
@@ -1758,6 +1760,7 @@ export default function MetaIntegrationPage() {
                     setShowDirectTokenModal(false);
                     setDirectPageId('');
                     setDirectPageToken('');
+                    setDirectFormId('');
                     fetchMetaSyncData();
                   } else {
                     showToast(data.error || 'Direct Token Connection failed.', 'error');
@@ -1773,7 +1776,7 @@ export default function MetaIntegrationPage() {
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-slate-600">
                 <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <p className="text-[11px] leading-relaxed">
-                  Enter your <strong>Facebook Page ID</strong> and <strong>Page Access Token</strong>. This connects your Page directly via Graph API, fetches lead forms, and subscribes to leadgen Webhooks.
+                  Enter your <strong>Facebook Page ID</strong> and <strong>Page Access Token</strong>. Optionally provide a specific <strong>Lead Form ID</strong> to force fetch that form directly.
                 </p>
               </div>
 
@@ -1806,6 +1809,21 @@ export default function MetaIntegrationPage() {
                   value={directPageToken}
                   onChange={(e) => setDirectPageToken(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+
+              {/* Input 3: Optional Form ID */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
+                  <span>Lead Form ID (form_id) — <em className="text-emerald-600 font-normal">Optional</em></span>
+                  <span className="text-[10px] text-slate-400 font-mono">Form Numeric ID</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 102938475610293 (Leave blank for auto-fetch)"
+                  value={directFormId}
+                  onChange={(e) => setDirectFormId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 

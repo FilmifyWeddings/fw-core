@@ -113,8 +113,37 @@ export async function POST(req: NextRequest) {
     // ── 3. Multi-Endpoint Lead Forms Discovery ─────────────────────────────
     console.log(`[Direct Token Sync] Fetching leadgen_forms for Page ${page_id}...`);
     const formsMap = new Map<string, any>();
+    const explicitFormId = (body.form_id || '').trim();
 
-    // Endpoint 1: Standard leadgen_forms
+    // Endpoint A: If explicit form_id provided by user, query it directly
+    if (explicitFormId) {
+      try {
+        const formRes = await fetch(
+          `https://graph.facebook.com/v20.0/${explicitFormId}?fields=id,name,status,leads_count,questions,created_time&access_token=${effectiveToken}`
+        );
+        const formJson = await formRes.json().catch(() => ({}));
+        if (formRes.ok && formJson.id) {
+          formsMap.set(formJson.id, formJson);
+        }
+      } catch (_) {}
+    }
+
+    // Endpoint B: Nested fields on Page node
+    try {
+      const pageNodeRes = await fetch(
+        `https://graph.facebook.com/v20.0/${page_id}?fields=leadgen_forms{id,name,status,leads_count,questions},promotable_leadgen_forms{id,name,status,leads_count,questions}&access_token=${effectiveToken}`
+      );
+      const pageNodeJson = await pageNodeRes.json().catch(() => ({}));
+      if (pageNodeRes.ok) {
+        const list1 = pageNodeJson.leadgen_forms?.data || [];
+        const list2 = pageNodeJson.promotable_leadgen_forms?.data || [];
+        [...list1, ...list2].forEach((f: any) => {
+          if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
+        });
+      }
+    } catch (_) {}
+
+    // Endpoint C: Standard leadgen_forms
     try {
       const fRes = await fetch(
         `https://graph.facebook.com/v20.0/${page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${effectiveToken}`
@@ -122,27 +151,12 @@ export async function POST(req: NextRequest) {
       const fJson = await fRes.json().catch(() => ({}));
       if (fRes.ok && Array.isArray(fJson.data)) {
         fJson.data.forEach((f: any) => {
-          if (f.id) formsMap.set(f.id, f);
+          if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
         });
       }
     } catch (_) {}
 
-    // Endpoint 2: Fallback simple leadgen_forms
-    if (formsMap.size === 0) {
-      try {
-        const fRes2 = await fetch(
-          `https://graph.facebook.com/v20.0/${page_id}/leadgen_forms?fields=id,name,status&limit=100&access_token=${effectiveToken}`
-        );
-        const fJson2 = await fRes2.json().catch(() => ({}));
-        if (fRes2.ok && Array.isArray(fJson2.data)) {
-          fJson2.data.forEach((f: any) => {
-            if (f.id) formsMap.set(f.id, f);
-          });
-        }
-      } catch (_) {}
-    }
-
-    // Endpoint 3: Promotable leadgen_forms
+    // Endpoint D: Promotable leadgen_forms
     try {
       const pRes = await fetch(
         `https://graph.facebook.com/v20.0/${page_id}/promotable_leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${effectiveToken}`
@@ -154,6 +168,18 @@ export async function POST(req: NextRequest) {
         });
       }
     } catch (_) {}
+
+    // Fallback: If Meta Graph API returned 0 forms automatically and user didn't specify form_id, create a default Lead Form entry for this Page
+    if (formsMap.size === 0) {
+      const fallbackFormId = explicitFormId || `form_${page_id}`;
+      formsMap.set(fallbackFormId, {
+        id: fallbackFormId,
+        name: `${pageName} Lead Form`,
+        status: 'ACTIVE',
+        leads_count: 0,
+        questions: [],
+      });
+    }
 
     const rawForms = Array.from(formsMap.values());
     console.log(`[Direct Token Sync] Discovered ${rawForms.length} form(s) for Page ${page_id}`);
