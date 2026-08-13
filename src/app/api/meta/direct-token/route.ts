@@ -110,13 +110,53 @@ export async function POST(req: NextRequest) {
       console.warn(`[Direct Token Sync] Webhook subscription exception:`, wErr.message);
     }
 
-    // ── 3. Fetch Lead Forms for Page ────────────────────────────────────────
+    // ── 3. Multi-Endpoint Lead Forms Discovery ─────────────────────────────
     console.log(`[Direct Token Sync] Fetching leadgen_forms for Page ${page_id}...`);
-    const formsRes = await fetch(
-      `https://graph.facebook.com/v20.0/${page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&access_token=${effectiveToken}`
-    );
-    const formsJson = await formsRes.json().catch(() => ({}));
-    const rawForms = Array.isArray(formsJson.data) ? formsJson.data : [];
+    const formsMap = new Map<string, any>();
+
+    // Endpoint 1: Standard leadgen_forms
+    try {
+      const fRes = await fetch(
+        `https://graph.facebook.com/v20.0/${page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${effectiveToken}`
+      );
+      const fJson = await fRes.json().catch(() => ({}));
+      if (fRes.ok && Array.isArray(fJson.data)) {
+        fJson.data.forEach((f: any) => {
+          if (f.id) formsMap.set(f.id, f);
+        });
+      }
+    } catch (_) {}
+
+    // Endpoint 2: Fallback simple leadgen_forms
+    if (formsMap.size === 0) {
+      try {
+        const fRes2 = await fetch(
+          `https://graph.facebook.com/v20.0/${page_id}/leadgen_forms?fields=id,name,status&limit=100&access_token=${effectiveToken}`
+        );
+        const fJson2 = await fRes2.json().catch(() => ({}));
+        if (fRes2.ok && Array.isArray(fJson2.data)) {
+          fJson2.data.forEach((f: any) => {
+            if (f.id) formsMap.set(f.id, f);
+          });
+        }
+      } catch (_) {}
+    }
+
+    // Endpoint 3: Promotable leadgen_forms
+    try {
+      const pRes = await fetch(
+        `https://graph.facebook.com/v20.0/${page_id}/promotable_leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${effectiveToken}`
+      );
+      const pJson = await pRes.json().catch(() => ({}));
+      if (pRes.ok && Array.isArray(pJson.data)) {
+        pJson.data.forEach((f: any) => {
+          if (f.id && !formsMap.has(f.id)) formsMap.set(f.id, f);
+        });
+      }
+    } catch (_) {}
+
+    const rawForms = Array.from(formsMap.values());
+    console.log(`[Direct Token Sync] Discovered ${rawForms.length} form(s) for Page ${page_id}`);
 
     // ── 4. Save Integration Credentials in DB ────────────────────────────────
     const now = new Date().toISOString();

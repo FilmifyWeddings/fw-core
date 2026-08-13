@@ -190,11 +190,66 @@ export async function GET(req: NextRequest) {
     const pageMap = new Map((pagesData || []).map((p: any) => [p.page_id, p.page_name]));
     const businessName = pages[0]?.page_name || metaUserName || 'Facebook Business';
 
-    // 4. Query forms strictly for THIS workspace (ZERO global fallbacks, ZERO DB mutations)
-    const { data: rawFormsData } = await supabaseAdmin
+    // 4. Query forms for workspace with Live Graph API Auto-Healing
+    let { data: rawFormsData } = await supabaseAdmin
       .from('fb_lead_forms')
       .select('*')
       .eq('workspace_id', workspaceId);
+
+    // Live Forms Discovery: If 0 forms in DB for connected workspace, query Graph API for all pages
+    if ((!rawFormsData || rawFormsData.length === 0) && pagesData && pagesData.length > 0) {
+      console.log(`[STATUS API AUDIT] 0 forms in fb_lead_forms for ${workspaceId}. Live discovering forms from pages...`);
+      const discoveredForms: any[] = [];
+      const now = new Date().toISOString();
+
+      for (const page of pagesData) {
+        const pageToken = page.page_access_token || conn?.access_token;
+        if (!pageToken) continue;
+
+        try {
+          // Query leadgen_forms & promotable_leadgen_forms
+          const fRes = await fetch(
+            `https://graph.facebook.com/v20.0/${page.page_id}/leadgen_forms?fields=id,name,status,leads_count,questions,created_time&limit=100&access_token=${pageToken}`
+          );
+          const fJson = await fRes.json().catch(() => ({}));
+          const pageForms = Array.isArray(fJson.data) ? fJson.data : [];
+
+          for (const f of pageForms) {
+            if (!f.id) continue;
+            const formId = f.id;
+            const formName = f.name || 'Instant Lead Form';
+            const status = f.status || 'ACTIVE';
+            const leadsCount = f.leads_count || 0;
+            const questions = f.questions || [];
+
+            const { data: savedForm } = await supabaseAdmin
+              .from('fb_lead_forms')
+              .upsert({
+                workspace_id: workspaceId,
+                page_id: page.page_id,
+                form_id: formId,
+                form_name: formName,
+                status,
+                leads_count: leadsCount,
+                questions_count: questions.length,
+                questions,
+                is_enabled: true,
+                updated_at: now,
+              }, { onConflict: 'workspace_id,form_id' })
+              .select('*')
+              .maybeSingle();
+
+            if (savedForm) discoveredForms.push(savedForm);
+          }
+        } catch (err: any) {
+          console.error(`[STATUS API Live Forms Error for Page ${page.page_id}]:`, err.message);
+        }
+      }
+
+      if (discoveredForms.length > 0) {
+        rawFormsData = discoveredForms;
+      }
+    }
 
     const { data: mappingsData } = await supabaseAdmin
       .from('fb_form_mappings')
