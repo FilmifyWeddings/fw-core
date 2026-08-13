@@ -1735,8 +1735,8 @@ export default function MetaIntegrationPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (!directPageId.trim() || !directPageToken.trim()) {
-                  showToast('Both Page ID and Page Access Token are required.', 'error');
+                if (!directPageToken.trim()) {
+                  showToast('Access Token is required.', 'error');
                   return;
                 }
                 setDirectTokenConnecting(true);
@@ -1756,7 +1756,8 @@ export default function MetaIntegrationPage() {
                   });
                   const data = await res.json().catch(() => ({}));
                   if (res.ok && data.success) {
-                    showToast(`🎯 Connected Page "${data.page?.page_name || directPageId}"! Fetched ${data.forms_count || 0} forms.`);
+                    const pagesMsg = data.pages_count ? `Connected ${data.pages_count} Page(s)` : `Connected Page "${data.page?.page_name || directPageId}"`;
+                    showToast(`🎯 ${pagesMsg}! Discovered ${data.forms_count || 0} form(s).`);
                     setShowDirectTokenModal(false);
                     setDirectPageId('');
                     setDirectPageToken('');
@@ -1776,36 +1777,35 @@ export default function MetaIntegrationPage() {
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-slate-600">
                 <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <p className="text-[11px] leading-relaxed">
-                  Enter your <strong>Facebook Page ID</strong> and <strong>Page Access Token</strong>. Optionally provide a specific <strong>Lead Form ID</strong> to force fetch that form directly.
+                  Paste your <strong>Facebook Access Token</strong> (User or Page Token). Page ID is <strong>optional</strong> — the system will automatically discover all Pages & Lead Forms associated with your token!
                 </p>
               </div>
 
-              {/* Input 1: Page ID */}
+              {/* Input 1: Page ID (Optional) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
-                  <span>Facebook Page ID (page_id)</span>
-                  <span className="text-[10px] text-slate-400 font-mono">Numeric ID</span>
+                  <span>Facebook Page ID (page_id) — <em className="text-emerald-600 font-normal">Optional</em></span>
+                  <span className="text-[10px] text-slate-400 font-mono">Auto-Discovered if Blank</span>
                 </label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. 335849269615110"
+                  placeholder="e.g. 335849269615110 (Leave blank for Auto-Discovery)"
                   value={directPageId}
                   onChange={(e) => setDirectPageId(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
-              {/* Input 2: Page Access Token */}
+              {/* Input 2: Access Token (Required) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
-                  <span>Page Access Token (page_access_token)</span>
+                  <span>Access Token (User or Page Token)</span>
                   <span className="text-[10px] text-slate-400 font-mono">EAA... Token</span>
                 </label>
                 <textarea
                   required
                   rows={3}
-                  placeholder="e.g. EAAXXXXXX..."
+                  placeholder="Paste Access Token here (e.g. EAAXXXXXX...)"
                   value={directPageToken}
                   onChange={(e) => setDirectPageToken(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
