@@ -39,19 +39,34 @@ export async function POST(req: NextRequest) {
   const workspaceId = authResult.workspaceId;
 
   // ── Resolve page access token ─────────────────────────────────────────────
+  let pageToken: string | null = null;
+  let pageName = 'Facebook Page';
+
   const { data: pageRow } = await supabaseAdmin
     .from('fb_page_configs')
     .select('page_name, page_access_token')
-    .eq('workspace_id', workspaceId)
     .eq('page_id', page_id)
-    .single();
+    .not('page_access_token', 'is', null)
+    .limit(1)
+    .maybeSingle();
 
-  if (!pageRow?.page_access_token) {
-    return new Response(JSON.stringify({ error: 'Page access token not found. Please reconnect Facebook.' }), { status: 403 });
+  if (pageRow?.page_access_token) {
+    pageToken = pageRow.page_access_token;
+    pageName  = pageRow.page_name || 'Facebook Page';
   }
 
-  const pageToken = pageRow.page_access_token;
-  const pageName = pageRow.page_name || 'Facebook Page';
+  if (!pageToken) {
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('meta_access_token')
+      .eq('id', workspaceId)
+      .maybeSingle();
+    pageToken = profile?.meta_access_token || null;
+  }
+
+  if (!pageToken) {
+    return new Response(JSON.stringify({ error: 'Page access token not found. Please reconnect Facebook.' }), { status: 403 });
+  }
 
   // ── Resolve form name ──────────────────────────────────────────────────────
   const { data: formRow } = await supabaseAdmin
