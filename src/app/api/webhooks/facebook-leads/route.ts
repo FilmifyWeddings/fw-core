@@ -112,7 +112,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (!workspaceId) {
-    return NextResponse.json({ error: 'Could not resolve workspace_id for incoming webhook' }, { status: 400 });
+    console.error('[FB Webhook] Unresolved workspace_id for incoming payload');
+    return NextResponse.json({ success: false, error: 'Could not resolve workspace_id for incoming webhook' }, { status: 200 });
   }
 
   try {
@@ -145,7 +146,7 @@ export async function POST(req: NextRequest) {
       const change   = entry.changes[0];
       const leadgenId = change.value.leadgen_id as string;
       const formId    = (change.value.form_id as string) || null;
-      const pageId    = (change.value.page_id as string) || null;
+      const pageId    = (change.value.page_id as string) || (entry.id as string) || null;
 
       leadData.meta_lead_id   = leadgenId;
       leadData.source_form_id = formId;
@@ -169,12 +170,14 @@ export async function POST(req: NextRequest) {
 
       // ── 1b. Fetch Page Access Token ──────────────────────
       let pageAccessToken: string | null = null;
+
       if (pageId) {
         const { data: pageConfig } = await supabaseAdmin
           .from('fb_page_configs')
           .select('page_access_token')
-          .eq('workspace_id', workspaceId)
           .eq('page_id', pageId)
+          .not('page_access_token', 'is', null)
+          .limit(1)
           .maybeSingle();
         pageAccessToken = pageConfig?.page_access_token || null;
       }
@@ -185,12 +188,22 @@ export async function POST(req: NextRequest) {
           .from('profiles')
           .select('meta_access_token')
           .eq('id', workspaceId)
-          .single();
+          .maybeSingle();
         pageAccessToken = profile?.meta_access_token || null;
       }
 
       if (!pageAccessToken) {
-        throw new Error(`No access token found for workspace: ${workspaceId}`);
+        console.error(`[FB Webhook] No access token found for workspace: ${workspaceId}, pageId: ${pageId}`);
+        try {
+          await supabaseAdmin.from('live_logs').insert({
+            workspace_id: workspaceId,
+            event_type: 'webhook_error',
+            message: `FB Webhook Error: No access token found for Page ID ${pageId || 'unknown'}. Please reconnect Meta account in Integrations.`,
+            metadata: { page_id: pageId, form_id: formId, leadgen_id: leadgenId },
+          });
+        } catch (_) {}
+
+        return NextResponse.json({ success: false, error: `No access token found for page ${pageId}` }, { status: 200 });
       }
 
       // ── 1c. Fetch lead values from Meta Graph API ────────
@@ -200,7 +213,17 @@ export async function POST(req: NextRequest) {
 
       if (!metaRes.ok) {
         const errText = await metaRes.text();
-        throw new Error(`Meta Graph API error: ${metaRes.status} — ${errText}`);
+        console.error(`[FB Webhook] Meta Graph API error: ${metaRes.status} — ${errText}`);
+        try {
+          await supabaseAdmin.from('live_logs').insert({
+            workspace_id: workspaceId,
+            event_type: 'webhook_error',
+            message: `Meta Graph API fetch error (${metaRes.status}): ${errText}`,
+            metadata: { leadgen_id: leadgenId, form_id: formId, page_id: pageId },
+          });
+        } catch (_) {}
+
+        return NextResponse.json({ success: false, error: `Meta Graph API error: ${errText}` }, { status: 200 });
       }
 
       const metaLead = await metaRes.json();
@@ -444,6 +467,6 @@ export async function POST(req: NextRequest) {
       // Non-critical — ignore log write errors
     }
 
-    return NextResponse.json({ error: err.message || 'Ingestion failed' }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message || 'Ingestion failed' }, { status: 200 });
   }
 }
