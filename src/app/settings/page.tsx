@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
   FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send,
-  ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown
+  UserCheck, AlertCircle, ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -79,9 +79,10 @@ export default function SettingsPage() {
     call: true,
     mail: true,
     comments: true,
-    followup: true,
-    whatsapp: true,
-    delete: false,
+    google_contact: false,
+    wgl_alert: false,
+    whatsapp: false,
+    followup: false,
   });
 
   // 2. Quotations Page Settings
@@ -608,18 +609,19 @@ export default function SettingsPage() {
                     <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block">
                       Manage Lead Action Column Buttons (Visible on `/leads` Page)
                     </label>
-                    <p className="text-xs text-slate-500 mt-0.5">Select which quick action icons appear in the Action column for each lead (Quotation, Call, Mail & Comments enabled by default)</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Select which action buttons appear in the Action column (New users get Quotation, Call, Mail & Comments by default)</p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1">
                     {[
                       { key: 'quotation', label: 'Quotation / Proposal', icon: FileText, desc: 'Generate & send PDF quotes', isDefault: true },
                       { key: 'call', label: 'Device Dialer Call', icon: Phone, desc: 'Click-to-call lead phone number', isDefault: true },
                       { key: 'mail', label: 'Email Lead', icon: Mail, desc: 'Send email to lead', isDefault: true },
-                      { key: 'comments', label: 'Comments & Reminders', icon: MessageSquare, desc: 'Open lead discussion drawer', isDefault: true },
-                      { key: 'whatsapp', label: 'WhatsApp Direct', icon: Send, desc: 'Send WhatsApp message', isDefault: true },
-                      { key: 'followup', label: 'Followup Calendar', icon: Clock, desc: 'Schedule followups & tasks', isDefault: true },
-                      { key: 'delete', label: 'Delete Lead Button', icon: Trash2, desc: 'Trash / delete lead button', isDefault: false },
+                      { key: 'comments', label: 'Comments & Reminders', icon: MessageSquare, desc: 'Open discussion timeline drawer', isDefault: true },
+                      { key: 'google_contact', label: 'Google Contact Sync', icon: UserCheck, desc: 'Sync lead to Google Contacts', isDefault: false },
+                      { key: 'wgl_alert', label: 'WGL Alert Dispatch', icon: AlertCircle, desc: 'Dispatch WGL team notification', isDefault: false },
+                      { key: 'whatsapp', label: 'WhatsApp Direct', icon: Send, desc: 'Send WhatsApp welcome message', isDefault: false },
+                      { key: 'followup', label: 'Followup Calendar', icon: Clock, desc: 'Schedule followups & tasks', isDefault: false },
                     ].map(item => (
                       <label
                         key={item.key}

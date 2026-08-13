@@ -2497,9 +2497,44 @@ export function LeadTable({
               </th>
             ); })}
 
-            {/* Frozen Column Actions (Sticky Top & Right) */}
+            {/* Frozen Column Actions (Sticky Top & Right Dynamic Width) */}
             <th 
-              className="py-4 px-4 text-center sticky top-0 right-0 w-[340px] min-w-[340px] max-w-[340px] bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)]"
+              className="py-4 px-4 text-center sticky top-0 right-0 bg-[#EAE6DF] dark:bg-[#1C1A18] z-40 border-l border-[#E8E5DF] dark:border-[#2C2926] text-slate-800 dark:text-zinc-200 shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)]"
+              style={{
+                width: `${Math.max(140, Math.min(340, [
+                  quickActionsConfig.quotation !== false,
+                  quickActionsConfig.whatsapp === true,
+                  quickActionsConfig.google_contact === true,
+                  quickActionsConfig.wgl_alert === true,
+                  quickActionsConfig.followup === true,
+                  quickActionsConfig.call !== false,
+                  quickActionsConfig.mail !== false,
+                  quickActionsConfig.comments !== false,
+                  true
+                ].filter(Boolean).length * 36 + 24))}px`,
+                minWidth: `${Math.max(140, Math.min(340, [
+                  quickActionsConfig.quotation !== false,
+                  quickActionsConfig.whatsapp === true,
+                  quickActionsConfig.google_contact === true,
+                  quickActionsConfig.wgl_alert === true,
+                  quickActionsConfig.followup === true,
+                  quickActionsConfig.call !== false,
+                  quickActionsConfig.mail !== false,
+                  quickActionsConfig.comments !== false,
+                  true
+                ].filter(Boolean).length * 36 + 24))}px`,
+                maxWidth: `${Math.max(140, Math.min(340, [
+                  quickActionsConfig.quotation !== false,
+                  quickActionsConfig.whatsapp === true,
+                  quickActionsConfig.google_contact === true,
+                  quickActionsConfig.wgl_alert === true,
+                  quickActionsConfig.followup === true,
+                  quickActionsConfig.call !== false,
+                  quickActionsConfig.mail !== false,
+                  quickActionsConfig.comments !== false,
+                  true
+                ].filter(Boolean).length * 36 + 24))}px`
+              }}
             >
               Actions
             </th>
@@ -3087,12 +3122,50 @@ export function LeadTable({
                           return null;
                         })}
 
-                        {/* Sticky Right: Column Actions */}
-                        <td className={`py-2 px-3 text-right sticky right-0 w-[340px] min-w-[340px] max-w-[340px] z-20 border-l border-[#E8E5DF] dark:border-[#2C2926] shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)] transition-colors ${
-                          isSelected 
-                            ? 'bg-[#EAE8E3] dark:bg-[#1F1C1A]' 
-                            : 'bg-[#FAF8F5] dark:bg-[#121110] group-hover/row:bg-[#EAE6DF] dark:group-hover/row:bg-[#1C1A18]'
-                        }`} onClick={(e) => e.stopPropagation()}>
+                        {/* Sticky Right: Column Actions (Dynamic Width) */}
+                        <td 
+                          className={`py-2 px-3 text-right sticky right-0 z-20 border-l border-[#E8E5DF] dark:border-[#2C2926] shadow-[-8px_0_15px_rgba(0,0,0,0.06)] dark:shadow-[-8px_0_15px_rgba(0,0,0,0.4)] transition-colors ${
+                            isSelected 
+                              ? 'bg-[#EAE8E3] dark:bg-[#1F1C1A]' 
+                              : 'bg-[#FAF8F5] dark:bg-[#121110] group-hover/row:bg-[#EAE6DF] dark:group-hover/row:bg-[#1C1A18]'
+                          }`}
+                          style={{
+                            width: `${Math.max(140, Math.min(340, [
+                              quickActionsConfig.quotation !== false,
+                              quickActionsConfig.whatsapp === true,
+                              quickActionsConfig.google_contact === true,
+                              quickActionsConfig.wgl_alert === true,
+                              quickActionsConfig.followup === true,
+                              quickActionsConfig.call !== false,
+                              quickActionsConfig.mail !== false,
+                              quickActionsConfig.comments !== false,
+                              true
+                            ].filter(Boolean).length * 36 + 24))}px`,
+                            minWidth: `${Math.max(140, Math.min(340, [
+                              quickActionsConfig.quotation !== false,
+                              quickActionsConfig.whatsapp === true,
+                              quickActionsConfig.google_contact === true,
+                              quickActionsConfig.wgl_alert === true,
+                              quickActionsConfig.followup === true,
+                              quickActionsConfig.call !== false,
+                              quickActionsConfig.mail !== false,
+                              quickActionsConfig.comments !== false,
+                              true
+                            ].filter(Boolean).length * 36 + 24))}px`,
+                            maxWidth: `${Math.max(140, Math.min(340, [
+                              quickActionsConfig.quotation !== false,
+                              quickActionsConfig.whatsapp === true,
+                              quickActionsConfig.google_contact === true,
+                              quickActionsConfig.wgl_alert === true,
+                              quickActionsConfig.followup === true,
+                              quickActionsConfig.call !== false,
+                              quickActionsConfig.mail !== false,
+                              quickActionsConfig.comments !== false,
+                              true
+                            ].filter(Boolean).length * 36 + 24))}px`
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex items-center justify-end gap-1 w-full">
                             
                             {/* Lead Quotations Management Action */}
