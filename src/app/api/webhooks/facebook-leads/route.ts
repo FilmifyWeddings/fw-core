@@ -72,49 +72,57 @@ export async function POST(req: NextRequest) {
 
   console.log('[FB Webhook] Incoming payload:', JSON.stringify(body, null, 2));
 
-  // Resolve workspace_id if missing from URL query
-  if (!workspaceId) {
-    const targetPageId = body?.entry?.[0]?.changes?.[0]?.value?.page_id || body?.entry?.[0]?.id;
-    const targetFormId = body?.entry?.[0]?.changes?.[0]?.value?.form_id;
+  // Resolve target workspace_ids for incoming payload
+  const targetWorkspaceIds = new Set<string>();
+  if (workspaceId) targetWorkspaceIds.add(workspaceId);
 
-    if (targetPageId) {
-      try {
-        const { data: pageConfig } = await supabaseAdmin
+  const targetPageId = body?.entry?.[0]?.changes?.[0]?.value?.page_id || body?.entry?.[0]?.id;
+  const targetFormId = body?.entry?.[0]?.changes?.[0]?.value?.form_id;
+
+  if (targetPageId) {
+    try {
+      const { data: pageConfigs } = await supabaseAdmin
+        .from('fb_page_configs')
+        .select('workspace_id, page_name')
+        .eq('page_id', targetPageId);
+      (pageConfigs || []).forEach((p: any) => p.workspace_id && targetWorkspaceIds.add(p.workspace_id));
+
+      if (targetWorkspaceIds.size === 0 && pageConfigs?.[0]?.page_name) {
+        const { data: sameNamePages } = await supabaseAdmin
           .from('fb_page_configs')
           .select('workspace_id')
-          .eq('page_id', targetPageId)
-          .maybeSingle();
-        if (pageConfig?.workspace_id) workspaceId = pageConfig.workspace_id;
-      } catch (_) {}
-    }
-
-    if (!workspaceId && targetFormId) {
-      try {
-        const { data: formConfig } = await supabaseAdmin
-          .from('fb_lead_forms')
-          .select('workspace_id')
-          .eq('form_id', targetFormId)
-          .maybeSingle();
-        if (formConfig?.workspace_id) workspaceId = formConfig.workspace_id;
-      } catch (_) {}
-    }
-
-    if (!workspaceId) {
-      try {
-        const { data: profiles } = await supabaseAdmin
-          .from('profiles')
-          .select('id')
-          .not('meta_access_token', 'is', null)
-          .limit(1);
-        if (profiles?.[0]?.id) workspaceId = profiles[0].id;
-      } catch (_) {}
-    }
+          .eq('page_name', pageConfigs[0].page_name);
+        (sameNamePages || []).forEach((p: any) => p.workspace_id && targetWorkspaceIds.add(p.workspace_id));
+      }
+    } catch (_) {}
   }
 
-  if (!workspaceId) {
+  if (targetFormId) {
+    try {
+      const { data: formConfigs } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('workspace_id')
+        .eq('form_id', targetFormId);
+      (formConfigs || []).forEach((f: any) => f.workspace_id && targetWorkspaceIds.add(f.workspace_id));
+    } catch (_) {}
+  }
+
+  if (targetWorkspaceIds.size === 0) {
+    try {
+      const { data: allPages } = await supabaseAdmin
+        .from('fb_page_configs')
+        .select('workspace_id');
+      (allPages || []).forEach((p: any) => p.workspace_id && targetWorkspaceIds.add(p.workspace_id));
+    } catch (_) {}
+  }
+
+  const workspaceIds = Array.from(targetWorkspaceIds);
+  if (workspaceIds.length === 0) {
     console.error('[FB Webhook] Unresolved workspace_id for incoming payload');
     return NextResponse.json({ success: false, error: 'Could not resolve workspace_id for incoming webhook' }, { status: 200 });
   }
+
+  workspaceId = workspaceIds[0];
 
   try {
     // ── Parsed lead data container ──────────────────────────
