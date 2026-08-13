@@ -2385,7 +2385,19 @@ export function LeadTable({
             if (col.type === 'meta_question') return <col key={col.id} className="w-[240px]" />;
             return <col key={col.id} className="w-[210px]" />;
           })}
-          <col className="w-[340px]" />
+          <col style={{
+            width: `${Math.max(140, Math.min(340, [
+              quickActionsConfig.quotation !== false,
+              quickActionsConfig.whatsapp === true,
+              quickActionsConfig.google_contact === true,
+              quickActionsConfig.wgl_alert === true,
+              quickActionsConfig.followup === true,
+              quickActionsConfig.call !== false,
+              quickActionsConfig.mail !== false,
+              quickActionsConfig.comments !== false,
+              true
+            ].filter(Boolean).length * 36 + 24))}px`
+          }} />
         </colgroup>
 
         <thead>
