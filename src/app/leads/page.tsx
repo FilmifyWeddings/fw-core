@@ -849,22 +849,23 @@ export default function LeadsPage() {
             <RefreshCw className="w-8 h-8 animate-spin text-zinc-500" />
           </div>
         ) : (
-          <LeadTable 
-            leads={leads} 
-            stages={stages}
-            onStatusChange={handleStatusChange} 
-            onLeadUpdate={handleLeadUpdate}
-            onCreateLead={handleCreateLead}
-            initialPreferences={preferences}
-            onPreferencesChange={handlePreferencesChange}
-            userEmail={userEmail}
-            activeLeadId={activeLeadId}
-            onDrawerClose={() => setActiveLeadId(null)}
-            onLoadMore={handleLoadMore}
-            hasMore={hasMore}
-            loadingMore={loadingMore}
-            renderHeader={() => (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-zinc-900">
+          <React.Suspense fallback={<div className="py-20 flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-zinc-500" /></div>}>
+            <LeadTable 
+              leads={leads} 
+              stages={stages}
+              onStatusChange={handleStatusChange} 
+              onLeadUpdate={handleLeadUpdate}
+              onCreateLead={handleCreateLead}
+              initialPreferences={preferences}
+              onPreferencesChange={handlePreferencesChange}
+              userEmail={userEmail}
+              activeLeadId={activeLeadId}
+              onDrawerClose={() => setActiveLeadId(null)}
+              onLoadMore={handleLoadMore}
+              hasMore={hasMore}
+              loadingMore={loadingMore}
+              renderHeader={() => (
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-zinc-900">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center shadow-md">
                     <Database className="w-5 h-5 text-white" />
@@ -1004,6 +1005,7 @@ export default function LeadsPage() {
               </div>
             )}
           />
+          </React.Suspense>
         )}
 
         <MasterSettingsHub

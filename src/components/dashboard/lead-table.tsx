@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { motion as motionImport, AnimatePresence as AnimatePresenceImport } from 'framer-motion';
 import { 
   Search, Filter, Phone, Mail, Calendar, MapPin, X, Info, 
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe, FolderOpen, Archive
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -303,17 +304,16 @@ export function LeadTable({
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // Dynamic Sidebar width detection
-  const [sidebarWidth, setSidebarWidth] = useState(68);
+  const searchParams = useSearchParams();
+  const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
+
+  const sidebarFilter: 'overview' | 'lost' | 'archive' = 
+    stageParam === 'lost' ? 'lost' : 
+    (stageParam === 'archived' || stageParam === 'archive') ? 'archive' : 
+    'overview';
+
+  const [sidebarWidth, setSidebarWidth] = useState(0);
   const [rowActionMenuLeadId, setRowActionMenuLeadId] = useState<string | null>(null);
-
-  // Sidebar expansion & filter states
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
-  const [sidebarFilter, setSidebarFilter] = useState<'overview' | 'lost' | 'archive'>('overview');
-
-  useEffect(() => {
-    setSidebarWidth(isSidebarExpanded ? 240 : 68);
-  }, [isSidebarExpanded]);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -841,8 +841,12 @@ export function LeadTable({
   // Dynamic sidebar collapse detection
   useEffect(() => {
     const updateWidth = () => {
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setSidebarWidth(0);
+        return;
+      }
       const isCollapsed = localStorage.getItem('sidebar_collapsed') === 'true';
-      setSidebarWidth(isCollapsed ? 64 : 240);
+      setSidebarWidth(isCollapsed ? 80 : 256);
     };
     updateWidth();
     window.addEventListener('click', updateWidth);
@@ -1712,122 +1716,60 @@ export function LeadTable({
   };
 
   return (
-    <div className="flex-1 min-h-0 min-w-0 w-full flex relative overflow-hidden">
-      
-      {/* Dynamic Left Sidebar Menu Bar */}
-      <aside 
-        className={`flex flex-col border-r border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5] dark:bg-[#121110] transition-all duration-300 select-none shrink-0 ${
-          isSidebarExpanded ? 'w-60' : 'w-[68px]'
-        }`}
-      >
-        {/* CRM Logo / Toggler */}
-        <div className="p-4 border-b border-[#E8E5DF] dark:border-[#2C2926] flex items-center gap-3">
-          <button
-            onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
-            className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center shadow-md shrink-0 hover:scale-105 transition-all"
-            title={isSidebarExpanded ? "Collapse Sidebar" : "Expand Sidebar (CRM Toggler)"}
-          >
-            <Database className="w-5 h-5 text-white" />
-          </button>
-          {isSidebarExpanded && (
-            <div className="min-w-0">
-              <h2 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider truncate">CRM Platform</h2>
-              <span className="text-[9px] font-bold text-amber-500 block leading-none">Settings Config</span>
-            </div>
-          )}
-        </div>
-
-        {/* Navigation Items */}
-        <nav className="flex-1 p-3 space-y-2">
-          {/* Back to Suite Workspace */}
-          <Link
-            href="/workspace"
-            className={`flex items-center gap-3 p-2.5 rounded-xl border border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white transition-all ${
-              isSidebarExpanded ? 'justify-start' : 'justify-center'
-            }`}
-            title="Back to Suite Workspace"
-          >
-            <ArrowLeft className="w-4 h-4 shrink-0 text-slate-500" />
-            {isSidebarExpanded && <span className="text-xs font-bold whitespace-nowrap">Back to Workspace</span>}
-          </Link>
-
-          <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-2" />
-
-          {/* Overview */}
-          <button
-            onClick={() => setSidebarFilter('overview')}
-            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
-              sidebarFilter === 'overview'
-                ? 'bg-orange-500/10 border-orange-500/20 text-orange-500 font-bold'
-                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
-            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
-            title="Overview (Active Leads)"
-          >
-            <LayoutGrid className="w-4 h-4 shrink-0" />
-            {isSidebarExpanded && <span className="text-xs font-bold">Overview</span>}
-          </button>
-
-          {/* Lost */}
-          <button
-            onClick={() => setSidebarFilter('lost')}
-            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
-              sidebarFilter === 'lost'
-                ? 'bg-red-500/10 border-red-500/20 text-red-500 font-bold'
-                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
-            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
-            title="Lost Leads"
-          >
-            <X className="w-4 h-4 shrink-0" />
-            {isSidebarExpanded && <span className="text-xs font-bold">Lost Leads</span>}
-          </button>
-
-          {/* Archive */}
-          <button
-            onClick={() => setSidebarFilter('archive')}
-            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
-              sidebarFilter === 'archive'
-                ? 'bg-blue-500/10 border-blue-500/20 text-blue-500 font-bold'
-                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
-            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
-            title="Archived Leads"
-          >
-            <Archive className="w-4 h-4 shrink-0" />
-            {isSidebarExpanded && <span className="text-xs font-bold">Archive</span>}
-          </button>
-        </nav>
-      </aside>
-
-      {/* Main Table viewport container */}
-      <div className="flex-1 min-h-0 min-w-0 w-full max-w-full flex flex-col relative overflow-hidden">
-
-        {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
-        <div className="shrink-0 w-full max-w-full overflow-hidden border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
-          {renderHeader && (
-            <div className="bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-4 pb-2">
-              {renderHeader()}
-            </div>
-          )}
-
-          <div ref={headerRef} className="px-4 md:px-6 pb-2 pt-2">
-            
-
-
-        {/* Advanced In-Header Filters Row */}
-        <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-white dark:bg-[#0c0c0e] py-1">
-        
-        {/* Left Side: Search & Date Range & Count */}
-        <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
-          {/* Search */}
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3.5 top-3 w-4 h-4 text-[#706E6A] dark:text-[#A09E9A]" />
-            <input
-              type="text"
-              placeholder="Search leads, contact, number..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-[#0c0c0e] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A] dark:placeholder-[#A09E9A] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition-all font-sans"
-            />
+    <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col relative overflow-hidden">
+      {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
+      <div className="shrink-0 w-full max-w-full overflow-hidden border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
+        {renderHeader && (
+          <div className="bg-[#FAF8F5] dark:bg-[#070708] px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
+            {renderHeader()}
           </div>
+        )}
+
+        <div ref={headerRef} className="px-3 sm:px-4 md:px-6 pb-2 pt-2">
+          {/* Active View Indicator for Lost or Archived views */}
+          {sidebarFilter !== 'overview' && (
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-zinc-800/80">
+              <div className="flex items-center gap-2">
+                {sidebarFilter === 'lost' ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-full text-xs font-black">
+                    <UserX className="w-3.5 h-3.5" />
+                    <span>Lost Leads Vault</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-full text-xs font-black">
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>Archived Leads Vault</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-blue-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
+                )}
+              </div>
+              <Link 
+                href="/leads"
+                className="text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white underline flex items-center gap-1 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to All Active Leads
+              </Link>
+            </div>
+          )}
+
+          {/* Advanced In-Header Filters Row */}
+          <div className="flex flex-col lg:flex-row gap-2.5 items-stretch lg:items-center justify-between mb-3 bg-white dark:bg-[#0c0c0e] py-1">
+        
+            {/* Left Side: Search & Date Range & Count */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+              {/* Search */}
+              <div className="relative flex-1 sm:w-72 md:w-80">
+                <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-[#706E6A] dark:text-[#A09E9A]" />
+                <input
+                  type="text"
+                  placeholder="Search leads, contact, number..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-white dark:bg-[#0c0c0e] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A] dark:placeholder-[#A09E9A] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition-all font-sans"
+                />
+              </div>
 
           {/* Calendar Range Picker Trigger Button */}
           <div className="relative">
@@ -2225,6 +2167,7 @@ export function LeadTable({
         </div>
       </div>
     </div>
+  </div>
 
       {/* Scrollable Main Viewport Container */}
       <div className="flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-auto relative" style={{ maxHeight: 'calc(100vh - 180px)' }} ref={tableContainerRef}>
@@ -4297,9 +4240,6 @@ export function LeadTable({
         onClose={() => setQuotationModalLead(null)} 
         lead={quotationModalLead} 
       />
-
-        </div>
-      </div>
     </div>
   );
 }
