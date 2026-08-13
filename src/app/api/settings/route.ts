@@ -90,14 +90,14 @@ export async function GET(req: NextRequest) {
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
-    // Fetch profile workspace_name
+    // Fetch profile workspace_name & preferences fallback
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('full_name, email, workspace_name')
+      .select('full_name, email, workspace_name, leads_table_preferences')
       .eq('id', workspaceId)
       .maybeSingle();
 
-    const dbConfig = dbSettings?.config || {};
+    const dbConfig = dbSettings?.config || (profile?.leads_table_preferences && typeof profile.leads_table_preferences === 'object' ? profile.leads_table_preferences : {}) || {};
     const mergedSettings = {
       ...DEFAULT_SETTINGS,
       ...dbConfig,
@@ -145,13 +145,25 @@ export async function POST(req: NextRequest) {
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
+    const { data: profileExisting } = await supabaseAdmin
+      .from('profiles')
+      .select('leads_table_preferences')
+      .eq('id', workspaceId)
+      .maybeSingle();
+
+    const currentConfig = existing?.config || profileExisting?.leads_table_preferences || DEFAULT_SETTINGS;
+
     const updatedConfig = {
-      ...(existing?.config || DEFAULT_SETTINGS),
+      ...currentConfig,
       ...newSettings,
+      lead_quick_actions: {
+        ...(currentConfig.lead_quick_actions || DEFAULT_SETTINGS.lead_quick_actions),
+        ...(newSettings.lead_quick_actions || {}),
+      },
       updated_at: new Date().toISOString(),
     };
 
-    // Upsert into workspace_settings
+    // 1. Upsert into workspace_settings
     const { error: upsertErr } = await supabaseAdmin
       .from('workspace_settings')
       .upsert({
@@ -162,6 +174,18 @@ export async function POST(req: NextRequest) {
 
     if (upsertErr) {
       console.warn('[Workspace Settings Upsert Warning]:', upsertErr.message);
+    }
+
+    // 2. Also update profiles table as guaranteed fallback
+    try {
+      await supabaseAdmin
+        .from('profiles')
+        .update({
+          leads_table_preferences: updatedConfig
+        })
+        .eq('id', workspaceId);
+    } catch (pErr: any) {
+      console.warn('[Profile Preferences Backup Warning]:', pErr.message);
     }
 
     // Sync lead_stages to crm_stages table in Supabase

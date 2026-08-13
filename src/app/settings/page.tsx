@@ -222,6 +222,8 @@ export default function SettingsPage() {
           // Quick Actions
           if (s.lead_quick_actions && typeof s.lead_quick_actions === 'object') {
             setQuickActions(s.lead_quick_actions);
+            localStorage.setItem('leads_quick_actions', JSON.stringify(s.lead_quick_actions));
+            localStorage.setItem(`settings_quick_actions_${wId}`, JSON.stringify(s.lead_quick_actions));
           }
 
           // Quotes

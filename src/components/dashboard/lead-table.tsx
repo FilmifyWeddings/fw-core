@@ -958,16 +958,17 @@ export function LeadTable({
         try {
           setQuickActionsConfig(JSON.parse(localActions));
         } catch (_) {}
-      } else {
-        fetch('/api/settings')
-          .then(res => res.json())
-          .then(data => {
-            if (data.success && data.settings?.lead_quick_actions) {
-              setQuickActionsConfig(data.settings.lead_quick_actions);
-            }
-          })
-          .catch(() => {});
       }
+
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.settings?.lead_quick_actions) {
+            setQuickActionsConfig(data.settings.lead_quick_actions);
+            localStorage.setItem('leads_quick_actions', JSON.stringify(data.settings.lead_quick_actions));
+          }
+        })
+        .catch(() => {});
     };
 
     loadActions();
