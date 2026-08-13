@@ -16,10 +16,13 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Staging environment checks
+  // Staging environment checks (only active on staging domain e.g. staging.studiocore.in)
   const allowedStagingEmailsRaw = process.env.NEXT_PUBLIC_ALLOWED_STAGING_EMAILS || '';
-  const isStagingFlag = process.env.NEXT_PUBLIC_IS_STAGING === 'true';
-  const isStagingRestricted = isStagingFlag || allowedStagingEmailsRaw.trim().length > 0;
+  const isStagingDomain = typeof window !== 'undefined' && (
+    window.location.hostname.includes('staging') ||
+    process.env.NEXT_PUBLIC_IS_STAGING === 'true'
+  );
+  const isStagingRestricted = isStagingDomain && allowedStagingEmailsRaw.trim().length > 0;
 
   const allowedStagingEmails = allowedStagingEmailsRaw
     .split(',')
@@ -41,7 +44,8 @@ export default function LoginPage() {
       if (session) {
         // If user session exists, verify email on staging
         const userEmail = (session.user.email || '').trim().toLowerCase();
-        if (allowedStagingEmails.length > 0 && !allowedStagingEmails.includes(userEmail)) {
+        const isMasterAdmin = userEmail === 'filmifyweddings@gmail.com';
+        if (isStagingDomain && allowedStagingEmails.length > 0 && !allowedStagingEmails.includes(userEmail) && !isMasterAdmin) {
           await supabase.auth.signOut();
           document.cookie = 'sb-access-token=; path=/; max-age=0';
           document.cookie = 'sb-refresh-token=; path=/; max-age=0';
@@ -49,7 +53,7 @@ export default function LoginPage() {
           return;
         }
 
-        const redirectTo = searchParams.get('redirectTo');
+        const redirectTo = searchParams.get('redirectTo') || '/workspace';
         if (redirectTo) {
           router.push(redirectTo);
         }
@@ -63,9 +67,10 @@ export default function LoginPage() {
     setError(null);
 
     const targetEmail = email.trim().toLowerCase();
+    const isMasterAdmin = targetEmail === 'filmifyweddings@gmail.com';
 
     // Check staging email authorization client-side
-    if (allowedStagingEmails.length > 0 && !allowedStagingEmails.includes(targetEmail)) {
+    if (isStagingDomain && allowedStagingEmails.length > 0 && !allowedStagingEmails.includes(targetEmail) && !isMasterAdmin) {
       setError('Access Denied: This staging environment is restricted to authorized testing accounts only.');
       return;
     }

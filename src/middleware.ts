@@ -115,7 +115,8 @@ export async function middleware(request: NextRequest) {
   // If user is authenticated on staging environment, verify staging email permission
   if (isStagingDomain && user && allowedStagingEmails.length > 0) {
     const userEmail = (user.email || '').trim().toLowerCase();
-    const isAllowed = allowedStagingEmails.includes(userEmail);
+    const isMasterAdmin = userEmail === 'filmifyweddings@gmail.com';
+    const isAllowed = allowedStagingEmails.includes(userEmail) || isMasterAdmin;
 
     if (!isAllowed) {
       if (pathname.startsWith('/api/')) {
