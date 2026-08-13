@@ -72,57 +72,63 @@ export async function POST(req: NextRequest) {
 
   console.log('[FB Webhook] Incoming payload:', JSON.stringify(body, null, 2));
 
-  // Resolve target workspace_ids for incoming payload
-  const targetWorkspaceIds = new Set<string>();
-  if (workspaceId) targetWorkspaceIds.add(workspaceId);
+  // ── STRICT 1-TO-1 WORKSPACE RESOLUTION (PRIVACY PROTECTED) ─────────────
+  // A lead is strictly assigned ONLY to the exact workspace that owns the connected token/page/form.
+  if (!workspaceId) {
+    const targetPageId = body?.entry?.[0]?.changes?.[0]?.value?.page_id || body?.entry?.[0]?.id;
+    const targetFormId = body?.entry?.[0]?.changes?.[0]?.value?.form_id;
 
-  const targetPageId = body?.entry?.[0]?.changes?.[0]?.value?.page_id || body?.entry?.[0]?.id;
-  const targetFormId = body?.entry?.[0]?.changes?.[0]?.value?.form_id;
+    // Step 1: Check form_id in fb_lead_forms (most specific)
+    if (targetFormId) {
+      try {
+        const { data: formConfig } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('workspace_id')
+          .eq('form_id', targetFormId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (formConfig?.workspace_id) workspaceId = formConfig.workspace_id;
+      } catch (_) {}
+    }
 
-  if (targetPageId) {
-    try {
-      const { data: pageConfigs } = await supabaseAdmin
-        .from('fb_page_configs')
-        .select('workspace_id, page_name')
-        .eq('page_id', targetPageId);
-      (pageConfigs || []).forEach((p: any) => p.workspace_id && targetWorkspaceIds.add(p.workspace_id));
-
-      if (targetWorkspaceIds.size === 0 && pageConfigs?.[0]?.page_name) {
-        const { data: sameNamePages } = await supabaseAdmin
+    // Step 2: Check page_id in fb_page_configs
+    if (!workspaceId && targetPageId) {
+      try {
+        const { data: pageConfig } = await supabaseAdmin
           .from('fb_page_configs')
           .select('workspace_id')
-          .eq('page_name', pageConfigs[0].page_name);
-        (sameNamePages || []).forEach((p: any) => p.workspace_id && targetWorkspaceIds.add(p.workspace_id));
-      }
-    } catch (_) {}
+          .eq('page_id', targetPageId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (pageConfig?.workspace_id) workspaceId = pageConfig.workspace_id;
+      } catch (_) {}
+    }
+
+    // Step 3: Check integration_credentials
+    if (!workspaceId && targetPageId) {
+      try {
+        const { data: creds } = await supabaseAdmin
+          .from('integration_credentials')
+          .select('user_id')
+          .eq('provider', 'meta')
+          .eq('status', 'connected')
+          .filter('config->>page_id', 'eq', targetPageId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (creds?.user_id) workspaceId = creds.user_id;
+      } catch (_) {}
+    }
   }
 
-  if (targetFormId) {
-    try {
-      const { data: formConfigs } = await supabaseAdmin
-        .from('fb_lead_forms')
-        .select('workspace_id')
-        .eq('form_id', targetFormId);
-      (formConfigs || []).forEach((f: any) => f.workspace_id && targetWorkspaceIds.add(f.workspace_id));
-    } catch (_) {}
+  if (!workspaceId) {
+    console.error('[FB Webhook] Unresolved workspace_id for incoming payload - Strict Privacy Dropped');
+    return NextResponse.json({ success: false, error: 'Could not resolve exact owner workspace_id' }, { status: 200 });
   }
 
-  if (targetWorkspaceIds.size === 0) {
-    try {
-      const { data: allPages } = await supabaseAdmin
-        .from('fb_page_configs')
-        .select('workspace_id');
-      (allPages || []).forEach((p: any) => p.workspace_id && targetWorkspaceIds.add(p.workspace_id));
-    } catch (_) {}
-  }
-
-  const workspaceIds = Array.from(targetWorkspaceIds);
-  if (workspaceIds.length === 0) {
-    console.error('[FB Webhook] Unresolved workspace_id for incoming payload');
-    return NextResponse.json({ success: false, error: 'Could not resolve workspace_id for incoming webhook' }, { status: 200 });
-  }
-
-  workspaceId = workspaceIds[0];
+  console.log(`[FB Webhook] Strictly routing lead to owner workspace: ${workspaceId}`);
 
   try {
     // ── Parsed lead data container ──────────────────────────
