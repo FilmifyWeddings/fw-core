@@ -26,11 +26,17 @@ export async function GET(req: NextRequest) {
     let { data: conn } = await supabaseAdmin
       .from('integration_credentials')
       .select('*')
-      .eq('user_id', workspaceId)
+      .eq('user_id', effectiveWorkspaceId)
       .eq('provider', 'meta')
       .maybeSingle();
 
-    let metaAccessToken = (conn?.status === 'connected' && conn?.access_token) ? conn.access_token : null;
+    if (!conn && requestedWorkspaceId) {
+      const { data: altConn } = await supabaseAdmin
+        .from('integration_credentials')
+        .select('*')
+        .eq('user_id', requestedWorkspaceId)
+        .eq('provider', 'meta')
+        .maybeSingle();
 
       if (altConn) {
         conn = altConn;
