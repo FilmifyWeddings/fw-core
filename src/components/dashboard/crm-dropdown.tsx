@@ -22,6 +22,7 @@ export interface CRMDropdownProps {
   className?: string;
   allowCustomAdd?: boolean;
   customAddTitle?: string;
+  compact?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export function CRMDropdown({
   className = '',
   allowCustomAdd = true,
   customAddTitle = 'Add Custom Option',
+  compact = false,
 }: CRMDropdownProps) {
   const [open, setOpen] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -112,9 +114,6 @@ export function CRMDropdown({
     return [...customs, ...systems];
   }, [options]);
 
-  // ── 2. Fixed Width Calculation (Requirement 1 & 6) ──────────
-  // Calculates width based on longest option, max(170px, width + padding)
-  // Memoized to prevent layout shifts
   // ── 2. Fixed Width Calculation (Requirement 1 & 6) ──────────
   // Calculates width based on longest option, snug and compact
   const fixedWidthPx = useMemo(() => {
@@ -186,6 +185,8 @@ export function CRMDropdown({
     setOpen(false);
   };
 
+  const isFullWidth = className.includes('w-full');
+
   return (
     <div
       ref={containerRef}
@@ -198,24 +199,24 @@ export function CRMDropdown({
         disabled={disabled}
         onClick={() => !disabled && setOpen(!open)}
         style={{
-          width: `${fixedWidthPx}px`,
+          width: isFullWidth ? '100%' : `${fixedWidthPx}px`,
           backgroundColor: themeStyle.light.backgroundColor,
           borderColor: themeStyle.light.borderColor,
           color: themeStyle.light.color,
         }}
-        className={`h-8 px-2.5 rounded-full border transition-all duration-200 shadow-2xs inline-flex items-center justify-between gap-1 select-none cursor-pointer font-sans text-xs font-bold text-center ${
+        className={`${compact ? 'h-7 px-2 text-[11px]' : 'h-8 px-2.5 text-xs'} ${isFullWidth ? 'w-full' : ''} rounded-full border transition-all duration-200 shadow-2xs inline-flex items-center justify-between gap-1 select-none cursor-pointer font-sans font-bold text-center ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-xs active:scale-[0.99]'
         } ${open ? 'ring-2 ring-blue-500/20 border-blue-500' : ''}`}
       >
         <div className="flex items-center justify-center gap-1.5 truncate text-center flex-1 min-w-0">
           <span
-            className="w-2 h-2 rounded-full shrink-0 shadow-2xs"
+            className={`${compact ? 'w-1.5 h-1.5' : 'w-2 h-2'} rounded-full shrink-0 shadow-2xs`}
             style={{ backgroundColor: themeStyle.dot }}
           />
           <span className="truncate text-center font-bold">{displayLabel}</span>
         </div>
         <ChevronDown
-          className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-70 ${
+          className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} shrink-0 transition-transform duration-200 opacity-70 ${
             open ? 'rotate-180 opacity-100 text-blue-600' : ''
           }`}
         />
@@ -229,7 +230,7 @@ export function CRMDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
-            style={{ minWidth: `${fixedWidthPx}px` }}
+            style={{ minWidth: isFullWidth ? '100%' : `${fixedWidthPx}px` }}
             className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 max-h-64 overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1A1816] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-xl text-xs font-sans space-y-0.5"
           >
             {sortedOptions.map(opt => {

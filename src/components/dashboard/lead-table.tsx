@@ -9,7 +9,7 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, MessageCircle, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -2198,9 +2198,9 @@ export function LeadTable({
         {viewMode === 'table' ? (
           <>
       {/* ───────────────────────────────────────────────────────────── */}
-      {/* MOBILE / TABLET RESPONSIVE 3D CARD GRID (< 768px)             */}
+      {/* MOBILE / TABLET RESPONSIVE COMPACT CARD GRID (< 768px)         */}
       {/* ───────────────────────────────────────────────────────────── */}
-      <div className="block md:hidden space-y-3.5 p-3">
+      <div className="block md:hidden space-y-2.5 p-2.5">
         {paginatedLeads.length === 0 ? (
           <div className="py-12 text-center text-zinc-500 bg-white dark:bg-zinc-900/50 rounded-2xl border border-zinc-200 dark:border-zinc-800">
             <AlertCircle className="w-8 h-8 mx-auto text-amber-500 mb-2" />
@@ -2210,70 +2210,88 @@ export function LeadTable({
           paginatedLeads.map((lead) => {
             const isSelected = selectedLeadIds.includes(lead.id);
             const currentAssignedOwner = lead.raw_payload?.lead_owner || 'Unassigned';
-            const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Form';
+
+            // Extract Initials for Profile Circle
+            const getLeadInitials = (name?: string) => {
+              if (!name || !name.trim()) return 'LD';
+              const parts = name.trim().split(/\s+/).filter(Boolean);
+              if (parts.length === 1) {
+                return parts[0].substring(0, 2).toUpperCase();
+              }
+              return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+            };
+
+            const getAvatarStyle = (name?: string) => {
+              const styles = [
+                { bg: 'bg-amber-500/15 dark:bg-amber-500/25', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-500/30' },
+                { bg: 'bg-emerald-500/15 dark:bg-emerald-500/25', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-500/30' },
+                { bg: 'bg-blue-500/15 dark:bg-blue-500/25', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-500/30' },
+                { bg: 'bg-purple-500/15 dark:bg-purple-500/25', text: 'text-purple-700 dark:text-purple-300', border: 'border-purple-500/30' },
+                { bg: 'bg-rose-500/15 dark:bg-rose-500/25', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-500/30' },
+                { bg: 'bg-cyan-500/15 dark:bg-cyan-500/25', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-500/30' },
+                { bg: 'bg-indigo-500/15 dark:bg-indigo-500/25', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-500/30' },
+              ];
+              let sum = 0;
+              for (let i = 0; i < (name || '').length; i++) {
+                sum += (name || '').charCodeAt(i);
+              }
+              return styles[sum % styles.length];
+            };
+
+            const initials = getLeadInitials(lead.name || '');
+            const avStyle = getAvatarStyle(lead.name || '');
+            const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
 
             return (
               <div 
                 key={lead.id}
-                className={`bg-white dark:bg-[#121110] border border-slate-200/90 dark:border-zinc-800/90 rounded-2xl p-4 shadow-md space-y-3 relative overflow-hidden transition-all ${
+                className={`bg-white dark:bg-[#121110] border border-slate-200/90 dark:border-zinc-800/90 rounded-2xl p-3 shadow-xs space-y-2.5 relative overflow-hidden transition-all ${
                   isSelected ? 'ring-2 ring-[#D4AF37]' : ''
                 }`}
               >
-                {/* 1. TOP SECTION: Name, Mobile, Email & Source Form Tag */}
-                <div className="flex items-start justify-between gap-2.5">
-                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectRow(lead.id, e);
-                      }}
-                      className="p-0.5 mt-0.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 shrink-0"
-                    >
-                      {isSelected ? (
-                        <CheckSquare className="w-5 h-5 text-[#D4AF37] fill-[#D4AF37]/20" />
-                      ) : (
-                        <Square className="w-5 h-5" />
-                      )}
-                    </button>
-
-                    <div 
-                      className="min-w-0 flex-1 cursor-pointer select-none"
-                      onClick={() => {
-                        setSelectedLead(lead);
-                        setDrawerMode('full');
-                      }}
-                    >
-                      {/* Name */}
-                      <h4 className="text-sm font-black text-slate-900 dark:text-white leading-tight truncate">
-                        {lead.name || 'Unspecified Lead'}
-                      </h4>
-                      {/* Mobile Number (Small) */}
-                      <p className="text-xs font-mono font-bold text-slate-600 dark:text-zinc-300 mt-1 truncate">
-                        {lead.phone || 'No phone number'}
-                      </p>
-                      {/* Email ID (Small) */}
-                      <p className="text-[11px] font-mono text-slate-400 dark:text-zinc-500 mt-0.5 truncate">
-                        {lead.email || 'No email provided'}
-                      </p>
-                    </div>
+                {/* 1. TOP SECTION: Circular Avatar + Lead Name & Contact Info (No Form Badge) */}
+                <div 
+                  className="flex items-center gap-3 cursor-pointer select-none"
+                  onClick={() => {
+                    setSelectedLead(lead);
+                    setDrawerMode('full');
+                  }}
+                >
+                  {/* Avatar Circle with Initials (Replaces Checkbox) */}
+                  <div className={`w-9 h-9 rounded-full ${avStyle.bg} ${avStyle.border} ${avStyle.text} border flex items-center justify-center font-black text-xs shrink-0 shadow-2xs tracking-wider`}>
+                    {initials}
                   </div>
 
-                  {/* Form Name / Source Tag */}
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[9px] font-black uppercase tracking-wider shrink-0 max-w-[120px]">
-                    <Globe className="w-2.5 h-2.5 text-blue-500 shrink-0" />
-                    <span className="truncate">{formNameVal}</span>
-                  </span>
+                  {/* Name & Contact Details */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <h4 className="text-xs font-black text-slate-900 dark:text-white leading-tight truncate">
+                        {lead.name || 'Unspecified Lead'}
+                      </h4>
+                      {lead.created_at && (
+                        <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono shrink-0">
+                          {new Date(lead.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 text-[11px] font-mono text-slate-600 dark:text-zinc-400 truncate">
+                      {lead.phone && <span className="font-bold">{lead.phone}</span>}
+                      {lead.phone && lead.email && <span className="text-slate-300 dark:text-zinc-700">•</span>}
+                      {lead.email && <span className="text-slate-400 dark:text-zinc-500 truncate text-[10px]">{lead.email}</span>}
+                    </div>
+                  </div>
                 </div>
 
-                {/* 2. MIDDLE SECTION: Status & Lead Owner (Baju mai - 2 Columns) */}
-                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-zinc-850/80" onClick={(e) => e.stopPropagation()}>
+                {/* 2. MIDDLE SECTION: Status & Lead Owner (Compact 2-Columns, No Overflow) */}
+                <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100 dark:border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
                   {/* Status Dropdown */}
-                  <div className="space-y-1">
-                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider">Status</span>
+                  <div className="space-y-0.5 min-w-0">
+                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider truncate">Status</span>
                     <CRMDropdown
                       value={lead.stage_id || lead.status}
                       placeholder="Select status"
+                      className="w-full"
+                      compact={true}
                       customAddTitle="Add Custom Status"
                       options={stagesState.map(s => ({
                         value: s.id,
@@ -2314,11 +2332,13 @@ export function LeadTable({
                   </div>
 
                   {/* Lead Owner Dropdown */}
-                  <div className="space-y-1">
-                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider">Lead Owner</span>
+                  <div className="space-y-0.5 min-w-0">
+                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider truncate">Lead Owner</span>
                     <CRMDropdown
                       value={currentAssignedOwner}
                       placeholder="Select owner"
+                      className="w-full"
+                      compact={true}
                       allowCustomAdd={false}
                       options={[
                         { value: 'Unassigned', label: '👤 Unassigned', color: '#94a3b8' },
@@ -2333,51 +2353,64 @@ export function LeadTable({
                   </div>
                 </div>
 
-                {/* 3. BOTTOM ACTIONS ROW: Quotation, Call, Mail, Comment (4 Action Buttons) */}
-                <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-100 dark:border-zinc-850/80" onClick={(e) => e.stopPropagation()}>
-                  {/* Quotation */}
+                {/* 3. BOTTOM ACTIONS ROW: Icons ONLY (Quote, WhatsApp, Call, Mail, Comment) */}
+                <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100 dark:border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
+                  {/* Quotation Icon */}
                   <button
                     type="button"
                     onClick={() => setQuotationModalLead(lead)}
-                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-700 dark:text-amber-400 border border-amber-500/25 transition-all text-center active:scale-95 shadow-xs"
+                    className="flex-1 h-8 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-600 dark:text-amber-400 border border-amber-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
                     title="Create / View Quotation"
                   >
-                    <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">Quote</span>
+                    <FileText className="w-4 h-4" />
                   </button>
 
-                  {/* Call */}
-                  <a
-                    href={`tel:${lead.phone}`}
-                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 transition-all text-center active:scale-95 shadow-xs"
-                    title="Direct Phone Call"
-                  >
-                    <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">Call</span>
-                  </a>
+                  {/* WhatsApp Icon */}
+                  {cleanPhone ? (
+                    <a
+                      href={`https://wa.me/${cleanPhone}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 h-8 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
+                      title="Send WhatsApp Message"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                    </a>
+                  ) : null}
 
-                  {/* Mail */}
-                  <a
-                    href={`mailto:${lead.email || ''}`}
-                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 active:bg-blue-500/30 text-blue-700 dark:text-blue-400 border border-blue-500/25 transition-all text-center active:scale-95 shadow-xs"
-                    title="Send Email"
-                  >
-                    <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">Mail</span>
-                  </a>
+                  {/* Call Icon */}
+                  {lead.phone ? (
+                    <a
+                      href={`tel:${lead.phone}`}
+                      className="flex-1 h-8 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 active:bg-teal-500/30 text-teal-600 dark:text-teal-400 border border-teal-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
+                      title="Direct Phone Call"
+                    >
+                      <Phone className="w-4 h-4" />
+                    </a>
+                  ) : null}
 
-                  {/* Comment */}
+                  {/* Mail Icon */}
+                  {lead.email ? (
+                    <a
+                      href={`mailto:${lead.email}`}
+                      className="flex-1 h-8 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 active:bg-blue-500/30 text-blue-600 dark:text-blue-400 border border-blue-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
+                      title="Send Email"
+                    >
+                      <Mail className="w-4 h-4" />
+                    </a>
+                  ) : null}
+
+                  {/* Comment Icon */}
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedLead(lead);
                       setDrawerMode('comments');
                     }}
-                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/30 text-purple-700 dark:text-purple-400 border border-purple-500/25 transition-all text-center active:scale-95 shadow-xs"
-                    title="Open Comments / Reminders"
+                    className="flex-1 h-8 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/30 text-purple-600 dark:text-purple-400 border border-purple-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
+                    title="Lead Comments / Reminders"
                   >
-                    <MessageSquare className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">Comment</span>
+                    <MessageSquare className="w-4 h-4" />
                   </button>
                 </div>
               </div>
