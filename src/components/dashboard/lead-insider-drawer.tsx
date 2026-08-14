@@ -4,13 +4,14 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Check, User, DollarSign, FileText, Lock, Users, Briefcase, Plus, Calendar, Tag, Mail, Phone,
-  FileIcon, ChevronRight, CheckSquare, AlarmClock, Trash2, Edit2, Clock, Shield,
+  FileIcon, ChevronRight, CheckSquare, AlarmClock, Trash2, Edit2, Clock, Shield, MoreVertical, MessageCircle, ArrowUpRight, Sparkles,
   CornerDownRight, CheckCircle2, MessageSquare, Reply, AlertCircle, ArrowLeft, ArrowRight, Gift
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { QuotationBuilder } from './quotation-builder';
 import { TeamTasksManager } from './team-tasks-manager';
+import { CRMDropdown } from './crm-dropdown';
 import AiMicButton from '@/components/AiMicButton';
 
 interface LeadInsiderDrawerProps {
@@ -1021,35 +1022,38 @@ export function LeadInsiderDrawer({
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-        className={`fixed top-0 right-0 bottom-0 z-[999999] w-full ${commentsOnlyMode ? 'max-w-lg' : 'max-w-md'} bg-white dark:bg-zinc-950 border-l border-slate-200 dark:border-zinc-900 shadow-2xl flex flex-col text-slate-800 dark:text-white`}
+        className={`fixed top-0 right-0 bottom-0 z-[999999] w-full ${commentsOnlyMode ? 'max-w-lg' : 'max-w-md'} bg-[#FAF8F5] dark:bg-[#0E0D0C] border-l border-slate-200 dark:border-zinc-850 shadow-2xl flex flex-col text-slate-800 dark:text-white`}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-zinc-900 shrink-0 bg-slate-50 dark:bg-zinc-950/60">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#D4AF37] animate-pulse" />
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                {commentsOnlyMode ? 'Comments & Reminders Workspace' : 'Lead Workspace'}
-              </h3>
-              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                {commentsOnlyMode ? `Client: ${lead.name || lead.phone}` : `Project ID: ${lead.id.slice(0, 8)}...`}
-              </p>
-            </div>
-          </div>
+        {/* Header matching Image 3 (Back Arrow, Centered "Details", More Options) */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200/80 dark:border-zinc-850 shrink-0 bg-white dark:bg-[#141312]">
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-zinc-900 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer"
+            title="Back"
           >
-            <X className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+
+          <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+            {commentsOnlyMode ? 'Comments & Reminders' : 'Details'}
+          </h3>
+
+          <button
+            type="button"
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer"
+            title="More Options"
+          >
+            <MoreVertical className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab Selection (Render filters in Comments Only Mode) */}
-        {!commentsOnlyMode ? (
-          <div className="flex border-b border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950/30 p-1.5 gap-1 shrink-0">
+        {/* Tab Selection */}
+        {!commentsOnlyMode && (
+          <div className="flex border-b border-slate-200/80 dark:border-zinc-850 bg-white/50 dark:bg-[#141312]/50 p-1.5 gap-1 shrink-0 px-4">
             {[
-              { id: 'overview', label: 'Overview', icon: Briefcase },
-              { id: 'comments_timeline', label: 'Comments & Reminders', icon: MessageSquare },
+              { id: 'overview', label: 'Details', icon: Briefcase },
+              { id: 'comments_timeline', label: 'Notes & Timeline', icon: MessageSquare },
               { id: 'quotes', label: 'Quotations', icon: FileText },
               { id: 'assets', label: 'Assets', icon: FileIcon }
             ].map(t => {
@@ -1059,10 +1063,10 @@ export function LeadInsiderDrawer({
                 <button
                   key={t.id}
                   onClick={() => setActiveTab(t.id as any)}
-                  className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] font-bold rounded-xl transition-all ${
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold rounded-xl transition-all ${
                     active 
-                      ? 'bg-white dark:bg-zinc-900 text-orange-500 dark:text-white border border-slate-200 dark:border-zinc-800 shadow-sm' 
-                      : 'text-slate-500 dark:text-zinc-550 hover:text-slate-855 dark:hover:text-zinc-350'
+                      ? 'bg-blue-600 text-white shadow-xs' 
+                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -1071,36 +1075,10 @@ export function LeadInsiderDrawer({
               );
             })}
           </div>
-        ) : (
-          <div className="flex border-b border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950/30 p-1.5 gap-1 shrink-0">
-            {[
-              { id: 'all', label: 'All', icon: Clock },
-              { id: 'comments', label: 'Comments Only', icon: MessageSquare },
-              { id: 'reminders', label: 'Reminders Only', icon: AlarmClock }
-            ].map(f => {
-              const Icon = f.icon;
-              const active = filterMode === f.id;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setFilterMode(f.id as any)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold rounded-xl transition-all ${
-                    active 
-                      ? 'bg-white dark:bg-zinc-900 text-[#D4AF37] border border-slate-200 dark:border-zinc-800 shadow-sm' 
-                      : 'text-slate-500 dark:text-zinc-550 hover:text-slate-855 dark:hover:text-zinc-350'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{f.label}</span>
-                </button>
-              );
-            })}
-          </div>
         )}
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
           <AnimatePresence mode="wait">
             
             {/* If Comments Only Mode, render comments directly */}
@@ -1110,232 +1088,258 @@ export function LeadInsiderDrawer({
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 5 }}
-                className="space-y-6 text-xs"
+                className="space-y-5 text-xs"
               >
                 {renderCommentsTimeline()}
               </motion.div>
             ) : (
               <>
-                {/* TAB 1: OVERVIEW & ASSIGNEES */}
+                {/* TAB 1: DETAILS OVERVIEW (Matching Image 3) */}
                 {activeTab === 'overview' && (
                   <motion.div
                     key="overview"
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 5 }}
-                    className="space-y-6 text-xs"
+                    className="space-y-4 text-xs"
                   >
-                    {/* Standard fields */}
-                    <div className="space-y-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] text-slate-500 dark:text-zinc-550 font-bold uppercase tracking-wider block">Lead Name</label>
-                        <input 
-                          type="text" 
-                          value={lead.name || ''} 
-                          onChange={(e) => handleFieldChange({ name: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-850 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
-                        />
-                      </div>
+                    {/* 1. HERO PROFILE CARD (Image 3 Style) */}
+                    <div className="bg-white dark:bg-[#141312] border border-slate-200/90 dark:border-zinc-800 rounded-3xl p-4 shadow-sm space-y-3">
+                      <div className="flex items-center gap-4">
+                        {/* Big Avatar Badge */}
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-indigo-500/15 to-blue-500/15 border border-indigo-500/25 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black text-2xl shrink-0 shadow-xs tracking-wider">
+                          {(lead.name || 'LD').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'LD'}
+                        </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Mobile Phone</label>
-                        <input 
-                          type="text" 
-                          value={lead.phone} 
-                          onChange={(e) => handleFieldChange({ phone: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-mono focus:outline-none"
-                        />
-                      </div>
+                        {/* Name, Subtitle, Budget & Action Buttons */}
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-tight truncate">
+                            {lead.name || 'Unspecified Lead'}
+                          </h2>
+                          <p className="text-xs text-slate-400 dark:text-zinc-500 font-medium truncate mt-0.5">
+                            {lead.raw_payload?.groom_name && lead.raw_payload?.bride_name 
+                              ? `${lead.raw_payload.groom_name} & ${lead.raw_payload.bride_name}` 
+                              : lead.raw_payload?.company || lead.source || 'Wedding Photography'}
+                          </p>
 
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Email Address</label>
-                        <input 
-                          type="text" 
-                          value={lead.email || ''} 
-                          onChange={(e) => handleFieldChange({ email: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-mono focus:outline-none"
-                        />
+                          <div className="flex items-center justify-between gap-2 mt-2">
+                            <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono">
+                              {lead.raw_payload?.budget ? (String(lead.raw_payload.budget).startsWith('₹') || String(lead.raw_payload.budget).startsWith('$') ? lead.raw_payload.budget : `₹${lead.raw_payload.budget}`) : '₹1,50,000'}
+                            </span>
+
+                            {/* Quick Action Floating Circles (Call & WhatsApp) */}
+                            <div className="flex items-center gap-2">
+                              {lead.phone && (
+                                <a
+                                  href={`tel:${lead.phone}`}
+                                  className="w-9 h-9 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer"
+                                  title="Direct Call"
+                                >
+                                  <Phone className="w-4 h-4" />
+                                </a>
+                              )}
+
+                              {lead.phone && (
+                                <a
+                                  href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer"
+                                  title="WhatsApp Message"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Wedding & Event Specifications */}
-                    <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-zinc-900">
-                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-555 tracking-wider flex items-center gap-1.5">
-                        <Gift className="w-3.5 h-3.5 text-orange-500" />
-                        Wedding & Event Details
-                      </h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Groom Name */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Groom Name</label>
-                          <input 
-                            type="text" 
-                            value={lead.raw_payload?.groom_name || ''} 
-                            onChange={(e) => handleRawPayloadChange('groom_name', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
-                            placeholder="Groom Name"
-                          />
-                        </div>
-
-                        {/* Bride Name */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Bride Name</label>
-                          <input 
-                            type="text" 
-                            value={lead.raw_payload?.bride_name || ''} 
-                            onChange={(e) => handleRawPayloadChange('bride_name', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
-                            placeholder="Bride Name"
-                          />
-                        </div>
-
-                        {/* Event Type */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Event Type</label>
-                          <select 
-                            value={lead.raw_payload?.event_type || 'Wedding Photography'} 
-                            onChange={(e) => handleRawPayloadChange('event_type', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
-                          >
-                            <option value="Wedding Photography">Wedding Photography</option>
-                            <option value="Pre-Wedding Shoot">Pre-Wedding Shoot</option>
-                            <option value="Maternity Shoot">Maternity Shoot</option>
-                            <option value="Corporate Event">Corporate Event</option>
-                            <option value="Other / Custom Event">Other / Custom Event</option>
-                          </select>
-                        </div>
-
-                        {/* Event Date */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Event Date</label>
-                          <input 
-                            type="date" 
-                            value={lead.raw_payload?.event_date || ''} 
-                            onChange={(e) => handleRawPayloadChange('event_date', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
-                          />
-                        </div>
-
-                        {/* Budget Range */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Budget Range</label>
-                          <input 
-                            type="text" 
-                            value={lead.raw_payload?.budget || ''} 
-                            onChange={(e) => handleRawPayloadChange('budget', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
-                            placeholder="e.g. ₹1.5 Lakh - ₹2.5 Lakh"
-                          />
-                        </div>
-
-                        {/* Location / City */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Location / City</label>
-                          <input 
-                            type="text" 
-                            value={lead.raw_payload?.location || lead.raw_payload?.city || ''} 
-                            onChange={(e) => {
-                              handleRawPayloadChange('location', e.target.value);
-                              handleRawPayloadChange('city', e.target.value);
-                            }}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40"
-                            placeholder="e.g. Pune, Goa"
-                          />
-                        </div>
-
-                        {/* Venue Details */}
-                        <div className="space-y-1.5 col-span-2">
-                          <label className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider block">Venue Details</label>
-                          <textarea 
-                            rows={2}
-                            value={lead.raw_payload?.venue || ''} 
-                            onChange={(e) => handleRawPayloadChange('venue', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-855 p-2.5 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-orange-500/40 resize-none"
-                            placeholder="Enter venue details..."
-                          />
-                        </div>
+                    {/* 2. CONTACT INFORMATION SECTION (Image 3 Style) */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">Contact Information</span>
+                        {/* Status Dropdown Pill */}
+                        <CRMDropdown
+                          value={lead.stage_id || lead.status}
+                          placeholder="Select status"
+                          compact={true}
+                          options={stages.map(s => ({
+                            value: s.id,
+                            label: s.name,
+                            color: s.color,
+                            isCustom: s.is_custom,
+                            created_at: s.created_at
+                          }))}
+                          onChange={(val) => {
+                            const found = stages.find(s => s.id === val || s.name === val);
+                            if (onLeadUpdate) {
+                              onLeadUpdate(lead.id, {
+                                stage_id: found?.id || val,
+                                status: (found?.name || val) as any
+                              });
+                            }
+                          }}
+                        />
                       </div>
-                    </div>                    {/* Team Allocations & Assignees */}
-                    <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-zinc-900">
-                      <h4 className="text-[10px] uppercase font-bold text-slate-500 dark:text-zinc-555 tracking-wider flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <Users className="w-3.5 h-3.5 text-orange-500" />
-                          Team Allocations & Assignees
-                        </span>
-                      </h4>
-                      <div className="space-y-2">
-                        {teamMembersState.map(member => {
-                          const isAssigned = (lead.raw_payload?.assigned_team_ids || []).includes(member.id);
-                          return (
-                            <button
-                              key={member.id}
-                              onClick={() => toggleAssignee(member.id)}
-                              className={`w-full flex items-center justify-between p-2.5 border rounded-xl transition-all ${
-                                isAssigned 
-                                  ? 'bg-orange-500/10 border-orange-500/20 text-orange-600 dark:text-orange-400 font-bold' 
-                                  : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900/40 border-slate-200 dark:border-zinc-855 text-slate-600 dark:text-zinc-400'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-6 h-6 rounded-md bg-slate-200 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold">
-                                  {member.name.split(' ').map((n: string) => n[0]).join('')}
-                                </div>
-                                <div className="text-left">
-                                  <div className="text-xs font-semibold">{member.name}</div>
-                                  <div className="text-[9px] text-slate-500">{member.role}</div>
-                                </div>
-                              </div>
-                              <Check className={`w-3.5 h-3.5 ${isAssigned ? 'opacity-100' : 'opacity-0'}`} />
-                            </button>
-                          );
-                        })}
 
-                        {/* Add Team Member Inline Section */}
-                        {showAddMember ? (
-                          <div className="p-3 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              placeholder="Member Name"
-                              value={newMemberName}
-                              onChange={(e) => setNewMemberName(e.target.value)}
-                              className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-850 p-2 rounded-lg text-xs"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Role (e.g. Photographer)"
-                              value={newMemberRole}
-                              onChange={(e) => setNewMemberRole(e.target.value)}
-                              className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-855 p-2 rounded-lg text-xs"
-                            />
-                            <div className="flex gap-2 justify-end">
-                              <button
-                                onClick={() => setShowAddMember(false)}
-                                className="px-3 py-1.5 text-[10px] font-bold text-slate-500 rounded-lg bg-slate-100 hover:bg-slate-200"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={() => {
-                                  handleAddTeamMember(newMemberName, newMemberRole);
-                                  setNewMemberName('');
-                                  setShowAddMember(false);
-                                }}
-                                className="px-3 py-1.5 text-[10px] font-bold text-white rounded-lg bg-orange-500 hover:bg-orange-600"
-                              >
-                                Add Member
-                              </button>
+                      {/* Contact Info Rows */}
+                      <div className="space-y-2">
+                        {/* Email Row */}
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 flex items-center justify-center shrink-0">
+                              <Mail className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="block text-xs font-bold text-slate-900 dark:text-white truncate font-mono">
+                                {lead.email || 'No email provided'}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium">Email</span>
                             </div>
                           </div>
-                        ) : (
-                          <button
-                            onClick={() => setShowAddMember(true)}
-                            className="w-full py-2.5 border border-dashed border-slate-300 dark:border-zinc-800 rounded-xl text-[10px] font-bold text-slate-500 dark:text-zinc-400 hover:text-orange-500 hover:border-orange-500 transition-all flex items-center justify-center gap-1.5 mt-1"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add Team Member
-                          </button>
-                        )}
+                        </div>
+
+                        {/* Phone Row */}
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 flex items-center justify-center shrink-0">
+                              <Phone className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="block text-xs font-bold text-slate-900 dark:text-white truncate font-mono">
+                                {lead.phone || 'No phone number'}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium">Phone</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Last Contact / Lead Owner Row */}
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 flex items-center justify-center shrink-0">
+                              <User className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">
+                                {lead.raw_payload?.lead_owner || 'Sushant Nawale (Admin)'}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium">Lead Owner</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
+                    </div>
+
+                    {/* 3. NOTES CARD (Image 3 Style) */}
+                    <div 
+                      onClick={() => setActiveTab('comments_timeline')}
+                      className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 rounded-3xl p-4 space-y-2 cursor-pointer hover:border-indigo-400 transition-all shadow-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-indigo-900 dark:text-indigo-200">Notes</span>
+                        <div className="w-6 h-6 rounded-lg bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                          <Edit2 className="w-3 h-3" />
+                        </div>
+                      </div>
+                      <p className="text-xs text-indigo-900/80 dark:text-indigo-200/80 font-medium leading-relaxed">
+                        {commentsList[0]?.text || 'Discussed wedding photography package. Waiting for final confirmation. Very interested in our premium package.'}
+                      </p>
+                    </div>
+
+                    {/* 4. RECENT ACTIVITY TIMELINE (Image 3 Style) */}
+                    <div className="space-y-2.5">
+                      <span className="text-xs font-bold text-slate-800 dark:text-zinc-200 px-1">Recent Activity</span>
+                      <div className="space-y-2">
+                        {/* Call Activity Item */}
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                            <Phone className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
+                              Called to discuss package pricing
+                            </span>
+                            <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
+                              2 days ago
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Proposal Activity Item */}
+                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
+                          <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
+                              Generated wedding quotation proposal
+                            </span>
+                            <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
+                              1 day ago
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 5. EDITABLE SPECIFICATIONS ACCORDION */}
+                    <div className="pt-3 border-t border-slate-200 dark:border-zinc-850">
+                      <details className="group">
+                        <summary className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-[#141312] border border-slate-200 dark:border-zinc-800 cursor-pointer font-bold text-xs text-slate-800 dark:text-zinc-200 list-none select-none">
+                          <span className="flex items-center gap-2">
+                            <Gift className="w-4 h-4 text-orange-500" />
+                            Edit Full Wedding & Event Details
+                          </span>
+                          <ChevronRight className="w-4 h-4 text-slate-400 transition-transform group-open:rotate-90" />
+                        </summary>
+
+                        <div className="pt-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Groom Name</label>
+                              <input 
+                                type="text" 
+                                value={lead.raw_payload?.groom_name || ''} 
+                                onChange={(e) => handleRawPayloadChange('groom_name', e.target.value)}
+                                className="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
+                                placeholder="Groom Name"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Bride Name</label>
+                              <input 
+                                type="text" 
+                                value={lead.raw_payload?.bride_name || ''} 
+                                onChange={(e) => handleRawPayloadChange('bride_name', e.target.value)}
+                                className="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
+                                placeholder="Bride Name"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Event Date</label>
+                              <input 
+                                type="date" 
+                                value={lead.raw_payload?.event_date || ''} 
+                                onChange={(e) => handleRawPayloadChange('event_date', e.target.value)}
+                                className="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Budget</label>
+                              <input 
+                                type="text" 
+                                value={lead.raw_payload?.budget || ''} 
+                                onChange={(e) => handleRawPayloadChange('budget', e.target.value)}
+                                className="w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-2 rounded-xl text-xs font-semibold"
+                                placeholder="e.g. ₹2.5 Lakh"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </details>
                     </div>
                   </motion.div>
                 )}

@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { motion as motionImport, AnimatePresence as AnimatePresenceImport } from 'framer-motion';
 import { 
   Search, Filter, Phone, Mail, Calendar, MapPin, X, Info, 
-  HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
+  HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, MoreVertical, ArrowUpRight,
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
   Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, MessageCircle, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX
@@ -1959,6 +1959,48 @@ export function LeadTable({
               </button>
             </div>
 
+            {/* MOBILE ONLY: Filter by Stage Horizontal Scrollable Pills (Matching Image 2) */}
+            <div className="block md:hidden w-full pt-2 pb-1 border-t border-slate-100 dark:border-zinc-800/80">
+              <div className="flex items-center justify-between px-1 mb-1.5">
+                <span className="text-xs font-bold text-slate-900 dark:text-white">Filter by stage</span>
+                <span className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500">
+                  {filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+                {/* All Pill */}
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3.5 py-1 rounded-full text-xs font-bold shrink-0 transition-all ${
+                    statusFilter === 'all'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-zinc-850 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  All
+                </button>
+                {/* Dynamic Stage Pills */}
+                {stagesState.map((stage) => {
+                  const isActive = statusFilter === stage.id || statusFilter === stage.name;
+                  return (
+                    <button
+                      key={stage.id}
+                      type="button"
+                      onClick={() => setStatusFilter(isActive ? 'all' : stage.id)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition-all border ${
+                        isActive
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      {stage.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Filters Panel (Collapsible on Mobile, Full row on Desktop) */}
             <div className={`${mobileFilterOpen ? 'flex' : 'hidden'} md:flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-zinc-800`}>
               
@@ -2200,9 +2242,9 @@ export function LeadTable({
       {/* ───────────────────────────────────────────────────────────── */}
       {/* MOBILE / TABLET RESPONSIVE COMPACT CARD GRID (< 768px)         */}
       {/* ───────────────────────────────────────────────────────────── */}
-      <div className="block md:hidden space-y-2.5 p-2.5">
+      <div className="block md:hidden space-y-3 p-3">
         {paginatedLeads.length === 0 ? (
-          <div className="py-12 text-center text-zinc-500 bg-white dark:bg-zinc-900/50 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <div className="py-12 text-center text-zinc-500 bg-white dark:bg-zinc-900/50 rounded-3xl border border-zinc-200 dark:border-zinc-800">
             <AlertCircle className="w-8 h-8 mx-auto text-amber-500 mb-2" />
             <p className="text-xs font-bold">No photography leads match your filter criteria</p>
           </div>
@@ -2238,6 +2280,49 @@ export function LeadTable({
               return styles[sum % styles.length];
             };
 
+            const formatTimeAgo = (dateStr?: string | null) => {
+              if (!dateStr) return 'Recent';
+              try {
+                const d = new Date(dateStr);
+                const now = new Date();
+                const diffMs = now.getTime() - d.getTime();
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                if (diffDays === 0) {
+                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                  if (diffHours <= 0) return 'Today';
+                  return `${diffHours}h ago`;
+                }
+                if (diffDays === 1) return '1 Day ago';
+                if (diffDays < 30) return `${diffDays} Days ago`;
+                return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+              } catch (_) {
+                return 'Recent';
+              }
+            };
+
+            const getSubtitle = (l: Lead) => {
+              if (l.raw_payload?.groom_name && l.raw_payload?.bride_name) {
+                return `${l.raw_payload.groom_name} & ${l.raw_payload.bride_name}`;
+              }
+              if (l.raw_payload?.groom_name) return l.raw_payload.groom_name;
+              if (l.raw_payload?.bride_name) return l.raw_payload.bride_name;
+              if (l.raw_payload?.company) return l.raw_payload.company;
+              if (l.raw_payload?.event_type) return l.raw_payload.event_type;
+              if (l.raw_payload?.form_name) return l.raw_payload.form_name;
+              if (l.source) return l.source;
+              return 'Wedding Client';
+            };
+
+            const getBudgetValue = (l: Lead) => {
+              const raw = l.raw_payload?.budget || l.raw_payload?.deal_value || l.raw_payload?.amount;
+              if (raw) {
+                const s = String(raw).trim();
+                if (s.startsWith('₹') || s.startsWith('$')) return s;
+                return `₹${s}`;
+              }
+              return '₹1,50,000';
+            };
+
             const initials = getLeadInitials(lead.name || '');
             const avStyle = getAvatarStyle(lead.name || '');
             const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
@@ -2245,53 +2330,85 @@ export function LeadTable({
             return (
               <div 
                 key={lead.id}
-                className={`bg-white dark:bg-[#121110] border border-slate-200/90 dark:border-zinc-800/90 rounded-2xl p-3 shadow-xs space-y-2.5 relative overflow-hidden transition-all ${
+                className={`bg-white dark:bg-[#141312] border border-slate-200/90 dark:border-zinc-800 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all space-y-3 relative overflow-hidden ${
                   isSelected ? 'ring-2 ring-[#D4AF37]' : ''
                 }`}
               >
-                {/* 1. TOP SECTION: Circular Avatar + Lead Name & Contact Info (No Form Badge) */}
-                <div 
-                  className="flex items-center gap-3 cursor-pointer select-none"
-                  onClick={() => {
-                    setSelectedLead(lead);
-                    setDrawerMode('full');
-                  }}
-                >
-                  {/* Avatar Circle with Initials (Replaces Checkbox) */}
-                  <div className={`w-9 h-9 rounded-full ${avStyle.bg} ${avStyle.border} ${avStyle.text} border flex items-center justify-center font-black text-xs shrink-0 shadow-2xs tracking-wider`}>
-                    {initials}
-                  </div>
+                {/* 1. TOP ROW: Avatar + Name & Subtitle + Open Arrow ↗ (Image 2 Style) */}
+                <div className="flex items-center justify-between gap-3">
+                  <div 
+                    className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer select-none"
+                    onClick={() => {
+                      setSelectedLead(lead);
+                      setDrawerMode('full');
+                    }}
+                  >
+                    {/* Avatar Circle with initials */}
+                    <div className={`w-11 h-11 rounded-full ${avStyle.bg} ${avStyle.border} ${avStyle.text} border flex items-center justify-center font-extrabold text-sm shrink-0 shadow-2xs tracking-wider`}>
+                      {initials}
+                    </div>
 
-                  {/* Name & Contact Details */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <h4 className="text-xs font-black text-slate-900 dark:text-white leading-tight truncate">
+                    {/* Name & Subtitle */}
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white leading-tight truncate">
                         {lead.name || 'Unspecified Lead'}
                       </h4>
-                      {lead.created_at && (
-                        <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono shrink-0">
-                          {new Date(lead.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                        </span>
-                      )}
+                      <p className="text-xs text-slate-400 dark:text-zinc-400 font-medium truncate mt-0.5">
+                        {getSubtitle(lead)}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5 text-[11px] font-mono text-slate-600 dark:text-zinc-400 truncate">
-                      {lead.phone && <span className="font-bold">{lead.phone}</span>}
-                      {lead.phone && lead.email && <span className="text-slate-300 dark:text-zinc-700">•</span>}
-                      {lead.email && <span className="text-slate-400 dark:text-zinc-500 truncate text-[10px]">{lead.email}</span>}
-                    </div>
+                  </div>
+
+                  {/* Detail Open Arrow Button ↗ */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLead(lead);
+                      setDrawerMode('full');
+                    }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
+                    title="Open Details"
+                  >
+                    <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+                </div>
+
+                {/* 2. MIDDLE 2x2 METADATA GRID WITH ICONS (Image 2 Style) */}
+                <div className="grid grid-cols-2 gap-y-2 gap-x-3 pt-1 text-xs">
+                  {/* Email */}
+                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-mono text-slate-500 dark:text-zinc-400 truncate">
+                    <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{lead.email || 'No email'}</span>
+                  </div>
+
+                  {/* Created Date / Time ago */}
+                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-mono text-slate-500 dark:text-zinc-400 truncate">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{formatTimeAgo(lead.created_at)}</span>
+                  </div>
+
+                  {/* Phone */}
+                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-mono font-bold text-slate-600 dark:text-zinc-300 truncate">
+                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{lead.phone || 'No phone'}</span>
+                  </div>
+
+                  {/* Lead Owner / Score */}
+                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                    <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate font-medium">{currentAssignedOwner}</span>
                   </div>
                 </div>
 
-                {/* 2. MIDDLE SECTION: Status & Lead Owner (Compact 2-Columns, No Overflow) */}
-                <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100 dark:border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
-                  {/* Status Dropdown */}
-                  <div className="space-y-0.5 min-w-0">
-                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider truncate">Status</span>
+                {/* 3. BOTTOM ROW: Status Pill Dropdown (Left) + Deal Value & Action Icons (Right) */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
+                  {/* Status Dropdown Pill */}
+                  <div className="min-w-0 flex-1 max-w-[145px]">
                     <CRMDropdown
                       value={lead.stage_id || lead.status}
                       placeholder="Select status"
-                      className="w-full"
                       compact={true}
+                      className="w-full"
                       customAddTitle="Add Custom Status"
                       options={stagesState.map(s => ({
                         value: s.id,
@@ -2331,87 +2448,46 @@ export function LeadTable({
                     />
                   </div>
 
-                  {/* Lead Owner Dropdown */}
-                  <div className="space-y-0.5 min-w-0">
-                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider truncate">Lead Owner</span>
-                    <CRMDropdown
-                      value={currentAssignedOwner}
-                      placeholder="Select owner"
-                      className="w-full"
-                      compact={true}
-                      allowCustomAdd={false}
-                      options={[
-                        { value: 'Unassigned', label: '👤 Unassigned', color: '#94a3b8' },
-                        ...teamMembers.filter(m => m.name !== 'Unassigned').map(m => ({
-                          value: m.name,
-                          label: `👤 ${m.name}`,
-                          color: m.color || '#10b981'
-                        }))
-                      ]}
-                      onChange={(val) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: val } }, lead.id)}
-                    />
+                  {/* Right: Deal Budget / Quotation & Quick Action Icons */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-sm font-extrabold text-slate-900 dark:text-white font-mono">
+                      {getBudgetValue(lead)}
+                    </span>
+
+                    {/* WhatsApp Quick Icon */}
+                    {cleanPhone && (
+                      <a
+                        href={`https://wa.me/${cleanPhone}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-8 h-8 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs"
+                        title="Send WhatsApp"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </a>
+                    )}
+
+                    {/* Call Quick Icon */}
+                    {lead.phone && (
+                      <a
+                        href={`tel:${lead.phone}`}
+                        className="w-8 h-8 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs"
+                        title="Call Lead"
+                      >
+                        <Phone className="w-4 h-4" />
+                      </a>
+                    )}
+
+                    {/* Quotation Quick Icon */}
+                    <button
+                      type="button"
+                      onClick={() => setQuotationModalLead(lead)}
+                      className="w-8 h-8 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
+                      title="Quotation"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </button>
                   </div>
-                </div>
-
-                {/* 3. BOTTOM ACTIONS ROW: Icons ONLY (Quote, WhatsApp, Call, Mail, Comment) */}
-                <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100 dark:border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
-                  {/* Quotation Icon */}
-                  <button
-                    type="button"
-                    onClick={() => setQuotationModalLead(lead)}
-                    className="flex-1 h-8 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-600 dark:text-amber-400 border border-amber-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
-                    title="Create / View Quotation"
-                  >
-                    <FileText className="w-4 h-4" />
-                  </button>
-
-                  {/* WhatsApp Icon */}
-                  {cleanPhone ? (
-                    <a
-                      href={`https://wa.me/${cleanPhone}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 h-8 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
-                      title="Send WhatsApp Message"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                    </a>
-                  ) : null}
-
-                  {/* Call Icon */}
-                  {lead.phone ? (
-                    <a
-                      href={`tel:${lead.phone}`}
-                      className="flex-1 h-8 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 active:bg-teal-500/30 text-teal-600 dark:text-teal-400 border border-teal-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
-                      title="Direct Phone Call"
-                    >
-                      <Phone className="w-4 h-4" />
-                    </a>
-                  ) : null}
-
-                  {/* Mail Icon */}
-                  {lead.email ? (
-                    <a
-                      href={`mailto:${lead.email}`}
-                      className="flex-1 h-8 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 active:bg-blue-500/30 text-blue-600 dark:text-blue-400 border border-blue-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
-                      title="Send Email"
-                    >
-                      <Mail className="w-4 h-4" />
-                    </a>
-                  ) : null}
-
-                  {/* Comment Icon */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedLead(lead);
-                      setDrawerMode('comments');
-                    }}
-                    className="flex-1 h-8 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/30 text-purple-600 dark:text-purple-400 border border-purple-500/20 transition-all flex items-center justify-center active:scale-95 shadow-2xs cursor-pointer"
-                    title="Lead Comments / Reminders"
-                  >
-                    <MessageSquare className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
             );
