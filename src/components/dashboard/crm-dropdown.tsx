@@ -145,7 +145,13 @@ export function CRMDropdown({
 
   // Selected Option Object
   const selectedOpt = useMemo(() => {
-    return sortedOptions.find(o => o.value === value || o.label === value);
+    if (!value) return undefined;
+    return sortedOptions.find(o => 
+      o.value === value || 
+      o.label === value || 
+      (typeof o.value === 'string' && typeof value === 'string' && o.value.toLowerCase() === value.toLowerCase()) || 
+      (typeof o.label === 'string' && typeof value === 'string' && o.label.toLowerCase() === value.toLowerCase())
+    );
   }, [sortedOptions, value]);
 
   const displayLabel = selectedOpt?.label || value || placeholder;

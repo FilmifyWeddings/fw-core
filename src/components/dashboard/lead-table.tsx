@@ -2,19 +2,20 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { motion as motionImport, AnimatePresence as AnimatePresenceImport } from 'framer-motion';
 import { 
   Search, Filter, Phone, Mail, Calendar, MapPin, X, Info, 
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, 
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe, FolderOpen, Archive
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadInsiderDrawer } from './lead-insider-drawer';
 import { TeamTasksManager } from './team-tasks-manager';
-import { CRMDropdown } from './crm-dropdown';
+import { CRMDropdown, getDynamicBadgeStyle } from './crm-dropdown';
 import { LeadQuotationModal } from './lead-quotation-modal';
 
 const MotionDiv = motionImport.div;
@@ -215,21 +216,45 @@ export function LeadTable({
 
   useEffect(() => {
     if (stages && stages.length > 0) {
-      const hasBooked = stages.some((s: any) => s.id === 'booked' || s.name?.toLowerCase() === 'booked');
-      const merged = hasBooked ? stages : [...stages, { id: 'booked', name: 'Booked', color: '#10b981', position: 4 }];
-      setStagesState(merged);
-    } else {
-      setStagesState([
-        { id: 'new', name: 'Inquiry / New', color: '#6366f1', position: 0 },
-        { id: 'contacted', name: 'Contacted', color: '#8b5cf6', position: 1 },
-        { id: 'cool', name: 'Cool / Warm', color: '#06b6d4', position: 2 },
-        { id: 'hot', name: 'Hot 🔥', color: '#ef4444', position: 3 },
-        { id: 'booked', name: 'Booked', color: '#10b981', position: 4 },
-        { id: 'won', name: 'Won 🎉', color: '#10b981', position: 5 },
-        { id: 'lost', name: 'Lost ❌', color: '#f43f5e', position: 6 }
-      ]);
+      setStagesState(stages);
     }
   }, [stages]);
+
+  useEffect(() => {
+    const handleSettingsSync = () => {
+      const local = localStorage.getItem('leads_workspace_stages');
+      if (local) {
+        try {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setStagesState(parsed);
+            return;
+          }
+        } catch (_) {}
+      }
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.settings?.lead_stages) && data.settings.lead_stages.length > 0) {
+            setStagesState(data.settings.lead_stages);
+          }
+        })
+        .catch(() => {});
+    };
+
+    handleSettingsSync();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('settings_updated', handleSettingsSync);
+      window.addEventListener('storage', handleSettingsSync);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('settings_updated', handleSettingsSync);
+        window.removeEventListener('storage', handleSettingsSync);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (activeLeadId) {
@@ -279,17 +304,17 @@ export function LeadTable({
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // Dynamic Sidebar width detection
-  const [sidebarWidth, setSidebarWidth] = useState(68);
+  const searchParams = useSearchParams();
+  const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
+
+  const sidebarFilter: 'overview' | 'lost' | 'archive' = 
+    stageParam === 'lost' ? 'lost' : 
+    (stageParam === 'archived' || stageParam === 'archive') ? 'archive' : 
+    'overview';
+
+  const [sidebarWidth, setSidebarWidth] = useState(0);
   const [rowActionMenuLeadId, setRowActionMenuLeadId] = useState<string | null>(null);
-
-  // Sidebar expansion & filter states
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
-  const [sidebarFilter, setSidebarFilter] = useState<'overview' | 'lost' | 'archive'>('overview');
-
-  useEffect(() => {
-    setSidebarWidth(isSidebarExpanded ? 240 : 68);
-  }, [isSidebarExpanded]);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -817,8 +842,12 @@ export function LeadTable({
   // Dynamic sidebar collapse detection
   useEffect(() => {
     const updateWidth = () => {
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setSidebarWidth(0);
+        return;
+      }
       const isCollapsed = localStorage.getItem('sidebar_collapsed') === 'true';
-      setSidebarWidth(isCollapsed ? 64 : 240);
+      setSidebarWidth(isCollapsed ? 80 : 256);
     };
     updateWidth();
     window.addEventListener('click', updateWidth);
@@ -1232,7 +1261,7 @@ export function LeadTable({
       const stage = stages.find(s => s.id === (lead.stage_id || lead.status));
       return stage ? stage.name : lead.status;
     }
-    if (colId === 'owner') return lead.raw_payload?.lead_owner || 'Chad Thunderclock';
+    if (colId === 'owner' || colId === 'lead_owner') return lead.raw_payload?.lead_owner || 'Unassigned';
     if (colId === 'company') return lead.raw_payload?.company || '-';
     if (colId === 'date') {
       return new Date(lead.created_at).toLocaleDateString('en-IN', {
@@ -1397,6 +1426,7 @@ export function LeadTable({
 
   // Filter lists configuration
   const uniqueOwners = Array.from(new Set([
+    'Unassigned',
     ...teamMembers.map(m => m.name as string),
     ...leads.map(l => (l.raw_payload?.lead_owner) as string).filter(Boolean)
   ]));
@@ -1408,11 +1438,16 @@ export function LeadTable({
       lead.phone.includes(search) ||
       (lead.email?.toLowerCase() || '').includes(search.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' || 
+      lead.stage_id === statusFilter || 
+      lead.status === statusFilter ||
+      (stagesState.find(s => s.id === statusFilter)?.name?.toLowerCase() === lead.status?.toLowerCase()) ||
+      (stagesState.find(s => s.id === statusFilter)?.name?.toLowerCase() === lead.stage_id?.toLowerCase()) ||
+      (stagesState.find(s => s.name?.toLowerCase() === statusFilter?.toLowerCase())?.id?.toLowerCase() === lead.stage_id?.toLowerCase());
     const matchesSource = sourceFilter === 'all' || lead.source.toLowerCase() === sourceFilter.toLowerCase();
     const matchesScore = scoreFilter === 'all' || lead.score === scoreFilter;
     
-    const owner = lead.raw_payload?.lead_owner || 'Chad Thunderclock';
+    const owner = lead.raw_payload?.lead_owner || 'Unassigned';
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
     // Sidebar Filter logic
@@ -1682,520 +1717,480 @@ export function LeadTable({
   };
 
   return (
-    <div className="flex-1 min-h-0 min-w-0 w-full flex relative overflow-hidden">
-      
-      {/* Dynamic Left Sidebar Menu Bar */}
-      <aside 
-        className={`flex flex-col border-r border-[#E8E5DF] dark:border-[#2C2926] bg-[#FAF8F5] dark:bg-[#121110] transition-all duration-300 select-none shrink-0 ${
-          isSidebarExpanded ? 'w-60' : 'w-[68px]'
-        }`}
-      >
-        {/* CRM Logo / Toggler */}
-        <div className="p-4 border-b border-[#E8E5DF] dark:border-[#2C2926] flex items-center gap-3">
-          <button
-            onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
-            className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center shadow-md shrink-0 hover:scale-105 transition-all"
-            title={isSidebarExpanded ? "Collapse Sidebar" : "Expand Sidebar (CRM Toggler)"}
-          >
-            <Database className="w-5 h-5 text-white" />
-          </button>
-          {isSidebarExpanded && (
-            <div className="min-w-0">
-              <h2 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider truncate">CRM Platform</h2>
-              <span className="text-[9px] font-bold text-amber-500 block leading-none">Settings Config</span>
-            </div>
-          )}
-        </div>
-
-        {/* Navigation Items */}
-        <nav className="flex-1 p-3 space-y-2">
-          {/* Back to Suite Workspace */}
-          <Link
-            href="/workspace"
-            className={`flex items-center gap-3 p-2.5 rounded-xl border border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white transition-all ${
-              isSidebarExpanded ? 'justify-start' : 'justify-center'
-            }`}
-            title="Back to Suite Workspace"
-          >
-            <ArrowLeft className="w-4 h-4 shrink-0 text-slate-500" />
-            {isSidebarExpanded && <span className="text-xs font-bold whitespace-nowrap">Back to Workspace</span>}
-          </Link>
-
-          <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-2" />
-
-          {/* Overview */}
-          <button
-            onClick={() => setSidebarFilter('overview')}
-            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
-              sidebarFilter === 'overview'
-                ? 'bg-orange-500/10 border-orange-500/20 text-orange-500 font-bold'
-                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
-            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
-            title="Overview (Active Leads)"
-          >
-            <LayoutGrid className="w-4 h-4 shrink-0" />
-            {isSidebarExpanded && <span className="text-xs font-bold">Overview</span>}
-          </button>
-
-          {/* Lost */}
-          <button
-            onClick={() => setSidebarFilter('lost')}
-            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
-              sidebarFilter === 'lost'
-                ? 'bg-red-500/10 border-red-500/20 text-red-500 font-bold'
-                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
-            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
-            title="Lost Leads"
-          >
-            <X className="w-4 h-4 shrink-0" />
-            {isSidebarExpanded && <span className="text-xs font-bold">Lost Leads</span>}
-          </button>
-
-          {/* Archive */}
-          <button
-            onClick={() => setSidebarFilter('archive')}
-            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
-              sidebarFilter === 'archive'
-                ? 'bg-blue-500/10 border-blue-500/20 text-blue-500 font-bold'
-                : 'border-transparent text-zinc-550 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/50 hover:text-[#1A1A1A] dark:hover:text-white'
-            } ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}
-            title="Archived Leads"
-          >
-            <Archive className="w-4 h-4 shrink-0" />
-            {isSidebarExpanded && <span className="text-xs font-bold">Archive</span>}
-          </button>
-        </nav>
-      </aside>
-
-      {/* Main Table viewport container */}
-      <div className="flex-1 min-h-0 min-w-0 w-full max-w-full flex flex-col relative overflow-hidden">
-
-        {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
-        <div className="shrink-0 w-full max-w-full overflow-hidden border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
-          {renderHeader && (
-            <div className="bg-[#FAF8F5] dark:bg-[#070708] px-4 md:px-6 pt-4 pb-2">
-              {renderHeader()}
-            </div>
-          )}
-
-          <div ref={headerRef} className="px-4 md:px-6 pb-2 pt-2">
-            
-
-
-        {/* Advanced In-Header Filters Row */}
-        <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-4 bg-white dark:bg-[#0c0c0e] py-1">
-        
-        {/* Left Side: Search & Date Range & Count */}
-        <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
-          {/* Search */}
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3.5 top-3 w-4 h-4 text-[#706E6A] dark:text-[#A09E9A]" />
-            <input
-              type="text"
-              placeholder="Search leads, contact, number..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-[#0c0c0e] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A] dark:placeholder-[#A09E9A] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition-all font-sans"
-            />
+    <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col relative overflow-hidden">
+      {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
+      <div className="shrink-0 w-full max-w-full overflow-hidden border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
+        {renderHeader && (
+          <div className="bg-[#FAF8F5] dark:bg-[#070708] px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
+            {renderHeader()}
           </div>
+        )}
 
-          {/* Calendar Range Picker Trigger Button */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowDatePickerModal(!showDatePickerModal);
-                // Pre-populate temp selection states when opening
-                setTempStartDate(startDate);
-                setTempEndDate(endDate);
-              }}
-              className={`p-2.5 rounded-xl border transition-all flex items-center justify-center relative shadow-sm hover:scale-105 ${
-                startDate || endDate
-                  ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]'
-                  : 'bg-white hover:bg-slate-50 dark:bg-[#121110] dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
-              }`}
-              title="Filter by Date Range"
-            >
-              <Calendar className="w-4 h-4" />
-              {(startDate || endDate) && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#D4AF37] rounded-full border border-white" />
-              )}
-            </button>
-
-            {/* Custom 3D Advanced Date Range Picker Modal */}
-            {showDatePickerModal && (
-              <div className="absolute left-0 mt-2 z-50 w-[300px] bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.15)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)] flex flex-col gap-3 transition-all select-none">
-                
-                {/* Calendar Header: Month Selector */}
-                <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2.5">
-                  <button 
-                    onClick={() => {
-                      if (calMonth === 0) {
-                        setCalMonth(11);
-                        setCalYear(calYear - 1);
-                      } else {
-                        setCalMonth(calMonth - 1);
-                      }
-                    }}
-                    className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
-                    {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][calMonth]} {calYear}
-                  </span>
-                  <button 
-                    onClick={() => {
-                      if (calMonth === 11) {
-                        setCalMonth(0);
-                        setCalYear(calYear + 1);
-                      } else {
-                        setCalMonth(calMonth + 1);
-                      }
-                    }}
-                    className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Days of Week Row */}
-                <div className="grid grid-cols-7 gap-1 text-center">
-                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
-                    <span key={d} className="text-[10px] font-bold text-zinc-400 dark:text-zinc-555 uppercase">
-                      {d}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Days Grid */}
-                <div className="grid grid-cols-7 gap-1 text-center">
-                  {(() => {
-                    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-                    const firstDayIdx = new Date(calYear, calMonth, 1).getDay();
-                    const cells = [];
-                    
-                    // Empty slots for preceding days
-                    for (let i = 0; i < firstDayIdx; i++) {
-                      cells.push(<div key={`empty-${i}`} className="w-8 h-8" />);
-                    }
-                    
-                    // Days grid
-                    for (let d = 1; d <= daysInMonth; d++) {
-                      const curDateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                      const isSelectedStart = tempStartDate === curDateStr;
-                      const isSelectedEnd = tempEndDate === curDateStr;
-                      const isInRange = tempStartDate && tempEndDate && curDateStr > tempStartDate && curDateStr < tempEndDate;
-                      
-                      cells.push(
-                        <button
-                          key={d}
-                          onClick={() => {
-                            if (!tempStartDate || (tempStartDate && tempEndDate)) {
-                              setTempStartDate(curDateStr);
-                              setTempEndDate('');
-                            } else {
-                              if (curDateStr < tempStartDate) {
-                                setTempStartDate(curDateStr);
-                              } else {
-                                setTempEndDate(curDateStr);
-                              }
-                            }
-                          }}
-                          className={`w-8 h-8 text-[11px] font-bold rounded-lg flex items-center justify-center transition-all ${
-                            isSelectedStart || isSelectedEnd
-                              ? 'bg-[#D4AF37] text-white rounded-full font-black shadow-md'
-                              : isInRange
-                                ? 'bg-[#D4AF37]/15 text-[#D4AF37]'
-                                : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                          }`}
-                        >
-                          {d}
-                        </button>
-                      );
-                    }
-                    return cells;
-                  })()}
-                </div>
-
-                {/* Date Boxes Preview */}
-                <div className="grid grid-cols-2 gap-2 text-left pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
-                  <div>
-                    <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">Start Date</span>
-                    <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
-                      {tempStartDate ? new Date(tempStartDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
-                    </div>
+        <div ref={headerRef} className="px-3 sm:px-4 md:px-6 pb-2 pt-2">
+          {/* Active View Indicator for Lost or Archived views */}
+          {sidebarFilter !== 'overview' && (
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-zinc-800/80">
+              <div className="flex items-center gap-2">
+                {sidebarFilter === 'lost' ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-full text-xs font-black">
+                    <UserX className="w-3.5 h-3.5" />
+                    <span>Lost Leads Vault</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
                   </div>
-                  <div>
-                    <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">End Date</span>
-                    <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
-                      {tempEndDate ? new Date(tempEndDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
-                    </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-full text-xs font-black">
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>Archived Leads Vault</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-blue-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
                   </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-2 justify-end pt-2 text-[10px] font-bold">
-                  <button
-                    onClick={() => {
-                      setStartDate('');
-                      setEndDate('');
-                      setTempStartDate('');
-                      setTempEndDate('');
-                      setShowDatePickerModal(false);
-                    }}
-                    className="px-3 py-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                  >
-                    Clear Filter
-                  </button>
-                  <button
-                    onClick={() => {
-                      setStartDate(tempStartDate);
-                      setEndDate(tempEndDate);
-                      setShowDatePickerModal(false);
-                    }}
-                    className="px-3 py-1.5 bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-white rounded-lg transition-colors shadow-sm"
-                  >
-                    Apply Filter
-                  </button>
-                </div>
-
+                )}
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Filters Panel */}
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
-          
-          {/* Clear Column Filters Button */}
-          {Object.keys(activeHeaderFilters).length > 0 && (
-            <button
-              onClick={() => setActiveHeaderFilters({})}
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-200/60 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/10 text-red-600 dark:text-red-400 hover:bg-red-100/50 dark:hover:bg-red-950/20 transition-all text-[11px] font-bold"
-              title="Clear all header column filters"
-            >
-              <X className="w-3.5 h-3.5 stroke-[2.5]" />
-              Clear Filters
-            </button>
+              <Link 
+                href="/leads"
+                className="text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white underline flex items-center gap-1 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to All Active Leads
+              </Link>
+            </div>
           )}
 
-          {/* Main Google Sheets Filter Toggle Button */}
-          <button
-            onClick={() => {
-              setEnableHeaderFilters(!enableHeaderFilters);
-              setOpenFilterColId(null);
-              setFilterDropdownRect(null);
-            }}
-            className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
-              enableHeaderFilters 
-                ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]' 
-                : 'bg-white hover:bg-slate-50 dark:bg-[#121110] dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
-            }`}
-            title="Toggle Column Header Filters"
-          >
-            <Filter className="w-4 h-4" />
-          </button>
+          {/* Advanced In-Header Filters Row */}
+          <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center justify-between mb-3 bg-white dark:bg-[#0c0c0e] py-1">
+        
+            {/* Search & Date Range & Mobile Filter Buttons */}
+            <div className="flex items-center gap-2 w-full md:w-auto flex-1">
+              {/* Search */}
+              <div className="relative flex-1 md:w-80">
+                <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-[#706E6A] dark:text-[#A09E9A]" />
+                <input
+                  type="text"
+                  placeholder="Search leads, contact, number..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-white dark:bg-[#0c0c0e] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl text-[#1A1A1A] dark:text-[#F5F5F5] placeholder-[#706E6A] dark:placeholder-[#A09E9A] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition-all font-sans"
+                />
+              </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-1">
-            <CRMDropdown
-              value={statusFilter}
-              placeholder="Stages: All"
-              allowCustomAdd={false}
-              options={[
-                { value: 'all', label: 'Stages: All' },
-                { value: 'new', label: 'New' },
-                { value: 'contacted', label: 'Open' },
-                { value: 'warm', label: 'In Progress' },
-                { value: 'hot', label: 'Priority' },
-                { value: 'closed', label: 'Won' },
-                { value: 'lost', label: 'Lost' },
-              ]}
-              onChange={(val) => setStatusFilter(val)}
-            />
-          </div>
-
-          {/* Source Filter */}
-          <div className="flex items-center gap-1 font-sans">
-            <CRMDropdown
-              value={sourceFilter}
-              placeholder="Sources: All"
-              allowCustomAdd={false}
-              options={[
-                { value: 'all', label: 'Sources: All' },
-                ...customSources.map(src => {
-                  const val = typeof src === 'object' && src !== null ? (src.name || src.value) : String(src);
-                  const col = typeof src === 'object' && src !== null ? (src.color || '#3b82f6') : '#3b82f6';
-                  return { value: val, label: val, color: col };
-                })
-              ]}
-              onChange={(val) => setSourceFilter(val)}
-            />
-          </div>
-
-          {/* Owner Filter */}
-          <div className="flex items-center gap-1 font-sans">
-            <CRMDropdown
-              value={ownerFilter}
-              placeholder="Owners: All"
-              allowCustomAdd={false}
-              options={[
-                { value: 'all', label: 'Owners: All' },
-                ...uniqueOwners.map(owner => ({ value: owner, label: owner }))
-              ]}
-              onChange={(val) => setOwnerFilter(val)}
-            />
-          </div>
-
-          {/* Columns Config Trigger */}
-          <div className="relative" ref={manageColsRef}>
-            <button
-              onClick={() => setShowManageCols(!showManageCols)}
-              className="select-sheets text-xs font-semibold flex items-center gap-2"
-            >
-              <Columns className="w-3.5 h-3.5 text-slate-500" />
-              Columns Engine
-              <ChevronDown className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
-            </button>
-
-            <AnimatePresenceComponent>
-              {showManageCols && (
-                <MotionDiv
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-[#1A1A1A] dark:text-[#F5F5F5]"
+              {/* Calendar Range Picker Trigger Button */}
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => {
+                    setShowDatePickerModal(!showDatePickerModal);
+                    setTempStartDate(startDate);
+                    setTempEndDate(endDate);
+                  }}
+                  className={`p-2 sm:p-2.5 rounded-xl border transition-all flex items-center justify-center relative shadow-xs hover:scale-105 ${
+                    startDate || endDate
+                      ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]'
+                      : 'bg-white hover:bg-slate-50 dark:bg-[#121110] dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
+                  }`}
+                  title="Filter by Date Range"
                 >
-                  {/* Contact subtext layout config */}
-                  <div className="space-y-1.5 pb-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
-                    <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider">Contact Sub-text Layout</span>
-                    <select
-                      value={contactSubtext}
-                      onChange={(e) => {
-                        setContactSubtext(e.target.value as any);
-                        localStorage.setItem('leads_table_contact_subtext', e.target.value);
-                      }}
-                      className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926]"
-                    >
-                      <option value="both" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Phone & Email</option>
-                      <option value="phone" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Phone Only</option>
-                      <option value="email" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Email Only</option>
-                      <option value="none" className="bg-[#FAF8F5] dark:bg-[#121110]">Hide Sub-text</option>
-                    </select>
-                  </div>
+                  <Calendar className="w-4 h-4" />
+                  {(startDate || endDate) && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#D4AF37] rounded-full border border-white" />
+                  )}
+                </button>
 
-                  {/* Columns Toggles */}
-                  <div className="space-y-3">
-                    {/* 1. Standard Fields */}
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block mb-1">Standard Table Columns</span>
-                      {columns.filter(c => {
-                        const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-                        return (!c.type || c.type === 'system') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
-                      }).map(col => (
-                        <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
-                          <button
-                            onClick={() => toggleColumn(col.id)}
-                            className="flex items-center gap-2 flex-1 text-left py-0.5"
-                          >
-                            <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
-                              col.visible 
-                                ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
-                                : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
-                            }`}>
-                              <Check className="w-2.5 h-2.5 stroke-[3]" />
-                            </div>
-                            <span className="truncate max-w-[170px] font-semibold">{col.label}</span>
-                          </button>
-                        </div>
+                {/* Custom 3D Advanced Date Range Picker Modal */}
+                {showDatePickerModal && (
+                  <div className="absolute left-0 mt-2 z-50 w-[300px] bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.15)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)] flex flex-col gap-3 transition-all select-none">
+                    {/* Calendar Header: Month Selector */}
+                    <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2.5">
+                      <button 
+                        onClick={() => {
+                          if (calMonth === 0) {
+                            setCalMonth(11);
+                            setCalYear(calYear - 1);
+                          } else {
+                            setCalMonth(calMonth - 1);
+                          }
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                      </button>
+                      <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
+                        {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][calMonth]} {calYear}
+                      </span>
+                      <button 
+                        onClick={() => {
+                          if (calMonth === 11) {
+                            setCalMonth(0);
+                            setCalYear(calYear + 1);
+                          } else {
+                            setCalMonth(calMonth + 1);
+                          }
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Days of Week Row */}
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                        <span key={d} className="text-[10px] font-bold text-zinc-400 dark:text-zinc-555 uppercase">
+                          {d}
+                        </span>
                       ))}
                     </div>
 
-                    {/* 2. Meta Form Custom Questions Sync */}
-                    {columns.some(c => {
-                      const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-                      return c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !SYSTEM_AND_METADATA_KEYS.has(norm) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
-                    }) && (
-                      <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider flex items-center gap-1">
-                            <Tag className="w-3 h-3" />
-                            Meta Form Custom Questions
-                          </span>
-                          <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                            Auto Synced
-                          </span>
+                    {/* Days Grid */}
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {(() => {
+                        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+                        const firstDayIdx = new Date(calYear, calMonth, 1).getDay();
+                        const cells = [];
+                        
+                        for (let i = 0; i < firstDayIdx; i++) {
+                          cells.push(<div key={`empty-${i}`} className="w-8 h-8" />);
+                        }
+                        
+                        for (let d = 1; d <= daysInMonth; d++) {
+                          const curDateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                          const isSelectedStart = tempStartDate === curDateStr;
+                          const isSelectedEnd = tempEndDate === curDateStr;
+                          const isInRange = tempStartDate && tempEndDate && curDateStr > tempStartDate && curDateStr < tempEndDate;
+                          
+                          cells.push(
+                            <button
+                              key={d}
+                              onClick={() => {
+                                if (!tempStartDate || (tempStartDate && tempEndDate)) {
+                                  setTempStartDate(curDateStr);
+                                  setTempEndDate('');
+                                } else {
+                                  if (curDateStr < tempStartDate) {
+                                    setTempStartDate(curDateStr);
+                                  } else {
+                                    setTempEndDate(curDateStr);
+                                  }
+                                }
+                              }}
+                              className={`w-8 h-8 text-[11px] font-bold rounded-lg flex items-center justify-center transition-all ${
+                                isSelectedStart || isSelectedEnd
+                                  ? 'bg-[#D4AF37] text-white rounded-full font-black shadow-md'
+                                  : isInRange
+                                    ? 'bg-[#D4AF37]/15 text-[#D4AF37]'
+                                    : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                              }`}
+                            >
+                              {d}
+                            </button>
+                          );
+                        }
+                        return cells;
+                      })()}
+                    </div>
+
+                    {/* Date Boxes Preview */}
+                    <div className="grid grid-cols-2 gap-2 text-left pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">Start Date</span>
+                        <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
+                          {tempStartDate ? new Date(tempStartDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
                         </div>
-                        {columns.filter(c => {
+                      </div>
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">End Date</span>
+                        <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
+                          {tempEndDate ? new Date(tempEndDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 justify-end pt-2 text-[10px] font-bold">
+                      <button
+                        onClick={() => {
+                          setStartDate('');
+                          setEndDate('');
+                          setTempStartDate('');
+                          setTempEndDate('');
+                          setShowDatePickerModal(false);
+                        }}
+                        className="px-3 py-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                      >
+                        Clear Filter
+                      </button>
+                      <button
+                        onClick={() => {
+                          setStartDate(tempStartDate);
+                          setEndDate(tempEndDate);
+                          setShowDatePickerModal(false);
+                        }}
+                        className="px-3 py-1.5 bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-white rounded-lg transition-colors shadow-sm"
+                      >
+                        Apply Filter
+                      </button>
+                    </div>
+
+                  </div>
+                )}
+              </div>
+
+              {/* MOBILE ONLY: Single Filters Toggle Button */}
+              <button
+                onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
+                className={`md:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shrink-0 ${
+                  mobileFilterOpen || statusFilter !== 'all' || sourceFilter !== 'all' || ownerFilter !== 'all'
+                    ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]'
+                    : 'bg-white dark:bg-[#121110] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-600 dark:text-zinc-300'
+                }`}
+                title="Toggle Filters"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span>Filters</span>
+                {(statusFilter !== 'all' || sourceFilter !== 'all' || ownerFilter !== 'all') && (
+                  <span className="w-2 h-2 rounded-full bg-[#D4AF37]" />
+                )}
+              </button>
+
+              {/* MOBILE ONLY: Quick Add Lead Button */}
+              <button
+                onClick={() => setCreateModalOpen(true)}
+                className="md:hidden shrink-0 px-3 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-xl transition-all shadow-xs flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                <span>Add</span>
+              </button>
+            </div>
+
+            {/* Filters Panel (Collapsible on Mobile, Full row on Desktop) */}
+            <div className={`${mobileFilterOpen ? 'flex' : 'hidden'} md:flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-zinc-800`}>
+              
+              {/* Clear Column Filters Button */}
+              {Object.keys(activeHeaderFilters).length > 0 && (
+                <button
+                  onClick={() => setActiveHeaderFilters({})}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-200/60 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/10 text-red-600 dark:text-red-400 hover:bg-red-100/50 dark:hover:bg-red-950/20 transition-all text-[11px] font-bold"
+                  title="Clear all header column filters"
+                >
+                  <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                  Clear Filters
+                </button>
+              )}
+
+              {/* Main Google Sheets Filter Toggle Button */}
+              <button
+                onClick={() => {
+                  setEnableHeaderFilters(!enableHeaderFilters);
+                  setOpenFilterColId(null);
+                  setFilterDropdownRect(null);
+                }}
+                className={`p-2 rounded-xl border transition-all hidden md:flex items-center justify-center ${
+                  enableHeaderFilters 
+                    ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]' 
+                    : 'bg-white hover:bg-slate-50 dark:bg-[#121110] dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
+                }`}
+                title="Toggle Column Header Filters"
+              >
+                <Filter className="w-4 h-4" />
+              </button>
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-1">
+                <CRMDropdown
+                  value={statusFilter}
+                  placeholder="Stages: All"
+                  allowCustomAdd={false}
+                  options={[
+                    { value: 'all', label: 'Stages: All' },
+                    ...stagesState.map(s => ({
+                      value: s.id,
+                      label: s.name,
+                      color: s.color,
+                    }))
+                  ]}
+                  onChange={(val) => setStatusFilter(val)}
+                />
+              </div>
+
+              {/* Source Filter */}
+              <div className="flex items-center gap-1 font-sans">
+                <CRMDropdown
+                  value={sourceFilter}
+                  placeholder="Sources: All"
+                  allowCustomAdd={false}
+                  options={[
+                    { value: 'all', label: 'Sources: All' },
+                    ...customSources.map(src => {
+                      const val = typeof src === 'object' && src !== null ? (src.name || src.value) : String(src);
+                      const col = typeof src === 'object' && src !== null ? (src.color || '#3b82f6') : '#3b82f6';
+                      return { value: val, label: val, color: col };
+                    })
+                  ]}
+                  onChange={(val) => setSourceFilter(val)}
+                />
+              </div>
+
+              {/* Owner Filter */}
+              <div className="flex items-center gap-1 font-sans">
+                <CRMDropdown
+                  value={ownerFilter}
+                  placeholder="Owners: All"
+                  allowCustomAdd={false}
+                  options={[
+                    { value: 'all', label: 'Owners: All' },
+                    ...uniqueOwners.map(owner => ({ value: owner, label: owner }))
+                  ]}
+                  onChange={(val) => setOwnerFilter(val)}
+                />
+              </div>
+
+              {/* Columns Config Trigger */}
+              <div className="relative" ref={manageColsRef}>
+                <button
+                  onClick={() => setShowManageCols(!showManageCols)}
+                  className="select-sheets text-xs font-semibold flex items-center gap-2"
+                >
+                  <Columns className="w-3.5 h-3.5 text-slate-500" />
+                  Columns Engine
+                  <ChevronDown className="w-3 h-3 text-[#706E6A] dark:text-[#A09E9A]" />
+                </button>
+
+                <AnimatePresenceComponent>
+                  {showManageCols && (
+                    <MotionDiv
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-[#1A1A1A] dark:text-[#F5F5F5]"
+                    >
+                      {/* Contact subtext layout config */}
+                      <div className="space-y-1.5 pb-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">
+                        <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider">Contact Sub-text Layout</span>
+                        <select
+                          value={contactSubtext}
+                          onChange={(e) => {
+                            setContactSubtext(e.target.value as any);
+                            localStorage.setItem('leads_table_contact_subtext', e.target.value);
+                          }}
+                          className="w-full bg-[#FAF8F5]/60 dark:bg-[#121110]/60 text-xs text-[#1A1A1A] dark:text-[#F5F5F5] rounded-lg p-1.5 border border-[#E8E5DF] dark:border-[#2C2926]"
+                        >
+                          <option value="both" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Phone & Email</option>
+                          <option value="phone" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Phone Only</option>
+                          <option value="email" className="bg-[#FAF8F5] dark:bg-[#121110]">Show Email Only</option>
+                          <option value="none" className="bg-[#FAF8F5] dark:bg-[#121110]">Hide Sub-text</option>
+                        </select>
+                      </div>
+
+                      {/* Columns Toggles */}
+                      <div className="space-y-3">
+                        {/* 1. Standard Fields */}
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-[#706E6A] dark:text-[#A09E9A] tracking-wider block mb-1">Standard Table Columns</span>
+                          {columns.filter(c => {
+                            const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                            return (!c.type || c.type === 'system') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
+                          }).map(col => (
+                            <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
+                              <button
+                                onClick={() => toggleColumn(col.id)}
+                                className="flex items-center gap-2 flex-1 text-left py-0.5"
+                              >
+                                <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                                  col.visible 
+                                    ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
+                                    : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
+                                }`}>
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                </div>
+                                <span className="truncate max-w-[170px] font-semibold">{col.label}</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* 2. Meta Form Custom Questions Sync */}
+                        {columns.some(c => {
                           const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
                           return c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !SYSTEM_AND_METADATA_KEYS.has(norm) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
-                        }).map(col => (
-                          <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
-                            <button
-                              onClick={() => toggleColumn(col.id)}
-                              className="flex items-center gap-2 flex-1 text-left py-0.5"
-                            >
-                              <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
-                                col.visible 
-                                  ? 'bg-blue-600 border-transparent text-white' 
-                                  : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
-                              }`}>
-                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        }) && (
+                          <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider flex items-center gap-1">
+                                <Tag className="w-3 h-3" />
+                                Meta Form Custom Questions
+                              </span>
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                Auto Synced
+                              </span>
+                            </div>
+                            {columns.filter(c => {
+                              const norm = c.id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                              return c.type === 'meta_question' && !SYSTEM_AND_METADATA_KEYS.has(c.id.toLowerCase()) && !SYSTEM_AND_METADATA_KEYS.has(norm) && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase()) && !PERMANENTLY_BLOCKED_KEYS.has(norm);
+                            }).map(col => (
+                              <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
+                                <button
+                                  onClick={() => toggleColumn(col.id)}
+                                  className="flex items-center gap-2 flex-1 text-left py-0.5"
+                                >
+                                  <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                                    col.visible 
+                                      ? 'bg-blue-600 border-transparent text-white' 
+                                      : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
+                                  }`}>
+                                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                  </div>
+                                  <span className="truncate max-w-[170px] font-semibold">{col.label}</span>
+                                </button>
                               </div>
-                              <span className="truncate max-w-[170px] font-semibold">{col.label}</span>
-                            </button>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        )}
 
-                    {/* 3. Custom User Columns */}
-                    {columns.some(c => c.type && c.type.startsWith('custom_') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())) && (
-                      <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
-                        <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 tracking-wider block mb-1">Custom User Columns</span>
-                        {columns.filter(c => c.type && c.type.startsWith('custom_') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).map(col => (
-                          <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
-                            <button
-                              onClick={() => toggleColumn(col.id)}
-                              className="flex items-center gap-2 flex-1 text-left py-0.5"
-                            >
-                              <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
-                                col.visible 
-                                  ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
-                                  : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
-                              }`}>
-                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        {/* 3. Custom User Columns */}
+                        {columns.some(c => c.type && c.type.startsWith('custom_') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())) && (
+                          <div className="pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                            <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 tracking-wider block mb-1">Custom User Columns</span>
+                            {columns.filter(c => c.type && c.type.startsWith('custom_') && !PERMANENTLY_BLOCKED_KEYS.has(c.id.toLowerCase())).map(col => (
+                              <div key={col.id} className="w-full flex items-center justify-between p-1 hover:bg-[#FAF8F5] dark:hover:bg-[#121110] rounded-lg text-xs text-[#1A1A1A] dark:text-[#F5F5F5]">
+                                <button
+                                  onClick={() => toggleColumn(col.id)}
+                                  className="flex items-center gap-2 flex-1 text-left py-0.5"
+                                >
+                                  <div className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                                    col.visible 
+                                      ? 'bg-gradient-to-r from-[#D4AF37] to-[#C5A059] border-transparent text-white' 
+                                      : 'border-[#E8E5DF] dark:border-[#2C2926] bg-transparent text-transparent'
+                                  }`}>
+                                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                  </div>
+                                  <span className="truncate max-w-[140px] font-semibold">{col.label}</span>
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteCustomColumn(col.id)}
+                                  className="p-1 text-[#706E6A] hover:text-red-400 rounded transition-colors"
+                                >
+                                  <Trash className="w-3 h-3" />
+                                </button>
                               </div>
-                              <span className="truncate max-w-[140px] font-semibold">{col.label}</span>
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteCustomColumn(col.id)}
-                              className="p-1 text-[#706E6A] hover:text-red-400 rounded transition-colors"
-                            >
-                              <Trash className="w-3 h-3" />
-                            </button>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
-                    )}
-                  </div>
-          </MotionDiv>
-        )}
-      </AnimatePresenceComponent>
+                    </MotionDiv>
+                  )}
+                </AnimatePresenceComponent>
+              </div>
+
+              {/* Desktop Manual lead creation */}
+              <button
+                onClick={() => setCreateModalOpen(true)}
+                className="hidden md:flex shrink-0 px-3.5 py-1.5 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] items-center gap-1.5 hover:scale-105 font-sans"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                Add New Lead
+              </button>
+            </div>
           </div>
-
-          {/* Primary Manual lead creation */}
-          <button
-            onClick={() => setCreateModalOpen(true)}
-            className="shrink-0 px-3.5 py-1.5 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] hover:opacity-95 text-white font-extrabold rounded-xl transition-all shadow-[0_4px_12px_rgba(212,175,55,0.2)] flex items-center gap-1.5 hover:scale-105 font-sans"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            Add New Lead
-          </button>
         </div>
       </div>
-    </div>
 
       {/* Scrollable Main Viewport Container */}
       <div className="flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-auto relative" style={{ maxHeight: 'calc(100vh - 180px)' }} ref={tableContainerRef}>
@@ -2205,158 +2200,191 @@ export function LeadTable({
       {/* ───────────────────────────────────────────────────────────── */}
       {/* MOBILE / TABLET RESPONSIVE 3D CARD GRID (< 768px)             */}
       {/* ───────────────────────────────────────────────────────────── */}
-    <div className="block md:hidden space-y-3.5 p-3">
-      {paginatedLeads.length === 0 ? (
-        <div className="py-12 text-center text-zinc-500 bg-white dark:bg-zinc-900/50 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-          <AlertCircle className="w-8 h-8 mx-auto text-amber-500 mb-2" />
-          <p className="text-xs font-bold">No photography leads match your filter criteria</p>
-        </div>
-      ) : (
-        paginatedLeads.map((lead) => {
-          const isSelected = selectedLeadIds.includes(lead.id);
-          const currentStage = stages.find(s => s.id === (lead.stage_id || lead.status)) || { name: lead.status };
-          const stBadgeStyle = (() => {
-            const s = (currentStage.name || '').toLowerCase();
-            if (s.includes('hot') || s.includes('proposal')) return { bg: 'bg-red-500/15 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-300 font-extrabold', border: 'border-red-500/40 shadow-red-500/20', dot: 'bg-red-500' };
-            if (s.includes('cool') || s.includes('warm') || s.includes('meeting')) return { bg: 'bg-cyan-500/15 dark:bg-cyan-900/30', text: 'text-cyan-600 dark:text-cyan-300 font-extrabold', border: 'border-cyan-500/40 shadow-cyan-500/20', dot: 'bg-cyan-500' };
-            if (s.includes('won') || s.includes('signed') || s.includes('closed')) return { bg: 'bg-emerald-500/15 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-300 font-extrabold', border: 'border-emerald-500/40 shadow-emerald-500/20', dot: 'bg-emerald-500' };
-            if (s.includes('lost')) return { bg: 'bg-rose-950/20 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400 font-extrabold', border: 'border-rose-800/40', dot: 'bg-rose-500' };
-            if (s.includes('contacted')) return { bg: 'bg-violet-500/15 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-300 font-extrabold', border: 'border-violet-500/40', dot: 'bg-violet-500' };
-            return { bg: 'bg-indigo-500/15 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-300 font-extrabold', border: 'border-indigo-500/40', dot: 'bg-indigo-500' };
-          })();
+      <div className="block md:hidden space-y-3.5 p-3">
+        {paginatedLeads.length === 0 ? (
+          <div className="py-12 text-center text-zinc-500 bg-white dark:bg-zinc-900/50 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+            <AlertCircle className="w-8 h-8 mx-auto text-amber-500 mb-2" />
+            <p className="text-xs font-bold">No photography leads match your filter criteria</p>
+          </div>
+        ) : (
+          paginatedLeads.map((lead) => {
+            const isSelected = selectedLeadIds.includes(lead.id);
+            const currentAssignedOwner = lead.raw_payload?.lead_owner || 'Unassigned';
+            const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Form';
 
-          const currentAssignedOwner = lead.raw_payload?.lead_owner || getMockOwner(lead).name || 'Unassigned';
-          const formNameVal = lead.raw_payload?.form_name || lead.raw_payload?.page_name || lead.source || 'Meta Form';
+            return (
+              <div 
+                key={lead.id}
+                className={`bg-white dark:bg-[#121110] border border-slate-200/90 dark:border-zinc-800/90 rounded-2xl p-4 shadow-md space-y-3 relative overflow-hidden transition-all ${
+                  isSelected ? 'ring-2 ring-[#D4AF37]' : ''
+                }`}
+              >
+                {/* 1. TOP SECTION: Name, Mobile, Email & Source Form Tag */}
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectRow(lead.id, e);
+                      }}
+                      className="p-0.5 mt-0.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 shrink-0"
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="w-5 h-5 text-[#D4AF37] fill-[#D4AF37]/20" />
+                      ) : (
+                        <Square className="w-5 h-5" />
+                      )}
+                    </button>
 
-          return (
-            <div 
-              key={lead.id}
-              onClick={() => {
-                setSelectedLead(lead);
-                setDrawerMode('full');
-              }}
-              className={`bg-white dark:bg-zinc-900/90 border border-slate-200/90 dark:border-zinc-800/80 rounded-2xl p-4 shadow-lg space-y-3 transition-all cursor-pointer relative overflow-hidden ${
-                isSelected ? 'ring-2 ring-orange-500' : ''
-              }`}
-            >
-              {/* Header: Name, Avatar, Form Name */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white font-black text-sm flex items-center justify-center shadow-md shrink-0">
-                    {(lead.name || 'L').charAt(0).toUpperCase()}
+                    <div 
+                      className="min-w-0 flex-1 cursor-pointer select-none"
+                      onClick={() => {
+                        setSelectedLead(lead);
+                        setDrawerMode('full');
+                      }}
+                    >
+                      {/* Name */}
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white leading-tight truncate">
+                        {lead.name || 'Unspecified Lead'}
+                      </h4>
+                      {/* Mobile Number (Small) */}
+                      <p className="text-xs font-mono font-bold text-slate-600 dark:text-zinc-300 mt-1 truncate">
+                        {lead.phone || 'No phone number'}
+                      </p>
+                      {/* Email ID (Small) */}
+                      <p className="text-[11px] font-mono text-slate-400 dark:text-zinc-500 mt-0.5 truncate">
+                        {lead.email || 'No email provided'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-black text-slate-900 dark:text-white text-sm leading-snug">{lead.name || 'Unspecified Lead'}</h4>
-                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5">
-                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                    </p>
+
+                  {/* Form Name / Source Tag */}
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[9px] font-black uppercase tracking-wider shrink-0 max-w-[120px]">
+                    <Globe className="w-2.5 h-2.5 text-blue-500 shrink-0" />
+                    <span className="truncate">{formNameVal}</span>
+                  </span>
+                </div>
+
+                {/* 2. MIDDLE SECTION: Status & Lead Owner (Baju mai - 2 Columns) */}
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-zinc-850/80" onClick={(e) => e.stopPropagation()}>
+                  {/* Status Dropdown */}
+                  <div className="space-y-1">
+                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider">Status</span>
+                    <CRMDropdown
+                      value={lead.stage_id || lead.status}
+                      placeholder="Select status"
+                      customAddTitle="Add Custom Status"
+                      options={stagesState.map(s => ({
+                        value: s.id,
+                        label: s.name,
+                        color: s.color,
+                        isCustom: s.is_custom,
+                        created_at: s.created_at
+                      }))}
+                      onAddCustomOption={async (name, color) => {
+                        const newStageObj = {
+                          id: name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                          name: name,
+                          color: color || '#0866FF',
+                          is_custom: true,
+                          created_at: new Date().toISOString(),
+                          position: stagesState.length
+                        };
+                        const updated = [...stagesState, newStageObj];
+                        setStagesState(updated);
+                        if (onPreferencesChange) onPreferencesChange({ stages: updated });
+                        if (onLeadUpdate) {
+                          onLeadUpdate(lead.id, {
+                            stage_id: newStageObj.id,
+                            status: newStageObj.name as any
+                          });
+                        }
+                      }}
+                      onChange={(val) => {
+                        const foundStage = stagesState.find(s => s.id === val || s.name === val);
+                        if (onLeadUpdate) {
+                          onLeadUpdate(lead.id, {
+                            stage_id: foundStage?.id || val,
+                            status: (foundStage?.name || val) as any
+                          });
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {/* Lead Owner Dropdown */}
+                  <div className="space-y-1">
+                    <span className="text-[9px] uppercase font-black text-slate-400 dark:text-zinc-500 block tracking-wider">Lead Owner</span>
+                    <CRMDropdown
+                      value={currentAssignedOwner}
+                      placeholder="Select owner"
+                      allowCustomAdd={false}
+                      options={[
+                        { value: 'Unassigned', label: '👤 Unassigned', color: '#94a3b8' },
+                        ...teamMembers.filter(m => m.name !== 'Unassigned').map(m => ({
+                          value: m.name,
+                          label: `👤 ${m.name}`,
+                          color: m.color || '#10b981'
+                        }))
+                      ]}
+                      onChange={(val) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: val } }, lead.id)}
+                    />
                   </div>
                 </div>
 
-                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shrink-0">
-                  <Globe className="w-3 h-3 text-blue-500" />
-                  {formNameVal}
-                </span>
-              </div>
+                {/* 3. BOTTOM ACTIONS ROW: Quotation, Call, Mail, Comment (4 Action Buttons) */}
+                <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-100 dark:border-zinc-850/80" onClick={(e) => e.stopPropagation()}>
+                  {/* Quotation */}
+                  <button
+                    type="button"
+                    onClick={() => setQuotationModalLead(lead)}
+                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-700 dark:text-amber-400 border border-amber-500/25 transition-all text-center active:scale-95 shadow-xs"
+                    title="Create / View Quotation"
+                  >
+                    <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">Quote</span>
+                  </button>
 
-              {/* Direct 1-Tap Quick Action Row */}
-              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-zinc-950/70 p-2.5 rounded-xl border border-slate-200/60 dark:border-zinc-850" onClick={(e) => e.stopPropagation()}>
-                <a href={`tel:${lead.phone}`} className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-zinc-200 hover:text-emerald-500 truncate">
-                  <Phone className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="truncate">{lead.phone || 'No phone'}</span>
-                </a>
-                <a href={`https://wa.me/${lead.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-zinc-200 hover:text-green-500 truncate justify-end">
-                  <MessageSquare className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                  <span>WhatsApp</span>
-                </a>
-              </div>
+                  {/* Call */}
+                  <a
+                    href={`tel:${lead.phone}`}
+                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 transition-all text-center active:scale-95 shadow-xs"
+                    title="Direct Phone Call"
+                  >
+                    <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">Call</span>
+                  </a>
 
-              {/* 3D Curved Dropdowns: Status & Lead Owner */}
-              <div className="grid grid-cols-2 gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-                {/* Status Dropdown */}
-                <div className="space-y-1">
-                  <span className="text-[9px] uppercase font-black text-slate-400 block">Status</span>
-                  <CRMDropdown
-                    value={lead.stage_id || lead.status}
-                    placeholder="Select status"
-                    customAddTitle="Add Custom Status"
-                    options={stagesState.map(s => ({
-                      value: s.id,
-                      label: s.name,
-                      color: s.color,
-                      isCustom: s.is_custom,
-                      created_at: s.created_at
-                    }))}
-                    onAddCustomOption={async (name, color) => {
-                      const newStageObj = {
-                        id: name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-                        name: name,
-                        color: color || '#0866FF',
-                        is_custom: true,
-                        created_at: new Date().toISOString(),
-                        position: stagesState.length
-                      };
-                      const updated = [newStageObj, ...stagesState];
-                      setStagesState(updated);
-                      if (onPreferencesChange) {
-                        onPreferencesChange({ stages: updated });
-                      }
-                      if (onLeadUpdate) {
-                        onLeadUpdate(lead.id, {
-                          stage_id: newStageObj.id,
-                          status: newStageObj.name as any
-                        });
-                      }
+                  {/* Mail */}
+                  <a
+                    href={`mailto:${lead.email || ''}`}
+                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 active:bg-blue-500/30 text-blue-700 dark:text-blue-400 border border-blue-500/25 transition-all text-center active:scale-95 shadow-xs"
+                    title="Send Email"
+                  >
+                    <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">Mail</span>
+                  </a>
+
+                  {/* Comment */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLead(lead);
+                      setDrawerMode('comments');
                     }}
-                    onChange={(val) => {
-                      const foundStage = stagesState.find(s => s.id === val || s.name === val);
-                      if (onLeadUpdate) {
-                        onLeadUpdate(lead.id, {
-                          stage_id: val,
-                          status: (foundStage?.name || val) as any
-                        });
-                      }
-                    }}
-                  />
-                </div>
-
-                {/* Lead Owner Dropdown */}
-                <div className="space-y-1">
-                  <span className="text-[9px] uppercase font-black text-slate-400 block">Lead Owner</span>
-                  <CRMDropdown
-                    value={currentAssignedOwner}
-                    placeholder="Select owner"
-                    allowCustomAdd={false}
-                    options={teamMembers.map(m => ({
-                      value: m.name,
-                      label: `👤 ${m.name}`,
-                      color: '#d97706'
-                    }))}
-                    onChange={(val) => handleInlineLeadEdit({ raw_payload: { ...lead.raw_payload, lead_owner: val } }, lead.id)}
-                  />
+                    className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/30 text-purple-700 dark:text-purple-400 border border-purple-500/25 transition-all text-center active:scale-95 shadow-xs"
+                    title="Open Comments / Reminders"
+                  >
+                    <MessageSquare className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">Comment</span>
+                  </button>
                 </div>
               </div>
-
-              {/* Auto Ingested Meta Fields Grid */}
-              {Object.keys(lead.raw_payload || {}).length > 0 && (
-                <div className="pt-2 border-t border-slate-100 dark:border-zinc-850">
-                  <div className="flex flex-wrap gap-1.5">
-                    {Object.entries(lead.raw_payload || {}).map(([k, v]) => {
-                      if (['name', 'email', 'phone', 'lead_owner', 'form_name', 'page_name'].includes(k.toLowerCase())) return null;
-                      return (
-                        <span key={k} className="text-[10px] font-medium bg-slate-100 dark:bg-zinc-800/80 px-2.5 py-1 rounded-lg text-slate-700 dark:text-zinc-300 border border-slate-200/60 dark:border-zinc-700/50">
-                          <strong className="text-slate-900 dark:text-white uppercase text-[9px] mr-1">{k.replace(/_/g, ' ')}:</strong> {String(v)}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
-    </div>
+            );
+          })
+        )}
+      </div>
 
     {/* DESKTOP GRID TABLE VIEW (MD AND UP) */}
     <div className="hidden md:block w-full relative transition-all">
@@ -2740,7 +2768,7 @@ export function LeadTable({
                                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
                                         if (onLeadUpdate) {
                                           onLeadUpdate(lead.id, {
-                                            stage_id: val,
+                                            stage_id: foundStage?.id || val,
                                             status: (foundStage?.name || val) as any
                                           });
                                         }
@@ -2777,7 +2805,7 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'lead_owner':
-                                const currentAssignedOwner = lead.raw_payload?.lead_owner || getMockOwner(lead).name || 'Unassigned';
+                                const currentAssignedOwner = lead.raw_payload?.lead_owner || 'Unassigned';
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                                     <CRMDropdown
@@ -2785,11 +2813,14 @@ export function LeadTable({
                                       placeholder="Select owner"
                                       allowCustomAdd={true}
                                       customAddTitle="Add Custom Lead Owner"
-                                      options={teamMembers.map(m => ({
-                                        value: m.name,
-                                        label: `👤 ${m.name}`,
-                                        color: m.color || '#10b981'
-                                      }))}
+                                      options={[
+                                        { value: 'Unassigned', label: '👤 Unassigned', color: '#94a3b8' },
+                                        ...teamMembers.filter(m => m.name !== 'Unassigned').map(m => ({
+                                          value: m.name,
+                                          label: `👤 ${m.name}`,
+                                          color: m.color || '#10b981'
+                                        }))
+                                      ]}
                                       onAddCustomOption={(name) => {
                                         if (!name.trim()) return;
                                         const newTeam = [...teamMembers, { id: 't_' + Date.now(), name: name.trim(), email: '', role: 'Lead Owner' }];
@@ -4226,9 +4257,6 @@ export function LeadTable({
         onClose={() => setQuotationModalLead(null)} 
         lead={quotationModalLead} 
       />
-
-        </div>
-      </div>
     </div>
   );
 }

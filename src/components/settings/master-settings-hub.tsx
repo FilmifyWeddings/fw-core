@@ -427,8 +427,13 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
         .select();
 
       if (!error && data) {
-        setStages(prev => [...prev, data[0]]);
+        const updated = [...stages, data[0]];
+        setStages(updated);
         setNewStageName('');
+        try {
+          localStorage.setItem('leads_workspace_stages', JSON.stringify(updated));
+          window.dispatchEvent(new Event('settings_updated'));
+        } catch (_) {}
         if (onStagesUpdated) onStagesUpdated();
       } else {
         alert(error?.message || 'Error inserting stage');
@@ -447,7 +452,12 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
     try {
       const { error } = await supabase.from('crm_stages').delete().eq('id', id);
       if (!error) {
-        setStages(prev => prev.filter(s => s.id !== id));
+        const updated = stages.filter(s => s.id !== id);
+        setStages(updated);
+        try {
+          localStorage.setItem('leads_workspace_stages', JSON.stringify(updated));
+          window.dispatchEvent(new Event('settings_updated'));
+        } catch (_) {}
         if (onStagesUpdated) onStagesUpdated();
       }
     } catch (err) {
@@ -475,6 +485,10 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
       updated[targetIndex] = temp;
       updated.sort((a, b) => a.position - b.position);
       setStages(updated);
+      try {
+        localStorage.setItem('leads_workspace_stages', JSON.stringify(updated));
+        window.dispatchEvent(new Event('settings_updated'));
+      } catch (_) {}
       if (onStagesUpdated) onStagesUpdated();
     } catch (err) {
       console.error('Failed to swap stage positions:', err);

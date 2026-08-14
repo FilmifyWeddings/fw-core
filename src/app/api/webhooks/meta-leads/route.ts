@@ -9,6 +9,7 @@ import {
   enqueueRetry 
 } from '@/lib/meta-observability';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
 
 // ── GET: Meta Webhook Subscription Verification ──────────────
 export async function GET(req: NextRequest) {
@@ -280,7 +281,7 @@ export async function POST(req: NextRequest) {
               .eq('form_id', form_id)
               .maybeSingle();
 
-            // Also check legacy fb_form_mappings.is_active & distribution_config
+            // Also check fb_form_mappings for contact_group_id and status
             const { data: formSetting } = await supabaseAdmin
               .from('fb_form_mappings')
               .select('id, is_active, form_name, contact_group_id, mapping_config')
@@ -290,24 +291,18 @@ export async function POST(req: NextRequest) {
 
             if (formSetting) {
               contactGroupId = formSetting.contact_group_id || null;
-              const distConfig = (formSetting.mapping_config as any)?.distribution_config || (formSetting as any).distribution_config;
-              if (distConfig?.enabled && Array.isArray(distConfig.owners) && distConfig.owners.length > 0) {
-                const owners: string[] = distConfig.owners;
-                const lastIdx: number = typeof distConfig.last_assigned_index === 'number' ? distConfig.last_assigned_index : -1;
-                const nextIdx = (lastIdx + 1) % owners.length;
-                assignedLeadOwner = owners[nextIdx];
-
-                console.log(`[Meta-Leads Webhook Round-Robin] Assigning lead to owner [${nextIdx + 1}/${owners.length}]: ${assignedLeadOwner}`);
-
-                const updatedDistConfig = { ...distConfig, last_assigned_index: nextIdx };
-                const updatedMappingConfig = { ...((formSetting.mapping_config as any) || {}), distribution_config: updatedDistConfig };
-
-                await supabaseAdmin
-                  .from('fb_form_mappings')
-                  .update({ mapping_config: updatedMappingConfig })
-                  .eq('id', formSetting.id);
-              }
             }
+
+            try {
+              const autoOwner = await getNextDistributedLeadOwner(targetWorkspaceId, form_id);
+              if (autoOwner) {
+                assignedLeadOwner = autoOwner;
+                console.log(`[Meta-Leads Webhook Round-Robin] Assigned lead to owner: ${assignedLeadOwner}`);
+              }
+            } catch (distErr: any) {
+              console.error('[Meta-Leads Webhook Distribution Error]:', distErr?.message);
+            }
+
             resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
 
             const isFormDisabled =
@@ -489,8 +484,8 @@ export async function POST(req: NextRequest) {
               campaign_name: campaignName,
               adset_name: adsetName,
               ad_name: adName,
-              ...(assignedLeadOwner ? { lead_owner: assignedLeadOwner } : {}),
-              ...leadFields
+              ...leadFields,
+              lead_owner: assignedLeadOwner || leadFields.lead_owner || 'Unassigned',
             },
           };
 

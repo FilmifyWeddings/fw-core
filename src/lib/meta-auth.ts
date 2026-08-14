@@ -28,13 +28,22 @@ export async function verifyMetaAuth(
 
     // 2. Extract Cookie fallback if Bearer Token is not present
     if (!token) {
+      token = req.cookies.get('sb-access-token')?.value || '';
+    }
+
+    if (!token) {
       const cookieHeader = req.headers.get('cookie') || '';
-      const match = cookieHeader.match(/sb-[a-z0-9]+-auth-token=([^;]+)/i);
-      if (match) {
-        try {
-          const parsed = JSON.parse(decodeURIComponent(match[1]));
-          token = Array.isArray(parsed) ? parsed[0] : parsed?.access_token || '';
-        } catch (_) {}
+      const directMatch = cookieHeader.match(/sb-access-token=([^;]+)/i);
+      if (directMatch) {
+        token = decodeURIComponent(directMatch[1]);
+      } else {
+        const match = cookieHeader.match(/sb-[a-z0-9]+-auth-token=([^;]+)/i);
+        if (match) {
+          try {
+            const parsed = JSON.parse(decodeURIComponent(match[1]));
+            token = Array.isArray(parsed) ? parsed[0] : parsed?.access_token || '';
+          } catch (_) {}
+        }
       }
     }
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Database, Users, FileText, Calendar, Film, DollarSign, 
@@ -19,6 +19,21 @@ interface SidebarLayoutProps {
 export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
+
+  const checkIsSubActive = (subPath: string) => {
+    if (subPath === '/leads') {
+      return pathname === '/leads' && !stageParam;
+    }
+    if (subPath.includes('stage=lost')) {
+      return pathname.startsWith('/leads') && stageParam === 'lost';
+    }
+    if (subPath.includes('stage=archived')) {
+      return pathname.startsWith('/leads') && (stageParam === 'archived' || stageParam === 'archive');
+    }
+    return pathname === subPath;
+  };
 
   const [collapsed, setCollapsed] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('user@studiocore.in');
@@ -329,7 +344,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   >
                     {item.subItems?.map((sub) => {
                       const SubIcon = sub.icon;
-                      const isSubActive = pathname === sub.path || (sub.path.includes('?') && pathname + (typeof window !== 'undefined' ? window.location.search : '') === sub.path);
+                      const isSubActive = checkIsSubActive(sub.path);
 
                       return (
                         <Link
@@ -337,11 +352,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                           href={sub.path}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition ${
                             isSubActive
-                              ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-200'
+                              ? 'bg-amber-500/15 text-amber-950 font-extrabold border border-amber-300 shadow-2xs'
                               : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
                           }`}
                         >
-                          <SubIcon className="w-3 h-3 text-slate-400" />
+                          <SubIcon className={`w-3 h-3 ${isSubActive ? 'text-amber-600' : 'text-slate-400'}`} />
                           <span>{sub.name}</span>
                         </Link>
                       );
@@ -470,17 +485,26 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
                       {/* Mobile Submenu for Leads */}
                       {item.id === 'leads' && (
-                        <div className="pl-10 py-1 space-y-1">
-                          {item.subItems?.map(sub => (
-                            <Link
-                              key={sub.name}
-                              href={sub.path}
-                              onClick={() => setMobileDrawerOpen(false)}
-                              className="block py-1 text-xs text-slate-500 hover:text-slate-900 font-semibold"
-                            >
-                              • {sub.name}
-                            </Link>
-                          ))}
+                        <div className="pl-9 pr-2 py-1 space-y-1">
+                          {item.subItems?.map(sub => {
+                            const SubIcon = sub.icon;
+                            const isSubActive = checkIsSubActive(sub.path);
+                            return (
+                              <Link
+                                key={sub.name}
+                                href={sub.path}
+                                onClick={() => setMobileDrawerOpen(false)}
+                                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition ${
+                                  isSubActive
+                                    ? 'bg-amber-500/15 text-amber-950 font-black border border-amber-300 shadow-2xs'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-bold'
+                                }`}
+                              >
+                                <SubIcon className={`w-3.5 h-3.5 ${isSubActive ? 'text-amber-600' : 'text-slate-400'}`} />
+                                <span>{sub.name}</span>
+                              </Link>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

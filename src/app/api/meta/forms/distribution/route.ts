@@ -99,10 +99,33 @@ export async function POST(req: NextRequest) {
     try {
       const { data: existing } = await supabaseAdmin
         .from('fb_form_mappings')
-        .select('mapping_config')
+        .select('id, page_id, form_name, mapping_config')
         .eq('workspace_id', workspaceId)
         .eq('form_id', form_id)
         .maybeSingle();
+
+      let pageId = existing?.page_id || '';
+      let formName = existing?.form_name || '';
+
+      if (!pageId) {
+        const { data: lf } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('page_id, form_name')
+          .eq('workspace_id', workspaceId)
+          .eq('form_id', form_id)
+          .maybeSingle();
+        pageId = lf?.page_id || '';
+        formName = lf?.form_name || '';
+      }
+
+      if (!pageId) {
+        const { data: pageConfig } = await supabaseAdmin
+          .from('fb_page_configs')
+          .select('page_id')
+          .eq('workspace_id', workspaceId)
+          .maybeSingle();
+        pageId = pageConfig?.page_id || '0';
+      }
 
       const currentMapping = (existing?.mapping_config as Record<string, any>) || {};
       const updatedMappingConfig = {
@@ -114,7 +137,9 @@ export async function POST(req: NextRequest) {
         .from('fb_form_mappings')
         .upsert({
           workspace_id: workspaceId,
+          page_id: pageId,
           form_id,
+          form_name: formName || 'Instant Lead Form',
           mapping_config: updatedMappingConfig,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'workspace_id,form_id' });

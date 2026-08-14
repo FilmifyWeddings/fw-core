@@ -5,6 +5,7 @@ import { queueDripsForLead } from '@/lib/queue';
 import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
 import { Lead, LeadStatus } from '@/types';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
 
 // ─────────────────────────────────────────────────────────────
 // Fuzzy auto-mapper: Meta field key se system field guess karo
@@ -274,51 +275,15 @@ export async function POST(req: NextRequest) {
           leadData.whatsapp_group_id = formMapping.contact_group_id || null;
 
           // ── Round-Robin Lead Owner Auto-Distribution Engine ──
-          let distConfig = (formMapping?.mapping_config as any)?.distribution_config || (formMapping as any)?.distribution_config;
-
-          // Fallback to Supabase auth user_metadata form_distributions
-          if (!distConfig && workspaceId && resolvedFormId) {
+          if (resolvedFormId && workspaceId) {
             try {
-              const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
-              distConfig = u?.user?.user_metadata?.form_distributions?.[resolvedFormId];
-            } catch (_) {}
-          }
-
-          if (distConfig?.enabled !== false && Array.isArray(distConfig?.owners) && distConfig.owners.length > 0) {
-            const owners: string[] = distConfig.owners;
-            const lastIdx: number = typeof distConfig.last_assigned_index === 'number' ? distConfig.last_assigned_index : -1;
-            const nextIdx = (lastIdx + 1) % owners.length;
-            const assignedOwner = owners[nextIdx];
-
-            console.log(`[FB Webhook Round-Robin] Assigning lead for form ${resolvedFormId} to owner [${nextIdx + 1}/${owners.length}]: ${assignedOwner}`);
-
-            (leadData as any).assigned_lead_owner = assignedOwner;
-
-            const updatedDistConfig = { ...distConfig, last_assigned_index: nextIdx };
-
-            if (resolvedFormId) {
-              try {
-                const updatedMappingConfig = { ...(mappingConfig || {}), distribution_config: updatedDistConfig };
-                await supabaseAdmin
-                  .from('fb_form_mappings')
-                  .update({ mapping_config: updatedMappingConfig })
-                  .eq('form_id', resolvedFormId);
-              } catch (_) {}
-
-              try {
-                const { data: uData } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
-                const existingMeta = uData?.user?.user_metadata || {};
-                const existingDists = existingMeta.form_distributions || {};
-                await supabaseAdmin.auth.admin.updateUserById(workspaceId, {
-                  user_metadata: {
-                    ...existingMeta,
-                    form_distributions: {
-                      ...existingDists,
-                      [resolvedFormId]: updatedDistConfig
-                    }
-                  }
-                });
-              } catch (_) {}
+              const assignedOwner = await getNextDistributedLeadOwner(workspaceId, resolvedFormId);
+              if (assignedOwner) {
+                console.log(`[FB Webhook Round-Robin] Assigning lead for form ${resolvedFormId} to owner: ${assignedOwner}`);
+                (leadData as any).assigned_lead_owner = assignedOwner;
+              }
+            } catch (distErr: any) {
+              console.error('[FB Webhook Distribution Error]:', distErr?.message);
             }
           }
         }
@@ -410,8 +375,6 @@ export async function POST(req: NextRequest) {
         source_form_id:    leadData.source_form_id,
         form_tag:          leadData.form_tag,
         whatsapp_group_id: leadData.whatsapp_group_id,
-        owner:             (leadData as any).assigned_lead_owner || null,
-        lead_owner:        (leadData as any).assigned_lead_owner || null,
       })
       .select()
       .single();

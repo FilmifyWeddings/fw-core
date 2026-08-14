@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
 
 /**
  * POST /api/integrations/meta/manual-sync
@@ -112,24 +113,6 @@ export async function POST(req: NextRequest) {
 
     // ── 3. Fetch per-form Lead Auto-Distribution config ─────────────────────
     let distConfig: { enabled: boolean; owners: string[]; last_assigned_index?: number } | null = null;
-    try {
-      const { data: fMap } = await supabaseAdmin
-        .from('fb_form_mappings')
-        .select('mapping_config')
-        .eq('workspace_id', workspaceId)
-        .eq('form_id', form_id)
-        .maybeSingle();
-
-      distConfig = (fMap?.mapping_config as any)?.distribution_config || null;
-    } catch (_) {}
-
-    if (!distConfig) {
-      try {
-        const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
-        distConfig = u?.user?.user_metadata?.form_distributions?.[form_id] || null;
-      } catch (_) {}
-    }
-
     let imported = 0;
     let skipped = 0;
     let failed = 0;
@@ -181,12 +164,10 @@ export async function POST(req: NextRequest) {
 
       // Round-Robin Lead Owner Auto-Distribution
       let assignedOwner: string | null = null;
-      if (distConfig?.enabled === true && Array.isArray(distConfig.owners) && distConfig.owners.length > 0) {
-        const owners = distConfig.owners;
-        const lastIdx = typeof distConfig.last_assigned_index === 'number' ? distConfig.last_assigned_index : -1;
-        const nextIdx = (lastIdx + 1) % owners.length;
-        assignedOwner = owners[nextIdx];
-        distConfig.last_assigned_index = nextIdx;
+      try {
+        assignedOwner = await getNextDistributedLeadOwner(workspaceId, form_id);
+      } catch (distErr: any) {
+        console.error('[Manual Sync Distribution Error]:', distErr?.message);
       }
 
       // Insert Lead
@@ -200,8 +181,6 @@ export async function POST(req: NextRequest) {
           email,
           source: 'Facebook Lead Ads',
           status: 'new',
-          owner: assignedOwner,
-          lead_owner: assignedOwner,
           created_at: lead.created_time ? new Date(lead.created_time).toISOString() : new Date().toISOString(),
           raw_payload: {
             leadgen_id: leadgenId,
@@ -212,7 +191,7 @@ export async function POST(req: NextRequest) {
             adset_name: lead.adset_name || '',
             ad_name: lead.ad_name || '',
             field_data: lead.field_data || [],
-            lead_owner: assignedOwner,
+            lead_owner: assignedOwner || 'Unassigned',
             synced_manually: true,
           },
         });
@@ -222,24 +201,6 @@ export async function POST(req: NextRequest) {
       } else {
         imported++;
       }
-    }
-
-    // Persist updated last_assigned_index if distribution was used
-    if (distConfig && typeof distConfig.last_assigned_index === 'number') {
-      try {
-        const { data: uData } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
-        const existingMeta = uData?.user?.user_metadata || {};
-        const existingDists = existingMeta.form_distributions || {};
-        await supabaseAdmin.auth.admin.updateUserById(workspaceId, {
-          user_metadata: {
-            ...existingMeta,
-            form_distributions: {
-              ...existingDists,
-              [form_id]: distConfig,
-            },
-          },
-        });
-      } catch (_) {}
     }
 
     // ── 5. Update leads_count in fb_lead_forms ──────────────────────────────

@@ -354,37 +354,62 @@ export default function LeadsPage() {
       }
 
       if (pageNum === 0) {
-        // Load CRM Stages
-        const { data: dbStages, error: stagesErr } = await supabase
-          .from('crm_stages')
-          .select('*')
-          .eq('workspace_id', targetUserId)
-          .order('position', { ascending: true });
+        // Load CRM Stages synchronized with Settings
+        let loadedStages: any[] = [];
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token || '';
+          const res = await fetch(`/api/settings?workspace_id=${targetUserId}`, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.settings?.lead_stages) && data.settings.lead_stages.length > 0) {
+              loadedStages = data.settings.lead_stages.map((st: any, idx: number) => ({
+                id: st.id || `st_${idx}`,
+                name: st.name,
+                color: st.color || '#3b82f6',
+                position: typeof st.position === 'number' ? st.position : idx,
+              }));
+            }
+          }
+        } catch (_) {}
 
-        if (!stagesErr && dbStages && dbStages.length > 0) {
-          const hasBooked = dbStages.some((s: any) => s.id === 'booked' || s.name.toLowerCase() === 'booked');
-          const mergedStages = hasBooked 
-            ? dbStages 
-            : [...dbStages, { id: 'booked', name: 'Booked', color: '#10b981', position: 4 }];
-          setStages(mergedStages);
-        } else {
-          // Fallback to localStorage settings or API
+        if (loadedStages.length === 0) {
+          const { data: dbStages } = await supabase
+            .from('crm_stages')
+            .select('*')
+            .eq('workspace_id', targetUserId)
+            .order('position', { ascending: true });
+
+          if (dbStages && dbStages.length > 0) {
+            loadedStages = dbStages;
+          }
+        }
+
+        if (loadedStages.length === 0) {
           const localStages = localStorage.getItem('leads_workspace_stages') || localStorage.getItem(`settings_stages_${targetUserId}`);
           if (localStages) {
             try {
               const parsed = JSON.parse(localStages);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                setStages(parsed);
-              } else {
-                setStages(DEFAULT_STAGES);
+                loadedStages = parsed;
               }
-            } catch (_) {
-              setStages(DEFAULT_STAGES);
-            }
-          } else {
-            setStages(DEFAULT_STAGES);
+            } catch (_) {}
           }
         }
+
+        if (loadedStages.length === 0) {
+          loadedStages = DEFAULT_STAGES;
+        }
+
+        setStages(loadedStages);
+        try {
+          localStorage.setItem('leads_workspace_stages', JSON.stringify(loadedStages));
+        } catch (_) {}
 
         // Load Layout Configurations (try table_layouts first, fallback to profiles)
         const { data: layout, error: layoutErr } = await supabase
@@ -824,22 +849,23 @@ export default function LeadsPage() {
             <RefreshCw className="w-8 h-8 animate-spin text-zinc-500" />
           </div>
         ) : (
-          <LeadTable 
-            leads={leads} 
-            stages={stages}
-            onStatusChange={handleStatusChange} 
-            onLeadUpdate={handleLeadUpdate}
-            onCreateLead={handleCreateLead}
-            initialPreferences={preferences}
-            onPreferencesChange={handlePreferencesChange}
-            userEmail={userEmail}
-            activeLeadId={activeLeadId}
-            onDrawerClose={() => setActiveLeadId(null)}
-            onLoadMore={handleLoadMore}
-            hasMore={hasMore}
-            loadingMore={loadingMore}
-            renderHeader={() => (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-zinc-900">
+          <React.Suspense fallback={<div className="py-20 flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-zinc-500" /></div>}>
+            <LeadTable 
+              leads={leads} 
+              stages={stages}
+              onStatusChange={handleStatusChange} 
+              onLeadUpdate={handleLeadUpdate}
+              onCreateLead={handleCreateLead}
+              initialPreferences={preferences}
+              onPreferencesChange={handlePreferencesChange}
+              userEmail={userEmail}
+              activeLeadId={activeLeadId}
+              onDrawerClose={() => setActiveLeadId(null)}
+              onLoadMore={handleLoadMore}
+              hasMore={hasMore}
+              loadingMore={loadingMore}
+              renderHeader={() => (
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-zinc-900">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center shadow-md">
                     <Database className="w-5 h-5 text-white" />
@@ -979,6 +1005,7 @@ export default function LeadsPage() {
               </div>
             )}
           />
+          </React.Suspense>
         )}
 
         <MasterSettingsHub
