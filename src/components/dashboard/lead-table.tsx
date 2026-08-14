@@ -9,7 +9,7 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, MoreVertical, ArrowUpRight,
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, MessageCircle, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, MessageCircle, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX, Bell
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -41,6 +41,9 @@ interface LeadTableProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  notifications?: Array<{ id: string; text: string; time: string; read: boolean; leadId?: string; leadName?: string }>;
+  unreadNotificationCount?: number;
+  onNotificationClick?: () => void;
 }
 
 interface ColumnConfig {
@@ -206,7 +209,10 @@ export function LeadTable({
   onDrawerClose,
   onLoadMore,
   hasMore = false,
-  loadingMore = false
+  loadingMore = false,
+  notifications = [],
+  unreadNotificationCount = 0,
+  onNotificationClick
 }: LeadTableProps) {
   const [mounted, setMounted] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(104);
@@ -1953,23 +1959,39 @@ export function LeadTable({
                 )}
               </div>
 
-              {/* MOBILE ONLY: Single Filters Toggle Button */}
+              {/* MOBILE ONLY: Single Filters Toggle Button (Icon Only, No Text) */}
               <button
                 type="button"
                 onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
-                className={`md:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                className={`md:hidden flex items-center justify-center p-2 sm:p-2.5 rounded-xl border text-xs font-bold transition-all shrink-0 cursor-pointer relative shadow-xs ${
                   mobileFilterOpen || statusFilter !== 'all' || sourceFilter !== 'all' || ownerFilter !== 'all'
                     ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]'
                     : 'bg-white dark:bg-[#121110] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-600 dark:text-zinc-300'
                 }`}
                 title="Toggle Filters"
               >
-                <Filter className="w-3.5 h-3.5" />
-                <span>Filters</span>
+                <Filter className="w-4 h-4" />
                 {(statusFilter !== 'all' || sourceFilter !== 'all' || ownerFilter !== 'all') && (
-                  <span className="w-2 h-2 rounded-full bg-[#D4AF37]" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#D4AF37] rounded-full border border-white dark:border-zinc-900" />
                 )}
               </button>
+
+              {/* MOBILE ONLY: Notification Bell Button (Right before Add button) */}
+              {onNotificationClick && (
+                <button
+                  type="button"
+                  onClick={onNotificationClick}
+                  className="md:hidden flex items-center justify-center p-2 sm:p-2.5 rounded-xl border border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#121110] text-zinc-600 dark:text-zinc-300 transition-all shrink-0 cursor-pointer relative shadow-xs hover:bg-slate-50 dark:hover:bg-zinc-800"
+                  title="Workspace Reminders"
+                >
+                  <Bell className="w-4 h-4" />
+                  {(unreadNotificationCount || 0) > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center animate-pulse border border-white dark:border-zinc-900">
+                      {unreadNotificationCount}
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* MOBILE ONLY: Quick Add Lead Button */}
               <button
@@ -2295,7 +2317,7 @@ export function LeadTable({
             return (
               <div 
                 key={lead.id}
-                className={`bg-white dark:bg-[#141312] border border-slate-200/90 dark:border-zinc-800 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all space-y-3 relative z-10 focus-within:z-40 hover:z-30 ${
+                className={`bg-gradient-to-b from-[#FFFDF7] via-[#FFFBF0] to-[#FFF6E5] dark:from-[#1C1A14] dark:via-[#171510] dark:to-[#12100C] border border-amber-200/80 dark:border-amber-900/35 rounded-3xl p-4 shadow-[0_4px_20px_-2px_rgba(217,160,25,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,160,25,0.14)] transition-all space-y-3 relative z-10 focus-within:z-40 hover:z-30 ${
                   isSelected ? 'ring-2 ring-[#D4AF37]' : ''
                 }`}
               >

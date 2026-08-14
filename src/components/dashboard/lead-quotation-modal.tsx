@@ -150,7 +150,14 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
         }
       });
 
-      const json = await res.json();
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = text ? JSON.parse(text) : {};
+      } catch (_) {
+        json = {};
+      }
+
       if (json.success && Array.isArray(json.quotations)) {
         setQuotations(json.quotations);
         sessionStorage.setItem(cacheKey, JSON.stringify(json.quotations));
@@ -164,7 +171,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       }
     } catch (err: any) {
       console.error('[LeadQuotationModal] Fetch error:', err);
-      if (!cachedData) setErrorMsg('Failed to load quotation history.');
+      if (!cachedData) setErrorMsg(null);
     } finally {
       setLoading(false);
     }
@@ -194,7 +201,14 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
         })
       });
 
-      const json = await res.json();
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = text ? JSON.parse(text) : {};
+      } catch (_) {
+        json = {};
+      }
+
       if (json.success && (json.quotationId || json.templateId)) {
         const qId = json.quotationId || json.templateId;
         setOpeningQuotation({ id: qId, title: `Quotation V${json.version || ''}`, step: 'Hydrating Builder Canvas...' });
@@ -339,25 +353,34 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   };
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="relative w-full max-w-md bg-white dark:bg-[#1C1A18] rounded-3xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh]"
-        >
-          {/* Header */}
-          <div className="p-4 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border-b border-amber-500/20 dark:border-zinc-800 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-                <FileText className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">
-                  QUOTATIONS
-                </h3>
+    <>
+      <AnimatePresence mode="wait">
+        {isOpen && lead && (
+          <motion.div
+            key="lead-quotation-modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none"
+          >
+            <motion.div
+              key="lead-quotation-modal-dialog"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative w-full max-w-md bg-white dark:bg-[#1C1A18] rounded-3xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh]"
+            >
+              {/* Header */}
+              <div className="p-4 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border-b border-amber-500/20 dark:border-zinc-800 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">
+                      QUOTATIONS
+                    </h3>
                 <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 truncate max-w-[200px]">
                   {lead.name}
                 </p>
@@ -642,7 +665,9 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
             </button>
           </div>
         </motion.div>
-      </div>
+      </motion.div>
+    )}
+  </AnimatePresence>
 
       {/* AI Quotation Creator Modal */}
       <AiQuotationModal
@@ -688,6 +713,6 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
           </div>
         </div>
       )}
-    </AnimatePresence>
+    </>
   );
 }

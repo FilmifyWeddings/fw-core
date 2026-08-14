@@ -230,8 +230,7 @@ export function CRMDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
-            style={{ minWidth: isFullWidth ? '100%' : `${fixedWidthPx}px` }}
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 max-h-64 overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1A1816] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-2xl text-xs font-sans space-y-0.5"
+            className="absolute left-0 top-full mt-1.5 min-w-[170px] max-h-64 overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1A1816] border border-slate-200/90 dark:border-zinc-800 p-1.5 shadow-2xl text-xs font-sans space-y-0.5 backdrop-blur-md"
           >
             {sortedOptions.map(opt => {
               const isSelected = opt.value === value || opt.label === value;
@@ -245,21 +244,21 @@ export function CRMDropdown({
                     onChange(opt.value);
                     setOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-semibold transition-colors ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-semibold transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-extrabold'
-                      : 'hover:bg-slate-50 dark:hover:bg-zinc-800/80 text-slate-700 dark:text-zinc-200'
+                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 font-extrabold shadow-2xs'
+                      : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200'
                   }`}
                 >
-                  <div className="flex items-center gap-2 truncate">
+                  <div className="flex items-center gap-2.5 truncate">
                     <span
-                      className="w-2 h-2 rounded-full shrink-0"
+                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
                       style={{ backgroundColor: optStyle.dot }}
                     />
-                    <span className="truncate">{opt.label}</span>
+                    <span className="truncate text-[11.5px] font-bold">{opt.label}</span>
                   </div>
                   {isSelected && (
-                    <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 ml-2 stroke-[2.5]" />
+                    <Check className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 ml-2 stroke-[3]" />
                   )}
                 </button>
               );

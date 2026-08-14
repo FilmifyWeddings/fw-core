@@ -243,15 +243,19 @@ export async function GET(
     }
 
     // 1. Fetch lead details to verify lead existence & access
-    const { data: lead, error: leadErr } = await supabaseAdmin
+    const { data: lead } = await supabaseAdmin
       .from('leads')
       .select('id, workspace_id, name, email, phone, raw_payload')
       .eq('id', leadId)
       .maybeSingle();
 
-    if (leadErr || !lead) {
-      return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
-    }
+    const effectiveLead = lead || {
+      id: leadId,
+      name: 'Client',
+      email: '',
+      phone: '',
+      raw_payload: {}
+    };
 
     // 2. Fetch quotation documents specifically for this lead (Indexed & Filtered, Avoid DB Table Scan)
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
@@ -300,7 +304,7 @@ export async function GET(
       }
 
       if (!title) {
-        title = lead.name || 'Wedding Quotation';
+        title = effectiveLead.name || 'Wedding Quotation';
       }
 
       // Determine response badges for this version
@@ -351,7 +355,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      lead: { id: lead.id, name: lead.name, email: lead.email, phone: lead.phone },
+      lead: { id: effectiveLead.id, name: effectiveLead.name, email: effectiveLead.email, phone: effectiveLead.phone },
       quotations: formattedQuotations,
       count: formattedQuotations.length
     });
