@@ -1125,7 +1125,7 @@ function ThreeDCurvedDatePicker({
   disabled: boolean;
   onChange: (val: string) => void;
 }) {
-  const hiddenDateInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
@@ -1140,44 +1140,39 @@ function ThreeDCurvedDatePicker({
     }
   };
 
+  const handleTriggerPicker = () => {
+    if (disabled) return;
+    try {
+      dateInputRef.current?.showPicker?.();
+    } catch (_) {
+      dateInputRef.current?.focus();
+    }
+  };
+
   return (
-    <div className="relative">
+    <div 
+      onClick={handleTriggerPicker}
+      className={`relative w-full rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 shadow-2xs transition-all flex items-center justify-between p-2.5 ${disabled ? 'opacity-60 bg-zinc-100 cursor-not-allowed' : 'cursor-pointer hover:border-amber-300'}`}
+    >
       <input
         type="text"
+        value={disabled ? 'DATE NOT FIXED' : (value || '')}
+        placeholder="e.g. 15 DEC 26"
         disabled={disabled}
-        value={disabled ? 'DATE NOT FIXED' : value}
-        placeholder="e.g. 4 MAR 26"
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full p-2.5 pr-10 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs transition-all ${
-          disabled ? 'opacity-60 bg-zinc-100 cursor-not-allowed' : ''
-        }`}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full bg-transparent text-xs font-bold uppercase text-zinc-900 focus:outline-none placeholder:text-zinc-400 select-text"
       />
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => {
-          if (hiddenDateInputRef.current) {
-            if ('showPicker' in hiddenDateInputRef.current && typeof (hiddenDateInputRef.current as any).showPicker === 'function') {
-              (hiddenDateInputRef.current as any).showPicker();
-            } else {
-              hiddenDateInputRef.current.click();
-            }
-          }
-        }}
-        className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-amber-600 hover:bg-amber-100 transition-colors ${
-          disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
-        }`}
-        title="Open 3D Calendar Date Picker"
-      >
-        <Calendar className="w-4 h-4 text-amber-600" />
-      </button>
+      <Calendar className="w-4 h-4 text-amber-600 shrink-0 ml-2 select-none cursor-pointer" />
 
-      <input
-        ref={hiddenDateInputRef}
-        type="date"
-        className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none"
-        onChange={handleDateInputChange}
-      />
+      {!disabled && (
+        <input
+          ref={dateInputRef}
+          type="date"
+          onChange={handleDateInputChange}
+          className="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10"
+        />
+      )}
     </div>
   );
 }
@@ -1191,7 +1186,7 @@ function ThreeDCurvedTimePicker({
   value: string;
   onChange: (val: string) => void;
 }) {
-  const hiddenTimeRef = useRef<HTMLInputElement>(null);
+  const timeInputRef = useRef<HTMLInputElement>(null);
 
   const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawTime = e.target.value;
@@ -1205,39 +1200,36 @@ function ThreeDCurvedTimePicker({
     onChange(formatted);
   };
 
+  const handleTriggerTimePicker = () => {
+    try {
+      timeInputRef.current?.showPicker?.();
+    } catch (_) {
+      timeInputRef.current?.focus();
+    }
+  };
+
   return (
     <div className="space-y-1">
-      <label className="block text-[10px] uppercase font-bold text-zinc-500">{label}</label>
-      <div className="relative flex items-center">
-        <button
-          type="button"
-          onClick={() => {
-            if (hiddenTimeRef.current) {
-              if ('showPicker' in hiddenTimeRef.current && typeof (hiddenTimeRef.current as any).showPicker === 'function') {
-                (hiddenTimeRef.current as any).showPicker();
-              } else {
-                hiddenTimeRef.current.click();
-              }
-            }
-          }}
-          className="absolute left-2.5 p-1 rounded-md text-amber-600 hover:bg-amber-100 transition-colors cursor-pointer z-10"
-          title="Open 24-Hour Clock Picker"
-        >
-          <Clock className="w-3.5 h-3.5 text-amber-600" />
-        </button>
+      {label && <label className="block text-[10px] uppercase font-bold text-zinc-500">{label}</label>}
+      <div 
+        onClick={handleTriggerTimePicker}
+        className="relative w-full rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 shadow-2xs transition-all flex items-center justify-between p-2 cursor-pointer hover:border-amber-300"
+      >
+        <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 select-none mr-1.5 cursor-pointer" />
         <input
           type="text"
-          value={value}
-          placeholder="10:00 AM"
+          value={value || ''}
+          placeholder="e.g. 07:00 PM"
           onChange={(e) => onChange(e.target.value)}
-          className="w-full p-2 pl-9 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase shadow-2xs"
+          onClick={(e) => e.stopPropagation()}
+          className="w-full bg-transparent text-xs font-bold uppercase text-zinc-900 focus:outline-none placeholder:text-zinc-400 select-text"
         />
         <input
-          ref={hiddenTimeRef}
+          ref={timeInputRef}
           type="time"
           step="900"
-          className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none"
           onChange={handleTimeChange}
+          className="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10"
         />
       </div>
     </div>
@@ -1250,12 +1242,16 @@ function ThreeDCurvedMultiSelect({
   selectedText,
   onChangeSelectedText,
   onAddCustomOption,
+  onEditOption,
+  onDeleteOption,
 }: {
   title: string;
   availableOptions: string[];
   selectedText: string;
   onChangeSelectedText: (newText: string) => void;
   onAddCustomOption: (newItem: string) => void;
+  onEditOption?: (oldItem: string, newItem: string) => void;
+  onDeleteOption?: (itemToDelete: string) => void;
 }) {
   const selectedItems = (selectedText || '').split('\n').map(s => s.trim()).filter(Boolean);
 
@@ -1294,32 +1290,84 @@ function ThreeDCurvedMultiSelect({
         </button>
       </div>
 
-      <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-        {availableOptions.map((item) => {
-          const isSelected = selectedItems.includes(item);
-          return (
-            <div
-              key={item}
-              onClick={() => toggleItem(item)}
-              className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                isSelected
-                  ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
-                  : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100/80'
-              }`}
-            >
-              <span className="leading-tight select-none pr-2">{item}</span>
+      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+        {availableOptions.length === 0 ? (
+          <div className="text-[11px] text-zinc-400 italic p-2 text-center">No options available. Click + Add to create one.</div>
+        ) : (
+          availableOptions.map((item) => {
+            const isSelected = selectedItems.includes(item);
+            return (
               <div
-                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                key={item}
+                className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
                   isSelected
-                    ? 'border-amber-600 bg-amber-600 text-white'
-                    : 'border-zinc-300 bg-white'
+                    ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                    : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100/80'
                 }`}
               >
-                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                {/* 1. Checkbox at the START (Left side) */}
+                <button
+                  type="button"
+                  onClick={() => toggleItem(item)}
+                  className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                    isSelected
+                      ? 'border-amber-600 bg-amber-600 text-white'
+                      : 'border-zinc-300 bg-white hover:border-amber-400'
+                  }`}
+                >
+                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                </button>
+
+                {/* 2. Item Text (Clickable to toggle) */}
+                <span 
+                  onClick={() => toggleItem(item)} 
+                  className="flex-1 cursor-pointer select-none leading-tight truncate"
+                >
+                  {item}
+                </span>
+
+                {/* 3. Action Buttons: Edit (✏️) + Delete (🗑️) */}
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const edited = prompt(`Edit ${title} item:`, item);
+                      if (edited && edited.trim() && edited.trim() !== item) {
+                        const trimmed = edited.trim();
+                        if (onEditOption) {
+                          onEditOption(item, trimmed);
+                        } else {
+                          onAddCustomOption(trimmed);
+                          const updatedSel = selectedItems.map(s => s === item ? trimmed : s);
+                          onChangeSelectedText(updatedSel.join('\n'));
+                        }
+                      }
+                    }}
+                    className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
+                    title={`Edit ${item}`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {onDeleteOption && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteOption(item);
+                      }}
+                      className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
+                      title={`Delete ${item}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -1347,8 +1395,12 @@ function ThreeDCurvedFunctionEditor({
   onUpdate,
   onDelete,
   onAddCustomFunctionName,
+  onEditCustomFunctionName,
+  onDeleteCustomFunctionName,
   onAddCustomDuration,
   onAddCustomRequirement,
+  onEditCustomRequirement,
+  onDeleteCustomRequirement,
 }: {
   func: FunctionItem;
   index: number;
@@ -1358,8 +1410,12 @@ function ThreeDCurvedFunctionEditor({
   onUpdate: (updated: FunctionItem) => void;
   onDelete: () => void;
   onAddCustomFunctionName: (name: string) => void;
+  onEditCustomFunctionName?: (oldName: string, newName: string) => void;
+  onDeleteCustomFunctionName?: (name: string) => void;
   onAddCustomDuration: (dur: string) => void;
   onAddCustomRequirement: (req: string) => void;
+  onEditCustomRequirement?: (oldReq: string, newReq: string) => void;
+  onDeleteCustomRequirement?: (req: string) => void;
 }) {
   const selectedEventNames = (func.name || '').split(' + ').map(s => s.trim()).filter(Boolean);
 
@@ -1449,192 +1505,293 @@ function ThreeDCurvedFunctionEditor({
 
       <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3.5 space-y-3 relative transition-all">
 
-      {/* Multi-Select Event Names Dropdown (Curved 3D UI) */}
-      <div className="space-y-2 pt-1">
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-amber-600" /> Event Name(s)
-          </label>
-          <button
-            type="button"
-            onClick={handleAddCustomEvent}
-            className="px-2 py-0.5 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all"
-          >
-            + Add
-          </button>
-        </div>
+        {/* Multi-Select Event Names Dropdown (Curved 3D UI) */}
+        <div className="space-y-2 pt-1">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-600" /> Event Name(s)
+            </label>
+            <button
+              type="button"
+              onClick={handleAddCustomEvent}
+              className="px-2 py-0.5 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all flex items-center gap-1"
+            >
+              + Add
+            </button>
+          </div>
 
-        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-          {availableFunctionNames.map((evtName) => {
-            const isSelected = selectedEventNames.includes(evtName);
-            return (
-              <div
-                key={evtName}
-                onClick={() => toggleEventName(evtName)}
-                className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
-                    : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
-                }`}
-              >
-                <span className="leading-tight select-none pr-2">{evtName}</span>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            {availableFunctionNames.map((evtName) => {
+              const isSelected = selectedEventNames.includes(evtName);
+              return (
                 <div
-                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                  key={evtName}
+                  className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
                     isSelected
-                      ? 'border-amber-600 bg-amber-600 text-white'
-                      : 'border-zinc-300 bg-white'
+                      ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                      : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
                   }`}
                 >
-                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3D Calendar & Date Not Fixed Toggle */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] uppercase font-bold text-zinc-500">Date</label>
-          <label className="flex items-center gap-1.5 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={!!func.dateNotFixed}
-              onChange={(e) => onUpdate({ ...func, dateNotFixed: e.target.checked })}
-              className="w-3.5 h-3.5 rounded-md border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
-            />
-            <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wide">Date Not Fixed</span>
-          </label>
-        </div>
-
-        <ThreeDCurvedDatePicker
-          value={func.date}
-          disabled={!!func.dateNotFixed}
-          onChange={(val) => onUpdate({ ...func, date: val })}
-        />
-      </div>
-
-      {/* 3D Clock Selectors for Start & End Time */}
-      <div className="grid grid-cols-2 gap-2">
-        <ThreeDCurvedTimePicker
-          label="Start Time"
-          value={func.startTime}
-          onChange={(val) => onUpdate({ ...func, startTime: val })}
-        />
-        <ThreeDCurvedTimePicker
-          label="End Time"
-          value={func.endTime}
-          onChange={(val) => onUpdate({ ...func, endTime: val })}
-        />
-      </div>
-
-      {/* Standardized 3D Duration Dropdown */}
-      <ThreeDCurvedSelect
-        label="Duration Slot"
-        value={func.durationSlot}
-        options={availableDurationSlots.map(slot => ({ label: slot, value: slot }))}
-        onChange={(val) => handleDurationChange(val)}
-        onAddCustom={() => {
-          const customDur = prompt('Enter custom duration (e.g. 6 Hours, Half Day):');
-          if (customDur && customDur.trim()) {
-            const trimmed = customDur.trim();
-            onAddCustomDuration(trimmed);
-            onUpdate({ ...func, durationSlot: trimmed });
-          }
-        }}
-      />
-
-      {/* Location Input */}
-      <div>
-        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Venue / Location</label>
-        <textarea
-          rows={2}
-          value={func.location}
-          placeholder="e.g. JW MARRIOTT, MUMBAI"
-          onChange={(e) => onUpdate({ ...func, location: e.target.value })}
-          className="w-full p-2.5 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase resize-none shadow-2xs"
-        />
-      </div>
-
-      {/* Requirements with Quantity Selector */}
-      <div className="space-y-2 pt-1 border-t border-amber-100">
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1">
-            <Camera className="w-3 h-3 text-amber-600" /> Requirements &amp; Crew
-          </label>
-          <button
-            type="button"
-            onClick={handleAddReq}
-            className="px-2 py-0.5 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all"
-          >
-            + Add
-          </button>
-        </div>
-
-        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-          {availableRequirements.map((reqName) => {
-            const reqObj = safeRequirements.find(r => r.name === reqName);
-            const isSelected = !!reqObj;
-            return (
-              <div
-                key={reqName}
-                className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold transition-all ${
-                  isSelected
-                    ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
-                    : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600'
-                }`}
-              >
-                <div 
-                  onClick={() => toggleRequirement(reqName)} 
-                  className="flex items-center gap-2 cursor-pointer flex-1 select-none pr-1"
-                >
-                  <div
-                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                  {/* 1. Checkbox at the START */}
+                  <button
+                    type="button"
+                    onClick={() => toggleEventName(evtName)}
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
                       isSelected
                         ? 'border-amber-600 bg-amber-600 text-white'
-                        : 'border-zinc-300 bg-white'
+                        : 'border-zinc-300 bg-white hover:border-amber-400'
                     }`}
                   >
                     {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                  </div>
-                  <span className="leading-tight">{reqName}</span>
-                </div>
+                  </button>
 
-                {isSelected && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-[10px] font-bold text-amber-800">Qty:</span>
-                    <select
-                      value={reqObj?.qty || 1}
-                      onChange={(e) => changeRequirementQty(reqName, Number(e.target.value) || 1)}
-                      className="p-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-bold text-[11px]"
+                  {/* 2. Event Name Text */}
+                  <span 
+                    onClick={() => toggleEventName(evtName)}
+                    className="flex-1 cursor-pointer select-none leading-tight truncate"
+                  >
+                    {evtName}
+                  </span>
+
+                  {/* 3. Action Buttons: Edit (✏️) + Delete (🗑️) */}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const edited = prompt('Edit Event Name:', evtName);
+                        if (edited && edited.trim() && edited.trim() !== evtName) {
+                          const trimmed = edited.trim();
+                          if (onEditCustomFunctionName) {
+                            onEditCustomFunctionName(evtName, trimmed);
+                          }
+                          if (selectedEventNames.includes(evtName)) {
+                            const updated = selectedEventNames.map(n => n === evtName ? trimmed : n);
+                            onUpdate({ ...func, name: updated.join(' + ') });
+                          }
+                        }
+                      }}
+                      className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
+                      title={`Edit ${evtName}`}
                     >
-                      {[1,2,3,4,5,6,7,8,9,10].map(num => (
-                        <option key={num} value={num}>{num}</option>
-                      ))}
-                    </select>
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+
+                    {onDeleteCustomFunctionName && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteCustomFunctionName(evtName);
+                          if (selectedEventNames.includes(evtName)) {
+                            const updated = selectedEventNames.filter(n => n !== evtName);
+                            onUpdate({ ...func, name: updated.length > 0 ? updated.join(' + ') : 'Event' });
+                          }
+                        }}
+                        className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
+                        title={`Delete ${evtName}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 3D Calendar & Date Not Fixed Toggle */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase font-bold text-zinc-500">Date</label>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={!!func.dateNotFixed}
+                onChange={(e) => onUpdate({ ...func, dateNotFixed: e.target.checked })}
+                className="w-3.5 h-3.5 rounded-md border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+              />
+              <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wide">Date Not Fixed</span>
+            </label>
+          </div>
+
+          <ThreeDCurvedDatePicker
+            value={func.date}
+            disabled={!!func.dateNotFixed}
+            onChange={(val) => onUpdate({ ...func, date: val })}
+          />
+        </div>
+
+        {/* 3D Clock Selectors for Start & End Time */}
+        <div className="grid grid-cols-2 gap-2">
+          <ThreeDCurvedTimePicker
+            label="Start Time"
+            value={func.startTime}
+            onChange={(val) => onUpdate({ ...func, startTime: val })}
+          />
+          <ThreeDCurvedTimePicker
+            label="End Time"
+            value={func.endTime}
+            onChange={(val) => onUpdate({ ...func, endTime: val })}
+          />
+        </div>
+
+        {/* Standardized 3D Duration Dropdown */}
+        <ThreeDCurvedSelect
+          label="Duration Slot"
+          value={func.durationSlot}
+          options={availableDurationSlots.map(slot => ({ label: slot, value: slot }))}
+          onChange={(val) => handleDurationChange(val)}
+          onAddCustom={() => {
+            const customDur = prompt('Enter custom duration (e.g. 6 Hours, Half Day):');
+            if (customDur && customDur.trim()) {
+              const trimmed = customDur.trim();
+              onAddCustomDuration(trimmed);
+              onUpdate({ ...func, durationSlot: trimmed });
+            }
+          }}
+        />
+
+        {/* Location Input */}
+        <div>
+          <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Venue / Location</label>
+          <textarea
+            rows={2}
+            value={func.location}
+            placeholder="e.g. JW MARRIOTT, MUMBAI"
+            onChange={(e) => onUpdate({ ...func, location: e.target.value })}
+            className="w-full p-2.5 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 text-zinc-900 font-bold text-xs uppercase resize-none shadow-2xs"
+          />
+        </div>
+
+        {/* Requirements with Quantity Selector */}
+        <div className="space-y-2 pt-1 border-t border-amber-100">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1">
+              <Camera className="w-3 h-3 text-amber-600" /> Requirements &amp; Crew
+            </label>
+            <button
+              type="button"
+              onClick={handleAddReq}
+              className="px-2 py-0.5 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all flex items-center gap-1"
+            >
+              + Add
+            </button>
+          </div>
+
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            {availableRequirements.map((reqName) => {
+              const reqObj = safeRequirements.find(r => r.name === reqName);
+              const isSelected = !!reqObj;
+              return (
+                <div
+                  key={reqName}
+                  className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
+                    isSelected
+                      ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                      : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
+                  }`}
+                >
+                  {/* 1. Checkbox at START */}
+                  <button
+                    type="button"
+                    onClick={() => toggleRequirement(reqName)}
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-amber-600 bg-amber-600 text-white'
+                        : 'border-zinc-300 bg-white hover:border-amber-400'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                  </button>
+
+                  {/* 2. Requirement Name */}
+                  <span 
+                    onClick={() => toggleRequirement(reqName)}
+                    className="flex-1 cursor-pointer select-none leading-tight truncate"
+                  >
+                    {reqName}
+                  </span>
+
+                  {/* 3. Quantity Selector (when selected) */}
+                  {isSelected && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-[10px] font-bold text-amber-800">Qty:</span>
+                      <select
+                        value={reqObj?.qty || 1}
+                        onChange={(e) => changeRequirementQty(reqName, Number(e.target.value) || 1)}
+                        className="p-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-bold text-[11px]"
+                      >
+                        {[1,2,3,4,5,6,7,8,9,10].map(num => (
+                          <option key={num} value={num}>{num}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* 4. Edit & Delete Buttons */}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const edited = prompt('Edit Requirement item:', reqName);
+                        if (edited && edited.trim() && edited.trim() !== reqName) {
+                          const trimmed = edited.trim();
+                          if (onEditCustomRequirement) {
+                            onEditCustomRequirement(reqName, trimmed);
+                          }
+                          if (isSelected) {
+                            const updated = safeRequirements.map(r => r.name === reqName ? { ...r, name: trimmed } : r);
+                            onUpdate({ ...func, requirements: updated });
+                          }
+                        }
+                      }}
+                      className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
+                      title={`Edit ${reqName}`}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+
+                    {onDeleteCustomRequirement && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteCustomRequirement(reqName);
+                          if (isSelected) {
+                            const updated = safeRequirements.filter(r => r.name !== reqName);
+                            onUpdate({ ...func, requirements: updated });
+                          }
+                        }}
+                        className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
+                        title={`Delete ${reqName}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Function Notes */}
+        <div>
+          <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Notes / Highlights</label>
+          <textarea
+            rows={2}
+            value={func.notes}
+            placeholder="Custom notes for this function..."
+            onChange={(e) => onUpdate({ ...func, notes: e.target.value })}
+            className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs resize-none"
+          />
         </div>
       </div>
-
-      {/* Function Notes */}
-      <div>
-        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Notes / Highlights</label>
-        <textarea
-          rows={2}
-          value={func.notes}
-          placeholder="Custom notes for this function..."
-          onChange={(e) => onUpdate({ ...func, notes: e.target.value })}
-          className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium text-xs resize-none"
-        />
-      </div>
     </div>
-  </div>
-);
+  );
 }
 
 function normalizeQuotationData(loaded: any) {
@@ -1688,6 +1845,7 @@ function normalizeQuotationData(loaded: any) {
       accommodationCharges: typeof loaded.pricingPage?.accommodationCharges === 'number' ? loaded.pricingPage.accommodationCharges : d.pricingPage.accommodationCharges,
       travelCharges: typeof loaded.pricingPage?.travelCharges === 'number' ? loaded.pricingPage.travelCharges : d.pricingPage.travelCharges,
       additionalCharges: typeof loaded.pricingPage?.additionalCharges === 'number' ? loaded.pricingPage.additionalCharges : d.pricingPage.additionalCharges,
+      additionalChargesList: Array.isArray(loaded.pricingPage?.additionalChargesList) ? loaded.pricingPage.additionalChargesList : [],
       gstPct: typeof loaded.pricingPage?.gstPct === 'number' ? loaded.pricingPage.gstPct : d.pricingPage.gstPct,
       note: loaded.pricingPage?.note ?? d.pricingPage.note ?? '',
       photo: loaded.pricingPage?.photo ?? d.pricingPage.photo ?? '',
@@ -1745,11 +1903,15 @@ function calculatePricingTotals(pricing: any) {
   const accom = Number(p?.accommodationCharges ?? p?.accommodation ?? 0);
   const travel = Number(p?.travelCharges ?? p?.travel ?? 0);
   const addl = Number(p?.additionalCharges ?? p?.additional ?? 0);
-  const gross = Math.max(0, base - disc + accom + travel + addl);
+  const customAddl = Array.isArray(p?.additionalChargesList)
+    ? p.additionalChargesList.reduce((sum: number, c: any) => sum + (Number(c?.amount) || 0), 0)
+    : 0;
+  const totalAddl = addl + customAddl;
+  const gross = Math.max(0, base - disc + accom + travel + totalAddl);
   const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 18);
   const gstAmount = Math.round(gross * (gstPct / 100));
   const netTotal = gross + gstAmount;
-  return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
+  return { base, disc, accom, travel, addl, customAddl, totalAddl, gross, gstPct, gstAmount, netTotal };
 }
 
 function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmount: number) {
@@ -3003,18 +3165,42 @@ function StudioCoreAiryBuilderContent() {
               <ThreeDCurvedMultiSelect
                 title="Requirements"
                 availableOptions={availableRequirements}
-                selectedText={data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room'}
+                selectedText={data.shootDetails.crewText !== undefined ? data.shootDetails.crewText : 'Candid Photography\nCinematography\nPortable Changing Room'}
                 onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, crewText: newText } })}
                 onAddCustomOption={(newItem) => setAvailableRequirements(prev => Array.from(new Set([...prev, newItem])))}
+                onEditOption={(oldItem, newItem) => {
+                  setAvailableRequirements(prev => prev.map(item => item === oldItem ? newItem : item));
+                  const lines = (data.shootDetails.crewText || '').split('\n').map(s => s.trim()).filter(Boolean);
+                  const updated = lines.map(s => s === oldItem ? newItem : s);
+                  setData({ ...data, shootDetails: { ...data.shootDetails, crewText: updated.join('\n') } });
+                }}
+                onDeleteOption={(itemToDelete) => {
+                  setAvailableRequirements(prev => prev.filter(item => item !== itemToDelete));
+                  const lines = (data.shootDetails.crewText || '').split('\n').map(s => s.trim()).filter(Boolean);
+                  const updated = lines.filter(s => s !== itemToDelete);
+                  setData({ ...data, shootDetails: { ...data.shootDetails, crewText: updated.join('\n') } });
+                }}
               />
 
               {/* 3D Curved UI Multi-Select Dropdown: Deliverables */}
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
                 availableOptions={availableDeliverables}
-                selectedText={data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 Countdown Reel\n1 Video Reel'}
+                selectedText={data.shootDetails.deliverablesText !== undefined ? data.shootDetails.deliverablesText : 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 Countdown Reel\n1 Video Reel'}
                 onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: newText } })}
                 onAddCustomOption={(newItem) => setAvailableDeliverables(prev => Array.from(new Set([...prev, newItem])))}
+                onEditOption={(oldItem, newItem) => {
+                  setAvailableDeliverables(prev => prev.map(item => item === oldItem ? newItem : item));
+                  const lines = (data.shootDetails.deliverablesText || '').split('\n').map(s => s.trim()).filter(Boolean);
+                  const updated = lines.map(s => s === oldItem ? newItem : s);
+                  setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: updated.join('\n') } });
+                }}
+                onDeleteOption={(itemToDelete) => {
+                  setAvailableDeliverables(prev => prev.filter(item => item !== itemToDelete));
+                  const lines = (data.shootDetails.deliverablesText || '').split('\n').map(s => s.trim()).filter(Boolean);
+                  const updated = lines.filter(s => s !== itemToDelete);
+                  setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: updated.join('\n') } });
+                }}
               />
 
               {/* Yellow Theme Exclusions Note Control Box */}
@@ -3116,8 +3302,20 @@ function StudioCoreAiryBuilderContent() {
                       setData({ ...data, functionsPage: { ...data.functionsPage, items: filtered } });
                     }}
                     onAddCustomFunctionName={(newName) => setAvailableFunctionNames(prev => Array.from(new Set([...prev, newName])))}
+                    onEditCustomFunctionName={(oldName, newName) => {
+                      setAvailableFunctionNames(prev => prev.map(n => n === oldName ? newName : n));
+                    }}
+                    onDeleteCustomFunctionName={(nameToDelete) => {
+                      setAvailableFunctionNames(prev => prev.filter(n => n !== nameToDelete));
+                    }}
                     onAddCustomDuration={(newDur) => setAvailableDurationSlots(prev => Array.from(new Set([...prev, newDur])))}
                     onAddCustomRequirement={(newReq) => setAvailableRequirements(prev => Array.from(new Set([...prev, newReq])))}
+                    onEditCustomRequirement={(oldReq, newReq) => {
+                      setAvailableRequirements(prev => prev.map(r => r === oldReq ? newReq : r));
+                    }}
+                    onDeleteCustomRequirement={(reqToDelete) => {
+                      setAvailableRequirements(prev => prev.filter(r => r !== reqToDelete));
+                    }}
                   />
                 ))}
 
@@ -3177,6 +3375,32 @@ function StudioCoreAiryBuilderContent() {
                     });
                   }
                 }}
+                onEditOption={(oldItem, newItem) => {
+                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
+                  const opts = (currentObj.availableOptions || []).map(item => item === oldItem ? newItem : item);
+                  const sel = (currentObj.selectedItems || []).map(item => item === oldItem ? newItem : item);
+                  setData({
+                    ...data,
+                    deliverablesPage: {
+                      ...currentObj,
+                      availableOptions: opts,
+                      selectedItems: sel,
+                    }
+                  });
+                }}
+                onDeleteOption={(itemToDelete) => {
+                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
+                  const opts = (currentObj.availableOptions || []).filter(item => item !== itemToDelete);
+                  const sel = (currentObj.selectedItems || []).filter(item => item !== itemToDelete);
+                  setData({
+                    ...data,
+                    deliverablesPage: {
+                      ...currentObj,
+                      availableOptions: opts,
+                      selectedItems: sel,
+                    }
+                  });
+                }}
               />
 
               {/* Photo controls removed for Deliverables - purely content/card based */}
@@ -3207,6 +3431,32 @@ function StudioCoreAiryBuilderContent() {
                       }
                     });
                   }
+                }}
+                onEditOption={(oldItem, newItem) => {
+                  const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
+                  const opts = (currentObj.availableOptions || []).map(item => item === oldItem ? newItem : item);
+                  const sel = (currentObj.selectedItems || []).map(item => item === oldItem ? newItem : item);
+                  setData({
+                    ...data,
+                    specialValueAdditions: {
+                      ...currentObj,
+                      availableOptions: opts,
+                      selectedItems: sel,
+                    }
+                  });
+                }}
+                onDeleteOption={(itemToDelete) => {
+                  const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
+                  const opts = (currentObj.availableOptions || []).filter(item => item !== itemToDelete);
+                  const sel = (currentObj.selectedItems || []).filter(item => item !== itemToDelete);
+                  setData({
+                    ...data,
+                    specialValueAdditions: {
+                      ...currentObj,
+                      availableOptions: opts,
+                      selectedItems: sel,
+                    }
+                  });
                 }}
               />
 
@@ -3310,6 +3560,93 @@ function StudioCoreAiryBuilderContent() {
                     }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
+                </div>
+              </div>
+
+              {/* Custom Additional Charges List Section */}
+              <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Custom Additional Charges</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                      const list = Array.isArray(currentObj.additionalChargesList) ? currentObj.additionalChargesList : [];
+                      const newCharge = {
+                        id: `charge-${Date.now()}`,
+                        name: 'Drone Coverage',
+                        amount: 10000,
+                      };
+                      setData({
+                        ...data,
+                        pricingPage: {
+                          ...currentObj,
+                          additionalChargesList: [...list, newCharge],
+                        },
+                      });
+                    }}
+                    className="px-2.5 py-1 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all flex items-center gap-1"
+                  >
+                    <span>+ Add Charge</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {(data.pricingPage?.additionalChargesList || []).length === 0 ? (
+                    <div className="text-[11px] text-zinc-400 italic p-2 text-center">
+                      No custom additional charges. Click + Add Charge to add one.
+                    </div>
+                  ) : (
+                    (data.pricingPage?.additionalChargesList || []).map((charge: any, cIdx: number) => (
+                      <div
+                        key={charge.id || cIdx}
+                        className="flex items-center gap-2 p-2 rounded-xl border border-amber-200/80 bg-white/90 shadow-2xs"
+                      >
+                        <input
+                          type="text"
+                          value={charge.name || ''}
+                          placeholder="Charge Name (e.g. Drone Coverage)"
+                          onChange={(e) => {
+                            const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                            const list = [...(currentObj.additionalChargesList || [])];
+                            list[cIdx] = { ...list[cIdx], name: e.target.value };
+                            setData({ ...data, pricingPage: { ...currentObj, additionalChargesList: list } });
+                          }}
+                          className="flex-1 p-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-semibold text-zinc-900 focus:outline-none"
+                        />
+                        <div className="relative flex items-center w-28">
+                          <span className="absolute left-2 text-[11px] font-bold text-amber-700">₹</span>
+                          <input
+                            type="number"
+                            value={charge.amount || ''}
+                            placeholder="0"
+                            onChange={(e) => {
+                              const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                              const list = [...(currentObj.additionalChargesList || [])];
+                              list[cIdx] = { ...list[cIdx], amount: Number(e.target.value) || 0 };
+                              setData({ ...data, pricingPage: { ...currentObj, additionalChargesList: list } });
+                            }}
+                            className="w-full p-1.5 pl-5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
+                            const list = (currentObj.additionalChargesList || []).filter((_: any, i: number) => i !== cIdx);
+                            setData({ ...data, pricingPage: { ...currentObj, additionalChargesList: list } });
+                          }}
+                          className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition-all cursor-pointer"
+                          title="Delete Charge"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -4438,36 +4775,40 @@ function StudioCoreAiryBuilderContent() {
                     </h2>
                   </div>
 
-                  <div className="space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
-                    <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2 mb-1" style={{ color: textColor }}>
-                      <Camera className="w-4 h-4" style={{ color: kickerColor }} />
-                      <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
-                    </p>
-                    <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
-                      {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
-                        .split('\n').filter(Boolean).map((item, idx) => (
-                          <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
-                            <span>{item.trim()}</span>
-                          </div>
-                        ))}
+                  {Boolean(data.shootDetails.crewText?.trim()) && (
+                    <div className="space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
+                      <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2 mb-1" style={{ color: textColor }}>
+                        <Camera className="w-4 h-4" style={{ color: kickerColor }} />
+                        <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
+                      </p>
+                      <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
+                        {data.shootDetails.crewText
+                          .split('\n').filter(Boolean).map((item, idx) => (
+                            <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
+                              <span>{item.trim()}</span>
+                            </div>
+                          ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="pt-2 space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
-                    <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap mb-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.shootDetails.deliverablesHeading || 'Deliverables'}
-                    </h3>
-                    <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
-                      {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
-                        .split('\n').filter(Boolean).map((item, idx) => (
-                          <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
-                            <span>{item.trim()}</span>
-                          </div>
-                        ))}
+                  {Boolean(data.shootDetails.deliverablesText?.trim()) && (
+                    <div className="pt-2 space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
+                      <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap mb-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                        {data.shootDetails.deliverablesHeading || 'Deliverables'}
+                      </h3>
+                      <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
+                        {data.shootDetails.deliverablesText
+                          .split('\n').filter(Boolean).map((item, idx) => (
+                            <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
+                              <span>{item.trim()}</span>
+                            </div>
+                          ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* EXCLUSIONS CALLOUT BOX (BEFORE PHOTO) */}
                   {data.shootDetails?.showExclusionsNote && (
@@ -4904,11 +5245,20 @@ function StudioCoreAiryBuilderContent() {
                                         </tr>
                                       )}
                                       {pricingCalculated.addl > 0 && (
-                                        <tr style={{ borderColor }}>
-                                          <td className="py-3 px-5">Additional Charges</td>
-                                          <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
-                                        </tr>
-                                      )}
+                                         <tr style={{ borderColor }}>
+                                           <td className="py-3 px-5">Additional Charges</td>
+                                           <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
+                                         </tr>
+                                       )}
+                                       {Array.isArray(data.pricingPage?.additionalChargesList) && data.pricingPage.additionalChargesList.map((ch: any, idx: number) => {
+                                         if (!ch?.name && !ch?.amount) return null;
+                                         return (
+                                           <tr key={ch.id || `custom-charge-${idx}`} style={{ borderColor }}>
+                                             <td className="py-3 px-5">{ch.name || 'Additional Charge'}</td>
+                                             <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{Number(ch.amount || 0).toLocaleString('en-IN')}</td>
+                                           </tr>
+                                         );
+                                       })}
                                       <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor, borderColor }}>
                                         <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
                                         <td className="py-3 px-5 text-right font-sans font-black tracking-tight">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>

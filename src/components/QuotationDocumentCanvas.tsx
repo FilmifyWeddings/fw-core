@@ -1339,11 +1339,15 @@ function calculatePricingTotals(pricing: any) {
   const accom = Number(p?.accommodationCharges ?? p?.accommodation ?? 0);
   const travel = Number(p?.travelCharges ?? p?.travel ?? 0);
   const addl = Number(p?.additionalCharges ?? p?.additional ?? 0);
-  const gross = Math.max(0, base - disc + accom + travel + addl);
+  const customAddl = Array.isArray(p?.additionalChargesList)
+    ? p.additionalChargesList.reduce((sum: number, c: any) => sum + (Number(c?.amount) || 0), 0)
+    : 0;
+  const totalAddl = addl + customAddl;
+  const gross = Math.max(0, base - disc + accom + travel + totalAddl);
   const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 18);
   const gstAmount = Math.round(gross * (gstPct / 100));
   const netTotal = gross + gstAmount;
-  return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
+  return { base, disc, accom, travel, addl, customAddl, totalAddl, gross, gstPct, gstAmount, netTotal };
 }
 
 function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmount: number) {
@@ -1704,36 +1708,40 @@ export default function QuotationDocumentCanvas({
                     />
                   )}
 
-                  <div className="space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
-                    <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2 mb-1" style={{ color: textColor }}>
-                      <Camera className="w-4 h-4" style={{ color: kickerColor }} />
-                      <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
-                    </p>
-                    <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
-                      {(data.shootDetails.crewText || 'Candid Photography\nCinematography\nPortable Changing Room')
-                        .split('\n').filter(Boolean).map((item: any, idx: number) => (
-                          <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
-                            <span>{item.trim()}</span>
-                          </div>
-                        ))}
+                  {Boolean(data.shootDetails.crewText?.trim()) && (
+                    <div className="space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
+                      <p className="text-base font-bold tracking-wide flex items-center justify-center gap-2 mb-1" style={{ color: textColor }}>
+                        <Camera className="w-4 h-4" style={{ color: kickerColor }} />
+                        <span>{data.shootDetails.daysText || '1 Day Shoot'}</span>
+                      </p>
+                      <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
+                        {data.shootDetails.crewText
+                          .split('\n').filter(Boolean).map((item: any, idx: number) => (
+                            <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
+                              <span>{item.trim()}</span>
+                            </div>
+                          ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="pt-2 space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
-                    <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap mb-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.shootDetails.deliverablesHeading || 'Deliverables'}
-                    </h3>
-                    <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
-                      {(data.shootDetails.deliverablesText || 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel')
-                        .split('\n').filter(Boolean).map((item: any, idx: number) => (
-                          <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
-                            <span>{item.trim()}</span>
-                          </div>
-                        ))}
+                  {Boolean(data.shootDetails.deliverablesText?.trim()) && (
+                    <div className="pt-2 space-y-3 max-w-lg mx-auto my-3 flex flex-col items-center">
+                      <h3 className="text-2xl tracking-wide font-normal text-center whitespace-nowrap mb-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                        {data.shootDetails.deliverablesHeading || 'Deliverables'}
+                      </h3>
+                      <div className="space-y-2 flex flex-col items-start max-w-md mx-auto">
+                        {data.shootDetails.deliverablesText
+                          .split('\n').filter(Boolean).map((item: any, idx: number) => (
+                            <div key={idx} className="flex items-start gap-2.5 text-sm font-medium tracking-wide leading-tight" style={{ color: textColor }}>
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: kickerColor }} />
+                              <span>{item.trim()}</span>
+                            </div>
+                          ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* EXCLUSIONS CALLOUT BOX (BEFORE PHOTO) */}
                   {data.shootDetails?.showExclusionsNote && (
@@ -2269,6 +2277,15 @@ export default function QuotationDocumentCanvas({
                               <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{pricingCalculated.addl.toLocaleString('en-IN')}</td>
                             </tr>
                           )}
+                          {Array.isArray(data.pricingPage?.additionalChargesList) && data.pricingPage.additionalChargesList.map((ch: any, idx: number) => {
+                            if (!ch?.name && !ch?.amount) return null;
+                            return (
+                              <tr key={ch.id || `custom-charge-${idx}`} style={{ borderColor }}>
+                                <td className="py-3 px-5">{ch.name || 'Additional Charge'}</td>
+                                <td className="py-3 px-5 text-right font-sans font-medium tracking-tight">₹{Number(ch.amount || 0).toLocaleString('en-IN')}</td>
+                              </tr>
+                            );
+                          })}
                           <tr className="border-t font-bold" style={{ backgroundColor: boxBgColor, borderColor }}>
                             <td className="py-3 px-5 uppercase text-[11px] font-black">Subtotal (Gross Total)</td>
                             <td className="py-3 px-5 text-right font-sans font-black tracking-tight">₹{pricingCalculated.gross.toLocaleString('en-IN')}</td>

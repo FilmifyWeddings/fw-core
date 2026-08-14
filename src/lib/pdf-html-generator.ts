@@ -48,11 +48,15 @@ function calculatePricingTotals(pricing: any) {
   const accom = Number(p?.accommodationCharges ?? p?.accommodation ?? 0);
   const travel = Number(p?.travelCharges ?? p?.travel ?? 0);
   const addl = Number(p?.additionalCharges ?? p?.additional ?? 0);
-  const gross = Math.max(0, base - disc + accom + travel + addl);
+  const customAddl = Array.isArray(p?.additionalChargesList)
+    ? p.additionalChargesList.reduce((sum: number, c: any) => sum + (Number(c?.amount) || 0), 0)
+    : 0;
+  const totalAddl = addl + customAddl;
+  const gross = Math.max(0, base - disc + accom + travel + totalAddl);
   const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 18);
   const gstAmount = Math.round(gross * (gstPct / 100));
   const netTotal = gross + gstAmount;
-  return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
+  return { base, disc, accom, travel, addl, customAddl, totalAddl, gross, gstPct, gstAmount, netTotal };
 }
 
 function calculatePaymentTermsSummary(steps: any[], totalProjectAmount: number) {
@@ -530,17 +534,8 @@ export function renderQuotationToHTML(documentData: any): string {
 
       const cameraIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${theme.kicker}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:6px;"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
 
-      const crewItems = (shootDetails.crewText || `Candid Photography
-Cinematography
-Portable Changing Room`)
-        .split('\n').filter(Boolean);
-
-      const deliverableItems = (shootDetails.deliverablesText || `Full Ultra HD Super-Fine Raw Photos
-Approx. 50 High Resolution Edited Images
-3 Save The Dates Photos
-1 count Down Reel
-1 video Reel`)
-        .split('\n').filter(Boolean);
+      const crewItems = (shootDetails.crewText || '').split('\n').filter(Boolean);
+      const deliverableItems = (shootDetails.deliverablesText || '').split('\n').filter(Boolean);
 
       pagesHTML += `
         <section class="pdf-page quotation-canvas-page" style="width:210mm;min-width:210mm;max-width:210mm;height:295mm;min-height:295mm;max-height:295mm;padding:36px 44px;box-sizing:border-box;overflow:hidden;background-color:${theme.background};page-break-after:always;break-after:page;page-break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;position:relative;">
@@ -554,34 +549,38 @@ Approx. 50 High Resolution Edited Images
                 </h2>
               </div>
 
-              <div style="margin:12px 0;display:flex;flex-direction:column;align-items:center;">
-                <p style="font-size:16px;font-weight:700;letter-spacing:0.025em;color:${theme.text};margin:0 0 10px 0;display:flex;align-items:center;justify-content:center;gap:6px;">
-                  ${cameraIconSVG}
-                  <span>${shootDetails.daysText || '1 Day Shoot'}</span>
-                </p>
-                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
-                  ${crewItems.map((item: string) => `
-                    <div style="display:flex;align-items:flex-start;gap:10px;font-size:14px;font-weight:600;letter-spacing:0.025em;line-height:1.3;color:${theme.text};">
-                      <span style="width:6px;height:6px;border-radius:50%;background-color:${theme.kicker};display:inline-block;margin-top:6px;flex-shrink:0;"></span>
-                      <span>${item.trim()}</span>
-                    </div>
-                  `).join('')}
+              ${crewItems.length > 0 ? `
+                <div style="margin:12px 0;display:flex;flex-direction:column;align-items:center;">
+                  <p style="font-size:16px;font-weight:700;letter-spacing:0.025em;color:${theme.text};margin:0 0 10px 0;display:flex;align-items:center;justify-content:center;gap:6px;">
+                    ${cameraIconSVG}
+                    <span>${shootDetails.daysText || '1 Day Shoot'}</span>
+                  </p>
+                  <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
+                    ${crewItems.map((item: string) => `
+                      <div style="display:flex;align-items:flex-start;gap:10px;font-size:14px;font-weight:600;letter-spacing:0.025em;line-height:1.3;color:${theme.text};">
+                        <span style="width:6px;height:6px;border-radius:50%;background-color:${theme.kicker};display:inline-block;margin-top:6px;flex-shrink:0;"></span>
+                        <span>${item.trim()}</span>
+                      </div>
+                    `).join('')}
+                  </div>
                 </div>
-              </div>
+              ` : ''}
 
-              <div style="margin:16px 0;display:flex;flex-direction:column;align-items:center;">
-                <h3 style="font-family:${primaryFont};font-size:24px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0 0 10px 0;white-space:nowrap;">
-                  ${shootDetails.deliverablesHeading || 'Deliverables'}
-                </h3>
-                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
-                  ${deliverableItems.map((item: string) => `
-                    <div style="display:flex;align-items:flex-start;gap:10px;font-size:14px;font-weight:600;letter-spacing:0.025em;line-height:1.3;color:${theme.text};">
-                      <span style="width:6px;height:6px;border-radius:50%;background-color:${theme.kicker};display:inline-block;margin-top:6px;flex-shrink:0;"></span>
-                      <span>${item.trim()}</span>
-                    </div>
-                  `).join('')}
+              ${deliverableItems.length > 0 ? `
+                <div style="margin:16px 0;display:flex;flex-direction:column;align-items:center;">
+                  <h3 style="font-family:${primaryFont};font-size:24px;letter-spacing:0.05em;font-weight:400;color:${theme.text};margin:0 0 10px 0;white-space:nowrap;">
+                    ${shootDetails.deliverablesHeading || 'Deliverables'}
+                  </h3>
+                  <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
+                    ${deliverableItems.map((item: string) => `
+                      <div style="display:flex;align-items:flex-start;gap:10px;font-size:14px;font-weight:600;letter-spacing:0.025em;line-height:1.3;color:${theme.text};">
+                        <span style="width:6px;height:6px;border-radius:50%;background-color:${theme.kicker};display:inline-block;margin-top:6px;flex-shrink:0;"></span>
+                        <span>${item.trim()}</span>
+                      </div>
+                    `).join('')}
+                  </div>
                 </div>
-              </div>
+              ` : ''}
 
               ${shootDetails.showExclusionsNote ? `
                 <div style="width:100%;max-width:520px;margin:12px auto;padding:10px 16px;border-radius:12px;border:1px solid ${theme.borderColor};background-color:${theme.boxBgColor};color:${theme.text};font-size:11px;font-weight:600;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
@@ -854,6 +853,18 @@ Approx. 50 High Resolution Edited Images
             <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${calc.addl.toLocaleString('en-IN')}</td>
           </tr>
         `;
+      }
+
+      if (Array.isArray(pricingPage.additionalChargesList)) {
+        pricingPage.additionalChargesList.forEach((ch: any) => {
+          if (!ch?.name && !ch?.amount) return;
+          rowsHTML += `
+            <tr style="border-bottom:1px solid ${theme.borderColor};">
+              <td style="padding:12px 20px;">${ch.name || 'Additional Charge'}</td>
+              <td style="padding:12px 20px;text-align:right;font-family:system-ui, -apple-system, sans-serif;font-weight:500;letter-spacing:-0.02em;"><span style="font-family:Arial, sans-serif;">₹</span>${(Number(ch.amount) || 0).toLocaleString('en-IN')}</td>
+            </tr>
+          `;
+        });
       }
 
       rowsHTML += `
