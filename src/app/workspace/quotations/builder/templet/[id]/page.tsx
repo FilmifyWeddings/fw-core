@@ -3338,8 +3338,11 @@ function StudioCoreAiryBuilderContent() {
               {/* 3D Curved UI Multi-Select Dropdown: Requirements */}
               <ThreeDCurvedMultiSelect
                 title="Requirements"
-                availableOptions={availableRequirements}
-                selectedItems={(data.shootDetails.crewText !== undefined ? data.shootDetails.crewText : 'Candid Photography\nCinematography\nPortable Changing Room').split('\n').map((s: string) => s.trim()).filter(Boolean)}
+                availableOptions={Array.from(new Set([
+                  ...availableRequirements,
+                  ...((data.shootDetails.crewText || '').split('\n').map((s: string) => s.trim()).filter(Boolean))
+                ])).filter(Boolean)}
+                selectedItems={(data.shootDetails.crewText || '').split('\n').map((s: string) => s.trim()).filter(Boolean)}
                 onChangeSelectedItems={(newSelected) => setData({ ...data, shootDetails: { ...data.shootDetails, crewText: newSelected.join('\n') } })}
                 onAddCustomOption={(newItem) => setAvailableRequirements(prev => Array.from(new Set([...prev, newItem])))}
                 onEditOption={(oldItem, newItem) => {
@@ -3360,61 +3363,23 @@ function StudioCoreAiryBuilderContent() {
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
                 availableOptions={Array.from(new Set([
-                  ...(data.deliverablesPage?.availableOptions || DEFAULT_AIRY_PROPOSAL.deliverablesPage.availableOptions),
-                  ...(data.deliverablesPage?.selectedItems || [])
+                  ...availableDeliverables,
+                  ...((data.shootDetails.deliverablesText || '').split('\n').map((s: string) => s.trim()).filter(Boolean))
                 ])).filter(Boolean)}
-                selectedItems={
-                  data.shootDetails.deliverablesText !== undefined
-                    ? (data.shootDetails.deliverablesText ? data.shootDetails.deliverablesText.split('\n').map((s: string) => s.trim()).filter(Boolean) : [])
-                    : ['Full Ultra HD Super-Fine Raw Photos', 'Approx. 50 High Resolution Edited Images', '3 Save The Dates Photos', '1 count Down Reel', '1 video Reel']
-                }
+                selectedItems={(data.shootDetails.deliverablesText || '').split('\n').map((s: string) => s.trim()).filter(Boolean)}
                 onChangeSelectedItems={(newSelectedArr) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: newSelectedArr.join('\n') } })}
-                onAddCustomOption={(newItem) => {
-                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
-                  const currentItems = currentObj.selectedItems || [];
-                  const currentOpts = currentObj.availableOptions || [];
-                  const updatedItems = currentItems.includes(newItem) ? currentItems : [...currentItems, newItem];
-                  const updatedOpts = currentOpts.includes(newItem) ? currentOpts : [...currentOpts, newItem];
-                  setData({
-                    ...data,
-                    deliverablesPage: {
-                      ...currentObj,
-                      selectedItems: updatedItems,
-                      availableOptions: updatedOpts
-                    }
-                  });
-                }}
+                onAddCustomOption={(newItem) => setAvailableDeliverables(prev => Array.from(new Set([...prev, newItem])))}
                 onEditOption={(oldItem, newItem) => {
-                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
-                  const currentItems = (currentObj.selectedItems || []).map((i: string) => i === oldItem ? newItem : i);
-                  const currentOpts = (currentObj.availableOptions || []).map((i: string) => i === oldItem ? newItem : i);
+                  setAvailableDeliverables(prev => prev.map(d => d === oldItem ? newItem : d));
                   const currentShootDeliv = (data.shootDetails.deliverablesText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
                   const updatedShootDeliv = currentShootDeliv.map(d => d === oldItem ? newItem : d);
-                  setData({
-                    ...data,
-                    shootDetails: { ...data.shootDetails, deliverablesText: updatedShootDeliv.join('\n') },
-                    deliverablesPage: {
-                      ...currentObj,
-                      selectedItems: currentItems,
-                      availableOptions: currentOpts
-                    }
-                  });
+                  setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: updatedShootDeliv.join('\n') } });
                 }}
                 onDeleteOption={(itemToDelete) => {
-                  const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
-                  const currentItems = (currentObj.selectedItems || []).filter((i: string) => i !== itemToDelete);
-                  const currentOpts = (currentObj.availableOptions || []).filter((i: string) => i !== itemToDelete);
+                  setAvailableDeliverables(prev => prev.filter(d => d !== itemToDelete));
                   const currentShootDeliv = (data.shootDetails.deliverablesText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
                   const updatedShootDeliv = currentShootDeliv.filter(d => d !== itemToDelete);
-                  setData({
-                    ...data,
-                    shootDetails: { ...data.shootDetails, deliverablesText: updatedShootDeliv.join('\n') },
-                    deliverablesPage: {
-                      ...currentObj,
-                      selectedItems: currentItems,
-                      availableOptions: currentOpts
-                    }
-                  });
+                  setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: updatedShootDeliv.join('\n') } });
                 }}
               />
 

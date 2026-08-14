@@ -3164,8 +3164,11 @@ function StudioCoreAiryBuilderContent() {
               {/* 3D Curved UI Multi-Select Dropdown: Requirements */}
               <ThreeDCurvedMultiSelect
                 title="Requirements"
-                availableOptions={availableRequirements}
-                selectedText={data.shootDetails.crewText !== undefined ? data.shootDetails.crewText : 'Candid Photography\nCinematography\nPortable Changing Room'}
+                availableOptions={Array.from(new Set([
+                  ...availableRequirements,
+                  ...((data.shootDetails.crewText || '').split('\n').map((s: string) => s.trim()).filter(Boolean))
+                ])).filter(Boolean)}
+                selectedText={data.shootDetails.crewText || ''}
                 onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, crewText: newText } })}
                 onAddCustomOption={(newItem) => setAvailableRequirements(prev => Array.from(new Set([...prev, newItem])))}
                 onEditOption={(oldItem, newItem) => {
@@ -3185,8 +3188,11 @@ function StudioCoreAiryBuilderContent() {
               {/* 3D Curved UI Multi-Select Dropdown: Deliverables */}
               <ThreeDCurvedMultiSelect
                 title="Deliverables"
-                availableOptions={availableDeliverables}
-                selectedText={data.shootDetails.deliverablesText !== undefined ? data.shootDetails.deliverablesText : 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 Countdown Reel\n1 Video Reel'}
+                availableOptions={Array.from(new Set([
+                  ...availableDeliverables,
+                  ...((data.shootDetails.deliverablesText || '').split('\n').map((s: string) => s.trim()).filter(Boolean))
+                ])).filter(Boolean)}
+                selectedText={data.shootDetails.deliverablesText || ''}
                 onChangeSelectedText={(newText) => setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: newText } })}
                 onAddCustomOption={(newItem) => setAvailableDeliverables(prev => Array.from(new Set([...prev, newItem])))}
                 onEditOption={(oldItem, newItem) => {
