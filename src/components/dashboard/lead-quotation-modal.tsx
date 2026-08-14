@@ -96,28 +96,44 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
-      const email = session?.user?.email || '';
       const currentUserId = session?.user?.id || '';
 
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (email) headers['x-user-email'] = email;
+      const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`);
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = text ? JSON.parse(text) : {};
+      } catch (_) {
+        json = {};
+      }
 
-      const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
-      const json = await res.json();
-      if (json.success && Array.isArray(json.templates)) {
+      if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
         setAvailableTemplates(json.templates);
         sessionStorage.setItem(cacheKey, JSON.stringify(json.templates));
 
-        // Pre-select the user's active default template (the one marked is_default === true on /workspace/quotations)
+        // Pre-select the user's active default template
         const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
         if (activeDefault) {
           setSelectedTemplateId(activeDefault.id);
         }
+      } else if (availableTemplates.length === 0) {
+        // Fallback standard templates
+        const defaultTemplates: StudioTemplateItem[] = [
+          { id: 'GLOBAL_DEFAULT', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' },
+          { id: 'GLOBAL_DARK', title: 'Wedding - Royal Heritage', is_default: false, category: 'Wedding' }
+        ];
+        setAvailableTemplates(defaultTemplates);
+        setSelectedTemplateId(defaultTemplates[0].id);
       }
     } catch (e) {
       console.warn('[LeadQuotationModal] Templates fetch warning:', e);
+      if (availableTemplates.length === 0) {
+        const defaultTemplates: StudioTemplateItem[] = [
+          { id: 'GLOBAL_DEFAULT', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
+        ];
+        setAvailableTemplates(defaultTemplates);
+        setSelectedTemplateId(defaultTemplates[0].id);
+      }
     }
   };
 
@@ -346,11 +362,11 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
 
   if (!isOpen || !lead) return null;
 
-  const currentSelectedTemplate = availableTemplates.find(t => t.id === selectedTemplateId) || availableTemplates[0] || {
-    id: 'DEFAULT',
-    title: 'Studio Default Template',
-    is_default: true
-  };
+  const fallbackTemplates: StudioTemplateItem[] = [
+    { id: 'GLOBAL_DEFAULT', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
+  ];
+  const effectiveTemplateList = availableTemplates.length > 0 ? availableTemplates : fallbackTemplates;
+  const currentSelectedTemplate = effectiveTemplateList.find(t => t.id === selectedTemplateId) || effectiveTemplateList[0];
 
   return (
     <>
@@ -576,63 +592,61 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
           </div>
 
           {/* TEMPLATE PICKER DROPDOWN BAR */}
-          {availableTemplates.length > 0 && (
-            <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-800/80 bg-amber-500/5 relative">
-              <div className="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                <span className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                  <LayoutTemplate className="w-3.5 h-3.5" /> Template to Use:
+          <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-800/80 bg-amber-500/5 relative">
+            <div className="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
+              <span className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <LayoutTemplate className="w-3.5 h-3.5" /> Template to Use:
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+                className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-amber-500 text-zinc-900 dark:text-white flex items-center gap-1.5 transition-all text-xs cursor-pointer"
+              >
+                <span className="truncate max-w-[170px] font-bold">
+                  {currentSelectedTemplate.title} {currentSelectedTemplate.is_default ? '(Default)' : ''}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setShowTemplateMenu(!showTemplateMenu)}
-                  className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-amber-500 text-zinc-900 dark:text-white flex items-center gap-1.5 transition-all text-xs"
-                >
-                  <span className="truncate max-w-[170px] font-bold">
-                    {currentSelectedTemplate.title} {currentSelectedTemplate.is_default ? '(Default)' : ''}
-                  </span>
-                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-                </button>
-              </div>
-
-              {/* Template Selection Dropdown Menu */}
-              {showTemplateMenu && (
-                <div className="absolute left-4 right-4 bottom-full mb-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-2xl shadow-2xl p-2 z-50 space-y-1 max-h-48 overflow-y-auto">
-                  <span className="text-[9px] uppercase font-black text-zinc-400 block px-2 mb-1">
-                    Select Studio Template to Fork:
-                  </span>
-                  {availableTemplates.map((tmpl, idx) => {
-                    const isSel = tmpl.id === selectedTemplateId;
-                    const tmplKey = tmpl.id || `tmpl_item_${idx}`;
-                    return (
-                      <button
-                        key={tmplKey}
-                        type="button"
-                        onClick={() => {
-                          setSelectedTemplateId(tmpl.id);
-                          setShowTemplateMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all ${
-                          isSel
-                            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black border border-amber-500/30'
-                            : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          <span className="truncate">{tmpl.title}</span>
-                        </div>
-                        {tmpl.is_default && (
-                          <span className="text-[9px] bg-amber-500/20 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-extrabold uppercase">
-                            Default
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+              </button>
             </div>
-          )}
+
+            {/* Template Selection Dropdown Menu */}
+            {showTemplateMenu && (
+              <div className="absolute left-4 right-4 bottom-full mb-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-2xl shadow-2xl p-2 z-50 space-y-1 max-h-48 overflow-y-auto">
+                <span className="text-[9px] uppercase font-black text-zinc-400 block px-2 mb-1">
+                  Select Studio Template to Fork:
+                </span>
+                {effectiveTemplateList.map((tmpl, idx) => {
+                  const isSel = tmpl.id === selectedTemplateId || (!selectedTemplateId && tmpl.is_default);
+                  const tmplKey = tmpl.id || `tmpl_item_${idx}`;
+                  return (
+                    <button
+                      key={tmplKey}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTemplateId(tmpl.id);
+                        setShowTemplateMenu(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
+                        isSel
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black border border-amber-500/30'
+                          : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="truncate">{tmpl.title}</span>
+                      </div>
+                      {tmpl.is_default && (
+                        <span className="text-[9px] bg-amber-500/20 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-extrabold uppercase">
+                          Default
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {/* Modal Footer Actions */}
           <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex items-center justify-between gap-2 shrink-0">

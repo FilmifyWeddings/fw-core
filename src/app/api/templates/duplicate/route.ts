@@ -28,32 +28,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'sourceTemplateId is required' }, { status: 400 });
     }
 
-    // 1. Fetch Source Template Metadata
-    const { data: sourceTmpl } = await supabaseAdmin
-      .from('quotation_templates')
-      .select('*')
-      .eq('id', sourceTemplateId)
-      .maybeSingle();
+    // 1. Fetch Source Template Metadata from quotation_templates or quotations
+    const [{ data: sourceTmpl }, { data: sourceLegacyQuote }] = await Promise.all([
+      supabaseAdmin
+        .from('quotation_templates')
+        .select('*')
+        .eq('id', sourceTemplateId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('quotations')
+        .select('*')
+        .or(`id.eq.${sourceTemplateId},quotation_number.eq.${sourceTemplateId}`)
+        .maybeSingle()
+    ]);
 
     // 2. Fetch Source Document JSON
     const { data: sourceDoc } = await supabaseAdmin
       .from('quotation_documents')
       .select('*')
-      .eq('template_id', sourceTemplateId)
+      .or(`template_id.eq.${sourceTemplateId},id.eq.${sourceTemplateId}`)
       .maybeSingle();
 
-    let docJson = sourceDoc?.document_json || sourceDoc?.content_json;
+    let docJson = sourceDoc?.document_json || sourceDoc?.content_json || sourceLegacyQuote?.content_json;
 
-    // Fallback for system template if document not found in DB
-    if (!docJson && (sourceTemplateId === GLOBAL_SYSTEM_TEMPLATE_ID || sourceTmpl?.is_system_template)) {
+    // Fallback if not found in DB
+    if (!docJson) {
       docJson = DEFAULT_AIRY_PROPOSAL;
     }
 
-    if (!docJson) {
-      return NextResponse.json({ error: 'Source template document content not found' }, { status: 404 });
-    }
-
-    const title = `${sourceTmpl?.title || docJson.designName || 'Quotation Template'} (Copy)`;
+    const title = `${sourceTmpl?.title || sourceLegacyQuote?.title || docJson.designName || 'Quotation Template'} (Copy)`;
 
     // Deep clone document JSON and generate fresh unique custom page IDs
     const clonedDoc = JSON.parse(JSON.stringify(docJson));
@@ -156,6 +159,21 @@ export async function POST(req: NextRequest) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
+
+    // Also sync to quotations table for full backwards compatibility
+    try {
+      await supabaseAdmin.from('quotations').insert({
+        quotation_number: newTemplateId,
+        workspace_id: workspaceId,
+        user_id: userId,
+        title,
+        client_name: clonedDoc?.cover?.coupleName || 'Rahul & Neha',
+        status: 'draft',
+        content_json: clonedDoc,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    } catch (_) {}
 
     return NextResponse.json({
       success: true,

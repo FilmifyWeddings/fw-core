@@ -26,6 +26,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: '3000',
+        NODE_OPTIONS: '--max-http-header-size=65536'
       },
       error_file: 'logs/fw-core-error.log',
       out_file: 'logs/fw-core-out.log',

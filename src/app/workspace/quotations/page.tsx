@@ -143,6 +143,11 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const [mounted, setMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Dynamic Data States
   const [quotations, setQuotations] = useState<SavedQuotation[]>([]);
@@ -885,8 +890,8 @@ export default function WorkspaceQuotationsGalleryPage() {
 
           <div>
             <span className="text-xs font-bold text-pink-900/70 dark:text-pink-300">Your Images</span>
-            <h4 className="text-xl sm:text-2xl font-black text-pink-950 dark:text-white mt-0.5">
-              {userImages.length} <span className="text-xs sm:text-sm font-normal text-pink-700/60 dark:text-pink-400">/ 10 Images</span>
+            <h4 className="text-xl sm:text-2xl font-black text-pink-950 dark:text-white mt-0.5" suppressHydrationWarning>
+              {mounted ? userImages.length : 0} <span className="text-xs sm:text-sm font-normal text-pink-700/60 dark:text-pink-400">/ 10 Images</span>
             </h4>
           </div>
 
@@ -894,7 +899,7 @@ export default function WorkspaceQuotationsGalleryPage() {
             <div className="h-2 w-full bg-pink-200/70 dark:bg-pink-950 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-pink-500 rounded-full transition-all duration-500" 
-                style={{ width: `${Math.min(100, (userImages.length / 10) * 100)}%` }}
+                style={{ width: `${Math.min(100, ((mounted ? userImages.length : 0) / 10) * 100)}%` }}
               />
             </div>
           </div>
@@ -903,7 +908,7 @@ export default function WorkspaceQuotationsGalleryPage() {
             onClick={() => setShowGalleryModal(true)}
             className="pt-2 border-t border-pink-200/60 dark:border-pink-900/50 flex items-center justify-between text-xs font-bold text-pink-950 dark:text-pink-200 cursor-pointer hover:text-pink-600"
           >
-            <span>Open Image Gallery ({userImages.length})</span>
+            <span suppressHydrationWarning>Open Image Gallery ({mounted ? userImages.length : 0})</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </div>
         </motion.div>
