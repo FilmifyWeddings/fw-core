@@ -231,7 +231,7 @@ export function CRMDropdown({
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
             style={{ minWidth: isFullWidth ? '100%' : `${fixedWidthPx}px` }}
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 max-h-64 overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1A1816] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-xl text-xs font-sans space-y-0.5"
+            className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 max-h-64 overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1A1816] border border-slate-200 dark:border-zinc-800 p-1.5 shadow-2xl text-xs font-sans space-y-0.5"
           >
             {sortedOptions.map(opt => {
               const isSelected = opt.value === value || opt.label === value;

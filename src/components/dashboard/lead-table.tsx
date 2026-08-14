@@ -1775,12 +1775,13 @@ export function LeadTable({
               {/* Calendar Range Picker Trigger Button */}
               <div className="relative shrink-0">
                 <button
+                  type="button"
                   onClick={() => {
                     setShowDatePickerModal(!showDatePickerModal);
                     setTempStartDate(startDate);
                     setTempEndDate(endDate);
                   }}
-                  className={`p-2 sm:p-2.5 rounded-xl border transition-all flex items-center justify-center relative shadow-xs hover:scale-105 ${
+                  className={`p-2 sm:p-2.5 rounded-xl border transition-all flex items-center justify-center relative shadow-xs hover:scale-105 cursor-pointer ${
                     startDate || endDate
                       ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]'
                       : 'bg-white hover:bg-slate-50 dark:bg-[#121110] dark:hover:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400'
@@ -1793,149 +1794,170 @@ export function LeadTable({
                   )}
                 </button>
 
-                {/* Custom 3D Advanced Date Range Picker Modal */}
+                {/* Custom Centered Date Range Picker Modal with Backdrop */}
                 {showDatePickerModal && (
-                  <div className="absolute left-0 mt-2 z-50 w-[300px] bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.15)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)] flex flex-col gap-3 transition-all select-none">
-                    {/* Calendar Header: Month Selector */}
-                    <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2.5">
-                      <button 
-                        onClick={() => {
-                          if (calMonth === 0) {
-                            setCalMonth(11);
-                            setCalYear(calYear - 1);
-                          } else {
-                            setCalMonth(calMonth - 1);
-                          }
-                        }}
-                        className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                      </button>
-                      <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
-                        {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][calMonth]} {calYear}
-                      </span>
-                      <button 
-                        onClick={() => {
-                          if (calMonth === 11) {
-                            setCalMonth(0);
-                            setCalYear(calYear + 1);
-                          } else {
-                            setCalMonth(calMonth + 1);
-                          }
-                        }}
-                        className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors"
-                      >
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </div>
+                  <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+                    <div 
+                      className="w-full max-w-[320px] bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 rounded-3xl shadow-2xl flex flex-col gap-3 transition-all animate-in fade-in zoom-in-95 duration-150"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {/* Calendar Header: Month Selector & Close Button */}
+                      <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (calMonth === 0) {
+                                setCalMonth(11);
+                                setCalYear(calYear - 1);
+                              } else {
+                                setCalMonth(calMonth - 1);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors cursor-pointer"
+                          >
+                            <ArrowLeft className="w-4 h-4" />
+                          </button>
+                          <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
+                            {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][calMonth]} {calYear}
+                          </span>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (calMonth === 11) {
+                                setCalMonth(0);
+                                setCalYear(calYear + 1);
+                              } else {
+                                setCalMonth(calMonth + 1);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-350 transition-colors cursor-pointer"
+                          >
+                            <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
 
-                    {/* Days of Week Row */}
-                    <div className="grid grid-cols-7 gap-1 text-center">
-                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
-                        <span key={d} className="text-[10px] font-bold text-zinc-400 dark:text-zinc-555 uppercase">
-                          {d}
-                        </span>
-                      ))}
-                    </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowDatePickerModal(false)}
+                          className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
 
-                    {/* Days Grid */}
-                    <div className="grid grid-cols-7 gap-1 text-center">
-                      {(() => {
-                        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-                        const firstDayIdx = new Date(calYear, calMonth, 1).getDay();
-                        const cells = [];
-                        
-                        for (let i = 0; i < firstDayIdx; i++) {
-                          cells.push(<div key={`empty-${i}`} className="w-8 h-8" />);
-                        }
-                        
-                        for (let d = 1; d <= daysInMonth; d++) {
-                          const curDateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                          const isSelectedStart = tempStartDate === curDateStr;
-                          const isSelectedEnd = tempEndDate === curDateStr;
-                          const isInRange = tempStartDate && tempEndDate && curDateStr > tempStartDate && curDateStr < tempEndDate;
+                      {/* Days of Week Row */}
+                      <div className="grid grid-cols-7 gap-1 text-center">
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                          <span key={d} className="text-[10px] font-bold text-zinc-400 dark:text-zinc-555 uppercase">
+                            {d}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Days Grid */}
+                      <div className="grid grid-cols-7 gap-1 text-center">
+                        {(() => {
+                          const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+                          const firstDayIdx = new Date(calYear, calMonth, 1).getDay();
+                          const cells = [];
                           
-                          cells.push(
-                            <button
-                              key={d}
-                              onClick={() => {
-                                if (!tempStartDate || (tempStartDate && tempEndDate)) {
-                                  setTempStartDate(curDateStr);
-                                  setTempEndDate('');
-                                } else {
-                                  if (curDateStr < tempStartDate) {
+                          for (let i = 0; i < firstDayIdx; i++) {
+                            cells.push(<div key={`empty-${i}`} className="w-8 h-8" />);
+                          }
+                          
+                          for (let d = 1; d <= daysInMonth; d++) {
+                            const curDateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                            const isSelectedStart = tempStartDate === curDateStr;
+                            const isSelectedEnd = tempEndDate === curDateStr;
+                            const isInRange = tempStartDate && tempEndDate && curDateStr > tempStartDate && curDateStr < tempEndDate;
+                            
+                            cells.push(
+                              <button
+                                key={d}
+                                type="button"
+                                onClick={() => {
+                                  if (!tempStartDate || (tempStartDate && tempEndDate)) {
                                     setTempStartDate(curDateStr);
+                                    setTempEndDate('');
                                   } else {
-                                    setTempEndDate(curDateStr);
+                                    if (curDateStr < tempStartDate) {
+                                      setTempStartDate(curDateStr);
+                                    } else {
+                                      setTempEndDate(curDateStr);
+                                    }
                                   }
-                                }
-                              }}
-                              className={`w-8 h-8 text-[11px] font-bold rounded-lg flex items-center justify-center transition-all ${
-                                isSelectedStart || isSelectedEnd
-                                  ? 'bg-[#D4AF37] text-white rounded-full font-black shadow-md'
-                                  : isInRange
-                                    ? 'bg-[#D4AF37]/15 text-[#D4AF37]'
-                                    : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                              }`}
-                            >
-                              {d}
-                            </button>
-                          );
-                        }
-                        return cells;
-                      })()}
-                    </div>
+                                }}
+                                className={`w-8 h-8 text-[11px] font-bold rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                                  isSelectedStart || isSelectedEnd
+                                    ? 'bg-[#D4AF37] text-white rounded-full font-black shadow-md'
+                                    : isInRange
+                                      ? 'bg-[#D4AF37]/15 text-[#D4AF37]'
+                                      : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                                }`}
+                              >
+                                {d}
+                              </button>
+                            );
+                          }
+                          return cells;
+                        })()}
+                      </div>
 
-                    {/* Date Boxes Preview */}
-                    <div className="grid grid-cols-2 gap-2 text-left pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
-                      <div>
-                        <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">Start Date</span>
-                        <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
-                          {tempStartDate ? new Date(tempStartDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
+                      {/* Date Boxes Preview */}
+                      <div className="grid grid-cols-2 gap-2 text-left pt-2 border-t border-[#E8E5DF] dark:border-[#2C2926]">
+                        <div>
+                          <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">Start Date</span>
+                          <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
+                            {tempStartDate ? new Date(tempStartDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">End Date</span>
+                          <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
+                            {tempEndDate ? new Date(tempEndDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
+                          </div>
                         </div>
                       </div>
-                      <div>
-                        <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">End Date</span>
-                        <div className="bg-[#FAF8F5]/80 dark:bg-[#121110]/80 border border-[#E8E5DF] dark:border-[#2C2926] p-1.5 rounded-lg text-[10px] font-semibold text-slate-800 dark:text-zinc-300">
-                          {tempEndDate ? new Date(tempEndDate).toLocaleDateString('en-IN') : 'dd-mm-yyyy'}
-                        </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 justify-end pt-2 text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStartDate('');
+                            setEndDate('');
+                            setTempStartDate('');
+                            setTempEndDate('');
+                            setShowDatePickerModal(false);
+                          }}
+                          className="px-3 py-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Clear Filter
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStartDate(tempStartDate);
+                            setEndDate(tempEndDate);
+                            setShowDatePickerModal(false);
+                          }}
+                          className="px-3.5 py-1.5 bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-white rounded-lg transition-colors shadow-sm cursor-pointer font-bold"
+                        >
+                          Apply Filter
+                        </button>
                       </div>
-                    </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 justify-end pt-2 text-[10px] font-bold">
-                      <button
-                        onClick={() => {
-                          setStartDate('');
-                          setEndDate('');
-                          setTempStartDate('');
-                          setTempEndDate('');
-                          setShowDatePickerModal(false);
-                        }}
-                        className="px-3 py-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                      >
-                        Clear Filter
-                      </button>
-                      <button
-                        onClick={() => {
-                          setStartDate(tempStartDate);
-                          setEndDate(tempEndDate);
-                          setShowDatePickerModal(false);
-                        }}
-                        className="px-3 py-1.5 bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-white rounded-lg transition-colors shadow-sm"
-                      >
-                        Apply Filter
-                      </button>
                     </div>
-
                   </div>
                 )}
               </div>
 
               {/* MOBILE ONLY: Single Filters Toggle Button */}
               <button
+                type="button"
                 onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
-                className={`md:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shrink-0 ${
+                className={`md:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shrink-0 cursor-pointer ${
                   mobileFilterOpen || statusFilter !== 'all' || sourceFilter !== 'all' || ownerFilter !== 'all'
                     ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] dark:text-[#C5A059]'
                     : 'bg-white dark:bg-[#121110] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-600 dark:text-zinc-300'
@@ -1951,54 +1973,13 @@ export function LeadTable({
 
               {/* MOBILE ONLY: Quick Add Lead Button */}
               <button
+                type="button"
                 onClick={() => setCreateModalOpen(true)}
-                className="md:hidden shrink-0 px-3 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-xl transition-all shadow-xs flex items-center gap-1"
+                className="md:hidden shrink-0 px-3.5 py-2 text-xs bg-gradient-to-r from-[#D4AF37] to-[#C5A059] text-white font-extrabold rounded-xl transition-all shadow-xs flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[3]" />
                 <span>Add</span>
               </button>
-            </div>
-
-            {/* MOBILE ONLY: Filter by Stage Horizontal Scrollable Pills (Matching Image 2) */}
-            <div className="block md:hidden w-full pt-2 pb-1 border-t border-slate-100 dark:border-zinc-800/80">
-              <div className="flex items-center justify-between px-1 mb-1.5">
-                <span className="text-xs font-bold text-slate-900 dark:text-white">Filter by stage</span>
-                <span className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500">
-                  {filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
-                {/* All Pill */}
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-3.5 py-1 rounded-full text-xs font-bold shrink-0 transition-all ${
-                    statusFilter === 'all'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-slate-100 dark:bg-zinc-850 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  All
-                </button>
-                {/* Dynamic Stage Pills */}
-                {stagesState.map((stage) => {
-                  const isActive = statusFilter === stage.id || statusFilter === stage.name;
-                  return (
-                    <button
-                      key={stage.id}
-                      type="button"
-                      onClick={() => setStatusFilter(isActive ? 'all' : stage.id)}
-                      className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition-all border ${
-                        isActive
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : 'bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
-                      }`}
-                    >
-                      {stage.name}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
 
             {/* Filters Panel (Collapsible on Mobile, Full row on Desktop) */}
@@ -2280,37 +2261,21 @@ export function LeadTable({
               return styles[sum % styles.length];
             };
 
-            const formatTimeAgo = (dateStr?: string | null) => {
+            const formatProperDate = (dateStr?: string | null) => {
               if (!dateStr) return 'Recent';
               try {
                 const d = new Date(dateStr);
-                const now = new Date();
-                const diffMs = now.getTime() - d.getTime();
-                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                if (diffDays === 0) {
-                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                  if (diffHours <= 0) return 'Today';
-                  return `${diffHours}h ago`;
-                }
-                if (diffDays === 1) return '1 Day ago';
-                if (diffDays < 30) return `${diffDays} Days ago`;
-                return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                return d.toLocaleDateString('en-IN', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true
+                });
               } catch (_) {
                 return 'Recent';
               }
-            };
-
-            const getSubtitle = (l: Lead) => {
-              if (l.raw_payload?.groom_name && l.raw_payload?.bride_name) {
-                return `${l.raw_payload.groom_name} & ${l.raw_payload.bride_name}`;
-              }
-              if (l.raw_payload?.groom_name) return l.raw_payload.groom_name;
-              if (l.raw_payload?.bride_name) return l.raw_payload.bride_name;
-              if (l.raw_payload?.company) return l.raw_payload.company;
-              if (l.raw_payload?.event_type) return l.raw_payload.event_type;
-              if (l.raw_payload?.form_name) return l.raw_payload.form_name;
-              if (l.source) return l.source;
-              return 'Wedding Client';
             };
 
             const getBudgetValue = (l: Lead) => {
@@ -2330,32 +2295,45 @@ export function LeadTable({
             return (
               <div 
                 key={lead.id}
-                className={`bg-white dark:bg-[#141312] border border-slate-200/90 dark:border-zinc-800 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all space-y-3 relative overflow-hidden ${
+                className={`bg-white dark:bg-[#141312] border border-slate-200/90 dark:border-zinc-800 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all space-y-3 relative z-10 focus-within:z-40 hover:z-30 ${
                   isSelected ? 'ring-2 ring-[#D4AF37]' : ''
                 }`}
               >
-                {/* 1. TOP ROW: Avatar + Name & Subtitle + Open Arrow ↗ (Image 2 Style) */}
-                <div className="flex items-center justify-between gap-3">
+                {/* 1. TOP ROW: Avatar + Name + Mobile & Email directly below name (No Form Name) + Open Arrow ↗ */}
+                <div className="flex items-start justify-between gap-3">
                   <div 
-                    className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer select-none"
+                    className="flex items-start gap-3 min-w-0 flex-1 cursor-pointer select-none"
                     onClick={() => {
                       setSelectedLead(lead);
                       setDrawerMode('full');
                     }}
                   >
                     {/* Avatar Circle with initials */}
-                    <div className={`w-11 h-11 rounded-full ${avStyle.bg} ${avStyle.border} ${avStyle.text} border flex items-center justify-center font-extrabold text-sm shrink-0 shadow-2xs tracking-wider`}>
+                    <div className={`w-11 h-11 rounded-full ${avStyle.bg} ${avStyle.border} ${avStyle.text} border flex items-center justify-center font-extrabold text-sm shrink-0 shadow-2xs tracking-wider mt-0.5`}>
                       {initials}
                     </div>
 
-                    {/* Name & Subtitle */}
+                    {/* Name & Contact Info (Mobile + Email right below Name, NO Form Name) */}
                     <div className="min-w-0 flex-1">
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white leading-tight truncate">
+                      <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight truncate">
                         {lead.name || 'Unspecified Lead'}
                       </h4>
-                      <p className="text-xs text-slate-400 dark:text-zinc-400 font-medium truncate mt-0.5">
-                        {getSubtitle(lead)}
-                      </p>
+
+                      {/* Mobile Phone & Email directly under Name */}
+                      <div className="flex flex-col gap-0.5 mt-1 text-[11px] font-mono">
+                        {lead.phone && (
+                          <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-zinc-300">
+                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{lead.phone}</span>
+                          </div>
+                        )}
+                        {lead.email && (
+                          <div className="flex items-center gap-1.5 text-slate-500 dark:text-zinc-400 text-[10px]">
+                            <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{lead.email}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -2366,44 +2344,32 @@ export function LeadTable({
                       setSelectedLead(lead);
                       setDrawerMode('full');
                     }}
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors shrink-0 cursor-pointer mt-0.5"
                     title="Open Details"
                   >
                     <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
                   </button>
                 </div>
 
-                {/* 2. MIDDLE 2x2 METADATA GRID WITH ICONS (Image 2 Style) */}
-                <div className="grid grid-cols-2 gap-y-2 gap-x-3 pt-1 text-xs">
-                  {/* Email */}
-                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-mono text-slate-500 dark:text-zinc-400 truncate">
-                    <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{lead.email || 'No email'}</span>
-                  </div>
-
-                  {/* Created Date / Time ago */}
-                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-mono text-slate-500 dark:text-zinc-400 truncate">
+                {/* 2. MIDDLE ROW: Proper Lead Arrival Date & Lead Owner */}
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-zinc-850 text-xs">
+                  {/* Proper Creation Date & Time */}
+                  <div className="flex items-center gap-1.5 min-w-0 text-[10.5px] font-mono text-slate-500 dark:text-zinc-400 truncate">
                     <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{formatTimeAgo(lead.created_at)}</span>
+                    <span className="truncate">{formatProperDate(lead.created_at)}</span>
                   </div>
 
-                  {/* Phone */}
-                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-mono font-bold text-slate-600 dark:text-zinc-300 truncate">
-                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{lead.phone || 'No phone'}</span>
-                  </div>
-
-                  {/* Lead Owner / Score */}
-                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                  {/* Lead Owner */}
+                  <div className="flex items-center gap-1.5 min-w-0 text-[10.5px] text-slate-500 dark:text-zinc-400 truncate justify-end">
                     <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span className="truncate font-medium">{currentAssignedOwner}</span>
                   </div>
                 </div>
 
-                {/* 3. BOTTOM ROW: Status Pill Dropdown (Left) + Deal Value & Action Icons (Right) */}
+                {/* 3. BOTTOM ROW: Status Pill Dropdown (Left) + Deal Value & 4 Action Icons (Right) */}
                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
                   {/* Status Dropdown Pill */}
-                  <div className="min-w-0 flex-1 max-w-[145px]">
+                  <div className="min-w-0 flex-1 max-w-[130px]">
                     <CRMDropdown
                       value={lead.stage_id || lead.status}
                       placeholder="Select status"
@@ -2448,22 +2414,24 @@ export function LeadTable({
                     />
                   </div>
 
-                  {/* Right: Deal Budget / Quotation & Quick Action Icons */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm font-extrabold text-slate-900 dark:text-white font-mono">
+                  {/* Right: Deal Budget & 4 Action Icons (WhatsApp, Call, Comment, Quotation) */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white font-mono mr-0.5">
                       {getBudgetValue(lead)}
                     </span>
 
-                    {/* WhatsApp Quick Icon */}
+                    {/* Real WhatsApp Icon */}
                     {cleanPhone && (
                       <a
                         href={`https://wa.me/${cleanPhone}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-8 h-8 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs"
-                        title="Send WhatsApp"
+                        className="w-7.5 h-7.5 rounded-full bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#25D366] flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
+                        title="Send WhatsApp Message"
                       >
-                        <MessageCircle className="w-4 h-4" />
+                        <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                          <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.63C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2ZM12.05 20.16C10.57 20.16 9.12 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.98 3.8 13.47 3.8 11.91C3.8 7.37 7.5 3.67 12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.16 12.05 20.16ZM16.57 14.33C16.32 14.2 15.1 13.6 14.88 13.52C14.65 13.43 14.49 13.39 14.32 13.64C14.16 13.88 13.68 14.46 13.54 14.62C13.39 14.79 13.25 14.81 13 14.68C12.75 14.56 11.95 14.29 11 13.45C10.26 12.79 9.76 11.98 9.61 11.73C9.47 11.49 9.6 11.35 9.72 11.23C9.83 11.12 9.97 10.94 10.1 10.8C10.22 10.65 10.26 10.55 10.35 10.38C10.43 10.22 10.39 10.07 10.33 9.95C10.26 9.82 9.77 8.63 9.57 8.13C9.37 7.65 9.17 7.72 9.02 7.71C8.88 7.7 8.71 7.7 8.55 7.7C8.38 7.7 8.11 7.76 7.89 8.01C7.66 8.25 7.03 8.84 7.03 10.05C7.03 11.26 7.91 12.43 8.03 12.59C8.16 12.76 9.76 15.22 12.21 16.28C12.79 16.53 13.25 16.68 13.6 16.79C14.19 16.98 14.73 16.95 15.15 16.89C15.63 16.82 16.62 16.29 16.82 15.71C17.03 15.14 17.03 14.64 16.97 14.54C16.9 14.44 16.82 14.45 16.57 14.33Z" />
+                        </svg>
                       </a>
                     )}
 
@@ -2471,21 +2439,34 @@ export function LeadTable({
                     {lead.phone && (
                       <a
                         href={`tel:${lead.phone}`}
-                        className="w-8 h-8 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs"
+                        className="w-7.5 h-7.5 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
                         title="Call Lead"
                       >
-                        <Phone className="w-4 h-4" />
+                        <Phone className="w-3.5 h-3.5" />
                       </a>
                     )}
+
+                    {/* Comment Quick Icon */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedLead(lead);
+                        setDrawerMode('comments');
+                      }}
+                      className="w-7.5 h-7.5 rounded-full bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
+                      title="Comments & Notes"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </button>
 
                     {/* Quotation Quick Icon */}
                     <button
                       type="button"
                       onClick={() => setQuotationModalLead(lead)}
-                      className="w-8 h-8 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
+                      className="w-7.5 h-7.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
                       title="Quotation"
                     >
-                      <FileText className="w-4 h-4" />
+                      <FileText className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>

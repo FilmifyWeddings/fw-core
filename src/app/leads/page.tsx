@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Database, RefreshCw, Settings, Bell, Check, ArrowLeft, Globe } from 'lucide-react';
+import { Database, RefreshCw, Settings, Bell, Check, ArrowLeft, Globe, X } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadTable } from '@/components/dashboard/lead-table';
@@ -902,85 +902,108 @@ export default function LeadsPage() {
                       )}
                     </button>
 
-                    {/* Notifications Dropdown Panel (Premium 3D Popover style) */}
+                    {/* Centered Notifications Modal Popup with Backdrop */}
                     {showNotifications && (
-                      <div className="absolute right-0 mt-3.5 w-80 max-h-96 overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl space-y-3 text-slate-800 dark:text-zinc-200 select-none">
-                        <div className="flex items-center justify-between border-b border-[#E8E5DF] dark:border-[#2C2926] pb-2">
-                          <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
-                            <Bell className="w-4 h-4 text-[#D4AF37]" />
-                            Reminder Alerts
-                          </span>
-                          {notifications.length > 0 && (
-                            <button
-                              onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
-                              className="text-[9px] font-bold uppercase tracking-wider text-[#D4AF37] hover:underline"
-                            >
-                              Mark all as read
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                          {notifications.length === 0 ? (
-                            <div className="text-center py-8 text-xs text-slate-400 italic">
-                              No active reminders triggered yet.
-                            </div>
-                          ) : (
-                            notifications.map(n => (
-                              <div
-                                key={n.id}
-                                className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-2.5 hover:translate-x-0.5 ${
-                                  n.read 
-                                    ? 'bg-slate-50/50 dark:bg-zinc-900/20 border-slate-200/50 dark:border-zinc-900/60' 
-                                    : 'bg-[#D4AF37]/5 dark:bg-[#C5A059]/5 border-[#D4AF37]/20 dark:border-[#C5A059]/20 shadow-xs'
-                                }`}
-                              >
-                                {/* Clickable Area to Open Workspace Drawer */}
-                                <div
-                                  onClick={() => {
-                                    setNotifications(prev => prev.map(notif => notif.id === n.id ? { ...notif, read: true } : notif));
-                                    setShowNotifications(false);
-                                    setActiveLeadId(n.leadId);
-                                  }}
-                                  className="flex-1 min-w-0 text-left cursor-pointer"
-                                >
-                                  <div className="flex items-start gap-1.5 min-w-0">
-                                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${n.read ? 'bg-zinc-300 dark:bg-zinc-700' : 'bg-rose-500 animate-ping'}`} />
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center justify-between gap-1">
-                                        <span className="text-[9px] font-bold text-slate-500 dark:text-zinc-400 shrink-0">
-                                          {new Date(n.time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} {new Date(n.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                                        </span>
-                                      </div>
-                                      <div className="text-xs leading-normal mt-1 break-words whitespace-normal font-sans">
-                                        <span className="font-extrabold text-[#D4AF37] dark:text-[#C5A059] mr-1.5">{n.leadName}:</span>
-                                        <span className="text-slate-900 dark:text-white font-bold">{n.text}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Complete & Hide Button */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setNotifications(prev => prev.filter(notif => notif.id !== n.id));
-                                    const newNotified = [...notifiedCommentIds];
-                                    if (!newNotified.includes(n.id)) {
-                                      newNotified.push(n.id);
-                                      setNotifiedCommentIds(newNotified);
-                                      localStorage.setItem('leads_notified_comment_ids', JSON.stringify(newNotified));
-                                    }
-                                  }}
-                                  className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg shrink-0 transition-all flex items-center gap-1 border border-emerald-200 dark:border-emerald-900/50 bg-emerald-500/5 font-medium"
-                                  title="Complete & Hide"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span className="text-[9px] font-bold tracking-wider font-sans">Complete</span>
-                                </button>
+                      <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+                        <div 
+                          className="w-full max-w-md max-h-[85vh] overflow-hidden rounded-3xl bg-white dark:bg-[#1C1A18] border border-slate-200 dark:border-zinc-800 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-150"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center">
+                                <Bell className="w-4 h-4" />
                               </div>
-                            ))
-                          )}
+                              <div>
+                                <span className="text-sm font-extrabold text-slate-900 dark:text-white block">
+                                  Reminder Alerts
+                                </span>
+                                <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-medium">
+                                  {notifications.filter(n => !n.read).length} unread alerts
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {notifications.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                                  className="text-[10px] font-bold text-[#D4AF37] hover:underline px-2 py-1 cursor-pointer"
+                                >
+                                  Mark all read
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setShowNotifications(false)}
+                                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="p-4 overflow-y-auto space-y-2.5 max-h-[60vh]">
+                            {notifications.length === 0 ? (
+                              <div className="text-center py-10 text-xs text-slate-400">
+                                <Bell className="w-8 h-8 mx-auto text-slate-300 dark:text-zinc-700 mb-2 opacity-50" />
+                                No active reminders triggered yet.
+                              </div>
+                            ) : (
+                              notifications.map(n => (
+                                <div
+                                  key={n.id}
+                                  className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                                    n.read 
+                                      ? 'bg-slate-50 dark:bg-zinc-900/40 border-slate-200/60 dark:border-zinc-850' 
+                                      : 'bg-[#D4AF37]/5 dark:bg-[#C5A059]/5 border-[#D4AF37]/30 dark:border-[#C5A059]/30 shadow-xs'
+                                  }`}
+                                >
+                                  {/* Clickable Area to Open Workspace Drawer */}
+                                  <div
+                                    onClick={() => {
+                                      setNotifications(prev => prev.map(notif => notif.id === n.id ? { ...notif, read: true } : notif));
+                                      setShowNotifications(false);
+                                      setActiveLeadId(n.leadId);
+                                    }}
+                                    className="flex-1 min-w-0 text-left cursor-pointer"
+                                  >
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                      <span className="text-xs font-bold text-[#D4AF37] dark:text-[#C5A059] truncate">
+                                        {n.leadName}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
+                                        {new Date(n.time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} {new Date(n.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-800 dark:text-zinc-200 font-medium line-clamp-2">
+                                      {n.text}
+                                    </p>
+                                  </div>
+
+                                  {/* Complete & Hide Button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setNotifications(prev => prev.filter(notif => notif.id !== n.id));
+                                      const newNotified = [...notifiedCommentIds];
+                                      if (!newNotified.includes(n.id)) {
+                                        newNotified.push(n.id);
+                                        setNotifiedCommentIds(newNotified);
+                                        localStorage.setItem('leads_notified_comment_ids', JSON.stringify(newNotified));
+                                      }
+                                    }}
+                                    className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl shrink-0 transition-all border border-emerald-200 dark:border-emerald-900/50 bg-emerald-500/10 cursor-pointer"
+                                    title="Complete & Hide"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
