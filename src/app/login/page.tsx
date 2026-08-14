@@ -16,10 +16,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Staging environment checks (only active on staging domain e.g. staging.studiocore.in)
+  // Staging environment checks (only active on staging/test domain e.g. test.studiocore.in)
   const allowedStagingEmailsRaw = process.env.NEXT_PUBLIC_ALLOWED_STAGING_EMAILS || '';
   const isStagingDomain = typeof window !== 'undefined' && (
     window.location.hostname.includes('staging') ||
+    window.location.hostname.includes('test') ||
     process.env.NEXT_PUBLIC_IS_STAGING === 'true'
   );
   const isStagingRestricted = isStagingDomain && allowedStagingEmailsRaw.trim().length > 0;

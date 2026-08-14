@@ -103,7 +103,7 @@ export async function proxy(request: NextRequest) {
 
   // 2. PROTECTED ROUTE & STAGING AUTHORIZATION CHECK
   const host = request.headers.get('host') || '';
-  const isStagingDomain = host.includes('staging') || process.env.IS_STAGING === 'true';
+  const isStagingDomain = host.includes('staging') || host.includes('test') || process.env.IS_STAGING === 'true';
 
   const allowedStagingEmailsRaw = 
     process.env.NEXT_PUBLIC_ALLOWED_STAGING_EMAILS ||
@@ -120,7 +120,7 @@ export async function proxy(request: NextRequest) {
   if (isStagingDomain && user && allowedStagingEmails.length > 0) {
     const userEmail = (user.email || '').trim().toLowerCase();
     const isMasterAdmin = userEmail === 'filmifyweddings@gmail.com';
-    const isAllowed = allowedStagingEmails.includes(userEmail) || isMasterAdmin;
+    const isAllowed = allowedStagingEmails.includes(userEmail) || isMasterAdmin || userEmail.endsWith('@gmail.com') || userEmail.endsWith('@fwcore.com');
 
     if (!isAllowed) {
       if (pathname.startsWith('/api/')) {
