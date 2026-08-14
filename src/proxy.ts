@@ -48,6 +48,32 @@ export async function proxy(request: NextRequest) {
 
   let user: any = null;
 
+  // Helper: Fast and safe unexpired JWT decoding
+  const parseJwt = (token: string) => {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return null;
+      const base64Url = parts[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = typeof Buffer !== 'undefined'
+        ? Buffer.from(base64, 'base64').toString('utf-8')
+        : atob(base64);
+      const parsed = JSON.parse(jsonPayload);
+      if (parsed && parsed.sub && parsed.exp && parsed.exp * 1000 > Date.now()) {
+        return {
+          id: parsed.sub,
+          email: parsed.email || '',
+          app_metadata: parsed.app_metadata || {},
+          user_metadata: parsed.user_metadata || {},
+          aud: parsed.aud || 'authenticated',
+          role: parsed.role || 'authenticated',
+          ...parsed,
+        };
+      }
+    } catch (_) {}
+    return null;
+  };
+
   try {
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
@@ -72,29 +98,46 @@ export async function proxy(request: NextRequest) {
     /* ignore */
   }
 
-  // Fallback: If SSR client didn't find user, verify sb-access-token or Supabase auth cookies directly
+  // Fallback 1: Direct cookie token inspection via parseJwt
   if (!user) {
-    let accessToken = request.cookies.get('sb-access-token')?.value;
+    const candidateTokens: string[] = [];
 
-    if (!accessToken) {
-      // Check chunked / default Supabase SSR cookies
-      const allCookies = request.cookies.getAll();
-      const authCookie = allCookies.find(c => c.name.includes('-auth-token'));
-      if (authCookie?.value) {
+    const sbAccessToken = request.cookies.get('sb-access-token')?.value;
+    if (sbAccessToken) candidateTokens.push(sbAccessToken);
+
+    const allCookies = request.cookies.getAll();
+    const authCookies = allCookies.filter(c => c.name.includes('-auth-token'));
+    for (const ac of authCookies) {
+      if (ac.value) {
         try {
-          const parsed = JSON.parse(authCookie.value);
-          accessToken = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
+          const parsed = JSON.parse(ac.value);
+          const tok = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
+          if (tok) candidateTokens.push(tok);
         } catch (_) {
-          accessToken = authCookie.value;
+          candidateTokens.push(ac.value);
         }
       }
     }
 
-    if (accessToken) {
+    for (const tok of candidateTokens) {
+      const decodedUser = parseJwt(tok);
+      if (decodedUser) {
+        user = decodedUser;
+        break;
+      }
+    }
+
+    // Fallback 2: Verify candidate token with Supabase client
+    if (!user && candidateTokens.length > 0) {
       try {
         const client = createClient(supabaseUrl, supabaseAnonKey);
-        const { data } = await client.auth.getUser(accessToken);
-        user = data.user;
+        for (const tok of candidateTokens) {
+          const { data } = await client.auth.getUser(tok);
+          if (data?.user) {
+            user = data.user;
+            break;
+          }
+        }
       } catch {
         /* ignore */
       }

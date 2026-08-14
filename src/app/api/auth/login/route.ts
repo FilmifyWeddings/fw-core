@@ -39,6 +39,14 @@ export async function POST(req: NextRequest) {
         id: session.user.id,
         email: session.user.email,
       },
+      session: {
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at,
+        expires_in: session.expires_in,
+        token_type: session.token_type,
+        user: session.user,
+      },
       redirectUrl: '/workspace',
     });
 
