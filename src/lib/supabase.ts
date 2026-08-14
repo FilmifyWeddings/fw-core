@@ -10,19 +10,12 @@ export const supabase = typeof window !== 'undefined'
   ? createBrowserClient(supabaseUrl, supabaseAnonKey)
   : createClient(supabaseUrl, supabaseAnonKey);
 
+// Clean up bloated legacy cookies on client mount to prevent HTTP 400/431 (Header Too Large)
 if (typeof window !== 'undefined') {
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (session?.access_token) {
-      const maxAge = 60 * 60 * 24 * 7;
-      const isHttps = window.location.protocol === 'https:';
-      const secureFlag = isHttps ? '; Secure' : '';
-      document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
-      document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
-    } else if (event === 'SIGNED_OUT') {
-      document.cookie = `sb-access-token=; path=/; max-age=0; SameSite=Lax`;
-      document.cookie = `sb-refresh-token=; path=/; max-age=0; SameSite=Lax`;
-    }
-  });
+  try {
+    document.cookie = 'sb-access-token=; path=/; max-age=0; SameSite=Lax';
+    document.cookie = 'sb-refresh-token=; path=/; max-age=0; SameSite=Lax';
+  } catch (_) {}
 }
 
 // Admin client for backend operations (webhooks, cron tasks) that bypass RLS

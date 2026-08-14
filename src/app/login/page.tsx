@@ -128,18 +128,8 @@ export default function LoginPage() {
             loginSuccess = true;
             if (apiJson.session) {
               await supabase.auth.setSession(apiJson.session).catch(() => {});
-              const maxAge = 60 * 60 * 24 * 7;
-              const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
-              document.cookie = `sb-access-token=${apiJson.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
-              document.cookie = `sb-refresh-token=${apiJson.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
             } else {
-              const signInRes = await supabase.auth.signInWithPassword({ email: targetEmail, password }).catch(() => null);
-              if (signInRes?.data?.session) {
-                const maxAge = 60 * 60 * 24 * 7;
-                const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
-                document.cookie = `sb-access-token=${signInRes.data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
-                document.cookie = `sb-refresh-token=${signInRes.data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
-              }
+              await supabase.auth.signInWithPassword({ email: targetEmail, password }).catch(() => null);
             }
             window.location.href = redirectTo;
             return;
@@ -152,19 +142,12 @@ export default function LoginPage() {
 
         // Client-side fallback if server API is unreachable
         if (!loginSuccess) {
-          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          const { error: signInErr } = await supabase.auth.signInWithPassword({
             email: targetEmail,
             password,
           });
 
           if (signInErr) throw signInErr;
-
-          if (signInData?.session) {
-            const maxAge = 60 * 60 * 24 * 7;
-            const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
-            document.cookie = `sb-access-token=${signInData.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
-            document.cookie = `sb-refresh-token=${signInData.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${isSecure}`;
-          }
 
           window.location.href = redirectTo;
         }
