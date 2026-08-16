@@ -114,7 +114,7 @@ export default function LoginPage() {
 
         setTimeout(() => {
           window.location.href = redirectTo;
-        }, 1200);
+        }, 1800);
         return;
       } else {
         const errMsg = apiJson.error || 'Authentication failed. Please check credentials.';
