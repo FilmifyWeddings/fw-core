@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { generateAndStoreResetToken } from '@/lib/auth-otp-store';
 import { sendPasswordResetEmail } from '@/lib/email-service';
 
@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/forgot-password
- * Generates secure 15-minute reset token and sends modern HTML email via Hostinger SMTP (with Supabase fallback).
+ * Generates secure 15-minute reset token and sends luxury HTML email from support@studiocore.in.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -57,27 +57,20 @@ export async function POST(req: NextRequest) {
       userId = 'anon-' + Buffer.from(targetEmail).toString('hex').slice(0, 16);
     }
 
-    // 3. Generate secure 15-minute token
+    // 3. Generate secure 15-minute token & persist in database
     const { token } = await generateAndStoreResetToken({
       email: targetEmail,
       userId: userId,
       expiresInMinutes: 15,
     });
 
-    // 4. Construct reset password link
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || req.nextUrl.origin;
+    // 4. Construct luxury reset password link
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://studiocore.in';
     const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password/${token}`;
 
-    console.log(`[Forgot Password] Initiating reset email to ${targetEmail} | Reset URL: ${resetUrl}`);
+    console.log(`[Forgot Password] Dispatching luxury StudioCore email to ${targetEmail} | Reset URL: ${resetUrl}`);
 
-    // 5. Also trigger Supabase Recovery link in parallel as backup
-    try {
-      supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: resetUrl,
-      }).catch(() => {});
-    } catch (_) {}
-
-    // 6. Send email via Hostinger SMTP with automatic Port 465 -> Port 587 fallback
+    // 5. Dispatch email exclusively via our Hostinger SMTP luxury template
     const emailResult = await sendPasswordResetEmail({
       toEmail: targetEmail,
       recipientName,

@@ -15,7 +15,7 @@ interface SendWelcomeEmailParams {
 }
 
 /**
- * Creates a configured Nodemailer transporter with tight timeouts (5s) for high responsiveness
+ * Creates a configured Nodemailer transporter with tight timeouts for high responsiveness
  */
 function createTransporter(port: number, secure: boolean) {
   const host = process.env.SMTP_HOST || 'smtp.hostinger.com';
@@ -33,9 +33,9 @@ function createTransporter(port: number, secure: boolean) {
     tls: {
       rejectUnauthorized: false,
     },
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 8000,
+    connectionTimeout: 6000,
+    greetingTimeout: 6000,
+    socketTimeout: 10000,
   });
 }
 
@@ -45,7 +45,7 @@ function createTransporter(port: number, secure: boolean) {
 async function sendMailWithFallback(mailOptions: any) {
   const defaultPort = parseInt(process.env.SMTP_PORT || '465', 10);
   
-  // Attempt 1: Default port (465 SSL or configured)
+  // Attempt 1: Port 465 (SSL)
   try {
     const isSecure = defaultPort === 465;
     const transporter = createTransporter(defaultPort, isSecure);
@@ -53,10 +53,10 @@ async function sendMailWithFallback(mailOptions: any) {
     console.log(`[Hostinger SMTP Port ${defaultPort} Success] MessageID: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (err1: any) {
-    console.warn(`[Hostinger SMTP Port ${defaultPort} Warning]: ${err1.message}. Trying fallback port...`);
+    console.warn(`[Hostinger SMTP Port ${defaultPort} Notice]: ${err1.message}. Attempting fallback port 587...`);
   }
 
-  // Attempt 2: Fallback to Port 587 STARTTLS (if 465 was blocked by VPS firewall)
+  // Attempt 2: Fallback to Port 587 STARTTLS
   try {
     const fallbackPort = defaultPort === 465 ? 587 : 465;
     const transporterFallback = createTransporter(fallbackPort, fallbackPort === 465);
@@ -78,8 +78,9 @@ export async function sendWelcomeEmail({
   businessName,
   workspaceUrl,
 }: SendWelcomeEmailParams) {
-  const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://test.studiocore.in';
+  const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
   const targetUrl = workspaceUrl || `${defaultAppUrl.replace(/\/$/, '')}/workspace`;
+  const logoUrl = `${defaultAppUrl.replace(/\/$/, '')}/images/auth/sc-orange-logo.png`;
   const fromAddress = process.env.SMTP_FROM || `"StudioCore Support" <support@studiocore.in>`;
   const studioTitle = businessName || `${name}'s Studio`;
 
@@ -110,26 +111,8 @@ export async function sendWelcomeEmail({
     }
     .header {
       background: #18181b;
-      padding: 40px 32px;
+      padding: 36px 32px;
       text-align: center;
-    }
-    .logo-text {
-      font-size: 26px;
-      font-weight: 900;
-      color: #ffffff;
-      letter-spacing: -0.5px;
-      margin: 0;
-    }
-    .logo-orange {
-      color: #F36F21;
-    }
-    .tagline {
-      font-size: 12px;
-      font-weight: 600;
-      color: #a1a1aa;
-      margin-top: 6px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
     }
     .content {
       padding: 40px 36px;
@@ -172,17 +155,19 @@ export async function sendWelcomeEmail({
       text-align: center;
       margin: 32px 0 24px 0;
     }
-    .cta-btn {
+    .cta-btn-3d {
       display: inline-block;
-      background: #F36F21;
+      background: linear-gradient(135deg, #F36F21 0%, #FF8A3D 100%);
       color: #ffffff !important;
       text-decoration: none;
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 800;
-      padding: 16px 36px;
+      padding: 16px 40px;
       border-radius: 14px;
-      letter-spacing: 0.3px;
-      box-shadow: 0 6px 20px rgba(243, 111, 33, 0.35);
+      letter-spacing: 0.5px;
+      box-shadow: 0 8px 24px rgba(243, 111, 33, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      border-bottom: 3px solid #d45610;
+      text-transform: uppercase;
     }
     .footer {
       background: #FAF6F3;
@@ -197,13 +182,28 @@ export async function sendWelcomeEmail({
 <body>
   <div class="wrapper">
     <div class="header">
-      <div class="logo-text"><span class="logo-orange">SC</span> StudioCore</div>
-      <div class="tagline">Focus on Art, We Manage</div>
+      <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+        <tr>
+          <td align="center" style="padding-bottom: 8px;">
+            <img src="${logoUrl}" alt="StudioCore Logo" width="56" height="32" style="display: block; border: 0;" />
+          </td>
+        </tr>
+        <tr>
+          <td align="center">
+            <span style="font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">Studio<span style="color: #F36F21;">Core</span></span>
+          </td>
+        </tr>
+        <tr>
+          <td align="center">
+            <span style="font-size: 11px; font-weight: 600; color: #a1a1aa; letter-spacing: 1px; text-transform: uppercase;">Focus on Art, We Manage</span>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <div class="badge">🎉 Account Ready</div>
       <h1>Welcome to StudioCore, ${name}!</h1>
-      <p>Congratulations! Your official studio management workspace for <strong>${studioTitle}</strong> has been successfully initialized.</p>
+      <p>Congratulations! Your studio workspace for <strong>${studioTitle}</strong> has been successfully initialized.</p>
       
       <div class="highlight-card">
         <div style="margin-bottom: 12px;">
@@ -215,7 +215,7 @@ export async function sendWelcomeEmail({
       </div>
 
       <div class="button-container">
-        <a href="${targetUrl}" target="_blank" class="cta-btn">Launch StudioCore Workspace →</a>
+        <a href="${targetUrl}" target="_blank" class="cta-btn-3d">Launch Workspace →</a>
       </div>
 
       <p style="font-size: 12px; color: #71717a; text-align: center; margin-top: 24px;">
@@ -234,7 +234,7 @@ export async function sendWelcomeEmail({
   const textContent = `
 Welcome to StudioCore, ${name}!
 
-Congratulations! Your official studio management workspace for "${studioTitle}" is now live.
+Congratulations! Your studio workspace for "${studioTitle}" is now live.
 
 Access your dashboard here:
 ${targetUrl}
@@ -253,7 +253,7 @@ StudioCore Support (support@studiocore.in)
 }
 
 /**
- * Sends a password reset email with modern branded HTML template
+ * Sends a high-end luxury Password Reset Email with 3D button and official StudioCore branding
  */
 export async function sendPasswordResetEmail({
   toEmail,
@@ -261,7 +261,9 @@ export async function sendPasswordResetEmail({
   resetUrl,
   expiresInMinutes = 15,
 }: SendPasswordResetEmailParams) {
-  const fromAddress = process.env.SMTP_FROM || `"StudioCore Security" <support@studiocore.in>`;
+  const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
+  const logoUrl = `${defaultAppUrl.replace(/\/$/, '')}/images/auth/sc-orange-logo.png`;
+  const fromAddress = process.env.SMTP_FROM || `"StudioCore Support" <support@studiocore.in>`;
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -290,26 +292,8 @@ export async function sendPasswordResetEmail({
     }
     .header {
       background: #18181b;
-      padding: 38px 32px;
+      padding: 36px 32px;
       text-align: center;
-    }
-    .logo-text {
-      font-size: 26px;
-      font-weight: 900;
-      color: #ffffff;
-      letter-spacing: -0.5px;
-      margin: 0;
-    }
-    .logo-orange {
-      color: #F36F21;
-    }
-    .tagline {
-      font-size: 12px;
-      font-weight: 600;
-      color: #a1a1aa;
-      margin-top: 6px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
     }
     .content {
       padding: 40px 36px;
@@ -328,7 +312,7 @@ export async function sendPasswordResetEmail({
       margin-bottom: 16px;
     }
     h1 {
-      font-size: 24px;
+      font-size: 26px;
       font-weight: 900;
       color: #18181b;
       margin: 0 0 14px 0;
@@ -343,19 +327,21 @@ export async function sendPasswordResetEmail({
     }
     .button-container {
       text-align: center;
-      margin: 32px 0;
+      margin: 36px 0;
     }
-    .cta-btn {
+    .cta-btn-3d {
       display: inline-block;
-      background: #F36F21;
+      background: linear-gradient(135deg, #F36F21 0%, #FF8A3D 100%);
       color: #ffffff !important;
       text-decoration: none;
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 800;
-      padding: 16px 36px;
+      padding: 16px 40px;
       border-radius: 14px;
-      letter-spacing: 0.3px;
-      box-shadow: 0 6px 20px rgba(243, 111, 33, 0.35);
+      letter-spacing: 0.5px;
+      box-shadow: 0 8px 24px rgba(243, 111, 33, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      border-bottom: 3px solid #d45610;
+      text-transform: uppercase;
     }
     .notice-box {
       background: #FAF6F3;
@@ -395,8 +381,23 @@ export async function sendPasswordResetEmail({
 <body>
   <div class="wrapper">
     <div class="header">
-      <div class="logo-text"><span class="logo-orange">SC</span> StudioCore</div>
-      <div class="tagline">Focus on Art, We Manage</div>
+      <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+        <tr>
+          <td align="center" style="padding-bottom: 8px;">
+            <img src="${logoUrl}" alt="StudioCore Logo" width="56" height="32" style="display: block; border: 0;" />
+          </td>
+        </tr>
+        <tr>
+          <td align="center">
+            <span style="font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">Studio<span style="color: #F36F21;">Core</span></span>
+          </td>
+        </tr>
+        <tr>
+          <td align="center">
+            <span style="font-size: 11px; font-weight: 600; color: #a1a1aa; letter-spacing: 1px; text-transform: uppercase;">Focus on Art, We Manage</span>
+          </td>
+        </tr>
+      </table>
     </div>
     <div class="content">
       <div class="badge">🔒 Security Request</div>
@@ -405,7 +406,7 @@ export async function sendPasswordResetEmail({
       <p>We received a request to reset the password for your StudioCore account associated with <strong>${toEmail}</strong>.</p>
       
       <div class="button-container">
-        <a href="${resetUrl}" target="_blank" class="cta-btn">Reset My Password →</a>
+        <a href="${resetUrl}" target="_blank" class="cta-btn-3d">Reset My Password →</a>
       </div>
 
       <div class="notice-box">
@@ -414,7 +415,7 @@ export async function sendPasswordResetEmail({
 
       <p class="link-fallback">
         If the button above doesn't work, copy and paste this URL into your browser:<br>
-        <a href="${resetUrl}" style="color: #F36F21;">${resetUrl}</a>
+        <a href="${resetUrl}" style="color: #F36F21; text-decoration: underline;">${resetUrl}</a>
       </p>
     </div>
     <div class="footer">
