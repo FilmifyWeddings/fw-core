@@ -504,6 +504,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     accommodationCharges: 15000,
     travelCharges: 10000,
     additionalCharges: 5000,
+    additionalChargesList: [] as Array<{ id: string; name: string; amount: number }>,
     gstPct: 18,
     note: '',
     photo: '',

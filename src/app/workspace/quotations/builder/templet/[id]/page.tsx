@@ -1931,6 +1931,7 @@ function StudioCoreAiryBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const params = useParams();
+  const templateId = (params?.id as string) || '';
 
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -3348,13 +3349,13 @@ function StudioCoreAiryBuilderContent() {
                 onEditOption={(oldItem, newItem) => {
                   setAvailableRequirements(prev => prev.map(r => r === oldItem ? newItem : r));
                   const currentCrew = (data.shootDetails.crewText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
-                  const updatedCrew = currentCrew.map(c => c === oldItem ? newItem : c);
+                  const updatedCrew = currentCrew.map((c: string) => c === oldItem ? newItem : c);
                   setData({ ...data, shootDetails: { ...data.shootDetails, crewText: updatedCrew.join('\n') } });
                 }}
                 onDeleteOption={(itemToDelete) => {
                   setAvailableRequirements(prev => prev.filter(r => r !== itemToDelete));
                   const currentCrew = (data.shootDetails.crewText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
-                  const updatedCrew = currentCrew.filter(c => c !== itemToDelete);
+                  const updatedCrew = currentCrew.filter((c: string) => c !== itemToDelete);
                   setData({ ...data, shootDetails: { ...data.shootDetails, crewText: updatedCrew.join('\n') } });
                 }}
               />
@@ -3372,13 +3373,13 @@ function StudioCoreAiryBuilderContent() {
                 onEditOption={(oldItem, newItem) => {
                   setAvailableDeliverables(prev => prev.map(d => d === oldItem ? newItem : d));
                   const currentShootDeliv = (data.shootDetails.deliverablesText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
-                  const updatedShootDeliv = currentShootDeliv.map(d => d === oldItem ? newItem : d);
+                  const updatedShootDeliv = currentShootDeliv.map((d: string) => d === oldItem ? newItem : d);
                   setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: updatedShootDeliv.join('\n') } });
                 }}
                 onDeleteOption={(itemToDelete) => {
                   setAvailableDeliverables(prev => prev.filter(d => d !== itemToDelete));
                   const currentShootDeliv = (data.shootDetails.deliverablesText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
-                  const updatedShootDeliv = currentShootDeliv.filter(d => d !== itemToDelete);
+                  const updatedShootDeliv = currentShootDeliv.filter((d: string) => d !== itemToDelete);
                   setData({ ...data, shootDetails: { ...data.shootDetails, deliverablesText: updatedShootDeliv.join('\n') } });
                 }}
               />
