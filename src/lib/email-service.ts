@@ -21,7 +21,7 @@ export function getEmailTransporter() {
   const host = process.env.SMTP_HOST || 'smtp.hostinger.com';
   const port = parseInt(process.env.SMTP_PORT || '465', 10);
   const user = process.env.SMTP_USER || process.env.EMAIL_USER || 'support@studiocore.in';
-  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || '';
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || 'Sushant@102310#';
   const secure = port === 465;
 
   return nodemailer.createTransport({
@@ -35,6 +35,9 @@ export function getEmailTransporter() {
     tls: {
       rejectUnauthorized: false,
     },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
   });
 }
 
@@ -137,26 +140,6 @@ export async function sendWelcomeEmail({
       padding: 22px;
       margin: 28px 0;
     }
-    .feature-row {
-      display: flex;
-      margin-bottom: 14px;
-    }
-    .feature-row:last-child {
-      margin-bottom: 0;
-    }
-    .feature-icon {
-      font-size: 18px;
-      margin-right: 12px;
-    }
-    .feature-text {
-      font-size: 13px;
-      color: #3f3f46;
-      line-height: 1.5;
-    }
-    .feature-title {
-      font-weight: 700;
-      color: #18181b;
-    }
     .button-container {
       text-align: center;
       margin: 32px 0 24px 0;
@@ -181,11 +164,6 @@ export async function sendWelcomeEmail({
       font-size: 11px;
       color: #a1a1aa;
     }
-    .footer a {
-      color: #F36F21;
-      text-decoration: none;
-      font-weight: 600;
-    }
   </style>
 </head>
 <body>
@@ -203,8 +181,8 @@ export async function sendWelcomeEmail({
         <div style="margin-bottom: 12px;">
           <strong style="color: #18181b; font-size: 14px;">What you can do right now:</strong>
         </div>
-        <p style="margin: 6px 0; font-size: 13px; color: #3f3f46;">📸 <strong>Capture & Leads:</strong> Connect Meta Ads, Google Sheets, or import wedding inquiries in 1-click.</p>
-        <p style="margin: 6px 0; font-size: 13px; color: #3f3f46;">📄 <strong>Pro Quotation Builder:</strong> Design luxury interactive proposals with direct WhatsApp send.</p>
+        <p style="margin: 6px 0; font-size: 13px; color: #3f3f46;">📸 <strong>Capture & Leads:</strong> Connect Meta Ads, Google Sheets, or import inquiries in 1-click.</p>
+        <p style="margin: 6px 0; font-size: 13px; color: #3f3f46;">📄 <strong>Pro Quotation Builder:</strong> Design luxury interactive proposals with direct WhatsApp delivery.</p>
         <p style="margin: 6px 0; font-size: 13px; color: #3f3f46;">⚡ <strong>Automated Workflows:</strong> Dispatch automated follow-ups, contracts, and team attendance.</p>
       </div>
 
@@ -213,7 +191,7 @@ export async function sendWelcomeEmail({
       </div>
 
       <p style="font-size: 12px; color: #71717a; text-align: center; margin-top: 24px;">
-        Need assistance getting set up? Simply reply to this email at <a href="mailto:support@studiocore.in" style="color: #F36F21; font-weight: bold;">support@studiocore.in</a>.
+        Need assistance getting set up? Reply directly to <a href="mailto:support@studiocore.in" style="color: #F36F21; font-weight: bold;">support@studiocore.in</a>.
       </p>
     </div>
     <div class="footer">
@@ -237,18 +215,9 @@ Capture · Manage · Deliver · Grow
 StudioCore Support (support@studiocore.in)
   `.trim();
 
-  // If SMTP password is not set, log and simulate safely
-  if (!process.env.SMTP_PASS && !process.env.EMAIL_PASSWORD) {
-    console.log(`[SMTP Welcome Notice] No SMTP_PASS found in env. Welcome email simulated for ${toEmail}.`);
-    return {
-      success: true,
-      simulated: true,
-      message: 'SMTP credentials not configured. Welcome email logged to console.',
-    };
-  }
-
   try {
     const transporter = getEmailTransporter();
+    console.log(`[Hostinger SMTP] Dispatching Welcome email to ${toEmail}...`);
     const info = await transporter.sendMail({
       from: fromAddress,
       to: toEmail,
@@ -257,9 +226,10 @@ StudioCore Support (support@studiocore.in)
       html: htmlContent,
     });
 
+    console.log(`[Hostinger SMTP] Welcome email delivered successfully! MessageID: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (err: any) {
-    console.error('[Welcome Email Error]:', err);
+    console.error('[Hostinger SMTP Welcome Email Error]:', err);
     return { success: false, error: err.message || 'Failed to send welcome email.' };
   }
 }
@@ -452,19 +422,9 @@ StudioCore Security
 support@studiocore.in
   `.trim();
 
-  // If SMTP password is not configured or in testing environment, log for easy dev testing
-  if (!process.env.SMTP_PASS && !process.env.EMAIL_PASSWORD) {
-    console.log(`[SMTP Notice] No SMTP_PASS found in env. Reset URL: ${resetUrl}`);
-    return {
-      success: true,
-      simulated: true,
-      resetUrl,
-      message: 'SMTP credentials not configured. Simulation logged to console.',
-    };
-  }
-
   try {
     const transporter = getEmailTransporter();
+    console.log(`[Hostinger SMTP] Dispatching Password Reset email to ${toEmail}...`);
     const info = await transporter.sendMail({
       from: fromAddress,
       to: toEmail,
@@ -473,12 +433,13 @@ support@studiocore.in
       html: htmlContent,
     });
 
+    console.log(`[Hostinger SMTP] Password reset email delivered successfully! MessageID: ${info.messageId}`);
     return {
       success: true,
       messageId: info.messageId,
     };
   } catch (error: any) {
-    console.error('[Nodemailer Error]:', error);
+    console.error('[Hostinger SMTP Password Reset Error]:', error);
     return {
       success: false,
       error: error.message || 'Failed to send email via SMTP server.',

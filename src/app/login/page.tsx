@@ -1,50 +1,50 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight, Building2 } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight, Building2, ChevronDown, Search } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// Comprehensive Country Code Data with Flags
-const COUNTRY_CODES = [
-  { code: '+91', flag: '🇮🇳', name: 'India' },
-  { code: '+1', flag: '🇺🇸', name: 'United States' },
-  { code: '+44', flag: '🇬🇧', name: 'United Kingdom' },
-  { code: '+971', flag: '🇦🇪', name: 'UAE' },
-  { code: '+1', flag: '🇨🇦', name: 'Canada' },
-  { code: '+61', flag: '🇦🇺', name: 'Australia' },
-  { code: '+65', flag: '🇸🇬', name: 'Singapore' },
-  { code: '+966', flag: '🇸🇦', name: 'Saudi Arabia' },
-  { code: '+974', flag: '🇶🇦', name: 'Qatar' },
-  { code: '+965', flag: '🇰🇼', name: 'Kuwait' },
-  { code: '+968', flag: '🇴🇲', name: 'Oman' },
-  { code: '+973', flag: '🇧🇭', name: 'Bahrain' },
-  { code: '+977', flag: '🇳🇵', name: 'Nepal' },
-  { code: '+880', flag: '🇧🇩', name: 'Bangladesh' },
-  { code: '+94', flag: '🇱🇰', name: 'Sri Lanka' },
-  { code: '+60', flag: '🇲🇾', name: 'Malaysia' },
-  { code: '+66', flag: '🇹🇭', name: 'Thailand' },
-  { code: '+49', flag: '🇩🇪', name: 'Germany' },
-  { code: '+33', flag: '🇫🇷', name: 'France' },
-  { code: '+39', flag: '🇮🇹', name: 'Italy' },
-  { code: '+34', flag: '🇪🇸', name: 'Spain' },
-  { code: '+31', flag: '🇳🇱', name: 'Netherlands' },
-  { code: '+41', flag: '🇨🇭', name: 'Switzerland' },
-  { code: '+27', flag: '🇿🇦', name: 'South Africa' },
-  { code: '+64', flag: '🇳🇿', name: 'New Zealand' },
-  { code: '+81', flag: '🇯🇵', name: 'Japan' },
-  { code: '+82', flag: '🇰🇷', name: 'South Korea' },
-  { code: '+55', flag: '🇧🇷', name: 'Brazil' },
-  { code: '+52', flag: '🇲🇽', name: 'Mexico' },
-  { code: '+62', flag: '🇮🇩', name: 'Indonesia' },
-  { code: '+63', flag: '🇵🇭', name: 'Philippines' },
-  { code: '+84', flag: '🇻🇳', name: 'Vietnam' },
-  { code: '+92', flag: '🇵🇰', name: 'Pakistan' },
-  { code: '+20', flag: '🇪🇬', name: 'Egypt' },
-  { code: '+90', flag: '🇹🇷', name: 'Turkey' },
-  { code: '+7', flag: '🇷🇺', name: 'Russia' },
+// Comprehensive Country Code Data with ISO for Flag Images
+const COUNTRIES = [
+  { code: '+91', iso: 'in', name: 'India' },
+  { code: '+1', iso: 'us', name: 'United States' },
+  { code: '+44', iso: 'gb', name: 'United Kingdom' },
+  { code: '+971', iso: 'ae', name: 'UAE' },
+  { code: '+1', iso: 'ca', name: 'Canada' },
+  { code: '+61', iso: 'au', name: 'Australia' },
+  { code: '+65', iso: 'sg', name: 'Singapore' },
+  { code: '+966', iso: 'sa', name: 'Saudi Arabia' },
+  { code: '+974', iso: 'qa', name: 'Qatar' },
+  { code: '+965', iso: 'kw', name: 'Kuwait' },
+  { code: '+968', iso: 'om', name: 'Oman' },
+  { code: '+973', iso: 'bh', name: 'Bahrain' },
+  { code: '+977', iso: 'np', name: 'Nepal' },
+  { code: '+880', iso: 'bd', name: 'Bangladesh' },
+  { code: '+94', iso: 'lk', name: 'Sri Lanka' },
+  { code: '+60', iso: 'my', name: 'Malaysia' },
+  { code: '+66', iso: 'th', name: 'Thailand' },
+  { code: '+49', iso: 'de', name: 'Germany' },
+  { code: '+33', iso: 'fr', name: 'France' },
+  { code: '+39', iso: 'it', name: 'Italy' },
+  { code: '+34', iso: 'es', name: 'Spain' },
+  { code: '+31', iso: 'nl', name: 'Netherlands' },
+  { code: '+41', iso: 'ch', name: 'Switzerland' },
+  { code: '+27', iso: 'za', name: 'South Africa' },
+  { code: '+64', iso: 'nz', name: 'New Zealand' },
+  { code: '+81', iso: 'jp', name: 'Japan' },
+  { code: '+82', iso: 'kr', name: 'South Korea' },
+  { code: '+55', iso: 'br', name: 'Brazil' },
+  { code: '+52', iso: 'mx', name: 'Mexico' },
+  { code: '+62', iso: 'id', name: 'Indonesia' },
+  { code: '+63', iso: 'ph', name: 'Philippines' },
+  { code: '+84', iso: 'vn', name: 'Vietnam' },
+  { code: '+92', iso: 'pk', name: 'Pakistan' },
+  { code: '+20', iso: 'eg', name: 'Egypt' },
+  { code: '+90', iso: 'tr', name: 'Turkey' },
+  { code: '+7', iso: 'ru', name: 'Russia' },
 ];
 
 export default function LoginPage() {
@@ -64,14 +64,30 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
-  const [selectedCountryCode, setSelectedCountryCode] = useState('+91');
+  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]); // Default: India (+91)
   const [signupPhone, setSignupPhone] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
+  // Country Dropdown state
+  const [isCountryOpen, setIsCountryOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const countryDropdownRef = useRef<HTMLDivElement>(null);
+
   // Status & Error
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Close country dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (countryDropdownRef.current && !countryDropdownRef.current.contains(event.target as Node)) {
+        setIsCountryOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Read mode from query param if available
   useEffect(() => {
@@ -96,6 +112,12 @@ export default function LoginPage() {
     };
     checkSession();
   }, [router, searchParams]);
+
+  const filteredCountries = COUNTRIES.filter(
+    (c) =>
+      c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+      c.code.includes(countrySearch)
+  );
 
   // Handle Login Submit
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -189,7 +211,7 @@ export default function LoginPage() {
           name: cleanName,
           businessName: cleanStudioName,
           email: cleanEmail,
-          countryCode: selectedCountryCode,
+          countryCode: selectedCountry.code,
           phone: cleanPhoneDigits,
           password: signupPassword,
         }),
@@ -277,7 +299,12 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setAuthMode('signup'); setError(null); }}
+                onClick={() => {
+                  setAuthMode('signup');
+                  setError(null);
+                  setSignupPhone('');
+                  setSignupPassword('');
+                }}
                 className={`flex-1 py-1 sm:py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer touch-manipulation ${
                   authMode === 'signup'
                     ? 'bg-white text-zinc-900 shadow-xs'
@@ -292,7 +319,7 @@ export default function LoginPage() {
             <div>
               {authMode === 'login' ? (
                 /* LOGIN FORM */
-                <form onSubmit={handleLoginSubmit} className="space-y-2.5 sm:space-y-3.5">
+                <form onSubmit={handleLoginSubmit} className="space-y-2.5 sm:space-y-3.5" autoComplete="on">
                   {/* Email or Phone */}
                   <div>
                     <div className="relative flex items-center">
@@ -301,6 +328,7 @@ export default function LoginPage() {
                       </div>
                       <input
                         type="text"
+                        name="username"
                         value={identifier}
                         onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
                         placeholder="Email or Phone"
@@ -317,6 +345,7 @@ export default function LoginPage() {
                       </div>
                       <input
                         type={showPassword ? 'text' : 'password'}
+                        name="password"
                         value={password}
                         onChange={(e) => { setPassword(e.target.value); setError(null); }}
                         placeholder="Password"
@@ -373,8 +402,13 @@ export default function LoginPage() {
                   </button>
                 </form>
               ) : (
-                /* SIGN UP FORM (All 5 Required Fields + Country Code Dropdown with Flags) */
-                <form onSubmit={handleSignupSubmit} className="space-y-2 sm:space-y-2.5">
+                /* SIGN UP FORM (All 5 Required Fields + Custom Flag Dropdown + Anti-Autofill Protection) */
+                <form onSubmit={handleSignupSubmit} className="space-y-2 sm:space-y-2.5" autoComplete="off">
+                  
+                  {/* Browser Autofill Traps to prevent Chrome from auto-filling login credentials */}
+                  <input type="text" name="prevent_autofill_user" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" />
+                  <input type="password" name="prevent_autofill_pwd" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" />
+
                   {/* 1. Full Name */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3 pointer-events-none text-zinc-400">
@@ -382,6 +416,8 @@ export default function LoginPage() {
                     </div>
                     <input
                       type="text"
+                      name="sc_signup_full_name"
+                      autoComplete="off"
                       value={fullName}
                       onChange={(e) => { setFullName(e.target.value); setError(null); }}
                       placeholder="Full Name *"
@@ -396,6 +432,8 @@ export default function LoginPage() {
                     </div>
                     <input
                       type="text"
+                      name="sc_signup_studio_name"
+                      autoComplete="off"
                       value={businessName}
                       onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
                       placeholder="Studio Name *"
@@ -410,6 +448,8 @@ export default function LoginPage() {
                     </div>
                     <input
                       type="email"
+                      name="sc_signup_email_address"
+                      autoComplete="off"
                       value={signupEmail}
                       onChange={(e) => { setSignupEmail(e.target.value); setError(null); }}
                       placeholder="Email Address *"
@@ -417,24 +457,80 @@ export default function LoginPage() {
                     />
                   </div>
 
-                  {/* 4. Country Code Selector with Flag + Mobile Number */}
-                  <div className="flex items-center gap-1.5">
-                    {/* Country Code Dropdown */}
-                    <div className="relative shrink-0 w-[112px] sm:w-[124px]">
-                      <select
-                        value={selectedCountryCode}
-                        onChange={(e) => setSelectedCountryCode(e.target.value)}
-                        className="w-full h-9 sm:h-10 px-2 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-semibold focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all cursor-pointer shadow-2xs appearance-none pr-6 text-ellipsis overflow-hidden"
+                  {/* 4. Interactive Country Flag Selector + Mobile Number */}
+                  <div className="flex items-center gap-1.5 relative">
+                    
+                    {/* Flag Trigger & Dropdown */}
+                    <div className="relative shrink-0" ref={countryDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsCountryOpen(!isCountryOpen)}
+                        className="h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-white border border-zinc-300 flex items-center gap-1.5 text-xs sm:text-sm font-bold text-zinc-800 hover:border-[#F36F21] focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 transition-all shadow-2xs cursor-pointer touch-manipulation"
                       >
-                        {COUNTRY_CODES.map((item, idx) => (
-                          <option key={`${item.code}-${idx}`} value={item.code}>
-                            {item.flag} {item.code} ({item.name})
-                          </option>
-                        ))}
-                      </select>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 text-[10px]">
-                        ▼
-                      </div>
+                        {/* High Quality Flag Image */}
+                        <div className="relative w-5 h-3.5 rounded-[2px] overflow-hidden shrink-0 border border-black/10 shadow-2xs">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`https://flagcdn.com/w40/${selectedCountry.iso}.png`}
+                            alt={selectedCountry.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <span className="font-mono text-xs sm:text-sm">{selectedCountry.code}</span>
+                        <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${isCountryOpen ? 'rotate-180 text-[#F36F21]' : ''}`} />
+                      </button>
+
+                      {/* Dropdown Menu with Search */}
+                      {isCountryOpen && (
+                        <div className="absolute left-0 top-full mt-1.5 w-[240px] sm:w-[260px] max-h-[220px] bg-white rounded-2xl border border-zinc-200 shadow-xl z-50 overflow-hidden flex flex-col p-1.5">
+                          {/* Search Input */}
+                          <div className="relative flex items-center px-2 py-1 border-b border-zinc-100 mb-1">
+                            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3" />
+                            <input
+                              type="text"
+                              value={countrySearch}
+                              onChange={(e) => setCountrySearch(e.target.value)}
+                              placeholder="Search country or code..."
+                              className="w-full pl-6 pr-2 py-1 text-xs text-zinc-900 placeholder:text-zinc-400 bg-zinc-50 rounded-lg outline-none"
+                              autoFocus
+                            />
+                          </div>
+
+                          {/* Country List */}
+                          <div className="overflow-y-auto max-h-[160px] space-y-0.5">
+                            {filteredCountries.map((item, idx) => (
+                              <button
+                                key={`${item.code}-${idx}`}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCountry(item);
+                                  setIsCountryOpen(false);
+                                  setCountrySearch('');
+                                }}
+                                className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left text-xs transition-colors cursor-pointer ${
+                                  selectedCountry.code === item.code && selectedCountry.iso === item.iso
+                                    ? 'bg-[#F36F21]/10 text-[#F36F21] font-bold'
+                                    : 'text-zinc-700 hover:bg-zinc-100'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={`https://flagcdn.com/w40/${item.iso}.png`}
+                                    alt={item.name}
+                                    className="w-4 h-3 rounded-[2px] object-cover border border-black/10 shrink-0"
+                                  />
+                                  <span className="truncate">{item.name}</span>
+                                </div>
+                                <span className="font-mono text-zinc-500 text-[11px] shrink-0 ml-1.5">{item.code}</span>
+                              </button>
+                            ))}
+                            {filteredCountries.length === 0 && (
+                              <div className="p-3 text-center text-xs text-zinc-400">No countries found</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Mobile Digits Input */}
@@ -445,6 +541,8 @@ export default function LoginPage() {
                       <input
                         type="tel"
                         maxLength={15}
+                        name="sc_signup_phone_input"
+                        autoComplete="off"
                         value={signupPhone}
                         onChange={(e) => { setSignupPhone(e.target.value.replace(/\D/g, '')); setError(null); }}
                         placeholder="Mobile Number *"
@@ -453,13 +551,15 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  {/* 5. Password */}
+                  {/* 5. Password (with new-password autocomplete) */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3 pointer-events-none text-zinc-400">
                       <Lock className="w-3.5 h-3.5" />
                     </div>
                     <input
                       type={showSignupPassword ? 'text' : 'password'}
+                      name="sc_signup_unique_pwd"
+                      autoComplete="new-password"
                       value={signupPassword}
                       onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
                       placeholder="Password (min 6 chars) *"
