@@ -1,23 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, supabase } from '@/lib/supabase';
+import { normalizePhoneNumber } from '@/lib/auth-otp-store';
+
+export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/login
- * Server-side login handler that sets HTTP cookies directly on response headers
- * to prevent browser navigation race conditions.
+ * Server-side login handler supporting both Email & Phone Number credentials.
+ * Sets HTTP cookies directly on response headers to prevent race conditions.
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { email, password } = body;
+    const { email: identifier, password, rememberMe = true } = body;
 
-    if (!email || !password) {
-      return NextResponse.json({ success: false, error: 'Email and password are required' }, { status: 400 });
+    if (!identifier || !password) {
+      return NextResponse.json({ success: false, error: 'Email/Phone and password are required' }, { status: 400 });
     }
 
-    const targetEmail = (email || '').trim().toLowerCase();
+    let targetEmail = (identifier || '').trim().toLowerCase();
 
-    // Authenticate with Supabase
+    // Check if identifier is a phone number (contains digits and no @)
+    if (!targetEmail.includes('@')) {
+      const cleanPhone = normalizePhoneNumber(targetEmail);
+      const raw10 = cleanPhone.slice(-10);
+
+      // Look up user email by phone in profiles table
+      try {
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('email, id')
+          .or(`phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.ilike.%${raw10}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (profile && profile.email) {
+          targetEmail = profile.email.toLowerCase();
+        } else {
+          // Fallback: search auth users list metadata
+          const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+          const found = userList?.users?.find(
+            u => u.user_metadata?.phone === cleanPhone ||
+                 u.phone === cleanPhone ||
+                 (u.user_metadata?.phone && u.user_metadata.phone.replace(/\D/g, '').includes(raw10))
+          );
+          if (found && found.email) {
+            targetEmail = found.email.toLowerCase();
+          } else {
+            return NextResponse.json(
+              { success: false, error: 'No account found matching this mobile number. Please check or sign up.' },
+              { status: 404 }
+            );
+          }
+        }
+      } catch (phoneErr) {
+        console.warn('[Phone Login Lookup Warning]:', phoneErr);
+      }
+    }
+
+    // Authenticate with Supabase using resolved email
     const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
       email: targetEmail,
       password,
@@ -25,13 +66,14 @@ export async function POST(req: NextRequest) {
 
     if (signInErr || !signInData?.session) {
       return NextResponse.json(
-        { success: false, error: signInErr?.message || 'Invalid email or password' },
+        { success: false, error: signInErr?.message || 'Invalid email/phone or password' },
         { status: 401 }
       );
     }
 
     const session = signInData.session;
-    const maxAge = 60 * 60 * 24 * 7; // 7 days
+    // 30 days if rememberMe, otherwise 7 days
+    const maxAge = rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
 
     const res = NextResponse.json({
       success: true,
