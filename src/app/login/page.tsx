@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Mail, Lock, Eye, EyeOff, Camera, AlertCircle, ArrowRight, User, Building2, Phone, Sparkles } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, User, Building2, Phone } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import OtpModal from '@/components/auth/OtpModal';
 
@@ -29,7 +29,7 @@ export default function LoginPage() {
   const [signupPassword, setSignupPassword] = useState('');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
-  // States
+  // Status & Error
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -37,7 +37,7 @@ export default function LoginPage() {
   const [isOtpOpen, setIsOtpOpen] = useState(false);
   const [pendingSignupData, setPendingSignupData] = useState<any>(null);
 
-  // Auto check session or read URL errors on mount
+  // Check existing session on mount
   useEffect(() => {
     const errParam = searchParams.get('error');
     if (errParam === 'unauthorized_staging') {
@@ -101,7 +101,7 @@ export default function LoginPage() {
     }
   };
 
-  // Handle Sign Up Submit (Triggers WhatsApp OTP)
+  // Handle Sign Up Submit (Dispatches WhatsApp OTP)
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -161,7 +161,7 @@ export default function LoginPage() {
     }
   };
 
-  // Verify OTP Callback from OtpModal
+  // Verify OTP Callback
   const handleVerifyOtp = async (code: string) => {
     if (!pendingSignupData) return false;
 
@@ -214,52 +214,58 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#F6EFE5] flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden selection:bg-orange-500 selection:text-white font-sans">
+    <main className="min-h-screen w-full bg-[#F5ECDD] flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden selection:bg-orange-500 selection:text-white font-sans">
       
       {/* ═══════════════════════════════════════════════════════════════
-          LEFT SIDE — AUTHENTICATION & LOGIN UI (42-45% Desktop)
+          LEFT SIDE — STUDIOCORE BRANDING & AUTH FORM (40–44% Desktop)
           ═══════════════════════════════════════════════════════════════ */}
-      <div className="w-full lg:w-[44%] xl:w-[42%] flex flex-col justify-between p-6 sm:p-10 md:p-14 lg:p-12 xl:p-16 z-10">
+      <section className="w-full lg:w-[44%] xl:w-[40%] flex flex-col justify-between p-8 sm:p-12 md:p-14 lg:pl-16 lg:pr-10 lg:py-10 xl:pl-24 xl:pr-12 xl:py-12 z-10 shrink-0">
         
-        {/* Top Logo & Tagline */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-sm">
-            <Camera className="w-5 h-5 stroke-[2.2]" />
+        {/* Top Official StudioCore Logo Asset */}
+        <div className="flex items-center gap-3.5">
+          <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl overflow-hidden shadow-md shadow-zinc-900/10 shrink-0 bg-black flex items-center justify-center border border-amber-400/30">
+            <Image
+              src="/StudioCorelogo1.png"
+              alt="StudioCore Logo"
+              fill
+              className="object-cover"
+              priority
+            />
           </div>
-          <div>
-            <span className="text-lg font-black tracking-widest text-zinc-900 block leading-none">
-              STUDIO.
+          <div className="flex flex-col">
+            <span className="text-xl sm:text-2xl font-black tracking-tight text-zinc-900 font-serif leading-none">
+              Studio<span className="text-amber-700">Core</span>
             </span>
-            <span className="text-[9px] font-extrabold uppercase tracking-widest text-zinc-500 block mt-0.5">
-              Capturing Moments
+            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-500 mt-1">
+              Capturing Moments &middot; OS
             </span>
           </div>
         </div>
 
         {/* Middle Main Form Area */}
-        <div className="my-8 lg:my-auto max-w-md w-full">
+        <div className="my-8 lg:my-auto max-w-[420px] w-full">
           
           {/* Welcome Heading */}
           <div>
-            <h1 className="text-3xl sm:text-4xl font-black text-zinc-900 tracking-tight">
-              {authMode === 'login' ? 'Welcome Back' : 'Create an Account'}
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-zinc-900 tracking-tight">
+              {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
             </h1>
-            <p className="text-xs sm:text-sm text-zinc-500 mt-2 font-medium">
+            <p className="text-sm sm:text-base text-zinc-600 mt-1.5 font-medium">
               {authMode === 'login'
-                ? 'Log in to manage your shoots, clients & memories.'
-                : 'Join Studio to streamline your photography business.'}
+                ? 'Log in to continue to your dashboard'
+                : 'Join StudioCore to manage your shoots, clients & deliverables'}
             </p>
           </div>
 
           {/* Mode Switcher Tabs */}
-          <div className="flex items-center gap-1 p-1 bg-zinc-200/60 rounded-xl max-w-[200px] mt-6">
+          <div className="flex items-center gap-1 p-1 bg-zinc-300/40 rounded-xl max-w-[210px] mt-6">
             <button
               type="button"
               onClick={() => { setAuthMode('login'); setError(null); }}
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                 authMode === 'login'
                   ? 'bg-white text-zinc-900 shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-800'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
               Login
@@ -270,14 +276,14 @@ export default function LoginPage() {
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                 authMode === 'signup'
                   ? 'bg-white text-zinc-900 shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-800'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
               Sign Up
             </button>
           </div>
 
-          {/* ── FORM ── */}
+          {/* ── FORM CONTAINER ── */}
           <div className="mt-6">
             {authMode === 'login' ? (
               /* LOGIN FORM */
@@ -294,7 +300,7 @@ export default function LoginPage() {
                       onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
                       placeholder="Email or Phone"
                       required
-                      className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                      className="w-full pl-12 pr-4 h-12 sm:h-[50px] rounded-xl bg-white border border-zinc-300/90 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all shadow-xs"
                     />
                   </div>
                 </div>
@@ -311,12 +317,13 @@ export default function LoginPage() {
                       onChange={(e) => { setPassword(e.target.value); setError(null); }}
                       placeholder="Password"
                       required
-                      className="w-full pl-11 pr-11 py-3.5 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                      className="w-full pl-12 pr-12 h-12 sm:h-[50px] rounded-xl bg-white border border-zinc-300/90 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all shadow-xs"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+                      className="absolute right-4 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -332,20 +339,20 @@ export default function LoginPage() {
                       onChange={(e) => setRememberMe(e.target.checked)}
                       className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500 accent-orange-600 cursor-pointer"
                     />
-                    <span className="text-xs font-semibold text-zinc-600">
+                    <span className="text-xs sm:text-sm font-semibold text-zinc-700">
                       Remember Me
                     </span>
                   </label>
 
                   <Link
                     href="/forgot-password"
-                    className="text-xs font-bold text-orange-600 hover:text-orange-700 hover:underline transition-colors"
+                    className="text-xs sm:text-sm font-bold text-orange-600 hover:text-orange-700 hover:underline transition-colors"
                   >
                     Forgot Password?
                   </Link>
                 </div>
 
-                {/* Inline Error Message */}
+                {/* Inline Error Alert */}
                 {error && (
                   <div className="p-3 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2.5 text-xs text-red-700 font-bold">
                     <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -357,7 +364,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full h-12 sm:h-[52px] rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
                 >
                   {loading ? (
                     <span>Logging in...</span>
@@ -372,7 +379,6 @@ export default function LoginPage() {
             ) : (
               /* SIGN UP FORM */
               <form onSubmit={handleSignupSubmit} className="space-y-3.5">
-                {/* Full Name & Studio Name */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <div className="relative flex items-center">
@@ -385,7 +391,7 @@ export default function LoginPage() {
                         onChange={(e) => { setFullName(e.target.value); setError(null); }}
                         placeholder="Full Name *"
                         required
-                        className="w-full pl-10 pr-3 py-3 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                        className="w-full pl-10 pr-3 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
                       />
                     </div>
                   </div>
@@ -400,7 +406,7 @@ export default function LoginPage() {
                         value={businessName}
                         onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
                         placeholder="Studio Name"
-                        className="w-full pl-10 pr-3 py-3 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                        className="w-full pl-10 pr-3 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
                       />
                     </div>
                   </div>
@@ -418,7 +424,7 @@ export default function LoginPage() {
                       onChange={(e) => { setSignupEmail(e.target.value); setError(null); }}
                       placeholder="Email Address *"
                       required
-                      className="w-full pl-10 pr-3 py-3 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                      className="w-full pl-10 pr-3 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
                     />
                   </div>
                 </div>
@@ -426,7 +432,7 @@ export default function LoginPage() {
                 {/* WhatsApp Phone */}
                 <div>
                   <div className="relative flex items-center">
-                    <div className="absolute left-3.5 flex items-center gap-1 text-zinc-500 font-bold text-xs pointer-events-none">
+                    <div className="absolute left-3.5 flex items-center gap-1 text-zinc-600 font-bold text-xs pointer-events-none">
                       <Phone className="w-3.5 h-3.5 text-emerald-600" />
                       <span>+91</span>
                     </div>
@@ -437,7 +443,7 @@ export default function LoginPage() {
                       onChange={(e) => { setSignupPhone(e.target.value.replace(/\D/g, '')); setError(null); }}
                       placeholder="WhatsApp Mobile Number *"
                       required
-                      className="w-full pl-16 pr-3 py-3 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all font-mono"
+                      className="w-full pl-16 pr-3 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all font-mono"
                     />
                   </div>
                 </div>
@@ -454,7 +460,7 @@ export default function LoginPage() {
                       onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
                       placeholder="Password (min 6 chars) *"
                       required
-                      className="w-full pl-10 pr-10 py-3 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                      className="w-full pl-10 pr-10 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
                     />
                     <button
                       type="button"
@@ -466,7 +472,6 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {/* Error */}
                 {error && (
                   <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-red-700 font-bold">
                     <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -474,11 +479,10 @@ export default function LoginPage() {
                   </div>
                 )}
 
-                {/* Button */}
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full h-12 rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
                 >
                   {loading ? (
                     <span>Sending OTP...</span>
@@ -495,33 +499,40 @@ export default function LoginPage() {
         </div>
 
         {/* Bottom Tagline / Signature */}
-        <div className="pt-4 flex items-center justify-between text-xs text-zinc-400 border-t border-zinc-300/40">
-          <span className="font-serif italic tracking-wide text-zinc-500 text-sm">
+        <div className="pt-4 flex items-center justify-between text-xs text-zinc-500 border-t border-zinc-300/60">
+          <span className="font-serif italic tracking-wide text-zinc-700 text-sm">
             Shoot &middot; Edit &middot; Deliver &middot; Grow
           </span>
-          <span className="font-semibold text-[11px] text-zinc-400">
-            Studio SaaS &copy; {new Date().getFullYear()}
+          <span className="font-semibold text-[11px] text-zinc-500">
+            StudioCore &copy; {new Date().getFullYear()}
           </span>
         </div>
-      </div>
+      </section>
 
       {/* ═══════════════════════════════════════════════════════════════
-          RIGHT SIDE — 3D PHOTOGRAPHER WORKSPACE ARTWORK (56-58% Desktop)
+          RIGHT SIDE — 3D PHOTOGRAPHER WORKSPACE ARTWORK (56–60% Desktop)
+          Seamlessly blended without visible rectangular borders
           ═══════════════════════════════════════════════════════════════ */}
-      <div className="w-full lg:w-[56%] xl:w-[58%] relative flex items-center justify-center bg-[#F6EFE5] overflow-hidden min-h-[380px] lg:min-h-full">
-        <div className="relative w-full h-full min-h-[420px] lg:min-h-full flex items-center justify-center p-4 lg:p-10">
+      <section className="w-full lg:w-[56%] xl:w-[60%] relative flex items-center justify-center bg-[#F5ECDD] overflow-hidden min-h-[380px] lg:min-h-full">
+        <div 
+          className="relative w-full h-full min-h-[460px] lg:min-h-full flex items-center justify-center p-2 sm:p-6 lg:p-10"
+          style={{
+            maskImage: 'radial-gradient(ellipse 92% 88% at 50% 50%, black 70%, transparent 100%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 92% 88% at 50% 50%, black 70%, transparent 100%)',
+          }}
+        >
           <Image
-            src="/images/auth/studio-workspace-desk.webp"
-            alt="3D Studio Photographer at Workstation Desk"
+            src="/images/auth/studio-workspace-blended.webp"
+            alt="3D StudioCore Photographer Workspace"
             fill
             priority
-            className="object-contain object-center select-none"
+            className="object-contain object-center select-none drop-shadow-sm"
             sizes="(max-width: 1024px) 100vw, 60vw"
           />
         </div>
-      </div>
+      </section>
 
-      {/* WhatsApp OTP Modal */}
+      {/* WhatsApp OTP Modal for Sign Up */}
       <OtpModal
         isOpen={isOtpOpen}
         onClose={() => setIsOtpOpen(false)}
@@ -531,6 +542,6 @@ export default function LoginPage() {
         onResendOtp={handleResendOtp}
         loading={loading}
       />
-    </div>
+    </main>
   );
 }

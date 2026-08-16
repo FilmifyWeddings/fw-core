@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Lock, Eye, EyeOff, ArrowRight, Camera, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 export default function ResetPasswordPage() {
   const params = useParams();
@@ -78,34 +78,40 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#F6EFE5] flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden selection:bg-orange-500 selection:text-white font-sans">
+    <main className="min-h-screen w-full bg-[#F5ECDD] flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden selection:bg-orange-500 selection:text-white font-sans">
       
       {/* ── LEFT SIDE: RESET PASSWORD FORM ── */}
-      <div className="w-full lg:w-[44%] xl:w-[42%] flex flex-col justify-between p-6 sm:p-10 md:p-14 lg:p-12 xl:p-16 z-10">
+      <section className="w-full lg:w-[44%] xl:w-[40%] flex flex-col justify-between p-8 sm:p-12 md:p-14 lg:pl-16 lg:pr-10 lg:py-10 xl:pl-24 xl:pr-12 xl:py-12 z-10 shrink-0">
         
-        {/* Top Logo */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-sm">
-            <Camera className="w-5 h-5 stroke-[2.2]" />
+        {/* Top StudioCore Logo */}
+        <div className="flex items-center gap-3.5">
+          <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl overflow-hidden shadow-md shadow-zinc-900/10 shrink-0 bg-black flex items-center justify-center border border-amber-400/30">
+            <Image
+              src="/StudioCorelogo1.png"
+              alt="StudioCore Logo"
+              fill
+              className="object-cover"
+              priority
+            />
           </div>
-          <div>
-            <span className="text-lg font-black tracking-widest text-zinc-900 block leading-none">
-              STUDIO.
+          <div className="flex flex-col">
+            <span className="text-xl sm:text-2xl font-black tracking-tight text-zinc-900 font-serif leading-none">
+              Studio<span className="text-amber-700">Core</span>
             </span>
-            <span className="text-[9px] font-extrabold uppercase tracking-widest text-zinc-500 block mt-0.5">
-              Capturing Moments
+            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-500 mt-1">
+              Capturing Moments &middot; OS
             </span>
           </div>
         </div>
 
         {/* Form Content */}
-        <div className="my-8 lg:my-auto max-w-md w-full">
+        <div className="my-8 lg:my-auto max-w-[420px] w-full">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-black text-zinc-900 tracking-tight">
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-zinc-900 tracking-tight">
               Set New Password
             </h1>
-            <p className="text-xs sm:text-sm text-zinc-500 mt-2 font-medium">
-              Choose a strong, secure password for your Studio account.
+            <p className="text-sm sm:text-base text-zinc-600 mt-1.5 font-medium">
+              Choose a strong, secure password for your StudioCore account.
             </p>
           </div>
 
@@ -117,7 +123,7 @@ export default function ResetPasswordPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-zinc-900">
-                    Password Reset Complete
+                    Password Updated
                   </h3>
                   <p className="text-xs text-zinc-600 mt-1 leading-relaxed">
                     Your password has been successfully updated. Redirecting to login...
@@ -149,12 +155,12 @@ export default function ResetPasswordPage() {
                       onChange={(e) => { setPassword(e.target.value); setError(null); }}
                       placeholder="••••••••"
                       required
-                      className="w-full pl-11 pr-11 py-3.5 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                      className="w-full pl-12 pr-12 h-12 sm:h-[50px] rounded-xl bg-white border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all shadow-xs"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+                      className="absolute right-4 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -194,12 +200,12 @@ export default function ResetPasswordPage() {
                       onChange={(e) => { setConfirmPassword(e.target.value); setError(null); }}
                       placeholder="••••••••"
                       required
-                      className="w-full pl-11 pr-11 py-3.5 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                      className="w-full pl-12 pr-12 h-12 sm:h-[50px] rounded-xl bg-white border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all shadow-xs"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3.5 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+                      className="absolute right-4 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
                     >
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -216,7 +222,7 @@ export default function ResetPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full h-12 sm:h-[52px] rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
                 >
                   {loading ? (
                     <span>Updating Password...</span>
@@ -233,30 +239,36 @@ export default function ResetPasswordPage() {
         </div>
 
         {/* Bottom Tagline */}
-        <div className="pt-4 flex items-center justify-between text-xs text-zinc-400 border-t border-zinc-300/40">
-          <span className="font-serif italic tracking-wide text-zinc-500 text-sm">
+        <div className="pt-4 flex items-center justify-between text-xs text-zinc-500 border-t border-zinc-300/60">
+          <span className="font-serif italic tracking-wide text-zinc-700 text-sm">
             Shoot &middot; Edit &middot; Deliver &middot; Grow
           </span>
-          <div className="flex items-center gap-1 font-semibold text-[11px] text-zinc-400">
+          <div className="flex items-center gap-1 font-semibold text-[11px] text-zinc-500">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
             <span>256-bit Encrypted</span>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* ── RIGHT SIDE: 3D PHOTOGRAPHER WORKSPACE ── */}
-      <div className="w-full lg:w-[56%] xl:w-[58%] relative flex items-center justify-center bg-[#F6EFE5] overflow-hidden min-h-[380px] lg:min-h-full">
-        <div className="relative w-full h-full min-h-[420px] lg:min-h-full flex items-center justify-center p-4 lg:p-10">
+      <section className="w-full lg:w-[56%] xl:w-[60%] relative flex items-center justify-center bg-[#F5ECDD] overflow-hidden min-h-[380px] lg:min-h-full">
+        <div 
+          className="relative w-full h-full min-h-[460px] lg:min-h-full flex items-center justify-center p-2 sm:p-6 lg:p-10"
+          style={{
+            maskImage: 'radial-gradient(ellipse 92% 88% at 50% 50%, black 70%, transparent 100%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 92% 88% at 50% 50%, black 70%, transparent 100%)',
+          }}
+        >
           <Image
-            src="/images/auth/studio-workspace-desk.webp"
-            alt="3D Studio Photographer Workspace"
+            src="/images/auth/studio-workspace-blended.webp"
+            alt="3D StudioCore Photographer Workspace"
             fill
             priority
-            className="object-contain object-center select-none"
+            className="object-contain object-center select-none drop-shadow-sm"
             sizes="(max-width: 1024px) 100vw, 60vw"
           />
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
