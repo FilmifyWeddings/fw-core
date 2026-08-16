@@ -26,7 +26,21 @@ const nextConfig: any = {
     '@hapi/boom',
     '@sparticuz/chromium',
     'puppeteer-core',
+    'puppeteer',
+    'pdf-lib',
+    'pdfkit',
+    'chromium-bidi',
   ],
+
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
+  },
+
+  outputFileTracingIncludes: {
+    '/api/quotations/export-pdf': ['./node_modules/**'],
+  },
 
   turbopack: {},
 };
