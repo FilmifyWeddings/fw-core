@@ -83,6 +83,29 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Password Strength Calculation
+  const getPasswordStrength = (pass: string) => {
+    if (!pass) return { score: 0, label: '', color: 'bg-zinc-200', barCount: 0, textColor: 'text-zinc-400', dot: 'bg-zinc-300' };
+    let score = 0;
+    if (pass.length >= 6) score += 1;
+    if (pass.length >= 8) score += 1;
+    if (/[A-Z]/.test(pass) && /[a-z]/.test(pass) && /[0-9]/.test(pass)) score += 1;
+    if (/[^A-Za-z0-9]/.test(pass)) score += 1;
+
+    if (score <= 1) {
+      return { score: 1, label: 'Weak (Add numbers & minimum 6 characters)', color: 'bg-rose-500', barCount: 1, textColor: 'text-rose-600', dot: 'bg-rose-500' };
+    }
+    if (score === 2) {
+      return { score: 2, label: 'Moderate (Add uppercase letters or symbols)', color: 'bg-amber-500', barCount: 2, textColor: 'text-amber-600', dot: 'bg-amber-500' };
+    }
+    if (score === 3) {
+      return { score: 3, label: 'Strong password', color: 'bg-blue-500', barCount: 3, textColor: 'text-blue-600', dot: 'bg-blue-500' };
+    }
+    return { score: 4, label: 'Very strong & secure password', color: 'bg-emerald-500', barCount: 4, textColor: 'text-emerald-600', dot: 'bg-emerald-500' };
+  };
+
+  const pwdStrength = getPasswordStrength(signupPassword);
+
   // Close country dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -461,7 +484,7 @@ export default function LoginPage() {
                   </button>
                 </form>
               ) : (
-                /* ── SIGN UP FORM (5 REQUIRED FIELDS) ── */
+                /* ── SIGN UP FORM (5 REQUIRED FIELDS + PASSWORD STRENGTH METER) ── */
                 <form onSubmit={handleSignupSubmit} className="space-y-2 sm:space-y-2.5" autoComplete="off">
                   
                   {/* Honeypot hidden fields to trap browser password managers */}
@@ -639,6 +662,29 @@ export default function LoginPage() {
                       {showSignupPassword ? <EyeOff className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
                     </button>
                   </div>
+
+                  {/* 🎨 Animated Colorful Password Strength Meter */}
+                  {signupPassword && (
+                    <div className="pt-0.5 space-y-1 transition-all duration-300">
+                      <div className="grid grid-cols-4 gap-1.5 h-1.5 w-full">
+                        {[1, 2, 3, 4].map((step) => {
+                          const active = pwdStrength.barCount >= step;
+                          return (
+                            <div
+                              key={step}
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                active ? pwdStrength.color + ' shadow-sm' : 'bg-zinc-200'
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                        <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${pwdStrength.dot}`} />
+                        <span className={pwdStrength.textColor}>{pwdStrength.label}</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Error Notification */}
                   {error && (

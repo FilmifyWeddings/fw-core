@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isEmailRegistered, isDisposableEmail, generateAndStoreEmailOtp } from '@/lib/auth-otp-store';
+import { isEmailRegistered, isPhoneRegistered, isDisposableEmail, generateAndStoreEmailOtp } from '@/lib/auth-otp-store';
 import { sendEmailOtp } from '@/lib/email-service';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/send-email-otp
- * Validates signup details, blocks disposable emails, and sends 6-digit verification code.
+ * Validates signup details, blocks duplicate mobile numbers, blocks disposable emails,
+ * and delivers 6-digit OTP instantly.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -17,6 +19,8 @@ export async function POST(req: NextRequest) {
     const targetStudio = (businessName || '').trim();
     const targetEmail = (email || '').trim().toLowerCase();
     const cleanPhone = (phone || '').replace(/\D/g, '');
+    const code = (countryCode || '+91').trim();
+    const fullPhone = cleanPhone ? `${code}${cleanPhone}` : '';
 
     // 1. Basic field validations
     if (!targetName) {
@@ -43,36 +47,53 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 3. Check if email already registered
-    const alreadyExists = await isEmailRegistered(targetEmail);
-    if (alreadyExists) {
+    // 3. Duplicate Email Check
+    const emailExists = await isEmailRegistered(targetEmail);
+    if (emailExists) {
       return NextResponse.json({
         success: false,
         error: 'An account with this email address already exists. Please log in.',
       }, { status: 400 });
     }
 
-    // 4. Generate 6-digit OTP (valid for 10 minutes)
+    // 4. Duplicate Mobile Number Check
+    const phoneExists = await isPhoneRegistered(cleanPhone);
+    if (phoneExists) {
+      return NextResponse.json({
+        success: false,
+        error: 'This mobile number is already registered with another account. Please use a different number or log in.',
+      }, { status: 400 });
+    }
+
+    // 5. Generate 6-digit OTP (valid for 10 minutes)
     const { otp } = await generateAndStoreEmailOtp({
       email: targetEmail,
       name: targetName,
-      phone: `${countryCode || '+91'}${cleanPhone}`,
+      phone: fullPhone,
       expiresInMinutes: 10,
     });
 
     console.log(`[Email OTP] Generated code for ${targetEmail}: ${otp}`);
 
-    // 5. Send verification code via Hostinger SMTP
-    const emailResult = await sendEmailOtp({
+    // 6. Non-blocking Hostinger SMTP Dispatch
+    sendEmailOtp({
       toEmail: targetEmail,
       recipientName: targetName,
       otp,
       expiresInMinutes: 10,
+    }).catch((emailErr) => {
+      console.warn('[Email OTP SMTP Notice]:', emailErr?.message);
     });
 
-    if (!emailResult.success) {
-      console.warn('[Email OTP Send Warning]:', emailResult.error);
-    }
+    // 7. Supabase Password/Magic OTP recovery backup
+    try {
+      supabaseAdmin.auth.signInWithOtp({
+        email: targetEmail,
+        options: {
+          shouldCreateUser: false,
+        },
+      }).catch(() => {});
+    } catch (_) {}
 
     return NextResponse.json({
       success: true,

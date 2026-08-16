@@ -53,7 +53,6 @@ export function isDisposableEmail(rawEmail: string): boolean {
  */
 export function normalizePhoneNumber(rawPhone: string): string {
   const digits = rawPhone.replace(/\D/g, '');
-  // If 10-digit Indian number without country code, prepend 91
   if (digits.length === 10) {
     return `91${digits}`;
   }
@@ -64,19 +63,30 @@ export function normalizePhoneNumber(rawPhone: string): string {
  * Check if a phone number is already registered in profiles or user metadata
  */
 export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
-  const phone = normalizePhoneNumber(rawPhone);
-  const raw10 = phone.slice(-10);
+  const digits = rawPhone.replace(/\D/g, '');
+  if (!digits || digits.length < 7) return false;
+  const raw10 = digits.slice(-10);
 
   try {
-    // Check in profiles table
+    // 1. Check in profiles table
     const { data: profiles, error } = await supabaseAdmin
       .from('profiles')
       .select('id, phone')
-      .or(`phone.eq.${phone},phone.eq.+${phone},phone.ilike.%${raw10}%`)
+      .or(`phone.eq.${digits},phone.eq.+${digits},phone.ilike.%${raw10}%`)
       .limit(1);
 
     if (!error && profiles && profiles.length > 0) {
       return true;
+    }
+
+    // 2. Check in Auth user metadata
+    const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+    if (userList?.users) {
+      const match = userList.users.some(u => {
+        const uPhone = (u.user_metadata?.phone || u.phone || '').replace(/\D/g, '');
+        return uPhone && (uPhone === digits || uPhone.endsWith(raw10) || digits.endsWith(uPhone.slice(-10)));
+      });
+      if (match) return true;
     }
   } catch (err) {
     console.error('[isPhoneRegistered Check Error]:', err);

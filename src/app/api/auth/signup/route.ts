@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, supabase } from '@/lib/supabase';
-import { verifyEmailOtp, isDisposableEmail } from '@/lib/auth-otp-store';
+import { verifyEmailOtp, isDisposableEmail, isPhoneRegistered } from '@/lib/auth-otp-store';
 import { sendWelcomeEmail } from '@/lib/email-service';
 
 export const runtime = 'nodejs';
@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
  * POST /api/auth/signup
  * Instant Signup API for StudioCore accounts with 6-digit Email OTP Verification:
  * - Validates Full Name, Studio Name, Email, Phone, Country Code, Password
+ * - Enforces Duplicate Mobile & Disposable Email protections
  * - Verifies 6-digit Email OTP
  * - Creates user in Supabase Auth (email_confirm: true)
  * - Creates profile in public.profiles table
@@ -70,7 +71,16 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Check if user already exists
+    // 2. Duplicate Mobile Check
+    const phoneExists = await isPhoneRegistered(cleanPhoneDigits);
+    if (phoneExists) {
+      return NextResponse.json({
+        success: false,
+        error: 'This mobile number is already registered with another account. Please use a different number or log in.',
+      }, { status: 400 });
+    }
+
+    // 3. Check if user already exists
     let existingUser = null;
     try {
       const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
@@ -129,7 +139,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Upsert profile in `profiles` table
+    // 4. Upsert profile in `profiles` table
     if (userId) {
       try {
         await supabaseAdmin.from('profiles').upsert({
@@ -145,7 +155,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Send Congratulations / Welcome Email via Hostinger SMTP (in background)
+    // 5. Send Congratulations / Welcome Email via Hostinger SMTP (in background)
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
     sendWelcomeEmail({
       toEmail: targetEmail,
@@ -156,7 +166,7 @@ export async function POST(req: NextRequest) {
       console.warn('[Async Welcome Email Notice]:', err);
     });
 
-    // 5. Authenticate and sign in user immediately
+    // 6. Authenticate and sign in user immediately
     const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
       email: targetEmail,
       password: targetPassword,
