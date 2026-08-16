@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 /**
  * POST /api/auth/send-email-otp
  * Validates signup details, blocks duplicate mobile numbers, blocks disposable emails,
- * and delivers 6-digit OTP instantly.
+ * and triggers instant 6-digit OTP delivery via Supabase Cloud Mailer + Hostinger fallback.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -75,7 +75,30 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Email OTP] Generated code for ${targetEmail}: ${otp}`);
 
-    // 6. Non-blocking Hostinger SMTP Dispatch
+    // 6. Trigger Supabase Cloud OTP Delivery (Instant HTTPS Mailer)
+    try {
+      const { data: sbData, error: sbError } = await supabaseAdmin.auth.signInWithOtp({
+        email: targetEmail,
+        options: {
+          shouldCreateUser: true,
+          data: {
+            full_name: targetName,
+            workspace_name: targetStudio,
+            phone: fullPhone,
+          },
+        },
+      });
+
+      if (sbError) {
+        console.warn('[Supabase OTP Dispatch Warning]:', sbError.message);
+      } else {
+        console.log('[Supabase OTP Dispatched Successfully to Cloud Mailer]');
+      }
+    } catch (sbErr: any) {
+      console.warn('[Supabase OTP Call Exception]:', sbErr?.message);
+    }
+
+    // 7. Non-blocking Hostinger SMTP Dispatch in background
     sendEmailOtp({
       toEmail: targetEmail,
       recipientName: targetName,
@@ -84,16 +107,6 @@ export async function POST(req: NextRequest) {
     }).catch((emailErr) => {
       console.warn('[Email OTP SMTP Notice]:', emailErr?.message);
     });
-
-    // 7. Supabase Password/Magic OTP recovery backup
-    try {
-      supabaseAdmin.auth.signInWithOtp({
-        email: targetEmail,
-        options: {
-          shouldCreateUser: false,
-        },
-      }).catch(() => {});
-    } catch (_) {}
 
     return NextResponse.json({
       success: true,
