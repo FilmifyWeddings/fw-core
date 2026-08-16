@@ -49,35 +49,36 @@ export default function ForgotPasswordPage() {
     <main className="fixed inset-0 w-full h-[100dvh] bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex flex-col justify-between p-3.5 sm:p-6 lg:p-10 overflow-hidden z-10">
       
       {/* ── RESPONSIVE CONTAINER ── */}
-      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-2 sm:gap-4 lg:gap-12 xl:gap-16 my-auto h-full max-h-[100dvh] lg:max-h-none justify-center">
+      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-3 lg:gap-12 xl:gap-16 my-auto h-full max-h-[100dvh] lg:max-h-none justify-center">
         
         {/* Left Column */}
-        <div className="w-full max-w-[360px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col justify-between my-auto h-full max-h-[100dvh] lg:max-h-none lg:justify-center">
+        <div className="w-full max-w-[360px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col justify-between h-full max-h-[100dvh] lg:max-h-none lg:justify-center">
           
-          <div>
-            {/* StudioCore Logo */}
-            <div className="mb-2 sm:mb-4 lg:mb-12">
-              <div className="flex items-center gap-2.5 sm:gap-4">
-                <div className="relative w-11 h-6 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
-                  <Image
-                    src="/images/auth/sc-orange-logo.png"
-                    alt="StudioCore SC Logo"
-                    fill
-                    className="object-contain"
-                    priority
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xl sm:text-3xl xl:text-[32px] font-black tracking-tight text-zinc-950 font-sans leading-none">
-                    StudioCore
-                  </span>
-                  <span className="text-[10px] sm:text-[13px] xl:text-sm font-semibold text-zinc-600 tracking-normal mt-0.5 sm:mt-1 leading-none">
-                    Focus on Art, We Manage
-                  </span>
-                </div>
+          {/* Logo (Top Left) */}
+          <div className="pt-0.5 sm:pt-1">
+            <div className="flex items-center gap-2.5 sm:gap-4">
+              <div className="relative w-11 h-6 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
+                <Image
+                  src="/images/auth/sc-orange-logo.png"
+                  alt="StudioCore SC Logo"
+                  fill
+                  className="object-contain"
+                  priority
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xl sm:text-3xl xl:text-[32px] font-black tracking-tight text-zinc-950 font-sans leading-none">
+                  StudioCore
+                </span>
+                <span className="text-[10px] sm:text-[13px] xl:text-sm font-semibold text-zinc-600 tracking-normal mt-0.5 sm:mt-1 leading-none">
+                  Focus on Art, We Manage
+                </span>
               </div>
             </div>
+          </div>
 
+          {/* Form Block */}
+          <div className="my-auto pt-3 sm:pt-5 lg:pt-0 lg:mt-10 xl:mt-12 flex flex-col">
             <Link
               href="/login"
               className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-600 hover:text-[#F36F21] transition-colors mb-2 sm:mb-4"
@@ -87,15 +88,15 @@ export default function ForgotPasswordPage() {
             </Link>
 
             <div>
-              <h1 className="text-xl sm:text-3xl xl:text-[36px] font-black text-zinc-900 tracking-tight leading-tight">
+              <h1 className="text-2xl sm:text-3xl xl:text-[36px] font-black text-zinc-900 tracking-tight leading-tight">
                 Reset Password
               </h1>
-              <p className="text-[11px] sm:text-sm text-zinc-600 mt-0.5 font-normal">
+              <p className="text-xs sm:text-sm text-zinc-600 mt-0.5 font-normal">
                 Enter your email address to receive a secure reset link.
               </p>
             </div>
 
-            <div className="mt-2 sm:mt-4">
+            <div className="mt-3 sm:mt-4">
               {isSubmitted ? (
                 <div className="p-4 sm:p-6 rounded-2xl bg-white border border-emerald-300 text-center space-y-2.5 shadow-sm">
                   <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-md">
@@ -119,7 +120,7 @@ export default function ForgotPasswordPage() {
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-2 sm:space-y-3.5">
+                <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3.5">
                   <div>
                     <div className="relative flex items-center">
                       <div className="absolute left-3.5 pointer-events-none text-zinc-400">
@@ -161,7 +162,7 @@ export default function ForgotPasswordPage() {
             </div>
 
             {/* Capture graphic */}
-            <div className="mt-2.5 sm:mt-4 lg:mt-8 relative w-full max-w-[290px] sm:max-w-[360px] lg:max-w-[450px] h-[44px] sm:h-[58px] lg:h-[78px] mx-auto">
+            <div className="mt-3 sm:mt-4 lg:mt-8 relative w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[450px] h-[46px] sm:h-[58px] lg:h-[78px] mx-auto">
               <Image
                 src="/Capture · Manage · Deliver · Grow.png"
                 alt="Capture · Manage · Deliver · Grow"
@@ -172,14 +173,14 @@ export default function ForgotPasswordPage() {
             </div>
           </div>
 
-          {/* Mobile 3D Photographer (Larger size with bottom 20% natural clipping) */}
-          <div className="block lg:hidden w-full max-w-[320px] sm:max-w-[380px] h-[190px] sm:h-[230px] mx-auto -mb-6 sm:-mb-8 relative overflow-hidden shrink-0">
+          {/* Mobile 3D Photographer */}
+          <div className="block lg:hidden w-full max-w-[340px] sm:max-w-[400px] aspect-[1292/1217] max-h-[33vh] sm:max-h-[36vh] mx-auto mt-1 sm:mt-2 relative shrink-0">
             <Image
               src="/3D Photographer.png"
               alt="3D Photographer Workspace"
               fill
-              className="object-contain object-top"
-              sizes="(max-width: 1024px) 380px, 0px"
+              className="object-contain object-bottom select-none"
+              sizes="(max-width: 1024px) 400px, 0px"
               priority
             />
           </div>
