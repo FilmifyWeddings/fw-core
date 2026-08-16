@@ -85,24 +85,14 @@ export default function ResetPasswordPage() {
         
         {/* Top Header */}
         <header className="pt-2 sm:pt-4 lg:pt-2">
-          <div className="flex items-center gap-3.5">
-            <div className="relative w-12 h-7 sm:w-14 sm:h-8 xl:w-[60px] xl:h-[34px] shrink-0 flex items-center justify-center">
-              <Image
-                src="/images/auth/sc-orange-logo.png"
-                alt="StudioCore SC Logo"
-                fill
-                className="object-contain select-none"
-                priority
-              />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-2xl sm:text-[28px] font-black tracking-tight text-zinc-950 font-sans leading-none">
-                StudioCore
-              </span>
-              <span className="text-xs sm:text-[13px] font-semibold text-zinc-600 tracking-normal mt-1 leading-none">
-                Focus on Art, We Manage
-              </span>
-            </div>
+          <div className="relative w-[165px] sm:w-[180px] xl:w-[205px] h-[40px] sm:h-[44px] xl:h-[50px] select-none">
+            <Image
+              src="/images/auth/studiocore-logo-transparent.png"
+              alt="StudioCore - Focus on Art, We Manage"
+              fill
+              className="object-contain object-left select-none"
+              priority
+            />
           </div>
         </header>
 
@@ -177,7 +167,7 @@ export default function ResetPasswordPage() {
                                 ? 'w-1/4 bg-red-500'
                                 : strength <= 50
                                 ? 'w-2/4 bg-amber-500'
-                                : strength <= 75
+                              : strength <= 75
                                 ? 'w-3/4 bg-blue-500'
                                 : 'w-full bg-emerald-500'
                             }`}
@@ -237,12 +227,12 @@ export default function ResetPasswordPage() {
             </div>
 
             {/* Capture graphic */}
-            <div className="mt-7 sm:mt-8 relative w-[280px] sm:w-[320px] max-w-[90%] h-11 sm:h-12 mx-auto flex items-center justify-center">
+            <div className="mt-8 sm:mt-9 relative w-[175px] sm:w-[185px] xl:w-[210px] h-[58px] sm:h-[62px] xl:h-[70px] mx-auto flex items-center justify-center select-none">
               <Image
                 src="/Capture · Manage · Deliver · Grow.png"
                 alt="Capture · Manage · Deliver · Grow"
                 fill
-                className="object-contain object-center select-none"
+                className="object-contain object-center"
                 priority
               />
             </div>

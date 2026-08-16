@@ -221,33 +221,23 @@ export default function LoginPage() {
           ═══════════════════════════════════════════════════════════════ */}
       <div className="w-full max-w-[1360px] mx-auto flex-1 flex flex-col justify-between">
         
-        {/* ── TOP HEADER: StudioCore Logo + Tagline ── */}
+        {/* ── TOP HEADER: StudioCore Logo (Explicit 205px Desktop Width) ── */}
         <header className="pt-2 sm:pt-4 lg:pt-2">
-          <div className="flex items-center gap-3.5">
-            <div className="relative w-12 h-7 sm:w-14 sm:h-8 xl:w-[60px] xl:h-[34px] shrink-0 flex items-center justify-center">
-              <Image
-                src="/images/auth/sc-orange-logo.png"
-                alt="StudioCore SC Logo"
-                fill
-                className="object-contain select-none"
-                priority
-              />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-2xl sm:text-[28px] font-black tracking-tight text-zinc-950 font-sans leading-none">
-                StudioCore
-              </span>
-              <span className="text-xs sm:text-[13px] font-semibold text-zinc-600 tracking-normal mt-1 leading-none">
-                Focus on Art, We Manage
-              </span>
-            </div>
+          <div className="relative w-[165px] sm:w-[180px] xl:w-[205px] h-[40px] sm:h-[44px] xl:h-[50px] select-none">
+            <Image
+              src="/images/auth/studiocore-logo-transparent.png"
+              alt="StudioCore - Focus on Art, We Manage"
+              fill
+              className="object-contain object-left select-none"
+              priority
+            />
           </div>
         </header>
 
         {/* ── MAIN CONTENT GRID: LOGIN (LEFT) + PHOTOGRAPHER (RIGHT) ── */}
         <div className="my-auto py-6 lg:py-0 grid grid-cols-1 lg:grid-cols-[40%_60%] xl:grid-cols-[38%_62%] items-center gap-8 lg:gap-10 xl:gap-14 min-h-[calc(100vh-140px)] lg:min-h-0">
           
-          {/* LEFT: LOGIN SECTION (Compact ~380px Form) */}
+          {/* LEFT: LOGIN SECTION (Form Width 360–380px) */}
           <div className="w-full max-w-[380px] mx-auto lg:mx-0 justify-self-start">
             
             {/* Welcome Heading */}
@@ -469,13 +459,13 @@ export default function LoginPage() {
               )}
             </div>
 
-            {/* ── CAPTURE · MANAGE · DELIVER · GROW (Centered below Login Form) ── */}
-            <div className="mt-7 sm:mt-8 relative w-[280px] sm:w-[320px] max-w-[90%] h-11 sm:h-12 mx-auto flex items-center justify-center">
+            {/* ── CAPTURE · MANAGE · DELIVER · GROW (Explicit 210px Desktop Width, Centered) ── */}
+            <div className="mt-8 sm:mt-9 relative w-[175px] sm:w-[185px] xl:w-[210px] h-[58px] sm:h-[62px] xl:h-[70px] mx-auto flex items-center justify-center select-none">
               <Image
                 src="/Capture · Manage · Deliver · Grow.png"
                 alt="Capture · Manage · Deliver · Grow"
                 fill
-                className="object-contain object-center select-none"
+                className="object-contain object-center"
                 priority
               />
             </div>
