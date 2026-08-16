@@ -51,23 +51,26 @@ export default function ForgotPasswordPage() {
       {/* ── LEFT SIDE: FORGOT PASSWORD FORM ── */}
       <section className="w-full lg:w-[44%] xl:w-[40%] flex flex-col justify-between p-8 sm:p-12 md:p-14 lg:pl-16 lg:pr-10 lg:py-10 xl:pl-24 xl:pr-12 xl:py-12 z-10 shrink-0">
         
-        {/* Top StudioCore Logo */}
+        {/* Top StudioCore Brand Header with Orange SC Logo Mark */}
         <div className="flex items-center gap-3.5">
-          <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl overflow-hidden shadow-md shadow-zinc-900/10 shrink-0 bg-black flex items-center justify-center border border-amber-400/30">
+          <div className="relative w-12 h-7 sm:w-14 sm:h-8.5 shrink-0 flex items-center justify-center">
             <Image
-              src="/StudioCorelogo1.png"
+              src="/images/auth/sc-orange-logo.png"
               alt="StudioCore Logo"
               fill
-              className="object-cover"
+              className="object-contain select-none"
               priority
             />
           </div>
           <div className="flex flex-col">
-            <span className="text-xl sm:text-2xl font-black tracking-tight text-zinc-900 font-serif leading-none">
-              Studio<span className="text-amber-700">Core</span>
+            <span className="text-xl sm:text-2xl font-black tracking-tight text-zinc-950 font-sans leading-none">
+              StudioCore
             </span>
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-500 mt-1">
-              Capturing Moments &middot; OS
+            <span className="text-[11px] font-bold text-zinc-700 leading-tight mt-1">
+              Focus on Art, We Manage
+            </span>
+            <span className="text-[9px] font-medium text-zinc-500 tracking-wider mt-0.5">
+              Capture &middot; Manage &middot; Deliver &middot; Grow
             </span>
           </div>
         </div>
@@ -164,9 +167,14 @@ export default function ForgotPasswordPage() {
 
         {/* Bottom Tagline */}
         <div className="pt-4 flex items-center justify-between text-xs text-zinc-500 border-t border-zinc-300/60">
-          <span className="font-serif italic tracking-wide text-zinc-700 text-sm">
-            Shoot &middot; Edit &middot; Deliver &middot; Grow
-          </span>
+          <div className="relative h-6 w-36 sm:w-44">
+            <Image
+              src="/images/auth/shoot-edit-deliver-grow.png"
+              alt="Shoot Edit Deliver Grow"
+              fill
+              className="object-contain object-left select-none"
+            />
+          </div>
           <span className="font-semibold text-[11px] text-zinc-500">
             StudioCore Security
           </span>
