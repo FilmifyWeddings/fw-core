@@ -49,11 +49,11 @@ export default function ForgotPasswordPage() {
     <main className="min-h-screen w-full bg-[#F6EFEB] flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden selection:bg-[#F36F21] selection:text-white font-sans">
       
       {/* ── LEFT SIDE: FORGOT PASSWORD FORM ── */}
-      <section className="w-full lg:w-[46%] xl:w-[42%] flex flex-col justify-between p-6 sm:p-10 md:p-14 lg:pl-16 lg:pr-8 lg:py-10 xl:pl-24 xl:pr-12 xl:py-12 z-10 shrink-0">
+      <section className="w-full lg:w-[45%] xl:w-[40%] flex flex-col justify-between p-6 sm:p-10 md:p-12 lg:pl-14 lg:pr-8 lg:py-10 xl:pl-20 xl:pr-10 xl:py-12 z-10 shrink-0">
         
-        {/* Top StudioCore Brand Header with Larger Orange SC Logo */}
-        <div className="flex items-center gap-4">
-          <div className="relative w-14 h-8 sm:w-16 sm:h-9.5 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
+        {/* Top StudioCore Brand Header with Orange SC Logo Mark */}
+        <div className="flex items-center gap-3.5 sm:gap-4">
+          <div className="relative w-13 h-7.5 sm:w-16 sm:h-9 xl:w-[68px] xl:h-[38px] shrink-0 flex items-center justify-center">
             <Image
               src="/images/auth/sc-orange-logo.png"
               alt="StudioCore SC Logo"
@@ -66,14 +66,14 @@ export default function ForgotPasswordPage() {
             <span className="text-2xl sm:text-3xl xl:text-[32px] font-black tracking-tight text-zinc-950 font-sans leading-none">
               StudioCore
             </span>
-            <span className="text-xs sm:text-sm font-semibold text-zinc-600 tracking-normal mt-1.5 leading-none">
+            <span className="text-xs sm:text-[13px] xl:text-sm font-semibold text-zinc-600 tracking-normal mt-1.5 leading-none">
               Focus on Art, We Manage
             </span>
           </div>
         </div>
 
         {/* Form Content */}
-        <div className="my-8 lg:my-auto max-w-[420px] sm:max-w-[450px] xl:max-w-[470px] w-full">
+        <div className="my-8 lg:my-auto max-w-[420px] sm:max-w-[450px] xl:max-w-[470px] w-full mx-auto lg:mx-0">
           
           <Link
             href="/login"
@@ -120,7 +120,7 @@ export default function ForgotPasswordPage() {
                 <div>
                   <div className="relative flex items-center">
                     <div className="absolute left-4 pointer-events-none text-zinc-400">
-                      <Mail className="w-4.5 h-4.5" />
+                      <Mail className="w-5 h-5" />
                     </div>
                     <input
                       type="email"
@@ -164,7 +164,7 @@ export default function ForgotPasswordPage() {
               src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
               fill
-              className="object-contain object-left select-none"
+              className="object-contain object-center lg:object-left select-none"
               priority
             />
           </div>
@@ -179,15 +179,15 @@ export default function ForgotPasswordPage() {
       </section>
 
       {/* ── RIGHT SIDE: 3D PHOTOGRAPHER WORKSPACE ── */}
-      <section className="w-full lg:w-[54%] xl:w-[58%] relative flex items-center justify-center bg-[#F6EFEB] overflow-hidden min-h-[380px] lg:min-h-full p-4 sm:p-8 lg:p-12">
-        <div className="relative w-full max-w-[560px] xl:max-w-[620px] aspect-[1292/1217] max-h-[82vh] flex items-center justify-center">
+      <section className="w-full lg:w-[55%] xl:w-[60%] relative flex items-center justify-center bg-[#F6EFEB] overflow-hidden min-h-[380px] lg:min-h-full p-4 sm:p-8 lg:p-10 xl:p-12">
+        <div className="relative w-full max-w-[660px] xl:max-w-[760px] aspect-[1292/1217] max-h-[86vh] flex items-center justify-center">
           <Image
             src="/3D Photographer.png"
             alt="3D StudioCore Photographer Workspace"
             fill
             priority
             className="object-contain object-center select-none"
-            sizes="(max-width: 1024px) 100vw, 56vw"
+            sizes="(max-width: 1024px) 100vw, 60vw"
           />
         </div>
       </section>
