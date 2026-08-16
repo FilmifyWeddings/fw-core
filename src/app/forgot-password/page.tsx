@@ -49,11 +49,11 @@ export default function ForgotPasswordPage() {
     <main className="min-h-screen w-full bg-[#F6EFEB] flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden selection:bg-[#F36F21] selection:text-white font-sans">
       
       {/* ── LEFT SIDE: FORGOT PASSWORD FORM ── */}
-      <section className="w-full lg:w-[42%] xl:w-[38%] flex flex-col justify-between p-6 sm:p-10 md:p-12 lg:pl-16 lg:pr-8 lg:py-12 xl:pl-24 xl:pr-10 xl:py-14 z-10 shrink-0">
+      <section className="w-full lg:w-[46%] xl:w-[42%] flex flex-col justify-between p-6 sm:p-10 md:p-14 lg:pl-16 lg:pr-8 lg:py-10 xl:pl-24 xl:pr-12 xl:py-12 z-10 shrink-0">
         
-        {/* Top StudioCore Brand Header with Orange SC Logo Mark */}
-        <div className="flex items-center gap-3">
-          <div className="relative w-12 h-7 sm:w-14 sm:h-8 shrink-0 flex items-center justify-center">
+        {/* Top StudioCore Brand Header with Larger Orange SC Logo */}
+        <div className="flex items-center gap-4">
+          <div className="relative w-14 h-8 sm:w-16 sm:h-9.5 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
             <Image
               src="/images/auth/sc-orange-logo.png"
               alt="StudioCore SC Logo"
@@ -63,31 +63,31 @@ export default function ForgotPasswordPage() {
             />
           </div>
           <div className="flex flex-col">
-            <span className="text-2xl sm:text-[26px] font-black tracking-tight text-zinc-950 font-sans leading-none">
+            <span className="text-2xl sm:text-3xl xl:text-[32px] font-black tracking-tight text-zinc-950 font-sans leading-none">
               StudioCore
             </span>
-            <span className="text-xs sm:text-[13px] font-medium text-zinc-600 tracking-normal mt-1 leading-none">
+            <span className="text-xs sm:text-sm font-semibold text-zinc-600 tracking-normal mt-1.5 leading-none">
               Focus on Art, We Manage
             </span>
           </div>
         </div>
 
         {/* Form Content */}
-        <div className="my-8 lg:my-auto max-w-[340px] sm:max-w-[380px] w-full">
+        <div className="my-8 lg:my-auto max-w-[420px] sm:max-w-[450px] xl:max-w-[470px] w-full">
           
           <Link
             href="/login"
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-600 hover:text-[#F36F21] transition-colors mb-6"
+            className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-zinc-600 hover:text-[#F36F21] transition-colors mb-6"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-4 h-4" />
             <span>Back to Login</span>
           </Link>
 
           <div>
-            <h1 className="text-3xl sm:text-[34px] font-extrabold text-zinc-900 tracking-tight leading-tight">
+            <h1 className="text-3xl sm:text-4xl xl:text-[42px] font-black text-zinc-900 tracking-tight leading-tight">
               Reset Password
             </h1>
-            <p className="text-sm text-zinc-600 mt-1.5 font-normal">
+            <p className="text-sm sm:text-base text-zinc-600 mt-2 font-medium">
               Enter your registered email address and we will send a 15-minute secure reset link.
             </p>
           </div>
@@ -120,7 +120,7 @@ export default function ForgotPasswordPage() {
                 <div>
                   <div className="relative flex items-center">
                     <div className="absolute left-4 pointer-events-none text-zinc-400">
-                      <Mail className="w-4 h-4" />
+                      <Mail className="w-4.5 h-4.5" />
                     </div>
                     <input
                       type="email"
@@ -128,14 +128,14 @@ export default function ForgotPasswordPage() {
                       onChange={(e) => { setEmail(e.target.value); setError(null); }}
                       placeholder="Email Address"
                       required
-                      className="w-full pl-11 pr-4 h-12 rounded-xl bg-white/90 border border-zinc-300/90 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      className="w-full pl-12 pr-4 h-[52px] sm:h-[54px] rounded-2xl bg-white/95 border border-zinc-300 text-zinc-900 text-sm sm:text-base font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-3 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-xs"
                     />
                   </div>
                 </div>
 
                 {error && (
-                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-red-700 font-bold">
-                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2.5 text-xs sm:text-sm text-red-700 font-bold">
+                    <AlertCircle className="w-4.5 h-4.5 text-red-500 shrink-0 mt-0.5" />
                     <span>{error}</span>
                   </div>
                 )}
@@ -143,7 +143,7 @@ export default function ForgotPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-12 rounded-xl bg-[#F36F21] hover:bg-[#e06118] text-white font-bold text-sm tracking-wide flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full h-[52px] sm:h-[54px] rounded-2xl bg-[#F36F21] hover:bg-[#e06118] text-white font-bold text-base tracking-wide flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all cursor-pointer disabled:opacity-50"
                 >
                   {loading ? (
                     <span>Sending Reset Link...</span>
@@ -159,7 +159,7 @@ export default function ForgotPasswordPage() {
           </div>
 
           {/* Capture Manage Deliver Grow */}
-          <div className="mt-8 relative w-full max-w-[290px] h-10 sm:h-12 flex items-center">
+          <div className="mt-8 sm:mt-10 relative w-full max-w-[360px] sm:max-w-[400px] h-12 sm:h-14 mx-auto lg:mx-0 flex items-center">
             <Image
               src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
@@ -179,15 +179,15 @@ export default function ForgotPasswordPage() {
       </section>
 
       {/* ── RIGHT SIDE: 3D PHOTOGRAPHER WORKSPACE ── */}
-      <section className="w-full lg:w-[58%] xl:w-[62%] relative flex items-center justify-center bg-[#F6EFEB] overflow-hidden min-h-[400px] lg:min-h-full">
-        <div className="relative w-full h-full min-h-[440px] lg:min-h-full flex items-center justify-center p-2 sm:p-6 lg:p-10">
+      <section className="w-full lg:w-[54%] xl:w-[58%] relative flex items-center justify-center bg-[#F6EFEB] overflow-hidden min-h-[380px] lg:min-h-full p-4 sm:p-8 lg:p-12">
+        <div className="relative w-full max-w-[560px] xl:max-w-[620px] aspect-[1292/1217] max-h-[82vh] flex items-center justify-center">
           <Image
             src="/3D Photographer.png"
             alt="3D StudioCore Photographer Workspace"
             fill
             priority
-            className="object-contain object-center lg:object-right-center select-none"
-            sizes="(max-width: 1024px) 100vw, 62vw"
+            className="object-contain object-center select-none"
+            sizes="(max-width: 1024px) 100vw, 56vw"
           />
         </div>
       </section>
