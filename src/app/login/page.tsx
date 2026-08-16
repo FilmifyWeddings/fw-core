@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, Lock, Eye, EyeOff, AlertCircle, Building, Phone, Mail } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle, Building, Phone, Mail, ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
@@ -36,7 +36,7 @@ export default function LoginPage() {
   useEffect(() => {
     const errParam = searchParams.get('error');
     if (errParam === 'unauthorized_staging') {
-      setError('Access Denied: This staging environment is restricted to authorized testing accounts only.');
+      setError('Access Denied: Staging is restricted to authorized accounts.');
     } else if (errParam) {
       setError(decodeURIComponent(errParam));
     }
@@ -96,7 +96,7 @@ export default function LoginPage() {
     }
   };
 
-  // Handle Sign Up Submit (Instant Direct Account Creation & Login)
+  // Handle Sign Up Submit
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -105,18 +105,18 @@ export default function LoginPage() {
     const cleanEmail = signupEmail.trim().toLowerCase();
     const cleanPhone = signupPhone.replace(/\D/g, '');
 
-    if (!cleanName || !cleanEmail || !signupPassword) {
-      setError('Please fill in your name, email, and password.');
+    if (!cleanName) {
+      setError('Please enter your full name.');
       return;
     }
 
-    if (!cleanEmail.includes('@')) {
+    if (!cleanEmail || !cleanEmail.includes('@')) {
       setError('Please enter a valid email address.');
       return;
     }
 
-    if (signupPassword.length < 6) {
-      setError('Password must be at least 6 characters.');
+    if (!signupPassword || signupPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
       return;
     }
 
@@ -157,18 +157,18 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen w-full bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex items-center justify-center p-4 sm:p-6 lg:p-10 h-screen overflow-hidden">
+    <main className="min-h-screen w-full bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex flex-col justify-between p-4 sm:p-6 lg:p-10 lg:h-screen lg:overflow-hidden">
       
       {/* ═══════════════════════════════════════════════════════════════
-          CENTERED CONTAINER (No-scroll on Mobile & Balanced on Desktop)
+          RESPONSIVE TWO-COLUMN CONTAINER
           ═══════════════════════════════════════════════════════════════ */}
-      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-8 lg:gap-12 xl:gap-16 my-auto h-full max-h-screen lg:max-h-none justify-center">
+      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-6 sm:gap-8 lg:gap-12 xl:gap-16 my-auto">
         
         {/* ── LEFT COLUMN: LOGO + FORM + CAPTURE GRAPHIC ── */}
         <div className="w-full max-w-[380px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col justify-center">
           
           {/* 1. StudioCore Brand Logo */}
-          <div className="mb-6 sm:mb-8 lg:mb-12">
+          <div className="mb-5 sm:mb-7 lg:mb-12">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="relative w-12 h-7 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
                 <Image
@@ -203,7 +203,7 @@ export default function LoginPage() {
           </div>
 
           {/* 3. Mode Switcher Tabs */}
-          <div className="flex items-center gap-1 p-1 bg-zinc-300/40 rounded-xl max-w-[180px] mt-4 sm:mt-5">
+          <div className="flex items-center gap-1 p-1 bg-zinc-300/40 rounded-xl max-w-[190px] mt-4 sm:mt-5">
             <button
               type="button"
               onClick={() => { setAuthMode('login'); setError(null); }}
@@ -309,7 +309,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11 sm:h-[48px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 mt-1"
+                  className="w-full h-11 sm:h-[48px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 mt-1 active:scale-[0.99]"
                 >
                   {loading ? 'Logging in...' : 'Login'}
                 </button>
@@ -340,7 +340,7 @@ export default function LoginPage() {
                       type="text"
                       value={businessName}
                       onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
-                      placeholder="Studio Name"
+                      placeholder="Studio Name (Optional)"
                       className="w-full pl-9 pr-3 h-10 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
                     />
                   </div>
@@ -408,16 +408,23 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-10 sm:h-11 rounded-xl bg-[#F36F21] hover:bg-[#e06118] text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full h-11 sm:h-[48px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 mt-1 active:scale-[0.99]"
                 >
-                  {loading ? 'Creating Account...' : 'Create Account & Get Started'}
+                  {loading ? (
+                    'Creating Account...'
+                  ) : (
+                    <>
+                      <span>Create Account & Get Started</span>
+                      <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                    </>
+                  )}
                 </button>
               </form>
             )}
           </div>
 
-          {/* 5. Capture · Manage · Deliver · Grow PNG (Below Login) */}
-          <div className="mt-6 sm:mt-8 relative w-full max-w-[320px] sm:max-w-[400px] lg:max-w-[450px] h-[50px] sm:h-[68px] lg:h-[78px] mx-auto select-none">
+          {/* 5. Capture · Manage · Deliver · Grow PNG */}
+          <div className="mt-5 sm:mt-7 lg:mt-8 relative w-full max-w-[280px] sm:max-w-[380px] lg:max-w-[450px] h-[45px] sm:h-[60px] lg:h-[78px] mx-auto select-none">
             <Image
               src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
@@ -427,7 +434,19 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* 6. Copyright */}
+          {/* 6. Mobile 3D Photographer (Compactly scaled on Mobile, below capture graphic) */}
+          <div className="block lg:hidden w-full max-w-[260px] sm:max-w-[320px] aspect-[1292/1217] mx-auto mt-4 relative select-none">
+            <Image
+              src="/3D Photographer.png"
+              alt="3D Photographer Workspace"
+              fill
+              className="object-contain object-center select-none"
+              sizes="(max-width: 1024px) 320px, 0px"
+              priority
+            />
+          </div>
+
+          {/* 7. Copyright */}
           <div className="pt-4 sm:pt-6 text-center lg:text-left text-xs text-zinc-400">
             <span className="font-medium text-[11px]">
               StudioCore &copy; {new Date().getFullYear()}
@@ -436,7 +455,7 @@ export default function LoginPage() {
 
         </div>
 
-        {/* ── RIGHT COLUMN: 3D PHOTOGRAPHER (Hidden on small mobile to prevent scrolling, Large on Desktop) ── */}
+        {/* ── RIGHT COLUMN: LARGE 3D PHOTOGRAPHER (Desktop Only) ── */}
         <div className="hidden lg:flex w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto items-center justify-center relative">
           <Image
             src="/3D Photographer.png"

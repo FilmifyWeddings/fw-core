@@ -78,16 +78,16 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <main className="min-h-screen w-full bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex items-center justify-center p-4 sm:p-6 lg:p-10 h-screen overflow-hidden">
+    <main className="min-h-screen w-full bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex flex-col justify-between p-4 sm:p-6 lg:p-10 lg:h-screen lg:overflow-hidden">
       
-      {/* ── CENTERED CONTAINER ── */}
-      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-8 lg:gap-12 xl:gap-16 my-auto h-full max-h-screen lg:max-h-none justify-center">
+      {/* ── RESPONSIVE CONTAINER ── */}
+      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-6 sm:gap-8 lg:gap-12 xl:gap-16 my-auto">
         
         {/* Left Column */}
         <div className="w-full max-w-[380px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col justify-center">
           
           {/* StudioCore Logo */}
-          <div className="mb-6 sm:mb-8 lg:mb-12">
+          <div className="mb-5 sm:mb-7 lg:mb-12">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="relative w-12 h-7 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
                 <Image
@@ -235,12 +235,24 @@ export default function ResetPasswordPage() {
           </div>
 
           {/* Capture graphic */}
-          <div className="mt-6 sm:mt-8 relative w-full max-w-[320px] sm:max-w-[400px] lg:max-w-[450px] h-[50px] sm:h-[68px] lg:h-[78px] mx-auto select-none">
+          <div className="mt-5 sm:mt-7 lg:mt-8 relative w-full max-w-[280px] sm:max-w-[380px] lg:max-w-[450px] h-[45px] sm:h-[60px] lg:h-[78px] mx-auto select-none">
             <Image
               src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
               fill
               className="object-contain object-center"
+              priority
+            />
+          </div>
+
+          {/* Mobile 3D Photographer */}
+          <div className="block lg:hidden w-full max-w-[260px] sm:max-w-[320px] aspect-[1292/1217] mx-auto mt-4 relative select-none">
+            <Image
+              src="/3D Photographer.png"
+              alt="3D Photographer Workspace"
+              fill
+              className="object-contain object-center select-none"
+              sizes="(max-width: 1024px) 320px, 0px"
               priority
             />
           </div>
