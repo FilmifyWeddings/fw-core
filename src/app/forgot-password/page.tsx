@@ -2,17 +2,14 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, ArrowRight, Camera, AlertCircle, Sparkles, CheckCircle2, ArrowLeft } from 'lucide-react';
-import CharacterStage, { CharacterState } from '@/components/auth/CharacterStage';
+import Image from 'next/image';
+import { Mail, ArrowRight, Camera, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
-  const [charState, setCharState] = useState<CharacterState>('idle');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [formShake, setFormShake] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,13 +17,11 @@ export default function ForgotPasswordPage() {
 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
-      setError('Please enter a valid email address');
-      triggerErrorAnimation();
+      setError('Please enter a valid email address.');
       return;
     }
 
     setLoading(true);
-    setCharState('submitting');
 
     try {
       const res = await fetch('/api/auth/forgot-password', {
@@ -39,194 +34,150 @@ export default function ForgotPasswordPage() {
 
       if (res.ok && data.success) {
         setIsSubmitted(true);
-        setCharState('success');
       } else {
         setError(data.error || 'Failed to send reset link. Please try again.');
-        triggerErrorAnimation();
       }
     } catch (err: any) {
-      console.error('[Forgot Password Catch Error]:', err);
+      console.error('[Forgot Password Error]:', err);
       setError(err.message || 'Unable to connect to password reset service.');
-      triggerErrorAnimation();
     } finally {
       setLoading(false);
     }
   };
 
-  const triggerErrorAnimation = () => {
-    setCharState('error');
-    setFormShake(true);
-    setTimeout(() => setFormShake(false), 600);
-  };
-
   return (
-    <div className="min-h-screen w-full bg-[#F4F4F6] flex flex-col justify-between selection:bg-orange-500 selection:text-white font-sans overflow-x-hidden">
+    <div className="min-h-screen w-full bg-[#F6EFE5] flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden selection:bg-orange-500 selection:text-white font-sans">
       
-      {/* ── TOP AMBIENT GLOW ── */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-gradient-to-b from-orange-400/10 via-amber-300/5 to-transparent blur-3xl pointer-events-none" />
+      {/* ── LEFT SIDE: FORGOT PASSWORD FORM ── */}
+      <div className="w-full lg:w-[44%] xl:w-[42%] flex flex-col justify-between p-6 sm:p-10 md:p-14 lg:p-12 xl:p-16 z-10">
+        
+        {/* Top Logo */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-sm">
+            <Camera className="w-5 h-5 stroke-[2.2]" />
+          </div>
+          <div>
+            <span className="text-lg font-black tracking-widest text-zinc-900 block leading-none">
+              STUDIO.
+            </span>
+            <span className="text-[9px] font-extrabold uppercase tracking-widest text-zinc-500 block mt-0.5">
+              Capturing Moments
+            </span>
+          </div>
+        </div>
 
-      {/* ── MAIN RESPONSIVE CONTAINER ── */}
-      <div className="flex-1 flex items-center justify-center p-3 sm:p-6 md:p-8 lg:p-12 z-10">
-        <div className="w-full max-w-5xl bg-white/80 backdrop-blur-2xl rounded-3xl sm:rounded-[36px] shadow-[0_20px_70px_rgba(0,0,0,0.06)] border border-white/80 overflow-hidden flex flex-col lg:flex-row items-stretch">
+        {/* Form Content */}
+        <div className="my-8 lg:my-auto max-w-md w-full">
+          
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-orange-600 transition-colors mb-6"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Login</span>
+          </Link>
 
-          {/* ── LEFT COLUMN: FORGOT PASSWORD CARD ── */}
-          <div className="w-full lg:w-[50%] p-6 sm:p-10 md:p-12 flex flex-col justify-between relative bg-white/70">
-            
-            {/* Top Brand Logo */}
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
-                  <Camera className="w-5 h-5 stroke-[2.5]" />
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-black text-zinc-900 tracking-tight">
+              Reset Password
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 mt-2 font-medium">
+              Enter your account email and we will send a 15-minute secure reset link.
+            </p>
+          </div>
+
+          <div className="mt-8">
+            {isSubmitted ? (
+              <div className="p-6 rounded-2xl bg-white border border-emerald-300 text-center space-y-4 shadow-sm">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-md">
+                  <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-black tracking-wider uppercase text-zinc-900 leading-tight">
-                    STUDIO.
-                  </h1>
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">
-                    Capturing Moments
+                  <h3 className="text-base font-extrabold text-zinc-900">
+                    Reset Link Dispatched
+                  </h3>
+                  <p className="text-xs text-zinc-600 mt-1 leading-relaxed">
+                    Check your inbox at <strong className="font-mono text-zinc-900">{email}</strong> for instructions.
                   </p>
                 </div>
-              </div>
-
-              {/* Back to Login Link */}
-              <div className="mt-8">
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-orange-600 transition-colors"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Back to Login</span>
-                </Link>
-              </div>
-
-              {/* Headline */}
-              <div className="mt-4">
-                <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                  Reset Password
-                </h2>
-                <p className="text-xs sm:text-sm text-zinc-500 mt-1.5 font-medium leading-relaxed">
-                  Enter your registered account email and we will send you a secure 15-minute password reset link.
-                </p>
-              </div>
-            </div>
-
-            {/* Mobile Hero Viewport */}
-            <div className="block lg:hidden my-4">
-              <CharacterStage charState={charState} isMobileCompact={true} />
-            </div>
-
-            {/* Form Body or Success State */}
-            <motion.div
-              animate={{ x: formShake ? [0, -10, 10, -8, 8, -4, 4, 0] : 0 }}
-              transition={{ duration: 0.5 }}
-              className="mt-6"
-            >
-              {isSubmitted ? (
-                /* ── SUCCESS NOTIFICATION ── */
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="p-6 rounded-3xl bg-emerald-50/80 border border-emerald-200 text-center space-y-4"
-                >
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
-                    <CheckCircle2 className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-extrabold text-emerald-950">
-                      Reset Link Sent!
-                    </h3>
-                    <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
-                      We have dispatched password reset instructions to{' '}
-                      <strong className="font-mono">{email}</strong>.
-                    </p>
-                  </div>
-                  <div className="pt-2">
-                    <Link
-                      href="/login"
-                      className="inline-block px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-                    >
-                      Return to Log In →
-                    </Link>
-                  </div>
-                </motion.div>
-              ) : (
-                /* ── EMAIL INPUT FORM ── */
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600">
-                      Registered Email Address
-                    </label>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-4 pointer-events-none text-zinc-400">
-                        <Mail className="w-4 h-4 stroke-[2.2]" />
-                      </div>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => { setEmail(e.target.value); setError(null); }}
-                        onFocus={() => setCharState('focus-email')}
-                        onBlur={() => setCharState('idle')}
-                        placeholder="you@domain.com"
-                        required
-                        className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/15 focus:outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Error Notification */}
-                  <AnimatePresence>
-                    {error && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="p-3 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-2.5 text-xs text-red-700 font-bold"
-                      >
-                        <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                        <span>{error}</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-orange-500/25 transition-all transform active:scale-98 disabled:opacity-60 cursor-pointer"
+                <div className="pt-2">
+                  <Link
+                    href="/login"
+                    className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition-all"
                   >
-                    {loading ? (
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 animate-spin" />
-                        <span>Sending Reset Link...</span>
-                      </div>
-                    ) : (
-                      <>
-                        <span>Send Reset Link</span>
-                        <ArrowRight className="w-4 h-4 stroke-[3]" />
-                      </>
-                    )}
-                  </button>
-                </form>
-              )}
-            </motion.div>
+                    Return to Log In &rarr;
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 mb-1.5">
+                    Registered Email Address
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-4 pointer-events-none text-zinc-400">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); setError(null); }}
+                      placeholder="you@studio.com"
+                      required
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
+                    />
+                  </div>
+                </div>
 
-            {/* Bottom Cursive Script Signature Tagline */}
-            <div className="mt-8 pt-4 border-t border-zinc-100 flex items-center justify-between">
-              <span className="font-serif italic text-sm text-zinc-400 tracking-wider">
-                Shoot &middot; Edit &middot; Deliver &middot; Grow
-              </span>
+                {error && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-red-700 font-bold">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                )}
 
-              <span className="text-[11px] font-bold text-zinc-400">
-                Studio Recovery
-              </span>
-            </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {loading ? (
+                    <span>Sending Reset Link...</span>
+                  ) : (
+                    <>
+                      <span>Send Reset Link</span>
+                      <ArrowRight className="w-4 h-4 stroke-[3]" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
           </div>
+        </div>
 
-          {/* ── RIGHT COLUMN: 3D PHOTOGRAPHER STAGE ── */}
-          <div className="hidden lg:flex w-full lg:w-[50%] bg-gradient-to-br from-[#FAFAFC] via-[#F5F5F8] to-[#ECECEF] items-center justify-center relative border-l border-zinc-100/80">
-            <CharacterStage charState={charState} />
-          </div>
+        {/* Bottom Tagline */}
+        <div className="pt-4 flex items-center justify-between text-xs text-zinc-400 border-t border-zinc-300/40">
+          <span className="font-serif italic tracking-wide text-zinc-500 text-sm">
+            Shoot &middot; Edit &middot; Deliver &middot; Grow
+          </span>
+          <span className="font-semibold text-[11px] text-zinc-400">
+            Studio Security
+          </span>
+        </div>
+      </div>
 
+      {/* ── RIGHT SIDE: 3D PHOTOGRAPHER WORKSPACE ── */}
+      <div className="w-full lg:w-[56%] xl:w-[58%] relative flex items-center justify-center bg-[#F6EFE5] overflow-hidden min-h-[380px] lg:min-h-full">
+        <div className="relative w-full h-full min-h-[420px] lg:min-h-full flex items-center justify-center p-4 lg:p-10">
+          <Image
+            src="/images/auth/studio-workspace-desk.webp"
+            alt="3D Studio Photographer Workspace"
+            fill
+            priority
+            className="object-contain object-center select-none"
+            sizes="(max-width: 1024px) 100vw, 60vw"
+          />
         </div>
       </div>
     </div>
