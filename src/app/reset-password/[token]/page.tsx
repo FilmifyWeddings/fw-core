@@ -87,9 +87,9 @@ export default function ResetPasswordPage() {
         <div className="w-full max-w-[400px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col">
           
           {/* StudioCore Logo */}
-          <div className="mb-7 sm:mb-9">
+          <div className="mb-10 sm:mb-12 lg:mb-14">
             <div className="flex items-center gap-3.5 sm:gap-4">
-              <div className="relative w-14 h-8 sm:w-16 sm:h-9 xl:w-[68px] xl:h-[39px] shrink-0 flex items-center justify-center">
+              <div className="relative w-14 h-8 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
                 <Image
                   src="/images/auth/sc-orange-logo.png"
                   alt="StudioCore SC Logo"
@@ -235,7 +235,7 @@ export default function ResetPasswordPage() {
           </div>
 
           {/* Capture graphic */}
-          <div className="mt-7 sm:mt-8 relative w-full max-w-[340px] sm:max-w-[380px] h-[52px] sm:h-[58px] xl:h-[64px] mx-auto select-none">
+          <div className="mt-8 sm:mt-9 relative w-full max-w-[380px] sm:max-w-[420px] lg:max-w-[450px] h-[64px] sm:h-[72px] lg:h-[78px] mx-auto select-none">
             <Image
               src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
@@ -253,14 +253,14 @@ export default function ResetPasswordPage() {
         </div>
 
         {/* Right: 3D Photographer */}
-        <div className="w-full max-w-[760px] xl:max-w-[840px] aspect-[1292/1217] max-h-[85vh] mx-auto flex items-center justify-center relative">
+        <div className="w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto flex items-center justify-center relative">
           <Image
             src="/3D Photographer.png"
             alt="3D StudioCore Photographer Workspace"
             fill
             priority
             className="object-contain object-center select-none"
-            sizes="(max-width: 1024px) 95vw, (max-width: 1440px) 62vw, 840px"
+            sizes="(max-width: 1024px) 95vw, (max-width: 1440px) 64vw, 860px"
           />
         </div>
 

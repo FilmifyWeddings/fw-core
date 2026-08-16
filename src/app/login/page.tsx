@@ -217,17 +217,17 @@ export default function LoginPage() {
     <main className="min-h-screen w-full bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex items-center justify-center p-4 sm:p-6 lg:p-10 lg:h-screen lg:overflow-hidden">
       
       {/* ═══════════════════════════════════════════════════════════════
-          CENTERED TWO-COLUMN CONTAINER (Exact Reference Proportions)
+          CENTERED TWO-COLUMN CONTAINER
           ═══════════════════════════════════════════════════════════════ */}
       <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-8 lg:gap-12 xl:gap-16 my-auto">
         
         {/* ── LEFT COLUMN: LOGO + FORM + TAGLINE STACK ── */}
         <div className="w-full max-w-[400px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col">
           
-          {/* 1. Large StudioCore Brand Logo (Directly Above Welcome Back) */}
-          <div className="mb-7 sm:mb-9">
+          {/* 1. Large StudioCore Brand Logo (Shifted slightly higher with mb-10 sm:mb-12) */}
+          <div className="mb-10 sm:mb-12 lg:mb-14">
             <div className="flex items-center gap-3.5 sm:gap-4">
-              <div className="relative w-14 h-8 sm:w-16 sm:h-9 xl:w-[68px] xl:h-[39px] shrink-0 flex items-center justify-center">
+              <div className="relative w-14 h-8 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
                 <Image
                   src="/images/auth/sc-orange-logo.png"
                   alt="StudioCore SC Logo"
@@ -466,8 +466,8 @@ export default function LoginPage() {
             )}
           </div>
 
-          {/* 5. Large Capture · Manage · Deliver · Grow PNG (Below Login) */}
-          <div className="mt-7 sm:mt-8 relative w-full max-w-[340px] sm:max-w-[380px] h-[52px] sm:h-[58px] xl:h-[64px] mx-auto select-none">
+          {/* 5. Even Larger Capture · Manage · Deliver · Grow PNG (Below Login) */}
+          <div className="mt-8 sm:mt-9 relative w-full max-w-[380px] sm:max-w-[420px] lg:max-w-[450px] h-[64px] sm:h-[72px] lg:h-[78px] mx-auto select-none">
             <Image
               src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
@@ -487,14 +487,14 @@ export default function LoginPage() {
         </div>
 
         {/* ── RIGHT COLUMN: LARGE 3D PHOTOGRAPHER SCENE ── */}
-        <div className="w-full max-w-[760px] xl:max-w-[840px] aspect-[1292/1217] max-h-[85vh] mx-auto flex items-center justify-center relative">
+        <div className="w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto flex items-center justify-center relative">
           <Image
             src="/3D Photographer.png"
             alt="3D Photographer Character Workspace"
             fill
             priority
             className="object-contain object-center select-none"
-            sizes="(max-width: 1024px) 95vw, (max-width: 1440px) 62vw, 840px"
+            sizes="(max-width: 1024px) 95vw, (max-width: 1440px) 64vw, 860px"
           />
         </div>
 
