@@ -4,8 +4,48 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight, Building2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+
+// Comprehensive Country Code Data with Flags
+const COUNTRY_CODES = [
+  { code: '+91', flag: '🇮🇳', name: 'India' },
+  { code: '+1', flag: '🇺🇸', name: 'United States' },
+  { code: '+44', flag: '🇬🇧', name: 'United Kingdom' },
+  { code: '+971', flag: '🇦🇪', name: 'UAE' },
+  { code: '+1', flag: '🇨🇦', name: 'Canada' },
+  { code: '+61', flag: '🇦🇺', name: 'Australia' },
+  { code: '+65', flag: '🇸🇬', name: 'Singapore' },
+  { code: '+966', flag: '🇸🇦', name: 'Saudi Arabia' },
+  { code: '+974', flag: '🇶🇦', name: 'Qatar' },
+  { code: '+965', flag: '🇰🇼', name: 'Kuwait' },
+  { code: '+968', flag: '🇴🇲', name: 'Oman' },
+  { code: '+973', flag: '🇧🇭', name: 'Bahrain' },
+  { code: '+977', flag: '🇳🇵', name: 'Nepal' },
+  { code: '+880', flag: '🇧🇩', name: 'Bangladesh' },
+  { code: '+94', flag: '🇱🇰', name: 'Sri Lanka' },
+  { code: '+60', flag: '🇲🇾', name: 'Malaysia' },
+  { code: '+66', flag: '🇹🇭', name: 'Thailand' },
+  { code: '+49', flag: '🇩🇪', name: 'Germany' },
+  { code: '+33', flag: '🇫🇷', name: 'France' },
+  { code: '+39', flag: '🇮🇹', name: 'Italy' },
+  { code: '+34', flag: '🇪🇸', name: 'Spain' },
+  { code: '+31', flag: '🇳🇱', name: 'Netherlands' },
+  { code: '+41', flag: '🇨🇭', name: 'Switzerland' },
+  { code: '+27', flag: '🇿🇦', name: 'South Africa' },
+  { code: '+64', flag: '🇳🇿', name: 'New Zealand' },
+  { code: '+81', flag: '🇯🇵', name: 'Japan' },
+  { code: '+82', flag: '🇰🇷', name: 'South Korea' },
+  { code: '+55', flag: '🇧🇷', name: 'Brazil' },
+  { code: '+52', flag: '🇲🇽', name: 'Mexico' },
+  { code: '+62', flag: '🇮🇩', name: 'Indonesia' },
+  { code: '+63', flag: '🇵🇭', name: 'Philippines' },
+  { code: '+84', flag: '🇻🇳', name: 'Vietnam' },
+  { code: '+92', flag: '🇵🇰', name: 'Pakistan' },
+  { code: '+20', flag: '🇪🇬', name: 'Egypt' },
+  { code: '+90', flag: '🇹🇷', name: 'Turkey' },
+  { code: '+7', flag: '🇷🇺', name: 'Russia' },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,10 +60,11 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
-  // Signup Specific Fields
+  // Signup Specific Fields (All 5 Required)
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
+  const [selectedCountryCode, setSelectedCountryCode] = useState('+91');
   const [signupPhone, setSignupPhone] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
@@ -101,22 +142,33 @@ export default function LoginPage() {
     }
   };
 
-  // Handle Sign Up Submit
+  // Handle Sign Up Submit (Validates All 5 Required Fields)
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     const cleanName = fullName.trim();
+    const cleanStudioName = businessName.trim();
     const cleanEmail = signupEmail.trim().toLowerCase();
-    const cleanPhone = signupPhone.replace(/\D/g, '');
+    const cleanPhoneDigits = signupPhone.replace(/\D/g, '');
 
     if (!cleanName) {
-      setError('Please enter your full name.');
+      setError('Full Name is required.');
+      return;
+    }
+
+    if (!cleanStudioName) {
+      setError('Studio Name is required.');
       return;
     }
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
-      setError('Please enter a valid email address.');
+      setError('A valid Email Address is required.');
+      return;
+    }
+
+    if (!cleanPhoneDigits || cleanPhoneDigits.length < 7) {
+      setError('A valid Mobile Number is required.');
       return;
     }
 
@@ -135,9 +187,10 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: cleanName,
-          businessName: businessName.trim() || `${cleanName}'s Studio`,
+          businessName: cleanStudioName,
           email: cleanEmail,
-          phone: cleanPhone,
+          countryCode: selectedCountryCode,
+          phone: cleanPhoneDigits,
           password: signupPassword,
         }),
       });
@@ -196,7 +249,7 @@ export default function LoginPage() {
           </div>
 
           {/* 2. Login/Signup Section (Shifted down with comfortable margin, tightly grouped) */}
-          <div className="my-auto pt-3 sm:pt-5 lg:pt-0 lg:mt-10 xl:mt-12 flex flex-col">
+          <div className="my-auto pt-2 sm:pt-4 lg:pt-0 lg:mt-10 xl:mt-12 flex flex-col">
             {/* Welcome Back / Create Account Heading */}
             <div>
               <h1 className="text-2xl sm:text-3xl xl:text-[36px] font-black text-zinc-900 tracking-tight leading-tight">
@@ -210,7 +263,7 @@ export default function LoginPage() {
             </div>
 
             {/* Mode Switcher Tabs */}
-            <div className="flex items-center gap-1 p-1 bg-zinc-300/50 rounded-xl max-w-[190px] my-2.5 sm:my-3.5">
+            <div className="flex items-center gap-1 p-1 bg-zinc-300/50 rounded-xl max-w-[190px] my-2 sm:my-3">
               <button
                 type="button"
                 onClick={() => { setAuthMode('login'); setError(null); }}
@@ -320,9 +373,9 @@ export default function LoginPage() {
                   </button>
                 </form>
               ) : (
-                /* SIGN UP FORM */
+                /* SIGN UP FORM (All 5 Required Fields + Country Code Dropdown with Flags) */
                 <form onSubmit={handleSignupSubmit} className="space-y-2 sm:space-y-2.5">
-                  {/* Name */}
+                  {/* 1. Full Name */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3 pointer-events-none text-zinc-400">
                       <User className="w-3.5 h-3.5" />
@@ -332,11 +385,25 @@ export default function LoginPage() {
                       value={fullName}
                       onChange={(e) => { setFullName(e.target.value); setError(null); }}
                       placeholder="Full Name *"
-                      className="w-full pl-9 pr-3 h-9 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                      className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                     />
                   </div>
 
-                  {/* Email */}
+                  {/* 2. Studio Name */}
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 pointer-events-none text-zinc-400">
+                      <Building2 className="w-3.5 h-3.5" />
+                    </div>
+                    <input
+                      type="text"
+                      value={businessName}
+                      onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
+                      placeholder="Studio Name *"
+                      className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  {/* 3. Email Address */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3 pointer-events-none text-zinc-400">
                       <Mail className="w-3.5 h-3.5" />
@@ -346,26 +413,47 @@ export default function LoginPage() {
                       value={signupEmail}
                       onChange={(e) => { setSignupEmail(e.target.value); setError(null); }}
                       placeholder="Email Address *"
-                      className="w-full pl-9 pr-3 h-9 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                      className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                     />
                   </div>
 
-                  {/* Phone */}
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3 pointer-events-none text-zinc-400">
-                      <Phone className="w-3.5 h-3.5" />
+                  {/* 4. Country Code Selector with Flag + Mobile Number */}
+                  <div className="flex items-center gap-1.5">
+                    {/* Country Code Dropdown */}
+                    <div className="relative shrink-0 w-[112px] sm:w-[124px]">
+                      <select
+                        value={selectedCountryCode}
+                        onChange={(e) => setSelectedCountryCode(e.target.value)}
+                        className="w-full h-9 sm:h-10 px-2 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-semibold focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all cursor-pointer shadow-2xs appearance-none pr-6 text-ellipsis overflow-hidden"
+                      >
+                        {COUNTRY_CODES.map((item, idx) => (
+                          <option key={`${item.code}-${idx}`} value={item.code}>
+                            {item.flag} {item.code} ({item.name})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 text-[10px]">
+                        ▼
+                      </div>
                     </div>
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      value={signupPhone}
-                      onChange={(e) => { setSignupPhone(e.target.value.replace(/\D/g, '')); setError(null); }}
-                      placeholder="Mobile Number (Optional)"
-                      className="w-full pl-9 pr-3 h-9 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all font-mono"
-                    />
+
+                    {/* Mobile Digits Input */}
+                    <div className="relative flex-1 flex items-center">
+                      <div className="absolute left-3 pointer-events-none text-zinc-400">
+                        <Phone className="w-3.5 h-3.5" />
+                      </div>
+                      <input
+                        type="tel"
+                        maxLength={15}
+                        value={signupPhone}
+                        onChange={(e) => { setSignupPhone(e.target.value.replace(/\D/g, '')); setError(null); }}
+                        placeholder="Mobile Number *"
+                        className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all font-mono shadow-2xs"
+                      />
+                    </div>
                   </div>
 
-                  {/* Password */}
+                  {/* 5. Password */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3 pointer-events-none text-zinc-400">
                       <Lock className="w-3.5 h-3.5" />
@@ -375,7 +463,7 @@ export default function LoginPage() {
                       value={signupPassword}
                       onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
                       placeholder="Password (min 6 chars) *"
-                      className="w-full pl-9 pr-9 h-9 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                      className="w-full pl-9 pr-9 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                     />
                     <button
                       type="button"
@@ -386,6 +474,7 @@ export default function LoginPage() {
                     </button>
                   </div>
 
+                  {/* Inline Error Alert */}
                   {error && (
                     <div className="p-1.5 sm:p-2 rounded-xl bg-red-50 border border-red-200 flex items-start gap-1.5 text-[11px] sm:text-xs text-red-700 font-bold">
                       <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
@@ -393,10 +482,11 @@ export default function LoginPage() {
                     </div>
                   )}
 
+                  {/* Submit Button */}
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-9 sm:h-[48px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99] touch-manipulation"
+                    className="w-full h-9 sm:h-[46px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99] touch-manipulation"
                   >
                     {loading ? (
                       'Creating Account...'
@@ -412,7 +502,7 @@ export default function LoginPage() {
             </div>
 
             {/* Capture Graphic (Centered right below login button) */}
-            <div className="mt-3 sm:mt-4 lg:mt-8 relative w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[450px] h-[46px] sm:h-[58px] lg:h-[78px] mx-auto">
+            <div className="mt-2.5 sm:mt-3.5 lg:mt-8 relative w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[450px] h-[44px] sm:h-[54px] lg:h-[78px] mx-auto">
               <Image
                 src="/Capture · Manage · Deliver · Grow.png"
                 alt="Capture · Manage · Deliver · Grow"
@@ -423,8 +513,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* 3. Mobile 3D Photographer (Larger size, positioned directly below capture with minimal gap) */}
-          <div className="block lg:hidden w-full max-w-[340px] sm:max-w-[400px] aspect-[1292/1217] max-h-[33vh] sm:max-h-[36vh] mx-auto mt-1 sm:mt-2 relative shrink-0">
+          {/* 3. Mobile 3D Photographer (Directly below capture with minimal gap) */}
+          <div className="block lg:hidden w-full max-w-[340px] sm:max-w-[400px] aspect-[1292/1217] max-h-[30vh] sm:max-h-[34vh] mx-auto mt-1 sm:mt-2 relative shrink-0">
             <Image
               src="/3D Photographer.png"
               alt="3D Photographer Workspace"

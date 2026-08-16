@@ -1,30 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, supabase } from '@/lib/supabase';
 import { normalizePhoneNumber } from '@/lib/auth-otp-store';
+import { sendWelcomeEmail } from '@/lib/email-service';
 
 export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/signup
  * Instant Signup API for StudioCore accounts:
- * - Validates input
- * - Creates user in Supabase Auth (or activates if pending)
+ * - Validates Full Name, Studio Name, Email, Phone (with Country Code), Password
+ * - Creates user in Supabase Auth
  * - Creates profile in public.profiles table
+ * - Sends Luxury Congratulations/Welcome email from support@studiocore.in
  * - Logs user in and sets session cookies
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { name, businessName, email, phone, password } = body;
+    const { name, businessName, email, phone, countryCode, password } = body;
 
+    const targetName = (name || '').trim();
+    const targetStudioName = (businessName || '').trim();
     const targetEmail = (email || '').trim().toLowerCase();
     const targetPassword = password || '';
-    const cleanPhone = phone ? normalizePhoneNumber(phone) : '';
-    const targetName = (name || '').trim() || 'Studio Owner';
-    const targetStudioName = (businessName || '').trim() || `${targetName}'s Studio`;
+    const code = (countryCode || '+91').trim();
+    const cleanPhoneDigits = (phone || '').replace(/\D/g, '');
+    const fullPhoneNumber = cleanPhoneDigits ? `${code}${cleanPhoneDigits}` : '';
+
+    if (!targetName) {
+      return NextResponse.json({ success: false, error: 'Full name is required.' }, { status: 400 });
+    }
+
+    if (!targetStudioName) {
+      return NextResponse.json({ success: false, error: 'Studio name is required.' }, { status: 400 });
+    }
 
     if (!targetEmail || !targetEmail.includes('@')) {
       return NextResponse.json({ success: false, error: 'Valid email address is required.' }, { status: 400 });
+    }
+
+    if (!cleanPhoneDigits || cleanPhoneDigits.length < 7) {
+      return NextResponse.json({ success: false, error: 'Valid mobile number is required.' }, { status: 400 });
     }
 
     if (!targetPassword || targetPassword.length < 6) {
@@ -51,7 +67,7 @@ export async function POST(req: NextRequest) {
         user_metadata: {
           full_name: targetName,
           workspace_name: targetStudioName,
-          phone: cleanPhone,
+          phone: fullPhoneNumber,
         },
       });
 
@@ -64,7 +80,7 @@ export async function POST(req: NextRequest) {
             data: {
               full_name: targetName,
               workspace_name: targetStudioName,
-              phone: cleanPhone,
+              phone: fullPhoneNumber,
             },
           },
         });
@@ -84,7 +100,7 @@ export async function POST(req: NextRequest) {
         user_metadata: {
           full_name: targetName,
           workspace_name: targetStudioName,
-          phone: cleanPhone || existingUser.user_metadata?.phone,
+          phone: fullPhoneNumber || existingUser.user_metadata?.phone,
         },
       });
     }
@@ -97,7 +113,7 @@ export async function POST(req: NextRequest) {
           workspace_name: targetStudioName,
           full_name: targetName,
           email: targetEmail,
-          phone: cleanPhone,
+          phone: fullPhoneNumber,
           updated_at: new Date().toISOString(),
         });
       } catch (profileErr) {
@@ -105,7 +121,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Authenticate and sign in user immediately
+    // 3. Send Congratulations / Welcome Email via Hostinger SMTP (in background)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    sendWelcomeEmail({
+      toEmail: targetEmail,
+      name: targetName,
+      businessName: targetStudioName,
+      workspaceUrl: `${baseUrl.replace(/\/$/, '')}/workspace`,
+    }).catch(err => {
+      console.warn('[Async Welcome Email Notice]:', err);
+    });
+
+    // 4. Authenticate and sign in user immediately
     const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
       email: targetEmail,
       password: targetPassword,
