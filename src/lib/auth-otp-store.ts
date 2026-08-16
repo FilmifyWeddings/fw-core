@@ -2,7 +2,7 @@ import { supabaseAdmin } from './supabase';
 import crypto from 'crypto';
 
 interface OtpRecord {
-  phone: string;
+  phone?: string;
   email?: string;
   otp: string;
   type: string;
@@ -22,11 +22,31 @@ interface ResetTokenRecord {
 // In-memory fallback caches in case tables aren't populated yet
 declare global {
   var __authOtpCache: Map<string, OtpRecord> | undefined;
+  var __emailOtpCache: Map<string, OtpRecord> | undefined;
   var __passwordResetCache: Map<string, ResetTokenRecord> | undefined;
 }
 
 const otpCache = global.__authOtpCache || (global.__authOtpCache = new Map<string, OtpRecord>());
+const emailOtpCache = global.__emailOtpCache || (global.__emailOtpCache = new Map<string, OtpRecord>());
 const resetCache = global.__passwordResetCache || (global.__passwordResetCache = new Map<string, ResetTokenRecord>());
+
+// Common temporary/throwaway email domains blacklist
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'tempmail.com', 'temp-mail.org', '10minutemail.com', 'mailinator.com',
+  'guerrillamail.com', 'sharklasers.com', 'getairmail.com', 'throwawaymail.com',
+  'dispostable.com', 'yopmail.com', 'fakeinbox.com', 'trashmail.com',
+  'mohmal.com', 'tempinbox.com', 'generator.email', 'crazymailing.com',
+  'mytemp.email', 'dropmail.me', 'trashmail.net', 'minuteinbox.com'
+]);
+
+/**
+ * Checks if an email uses a disposable / temporary email domain
+ */
+export function isDisposableEmail(rawEmail: string): boolean {
+  if (!rawEmail || !rawEmail.includes('@')) return true;
+  const domain = rawEmail.trim().toLowerCase().split('@')[1];
+  return DISPOSABLE_EMAIL_DOMAINS.has(domain);
+}
 
 /**
  * Standardize phone number format (removes +, spaces, dashes; ensures clean digits)
@@ -66,6 +86,141 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
 }
 
 /**
+ * Check if an email is already registered in profiles or auth.users
+ */
+export async function isEmailRegistered(rawEmail: string): Promise<boolean> {
+  const email = rawEmail.trim().toLowerCase();
+
+  try {
+    // 1. Check profiles
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .limit(1);
+
+    if (profiles && profiles.length > 0) {
+      return true;
+    }
+
+    // 2. Check auth users
+    const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+    if (userList?.users?.some(u => u.email?.toLowerCase() === email)) {
+      return true;
+    }
+  } catch (err) {
+    console.error('[isEmailRegistered Check Error]:', err);
+  }
+
+  return false;
+}
+
+/**
+ * Generate and store a 6-digit Email OTP
+ */
+export async function generateAndStoreEmailOtp({
+  email: rawEmail,
+  name,
+  phone,
+  type = 'signup',
+  metadata = {},
+  expiresInMinutes = 10,
+}: {
+  email: string;
+  name?: string;
+  phone?: string;
+  type?: 'signup' | 'login' | 'verify';
+  metadata?: any;
+  expiresInMinutes?: number;
+}): Promise<{ otp: string; expiresAt: Date }> {
+  const email = rawEmail.trim().toLowerCase();
+  const otp = Math.floor(100000 + crypto.randomInt(900000)).toString();
+  const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+
+  emailOtpCache.set(email, {
+    email,
+    phone,
+    otp,
+    type,
+    metadata: { ...metadata, name, phone },
+    expiresAt: expiresAt.getTime(),
+    verified: false,
+  });
+
+  try {
+    await supabaseAdmin.from('auth_otps').insert({
+      email,
+      phone: phone || null,
+      otp,
+      type,
+      metadata: { ...metadata, name, phone },
+      verified: false,
+      expires_at: expiresAt.toISOString(),
+    });
+  } catch (err) {
+    console.warn('[auth_otps Email DB fallback to cache]:', err);
+  }
+
+  return { otp, expiresAt };
+}
+
+/**
+ * Verify a 6-digit Email OTP
+ */
+export async function verifyEmailOtp({
+  email: rawEmail,
+  otp,
+}: {
+  email: string;
+  otp: string;
+}): Promise<{ valid: boolean; error?: string; metadata?: any }> {
+  const email = rawEmail.trim().toLowerCase();
+  const cleanOtp = (otp || '').trim();
+
+  // 1. Check in-memory cache
+  const cached = emailOtpCache.get(email);
+  if (cached) {
+    if (Date.now() > cached.expiresAt) {
+      emailOtpCache.delete(email);
+      return { valid: false, error: 'Verification code has expired. Please request a new code.' };
+    }
+
+    if (cached.otp === cleanOtp) {
+      cached.verified = true;
+      emailOtpCache.delete(email);
+      return { valid: true, metadata: cached.metadata };
+    }
+  }
+
+  // 2. Check Supabase auth_otps table
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('auth_otps')
+      .select('*')
+      .eq('email', email)
+      .eq('otp', cleanOtp)
+      .eq('verified', false)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data) {
+      await supabaseAdmin
+        .from('auth_otps')
+        .update({ verified: true })
+        .eq('id', data.id);
+
+      return { valid: true, metadata: data.metadata };
+    }
+  } catch (err) {
+    console.warn('[verifyEmailOtp DB check error]:', err);
+  }
+
+  return { valid: false, error: 'Invalid verification code. Please check your email and try again.' };
+}
+
+/**
  * Generate and store a 6-digit WhatsApp OTP
  */
 export async function generateAndStoreOtp({
@@ -82,11 +237,9 @@ export async function generateAndStoreOtp({
   expiresInMinutes?: number;
 }): Promise<{ otp: string; expiresAt: Date }> {
   const phone = normalizePhoneNumber(rawPhone);
-  // Generate cryptographically secure 6-digit numeric code
   const otp = Math.floor(100000 + crypto.randomInt(900000)).toString();
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
-  // Store in memory cache first for immediate low-latency availability
   otpCache.set(phone, {
     phone,
     email,
@@ -97,7 +250,6 @@ export async function generateAndStoreOtp({
     verified: false,
   });
 
-  // Also persist to Supabase auth_otps table
   try {
     await supabaseAdmin.from('auth_otps').insert({
       phone,
@@ -128,7 +280,6 @@ export async function verifyOtp({
   const phone = normalizePhoneNumber(rawPhone);
   const cleanOtp = otp.trim();
 
-  // 1. Check in-memory cache
   const cached = otpCache.get(phone);
   if (cached) {
     if (Date.now() > cached.expiresAt) {
@@ -143,7 +294,6 @@ export async function verifyOtp({
     }
   }
 
-  // 2. Check Supabase auth_otps table
   try {
     const { data, error } = await supabaseAdmin
       .from('auth_otps')
@@ -157,7 +307,6 @@ export async function verifyOtp({
       .maybeSingle();
 
     if (!error && data) {
-      // Mark as verified
       await supabaseAdmin
         .from('auth_otps')
         .update({ verified: true })
@@ -188,7 +337,6 @@ export async function generateAndStoreResetToken({
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
-  // In-memory cache
   resetCache.set(token, {
     email,
     userId,
@@ -197,7 +345,6 @@ export async function generateAndStoreResetToken({
     used: false,
   });
 
-  // DB persistence
   try {
     await supabaseAdmin.from('password_resets').insert({
       email,
@@ -221,7 +368,6 @@ export async function validateResetToken(
 ): Promise<{ valid: boolean; email?: string; userId?: string; error?: string }> {
   const cleanToken = token.trim();
 
-  // 1. Check in-memory cache
   const cached = resetCache.get(cleanToken);
   if (cached) {
     if (cached.used) {
@@ -234,7 +380,6 @@ export async function validateResetToken(
     return { valid: true, email: cached.email, userId: cached.userId };
   }
 
-  // 2. Check Supabase password_resets table
   try {
     const { data, error } = await supabaseAdmin
       .from('password_resets')

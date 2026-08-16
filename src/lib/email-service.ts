@@ -14,6 +14,13 @@ interface SendWelcomeEmailParams {
   workspaceUrl?: string;
 }
 
+interface SendEmailOtpParams {
+  toEmail: string;
+  recipientName?: string;
+  otp: string;
+  expiresInMinutes?: number;
+}
+
 /**
  * Creates a configured Nodemailer transporter with tight timeouts for high responsiveness
  */
@@ -67,6 +74,190 @@ async function sendMailWithFallback(mailOptions: any) {
     console.error(`[Hostinger SMTP Fallback Error]:`, err2.message);
     return { success: false, error: err2.message || 'SMTP Connection failed' };
   }
+}
+
+/**
+ * Sends a 6-digit verification code (OTP) for account registration or verification
+ */
+export async function sendEmailOtp({
+  toEmail,
+  recipientName = 'Creator',
+  otp,
+  expiresInMinutes = 10,
+}: SendEmailOtpParams) {
+  const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
+  const logoUrl = `${defaultAppUrl.replace(/\/$/, '')}/images/auth/sc-orange-logo.png`;
+  const fromAddress = process.env.SMTP_FROM || `"StudioCore Verification" <support@studiocore.in>`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your StudioCore Verification Code</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #F6EFEB;
+      margin: 0;
+      padding: 0;
+      color: #18181b;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      max-width: 560px;
+      margin: 30px auto;
+      background: #ffffff;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 12px 36px rgba(243, 111, 33, 0.08);
+      border: 1px solid #EAE0D8;
+    }
+    .header {
+      background: #18181b;
+      padding: 36px 32px;
+      text-align: center;
+    }
+    .content {
+      padding: 40px 36px;
+    }
+    .badge {
+      display: inline-block;
+      background: #FFF2E8;
+      color: #F36F21;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      border-radius: 50px;
+      border: 1px solid #FFD9BD;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 900;
+      color: #18181b;
+      margin: 0 0 14px 0;
+      line-height: 1.25;
+      letter-spacing: -0.5px;
+    }
+    p {
+      font-size: 14px;
+      line-height: 1.65;
+      color: #52525b;
+      margin: 0 0 18px 0;
+    }
+    .otp-container {
+      text-align: center;
+      margin: 32px 0;
+    }
+    .otp-code {
+      display: inline-block;
+      font-size: 38px;
+      font-weight: 900;
+      letter-spacing: 10px;
+      color: #F36F21;
+      background: #FFF7F2;
+      border: 2px dashed #F36F21;
+      padding: 16px 32px;
+      border-radius: 18px;
+      box-shadow: 0 4px 16px rgba(243, 111, 33, 0.12);
+      font-family: 'Courier New', Courier, monospace;
+    }
+    .notice-box {
+      background: #FAF6F3;
+      border: 1px solid #EAE0D8;
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin: 24px 0;
+    }
+    .notice-box p {
+      margin: 0;
+      color: #c2410c;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .footer {
+      background: #FAF6F3;
+      border-top: 1px solid #EAE0D8;
+      padding: 24px 36px;
+      text-align: center;
+      font-size: 11px;
+      color: #a1a1aa;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+        <tr>
+          <td align="center" style="padding-bottom: 8px;">
+            <img src="${logoUrl}" alt="StudioCore Logo" width="56" height="32" style="display: block; border: 0;" />
+          </td>
+        </tr>
+        <tr>
+          <td align="center">
+            <span style="font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">Studio<span style="color: #F36F21;">Core</span></span>
+          </td>
+        </tr>
+        <tr>
+          <td align="center">
+            <span style="font-size: 11px; font-weight: 600; color: #a1a1aa; letter-spacing: 1px; text-transform: uppercase;">Focus on Art, We Manage</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <div class="content">
+      <div class="badge">🛡️ Email Verification</div>
+      <h1>Verify Your Email Address</h1>
+      <p>Hello <strong>${recipientName}</strong>,</p>
+      <p>Thank you for choosing StudioCore! Use the verification code below to complete your registration for <strong>${toEmail}</strong>:</p>
+      
+      <div class="otp-container">
+        <div class="otp-code">${otp}</div>
+      </div>
+
+      <div class="notice-box">
+        <p>⏱️ This code will expire in <strong>${expiresInMinutes} minutes</strong>. Please do not share this code with anyone.</p>
+      </div>
+
+      <p style="font-size: 12px; color: #71717a; text-align: center; margin-top: 24px;">
+        If you did not request this verification code, you can safely disregard this email.
+      </p>
+    </div>
+    <div class="footer">
+      <p style="margin: 0 0 6px 0;">StudioCore Security · Focus on Art, We Manage</p>
+      <p style="margin: 0;">Support: support@studiocore.in</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  const textContent = `
+Your StudioCore Verification Code: ${otp}
+
+Hello ${recipientName},
+
+Use this 6-digit code to complete your StudioCore account verification:
+${otp}
+
+This code expires in ${expiresInMinutes} minutes.
+
+StudioCore Security
+support@studiocore.in
+  `.trim();
+
+  return sendMailWithFallback({
+    from: fromAddress,
+    to: toEmail,
+    subject: `${otp} is your StudioCore Verification Code`,
+    text: textContent,
+    html: htmlContent,
+  });
 }
 
 /**

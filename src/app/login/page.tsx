@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight, Building2, ChevronDown, Search } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import OtpModal from '@/components/auth/OtpModal';
 
 // Comprehensive Country Code Data with ISO for Flag Images
 const COUNTRIES = [
@@ -73,6 +74,10 @@ export default function LoginPage() {
   const [isCountryOpen, setIsCountryOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
   const countryDropdownRef = useRef<HTMLDivElement>(null);
+
+  // OTP Modal State
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
 
   // Status & Error
   const [error, setError] = useState<string | null>(null);
@@ -164,7 +169,7 @@ export default function LoginPage() {
     }
   };
 
-  // Handle Sign Up Submit (Validates All 5 Required Fields)
+  // Handle Sign Up Submit: Validates fields & sends 6-digit Email OTP
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -184,7 +189,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
       setError('A valid Email Address is required.');
       return;
     }
@@ -202,9 +207,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const redirectTo = searchParams.get('redirectTo') || '/workspace';
-
-      const apiRes = await fetch('/api/auth/signup', {
+      // 1. Dispatch 6-Digit Verification Code to Email
+      const otpRes = await fetch('/api/auth/send-email-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -217,22 +221,84 @@ export default function LoginPage() {
         }),
       });
 
+      const otpJson = await otpRes.json().catch(() => ({}));
+
+      if (otpRes.ok && otpJson.success) {
+        setShowOtpModal(true);
+      } else {
+        setError(otpJson.error || 'Failed to dispatch verification code. Please check your email.');
+      }
+    } catch (err: any) {
+      console.error('[Send OTP Error]:', err);
+      setError(err.message || 'Error connecting to verification service.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Verify OTP and complete account registration
+  const handleVerifyOtp = async (otpCode: string) => {
+    setOtpLoading(true);
+    try {
+      const cleanName = fullName.trim();
+      const cleanStudioName = businessName.trim();
+      const cleanEmail = signupEmail.trim().toLowerCase();
+      const cleanPhoneDigits = signupPhone.replace(/\D/g, '');
+      const redirectTo = searchParams.get('redirectTo') || '/workspace';
+
+      const apiRes = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cleanName,
+          businessName: cleanStudioName,
+          email: cleanEmail,
+          countryCode: selectedCountry.code,
+          phone: cleanPhoneDigits,
+          password: signupPassword,
+          otp: otpCode,
+        }),
+      });
+
       const apiJson = await apiRes.json().catch(() => ({}));
 
       if (apiRes.ok && apiJson.success) {
         if (apiJson.session) {
           await supabase.auth.setSession(apiJson.session).catch(() => {});
         }
+        setShowOtpModal(false);
         window.location.href = apiJson.redirectUrl || redirectTo;
-        return;
       } else {
-        setError(apiJson.error || 'Failed to create account. Please try again.');
+        throw new Error(apiJson.error || 'Invalid verification code.');
       }
-    } catch (err: any) {
-      console.error('[Signup Error]:', err);
-      setError(err.message || 'Error connecting to signup service.');
     } finally {
-      setLoading(false);
+      setOtpLoading(false);
+    }
+  };
+
+  // Resend OTP handler
+  const handleResendOtp = async () => {
+    const cleanName = fullName.trim();
+    const cleanStudioName = businessName.trim();
+    const cleanEmail = signupEmail.trim().toLowerCase();
+    const cleanPhoneDigits = signupPhone.replace(/\D/g, '');
+
+    const otpRes = await fetch('/api/auth/send-email-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: cleanName,
+        businessName: cleanStudioName,
+        email: cleanEmail,
+        countryCode: selectedCountry.code,
+        phone: cleanPhoneDigits,
+        password: signupPassword,
+      }),
+    });
+
+    const otpJson = await otpRes.json().catch(() => ({}));
+    if (!otpRes.ok || !otpJson.success) {
+      throw new Error(otpJson.error || 'Failed to resend code.');
     }
   };
 
@@ -270,313 +336,109 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* 2. Login/Signup Section (Shifted down with comfortable margin, tightly grouped) */}
-          <div className="my-auto pt-2 sm:pt-4 lg:pt-0 lg:mt-10 xl:mt-12 flex flex-col">
-            {/* Welcome Back / Create Account Heading */}
-            <div>
-              <h1 className="text-2xl sm:text-3xl xl:text-[36px] font-black text-zinc-900 tracking-tight leading-tight">
-                {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
-              </h1>
-              <p className="text-xs sm:text-sm text-zinc-500 mt-0.5 font-normal">
-                {authMode === 'login'
-                  ? 'Log in to continue to your dashboard'
-                  : 'Join StudioCore to manage your studio'}
-              </p>
-            </div>
-
-            {/* Mode Switcher Tabs */}
-            <div className="flex items-center gap-1 p-1 bg-zinc-300/50 rounded-xl max-w-[190px] my-2 sm:my-3">
+          {/* 2. Authentication Form Card */}
+          <div className="my-auto pt-2 sm:pt-4 lg:pt-0 lg:mt-6 xl:mt-8 flex flex-col">
+            
+            {/* Pill Tabs: Sign In / Sign Up */}
+            <div className="flex p-1 bg-zinc-200/80 rounded-xl max-w-[240px] mb-2 sm:mb-3">
               <button
                 type="button"
                 onClick={() => { setAuthMode('login'); setError(null); }}
-                className={`flex-1 py-1 sm:py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer touch-manipulation ${
+                className={`flex-1 py-1.5 text-xs sm:text-sm font-extrabold rounded-lg transition-all cursor-pointer ${
                   authMode === 'login'
-                    ? 'bg-white text-zinc-900 shadow-xs'
-                    : 'text-zinc-600 hover:text-zinc-900'
+                    ? 'bg-white text-zinc-950 shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-900'
                 }`}
               >
-                Login
+                Sign In
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setAuthMode('signup');
-                  setError(null);
-                  setSignupPhone('');
-                  setSignupPassword('');
-                }}
-                className={`flex-1 py-1 sm:py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer touch-manipulation ${
+                onClick={() => { setAuthMode('signup'); setError(null); }}
+                className={`flex-1 py-1.5 text-xs sm:text-sm font-extrabold rounded-lg transition-all cursor-pointer ${
                   authMode === 'signup'
-                    ? 'bg-white text-zinc-900 shadow-xs'
-                    : 'text-zinc-600 hover:text-zinc-900'
+                    ? 'bg-white text-[#F36F21] shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-900'
                 }`}
               >
                 Sign Up
               </button>
             </div>
 
-            {/* Form Container */}
+            {/* Heading & Subheading */}
             <div>
+              <h1 className="text-xl sm:text-2xl xl:text-[30px] font-black text-zinc-900 tracking-tight leading-tight">
+                {authMode === 'login' ? 'Welcome Back' : 'Create Studio Account'}
+              </h1>
+              <p className="text-[11px] sm:text-xs text-zinc-600 mt-0.5 font-normal">
+                {authMode === 'login'
+                  ? 'Access your studio quotations and workspace'
+                  : 'Start managing inquiries, quotations & team with StudioCore'}
+              </p>
+            </div>
+
+            {/* Forms Container */}
+            <div className="mt-2.5 sm:mt-3.5">
               {authMode === 'login' ? (
-                /* LOGIN FORM */
-                <form onSubmit={handleLoginSubmit} className="space-y-2.5 sm:space-y-3.5" autoComplete="on">
+                /* ── LOGIN FORM ── */
+                <form onSubmit={handleLoginSubmit} className="space-y-2 sm:space-y-3" autoComplete="off">
                   {/* Email or Phone */}
-                  <div>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3.5 pointer-events-none text-zinc-400">
-                        <User className="w-4 h-4 stroke-[2]" />
-                      </div>
-                      <input
-                        type="text"
-                        name="username"
-                        value={identifier}
-                        onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
-                        placeholder="Email or Phone"
-                        className="w-full pl-10 pr-3 h-10 sm:h-[48px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                      />
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                      <User className="w-4 h-4 stroke-[2]" />
                     </div>
+                    <input
+                      type="text"
+                      value={identifier}
+                      onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
+                      placeholder="Email or Mobile Number"
+                      className="w-full pl-10 pr-4 h-9 sm:h-[46px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
                   </div>
 
                   {/* Password */}
-                  <div>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3.5 pointer-events-none text-zinc-400">
-                        <Lock className="w-4 h-4 stroke-[2]" />
-                      </div>
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        name="password"
-                        value={password}
-                        onChange={(e) => { setPassword(e.target.value); setError(null); }}
-                        placeholder="Password"
-                        className="w-full pl-10 pr-10 h-10 sm:h-[48px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer touch-manipulation"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                      <Lock className="w-4 h-4 stroke-[2]" />
                     </div>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setError(null); }}
+                      placeholder="Password"
+                      className="w-full pl-10 pr-10 h-9 sm:h-[46px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer touch-manipulation"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
 
                   {/* Remember Me & Forgot Password */}
-                  <div className="flex items-center justify-between pt-0.5">
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <div className="flex items-center justify-between pt-0.5 pb-0.5 text-xs">
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none text-zinc-600 hover:text-zinc-900">
                       <input
                         type="checkbox"
                         checked={rememberMe}
                         onChange={(e) => setRememberMe(e.target.checked)}
-                        className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-zinc-300 text-[#F36F21] focus:ring-[#F36F21] accent-[#F36F21] cursor-pointer"
+                        className="w-3.5 h-3.5 rounded border-zinc-300 text-[#F36F21] focus:ring-[#F36F21] accent-[#F36F21] cursor-pointer"
                       />
-                      <span className="text-[11px] sm:text-sm font-semibold text-zinc-700">
-                        Remember Me
-                      </span>
+                      <span className="text-[11px] sm:text-xs font-semibold">Remember me</span>
                     </label>
-
                     <Link
                       href="/forgot-password"
-                      className="text-[11px] sm:text-sm font-bold text-[#F36F21] hover:text-[#d85e16] hover:underline transition-colors"
+                      className="text-[11px] sm:text-xs font-bold text-[#F36F21] hover:underline"
                     >
-                      Forgot Password?
+                      Forgot password?
                     </Link>
                   </div>
 
-                  {/* Inline Error Alert */}
+                  {/* Error Notification */}
                   {error && (
                     <div className="p-2 rounded-xl bg-red-50 border border-red-200 flex items-start gap-1.5 text-xs text-red-700 font-bold">
-                      <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                      <span>{error}</span>
-                    </div>
-                  )}
-
-                  {/* Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full h-10 sm:h-[48px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99] touch-manipulation"
-                  >
-                    {loading ? 'Logging in...' : 'Login'}
-                  </button>
-                </form>
-              ) : (
-                /* SIGN UP FORM (All 5 Required Fields + Custom Flag Dropdown + Anti-Autofill Protection) */
-                <form onSubmit={handleSignupSubmit} className="space-y-2 sm:space-y-2.5" autoComplete="off">
-                  
-                  {/* Browser Autofill Traps to prevent Chrome from auto-filling login credentials */}
-                  <input type="text" name="prevent_autofill_user" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" />
-                  <input type="password" name="prevent_autofill_pwd" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" />
-
-                  {/* 1. Full Name */}
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3 pointer-events-none text-zinc-400">
-                      <User className="w-3.5 h-3.5" />
-                    </div>
-                    <input
-                      type="text"
-                      name="sc_signup_full_name"
-                      autoComplete="off"
-                      value={fullName}
-                      onChange={(e) => { setFullName(e.target.value); setError(null); }}
-                      placeholder="Full Name *"
-                      className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                    />
-                  </div>
-
-                  {/* 2. Studio Name */}
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3 pointer-events-none text-zinc-400">
-                      <Building2 className="w-3.5 h-3.5" />
-                    </div>
-                    <input
-                      type="text"
-                      name="sc_signup_studio_name"
-                      autoComplete="off"
-                      value={businessName}
-                      onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
-                      placeholder="Studio Name *"
-                      className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                    />
-                  </div>
-
-                  {/* 3. Email Address */}
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3 pointer-events-none text-zinc-400">
-                      <Mail className="w-3.5 h-3.5" />
-                    </div>
-                    <input
-                      type="email"
-                      name="sc_signup_email_address"
-                      autoComplete="off"
-                      value={signupEmail}
-                      onChange={(e) => { setSignupEmail(e.target.value); setError(null); }}
-                      placeholder="Email Address *"
-                      className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                    />
-                  </div>
-
-                  {/* 4. Interactive Country Flag Selector + Mobile Number */}
-                  <div className="flex items-center gap-1.5 relative">
-                    
-                    {/* Flag Trigger & Dropdown */}
-                    <div className="relative shrink-0" ref={countryDropdownRef}>
-                      <button
-                        type="button"
-                        onClick={() => setIsCountryOpen(!isCountryOpen)}
-                        className="h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-white border border-zinc-300 flex items-center gap-1.5 text-xs sm:text-sm font-bold text-zinc-800 hover:border-[#F36F21] focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 transition-all shadow-2xs cursor-pointer touch-manipulation"
-                      >
-                        {/* High Quality Flag Image */}
-                        <div className="relative w-5 h-3.5 rounded-[2px] overflow-hidden shrink-0 border border-black/10 shadow-2xs">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={`https://flagcdn.com/w40/${selectedCountry.iso}.png`}
-                            alt={selectedCountry.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <span className="font-mono text-xs sm:text-sm">{selectedCountry.code}</span>
-                        <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${isCountryOpen ? 'rotate-180 text-[#F36F21]' : ''}`} />
-                      </button>
-
-                      {/* Dropdown Menu with Search */}
-                      {isCountryOpen && (
-                        <div className="absolute left-0 top-full mt-1.5 w-[240px] sm:w-[260px] max-h-[220px] bg-white rounded-2xl border border-zinc-200 shadow-xl z-50 overflow-hidden flex flex-col p-1.5">
-                          {/* Search Input */}
-                          <div className="relative flex items-center px-2 py-1 border-b border-zinc-100 mb-1">
-                            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3" />
-                            <input
-                              type="text"
-                              value={countrySearch}
-                              onChange={(e) => setCountrySearch(e.target.value)}
-                              placeholder="Search country or code..."
-                              className="w-full pl-6 pr-2 py-1 text-xs text-zinc-900 placeholder:text-zinc-400 bg-zinc-50 rounded-lg outline-none"
-                              autoFocus
-                            />
-                          </div>
-
-                          {/* Country List */}
-                          <div className="overflow-y-auto max-h-[160px] space-y-0.5">
-                            {filteredCountries.map((item, idx) => (
-                              <button
-                                key={`${item.code}-${idx}`}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCountry(item);
-                                  setIsCountryOpen(false);
-                                  setCountrySearch('');
-                                }}
-                                className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left text-xs transition-colors cursor-pointer ${
-                                  selectedCountry.code === item.code && selectedCountry.iso === item.iso
-                                    ? 'bg-[#F36F21]/10 text-[#F36F21] font-bold'
-                                    : 'text-zinc-700 hover:bg-zinc-100'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 truncate">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={`https://flagcdn.com/w40/${item.iso}.png`}
-                                    alt={item.name}
-                                    className="w-4 h-3 rounded-[2px] object-cover border border-black/10 shrink-0"
-                                  />
-                                  <span className="truncate">{item.name}</span>
-                                </div>
-                                <span className="font-mono text-zinc-500 text-[11px] shrink-0 ml-1.5">{item.code}</span>
-                              </button>
-                            ))}
-                            {filteredCountries.length === 0 && (
-                              <div className="p-3 text-center text-xs text-zinc-400">No countries found</div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Mobile Digits Input */}
-                    <div className="relative flex-1 flex items-center">
-                      <div className="absolute left-3 pointer-events-none text-zinc-400">
-                        <Phone className="w-3.5 h-3.5" />
-                      </div>
-                      <input
-                        type="tel"
-                        maxLength={15}
-                        name="sc_signup_phone_input"
-                        autoComplete="off"
-                        value={signupPhone}
-                        onChange={(e) => { setSignupPhone(e.target.value.replace(/\D/g, '')); setError(null); }}
-                        placeholder="Mobile Number *"
-                        className="w-full pl-9 pr-3 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all font-mono shadow-2xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 5. Password (with new-password autocomplete) */}
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3 pointer-events-none text-zinc-400">
-                      <Lock className="w-3.5 h-3.5" />
-                    </div>
-                    <input
-                      type={showSignupPassword ? 'text' : 'password'}
-                      name="sc_signup_unique_pwd"
-                      autoComplete="new-password"
-                      value={signupPassword}
-                      onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
-                      placeholder="Password (min 6 chars) *"
-                      className="w-full pl-9 pr-9 h-9 sm:h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSignupPassword(!showSignupPassword)}
-                      className="absolute right-2.5 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer touch-manipulation"
-                    >
-                      {showSignupPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-
-                  {/* Inline Error Alert */}
-                  {error && (
-                    <div className="p-1.5 sm:p-2 rounded-xl bg-red-50 border border-red-200 flex items-start gap-1.5 text-[11px] sm:text-xs text-red-700 font-bold">
                       <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
                       <span>{error}</span>
                     </div>
@@ -589,10 +451,214 @@ export default function LoginPage() {
                     className="w-full h-9 sm:h-[46px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99] touch-manipulation"
                   >
                     {loading ? (
-                      'Creating Account...'
+                      'Signing in...'
                     ) : (
                       <>
-                        <span>Create Account & Get Started</span>
+                        <span>Sign In to Workspace</span>
+                        <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                /* ── SIGN UP FORM (5 REQUIRED FIELDS) ── */
+                <form onSubmit={handleSignupSubmit} className="space-y-2 sm:space-y-2.5" autoComplete="off">
+                  
+                  {/* Honeypot hidden fields to trap browser password managers */}
+                  <div className="hidden" aria-hidden="true">
+                    <input type="text" name="fake_user_name_trap" tabIndex={-1} autoComplete="off" />
+                    <input type="password" name="fake_pwd_trap" tabIndex={-1} autoComplete="off" />
+                  </div>
+
+                  {/* 1. Full Name (Required) */}
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                      <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
+                    </div>
+                    <input
+                      type="text"
+                      name="sc_signup_full_name"
+                      autoComplete="off"
+                      value={fullName}
+                      onChange={(e) => { setFullName(e.target.value); setError(null); }}
+                      placeholder="Full Name *"
+                      required
+                      className="w-full pl-9 sm:pl-10 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  {/* 2. Studio / Business Name (Required) */}
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                      <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
+                    </div>
+                    <input
+                      type="text"
+                      name="sc_signup_studio_name"
+                      autoComplete="off"
+                      value={businessName}
+                      onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
+                      placeholder="Studio / Business Name *"
+                      required
+                      className="w-full pl-9 sm:pl-10 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  {/* 3. Email Address (Required) */}
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                      <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
+                    </div>
+                    <input
+                      type="email"
+                      name="sc_signup_email_address"
+                      autoComplete="off"
+                      value={signupEmail}
+                      onChange={(e) => { setSignupEmail(e.target.value); setError(null); }}
+                      placeholder="Email Address *"
+                      required
+                      className="w-full pl-9 sm:pl-10 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  {/* 4. Country Code (HD Flag) + Mobile Number (Required) */}
+                  <div className="flex items-center gap-1.5 relative">
+                    
+                    {/* Interactive Country Dropdown Button with HD Flag */}
+                    <div className="relative" ref={countryDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsCountryOpen(!isCountryOpen)}
+                        className="h-8.5 sm:h-[42px] px-2 sm:px-2.5 rounded-xl bg-white/95 border border-zinc-300 flex items-center gap-1.5 text-xs sm:text-sm font-bold text-zinc-800 hover:border-[#F36F21] transition-all cursor-pointer shrink-0 shadow-2xs"
+                      >
+                        {/* High Definition Flag Image */}
+                        <img
+                          src={`https://flagcdn.com/w40/${selectedCountry.iso}.png`}
+                          alt={selectedCountry.name}
+                          width={20}
+                          height={14}
+                          className="rounded-xs object-cover shadow-2xs"
+                        />
+                        <span>{selectedCountry.code}</span>
+                        <ChevronDown className="w-3 h-3 text-zinc-400" />
+                      </button>
+
+                      {/* Dropdown Menu */}
+                      {isCountryOpen && (
+                        <div className="absolute top-full left-0 mt-1.5 w-64 max-h-60 bg-white rounded-2xl shadow-xl border border-zinc-200 z-50 overflow-hidden flex flex-col">
+                          {/* Search */}
+                          <div className="p-2 border-b border-zinc-100 flex items-center gap-2 bg-zinc-50">
+                            <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <input
+                              type="text"
+                              value={countrySearch}
+                              onChange={(e) => setCountrySearch(e.target.value)}
+                              placeholder="Search country..."
+                              className="w-full text-xs bg-transparent border-none focus:outline-none text-zinc-800 font-medium"
+                              autoFocus
+                            />
+                          </div>
+
+                          {/* Country List */}
+                          <div className="overflow-y-auto flex-1 p-1">
+                            {filteredCountries.map((country) => (
+                              <button
+                                key={country.code + country.name}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCountry(country);
+                                  setIsCountryOpen(false);
+                                  setCountrySearch('');
+                                }}
+                                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  selectedCountry.iso === country.iso
+                                    ? 'bg-orange-50 text-[#F36F21] font-bold'
+                                    : 'text-zinc-700 hover:bg-zinc-100'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={`https://flagcdn.com/w40/${country.iso}.png`}
+                                    alt={country.name}
+                                    width={20}
+                                    height={14}
+                                    className="rounded-xs object-cover shadow-2xs"
+                                  />
+                                  <span>{country.name}</span>
+                                </div>
+                                <span className="font-mono text-zinc-400">{country.code}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Phone Number Input */}
+                    <div className="relative flex-1 flex items-center">
+                      <div className="absolute left-3 pointer-events-none text-zinc-400">
+                        <Phone className="w-3.5 h-3.5 stroke-[2]" />
+                      </div>
+                      <input
+                        type="tel"
+                        name="sc_signup_phone_input"
+                        autoComplete="off"
+                        value={signupPhone}
+                        onChange={(e) => {
+                          const digitsOnly = e.target.value.replace(/\D/g, '');
+                          setSignupPhone(digitsOnly);
+                          setError(null);
+                        }}
+                        placeholder="Mobile Number *"
+                        required
+                        className="w-full pl-8.5 sm:pl-9 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 5. Password (Required) */}
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                      <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
+                    </div>
+                    <input
+                      type={showSignupPassword ? 'text' : 'password'}
+                      name="sc_signup_unique_pwd"
+                      autoComplete="new-password"
+                      value={signupPassword}
+                      onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
+                      placeholder="Password (min. 6 characters) *"
+                      required
+                      className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSignupPassword(!showSignupPassword)}
+                      className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer touch-manipulation"
+                    >
+                      {showSignupPassword ? <EyeOff className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                    </button>
+                  </div>
+
+                  {/* Error Notification */}
+                  {error && (
+                    <div className="p-2 rounded-xl bg-red-50 border border-red-200 flex items-start gap-1.5 text-xs text-red-700 font-bold">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full h-9 sm:h-[46px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99] touch-manipulation"
+                  >
+                    {loading ? (
+                      'Sending Verification Code...'
+                    ) : (
+                      <>
+                        <span>Create Studio Account</span>
                         <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
                       </>
                     )}
@@ -640,6 +706,18 @@ export default function LoginPage() {
         </div>
 
       </div>
+
+      {/* ── 6-DIGIT EMAIL OTP VERIFICATION MODAL ── */}
+      <OtpModal
+        isOpen={showOtpModal}
+        onClose={() => setShowOtpModal(false)}
+        targetAddress={signupEmail}
+        name={fullName}
+        channel="email"
+        onVerify={handleVerifyOtp}
+        onResendOtp={handleResendOtp}
+        loading={otpLoading}
+      />
     </main>
   );
 }
