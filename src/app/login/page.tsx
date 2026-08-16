@@ -226,7 +226,7 @@ export default function LoginPage() {
           <div className="relative w-12 h-7 sm:w-14 sm:h-8 shrink-0 flex items-center justify-center">
             <Image
               src="/images/auth/sc-orange-logo.png"
-              alt="StudioCore Logo"
+              alt="StudioCore SC Logo"
               fill
               className="object-contain select-none"
               priority
@@ -464,10 +464,10 @@ export default function LoginPage() {
             )}
           </div>
 
-          {/* ── CAPTURE · MANAGE · DELIVER · GROW (Directly Under Login Button) ── */}
-          <div className="mt-8 relative w-full h-10 sm:h-12 flex items-center">
+          {/* ── CAPTURE · MANAGE · DELIVER · GROW (PNG directly from public) ── */}
+          <div className="mt-7 sm:mt-8 relative w-full max-w-[290px] h-10 sm:h-12 flex items-center">
             <Image
-              src="/images/auth/capture-manage-deliver-grow.png"
+              src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
               fill
               className="object-contain object-left select-none"
@@ -485,13 +485,13 @@ export default function LoginPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════
-          RIGHT COLUMN — 3D PHOTOGRAPHER WORKSPACE (Exact Reference Match)
+          RIGHT COLUMN — 3D PHOTOGRAPHER PNG (Transparent PNG from public)
           ═══════════════════════════════════════════════════════════════ */}
       <section className="w-full lg:w-[58%] xl:w-[62%] relative flex items-center justify-center bg-[#F6EFEB] overflow-hidden min-h-[400px] lg:min-h-full">
         <div className="relative w-full h-full min-h-[440px] lg:min-h-full flex items-center justify-center p-2 sm:p-6 lg:p-10">
           <Image
-            src="/images/auth/photographer-workspace-scene.webp"
-            alt="3D StudioCore Photographer Workspace"
+            src="/3D Photographer.png"
+            alt="3D Photographer Character Workspace"
             fill
             priority
             className="object-contain object-center lg:object-right-center select-none"

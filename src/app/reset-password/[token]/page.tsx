@@ -88,7 +88,7 @@ export default function ResetPasswordPage() {
           <div className="relative w-12 h-7 sm:w-14 sm:h-8 shrink-0 flex items-center justify-center">
             <Image
               src="/images/auth/sc-orange-logo.png"
-              alt="StudioCore Logo"
+              alt="StudioCore SC Logo"
               fill
               className="object-contain select-none"
               priority
@@ -232,9 +232,9 @@ export default function ResetPasswordPage() {
           </div>
 
           {/* Capture Manage Deliver Grow */}
-          <div className="mt-8 relative w-full h-10 sm:h-12 flex items-center">
+          <div className="mt-8 relative w-full max-w-[290px] h-10 sm:h-12 flex items-center">
             <Image
-              src="/images/auth/capture-manage-deliver-grow.png"
+              src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
               fill
               className="object-contain object-left select-none"
@@ -255,7 +255,7 @@ export default function ResetPasswordPage() {
       <section className="w-full lg:w-[58%] xl:w-[62%] relative flex items-center justify-center bg-[#F6EFEB] overflow-hidden min-h-[400px] lg:min-h-full">
         <div className="relative w-full h-full min-h-[440px] lg:min-h-full flex items-center justify-center p-2 sm:p-6 lg:p-10">
           <Image
-            src="/images/auth/photographer-workspace-scene.webp"
+            src="/3D Photographer.png"
             alt="3D StudioCore Photographer Workspace"
             fill
             priority
