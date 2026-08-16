@@ -4,9 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle, Building, Phone, Mail } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import OtpModal from '@/components/auth/OtpModal';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,10 +31,6 @@ export default function LoginPage() {
   // Status & Error
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // WhatsApp OTP Verification Modal State
-  const [isOtpOpen, setIsOtpOpen] = useState(false);
-  const [pendingSignupData, setPendingSignupData] = useState<any>(null);
 
   // Check existing session on mount
   useEffect(() => {
@@ -101,13 +96,22 @@ export default function LoginPage() {
     }
   };
 
-  // Handle Sign Up Submit (Dispatches WhatsApp OTP)
+  // Handle Sign Up Submit (Instant Direct Account Creation & Login)
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!fullName.trim() || !signupEmail.trim() || !signupPhone.trim() || !signupPassword) {
-      setError('Please fill in all required fields.');
+    const cleanName = fullName.trim();
+    const cleanEmail = signupEmail.trim().toLowerCase();
+    const cleanPhone = signupPhone.replace(/\D/g, '');
+
+    if (!cleanName || !cleanEmail || !signupPassword) {
+      setError('Please fill in your name, email, and password.');
+      return;
+    }
+
+    if (!cleanEmail.includes('@')) {
+      setError('Please enter a valid email address.');
       return;
     }
 
@@ -116,118 +120,57 @@ export default function LoginPage() {
       return;
     }
 
-    const cleanPhone = signupPhone.replace(/\D/g, '');
-    if (cleanPhone.length < 10) {
-      setError('Please enter a valid 10-digit mobile number for WhatsApp verification.');
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const otpRes = await fetch('/api/auth/send-whatsapp-otp', {
+      const redirectTo = searchParams.get('redirectTo') || '/workspace';
+
+      const apiRes = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: cleanName,
+          businessName: businessName.trim() || `${cleanName}'s Studio`,
+          email: cleanEmail,
           phone: cleanPhone,
-          email: signupEmail.trim().toLowerCase(),
-          name: fullName.trim(),
-          type: 'signup',
+          password: signupPassword,
         }),
       });
 
-      const otpJson = await otpRes.json().catch(() => ({}));
+      const apiJson = await apiRes.json().catch(() => ({}));
 
-      if (!otpRes.ok || !otpJson.success) {
-        setError(otpJson.error || 'Failed to send WhatsApp OTP.');
-        setLoading(false);
-        return;
-      }
-
-      setPendingSignupData({
-        name: fullName.trim(),
-        businessName: businessName.trim() || `${fullName.trim()}'s Studio`,
-        email: signupEmail.trim().toLowerCase(),
-        password: signupPassword,
-        phone: cleanPhone,
-      });
-
-      setIsOtpOpen(true);
-    } catch (err: any) {
-      console.error('[Signup OTP Error]:', err);
-      setError(err.message || 'Error sending WhatsApp verification OTP.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Verify OTP Callback
-  const handleVerifyOtp = async (code: string) => {
-    if (!pendingSignupData) return false;
-
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/auth/verify-whatsapp-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: pendingSignupData.phone,
-          otp: code,
-          signupData: pendingSignupData,
-        }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-
-      if (res.ok && json.success) {
-        if (json.session) {
-          await supabase.auth.setSession(json.session).catch(() => {});
+      if (apiRes.ok && apiJson.success) {
+        if (apiJson.session) {
+          await supabase.auth.setSession(apiJson.session).catch(() => {});
         }
-        setIsOtpOpen(false);
-        window.location.href = json.redirectUrl || '/workspace';
-        return true;
+        window.location.href = apiJson.redirectUrl || redirectTo;
+        return;
       } else {
-        throw new Error(json.error || 'Invalid OTP code.');
+        setError(apiJson.error || 'Failed to create account. Please try again.');
       }
     } catch (err: any) {
-      throw err;
+      console.error('[Signup Error]:', err);
+      setError(err.message || 'Error connecting to signup service.');
     } finally {
       setLoading(false);
     }
-  };
-
-  // Resend OTP Callback
-  const handleResendOtp = async () => {
-    if (!pendingSignupData) return;
-
-    await fetch('/api/auth/send-whatsapp-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phone: pendingSignupData.phone,
-        email: pendingSignupData.email,
-        name: pendingSignupData.name,
-        type: 'signup',
-      }),
-    });
   };
 
   return (
-    <main className="min-h-screen w-full bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex items-center justify-center p-4 sm:p-6 lg:p-10 lg:h-screen lg:overflow-hidden">
+    <main className="min-h-screen w-full bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex items-center justify-center p-4 sm:p-6 lg:p-10 h-screen overflow-hidden">
       
       {/* ═══════════════════════════════════════════════════════════════
-          CENTERED TWO-COLUMN CONTAINER
+          CENTERED CONTAINER (No-scroll on Mobile & Balanced on Desktop)
           ═══════════════════════════════════════════════════════════════ */}
-      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-8 lg:gap-12 xl:gap-16 my-auto">
+      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-8 lg:gap-12 xl:gap-16 my-auto h-full max-h-screen lg:max-h-none justify-center">
         
-        {/* ── LEFT COLUMN: LOGO + FORM + TAGLINE STACK ── */}
-        <div className="w-full max-w-[400px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col">
+        {/* ── LEFT COLUMN: LOGO + FORM + CAPTURE GRAPHIC ── */}
+        <div className="w-full max-w-[380px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col justify-center">
           
-          {/* 1. Large StudioCore Brand Logo (Shifted slightly higher with mb-10 sm:mb-12) */}
-          <div className="mb-10 sm:mb-12 lg:mb-14">
-            <div className="flex items-center gap-3.5 sm:gap-4">
-              <div className="relative w-14 h-8 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
+          {/* 1. StudioCore Brand Logo */}
+          <div className="mb-6 sm:mb-8 lg:mb-12">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="relative w-12 h-7 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
                 <Image
                   src="/images/auth/sc-orange-logo.png"
                   alt="StudioCore SC Logo"
@@ -240,27 +183,27 @@ export default function LoginPage() {
                 <span className="text-2xl sm:text-3xl xl:text-[32px] font-black tracking-tight text-zinc-950 font-sans leading-none">
                   StudioCore
                 </span>
-                <span className="text-xs sm:text-[13px] xl:text-sm font-semibold text-zinc-600 tracking-normal mt-1.5 leading-none">
+                <span className="text-[11px] sm:text-[13px] xl:text-sm font-semibold text-zinc-600 tracking-normal mt-1 leading-none">
                   Focus on Art, We Manage
                 </span>
               </div>
             </div>
           </div>
 
-          {/* 2. Welcome Back Heading */}
+          {/* 2. Welcome Back / Create Account Heading */}
           <div>
-            <h1 className="text-3xl sm:text-4xl xl:text-[38px] font-black text-zinc-900 tracking-tight leading-tight">
+            <h1 className="text-2xl sm:text-3xl xl:text-[36px] font-black text-zinc-900 tracking-tight leading-tight">
               {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
             </h1>
-            <p className="text-sm sm:text-base text-zinc-500 mt-1.5 font-normal">
+            <p className="text-xs sm:text-sm text-zinc-500 mt-1 font-normal">
               {authMode === 'login'
                 ? 'Log in to continue to your dashboard'
-                : 'Join StudioCore to manage your photography business'}
+                : 'Join StudioCore to manage your studio'}
             </p>
           </div>
 
           {/* 3. Mode Switcher Tabs */}
-          <div className="flex items-center gap-1 p-1 bg-zinc-300/40 rounded-xl max-w-[190px] mt-5">
+          <div className="flex items-center gap-1 p-1 bg-zinc-300/40 rounded-xl max-w-[180px] mt-4 sm:mt-5">
             <button
               type="button"
               onClick={() => { setAuthMode('login'); setError(null); }}
@@ -286,15 +229,15 @@ export default function LoginPage() {
           </div>
 
           {/* 4. Form Container */}
-          <div className="mt-5">
+          <div className="mt-4 sm:mt-5">
             {authMode === 'login' ? (
               /* LOGIN FORM */
-              <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+              <form onSubmit={handleLoginSubmit} className="space-y-3 sm:space-y-3.5">
                 {/* Email or Phone */}
                 <div>
                   <div className="relative flex items-center">
                     <div className="absolute left-4 pointer-events-none text-zinc-400">
-                      <User className="w-4.5 h-4.5 stroke-[2]" />
+                      <User className="w-4 h-4 stroke-[2]" />
                     </div>
                     <input
                       type="text"
@@ -302,7 +245,7 @@ export default function LoginPage() {
                       onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
                       placeholder="Email or Phone"
                       required
-                      className="w-full pl-11 pr-4 h-12 sm:h-[50px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      className="w-full pl-11 pr-4 h-11 sm:h-[48px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -311,7 +254,7 @@ export default function LoginPage() {
                 <div>
                   <div className="relative flex items-center">
                     <div className="absolute left-4 pointer-events-none text-zinc-400">
-                      <Lock className="w-4.5 h-4.5 stroke-[2]" />
+                      <Lock className="w-4 h-4 stroke-[2]" />
                     </div>
                     <input
                       type={showPassword ? 'text' : 'password'}
@@ -319,7 +262,7 @@ export default function LoginPage() {
                       onChange={(e) => { setPassword(e.target.value); setError(null); }}
                       placeholder="Password"
                       required
-                      className="w-full pl-11 pr-11 h-12 sm:h-[50px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      className="w-full pl-11 pr-11 h-11 sm:h-[48px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                     />
                     <button
                       type="button"
@@ -327,7 +270,7 @@ export default function LoginPage() {
                       className="absolute right-3.5 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
@@ -339,7 +282,7 @@ export default function LoginPage() {
                       type="checkbox"
                       checked={rememberMe}
                       onChange={(e) => setRememberMe(e.target.checked)}
-                      className="w-4 h-4 rounded border-zinc-300 text-[#F36F21] focus:ring-[#F36F21] accent-[#F36F21] cursor-pointer"
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-zinc-300 text-[#F36F21] focus:ring-[#F36F21] accent-[#F36F21] cursor-pointer"
                     />
                     <span className="text-xs sm:text-sm font-semibold text-zinc-700">
                       Remember Me
@@ -356,7 +299,7 @@ export default function LoginPage() {
 
                 {/* Inline Error Alert */}
                 {error && (
-                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-red-700 font-bold">
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-red-700 font-bold">
                     <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                     <span>{error}</span>
                   </div>
@@ -366,90 +309,97 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-12 sm:h-[50px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 mt-1"
+                  className="w-full h-11 sm:h-[48px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 mt-1"
                 >
                   {loading ? 'Logging in...' : 'Login'}
                 </button>
               </form>
             ) : (
               /* SIGN UP FORM */
-              <form onSubmit={handleSignupSubmit} className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
+              <form onSubmit={handleSignupSubmit} className="space-y-2.5 sm:space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 pointer-events-none text-zinc-400">
+                      <User className="w-3.5 h-3.5" />
+                    </div>
                     <input
                       type="text"
                       value={fullName}
                       onChange={(e) => { setFullName(e.target.value); setError(null); }}
                       placeholder="Full Name *"
                       required
-                      className="w-full px-3.5 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                      className="w-full pl-9 pr-3 h-10 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
                     />
                   </div>
 
-                  <div>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 pointer-events-none text-zinc-400">
+                      <Building className="w-3.5 h-3.5" />
+                    </div>
                     <input
                       type="text"
                       value={businessName}
                       onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
                       placeholder="Studio Name"
-                      className="w-full px-3.5 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                      className="w-full pl-9 pr-3 h-10 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
                     />
                   </div>
                 </div>
 
                 {/* Email */}
-                <div>
+                <div className="relative flex items-center">
+                  <div className="absolute left-3 pointer-events-none text-zinc-400">
+                    <Mail className="w-3.5 h-3.5" />
+                  </div>
                   <input
                     type="email"
                     value={signupEmail}
                     onChange={(e) => { setSignupEmail(e.target.value); setError(null); }}
                     placeholder="Email Address *"
                     required
-                    className="w-full px-3.5 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                    className="w-full pl-9 pr-3 h-10 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
                   />
                 </div>
 
-                {/* WhatsApp Phone */}
-                <div>
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3.5 text-zinc-500 font-bold text-xs pointer-events-none">
-                      +91
-                    </div>
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      value={signupPhone}
-                      onChange={(e) => { setSignupPhone(e.target.value.replace(/\D/g, '')); setError(null); }}
-                      placeholder="WhatsApp Mobile Number *"
-                      required
-                      className="w-full pl-12 pr-3.5 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all font-mono"
-                    />
+                {/* Phone */}
+                <div className="relative flex items-center">
+                  <div className="absolute left-3 pointer-events-none text-zinc-400">
+                    <Phone className="w-3.5 h-3.5" />
                   </div>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={signupPhone}
+                    onChange={(e) => { setSignupPhone(e.target.value.replace(/\D/g, '')); setError(null); }}
+                    placeholder="Mobile Number (Optional)"
+                    className="w-full pl-9 pr-3 h-10 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all font-mono"
+                  />
                 </div>
 
                 {/* Password */}
-                <div>
-                  <div className="relative flex items-center">
-                    <input
-                      type={showSignupPassword ? 'text' : 'password'}
-                      value={signupPassword}
-                      onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
-                      placeholder="Password (min 6 chars) *"
-                      required
-                      className="w-full px-3.5 pr-10 h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSignupPassword(!showSignupPassword)}
-                      className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
-                    >
-                      {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                <div className="relative flex items-center">
+                  <div className="absolute left-3 pointer-events-none text-zinc-400">
+                    <Lock className="w-3.5 h-3.5" />
                   </div>
+                  <input
+                    type={showSignupPassword ? 'text' : 'password'}
+                    value={signupPassword}
+                    onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
+                    placeholder="Password (min 6 chars) *"
+                    required
+                    className="w-full pl-9 pr-10 h-10 sm:h-11 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignupPassword(!showSignupPassword)}
+                    className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+                  >
+                    {showSignupPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
 
                 {error && (
-                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-red-700 font-bold">
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-red-700 font-bold">
                     <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                     <span>{error}</span>
                   </div>
@@ -458,16 +408,16 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11 rounded-xl bg-[#F36F21] hover:bg-[#e06118] text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full h-10 sm:h-11 rounded-xl bg-[#F36F21] hover:bg-[#e06118] text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50"
                 >
-                  {loading ? 'Sending OTP...' : 'Continue with WhatsApp Verification'}
+                  {loading ? 'Creating Account...' : 'Create Account & Get Started'}
                 </button>
               </form>
             )}
           </div>
 
-          {/* 5. Even Larger Capture · Manage · Deliver · Grow PNG (Below Login) */}
-          <div className="mt-8 sm:mt-9 relative w-full max-w-[380px] sm:max-w-[420px] lg:max-w-[450px] h-[64px] sm:h-[72px] lg:h-[78px] mx-auto select-none">
+          {/* 5. Capture · Manage · Deliver · Grow PNG (Below Login) */}
+          <div className="mt-6 sm:mt-8 relative w-full max-w-[320px] sm:max-w-[400px] lg:max-w-[450px] h-[50px] sm:h-[68px] lg:h-[78px] mx-auto select-none">
             <Image
               src="/Capture · Manage · Deliver · Grow.png"
               alt="Capture · Manage · Deliver · Grow"
@@ -478,7 +428,7 @@ export default function LoginPage() {
           </div>
 
           {/* 6. Copyright */}
-          <div className="pt-6 text-center lg:text-left text-xs text-zinc-400">
+          <div className="pt-4 sm:pt-6 text-center lg:text-left text-xs text-zinc-400">
             <span className="font-medium text-[11px]">
               StudioCore &copy; {new Date().getFullYear()}
             </span>
@@ -486,30 +436,19 @@ export default function LoginPage() {
 
         </div>
 
-        {/* ── RIGHT COLUMN: LARGE 3D PHOTOGRAPHER SCENE ── */}
-        <div className="w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto flex items-center justify-center relative">
+        {/* ── RIGHT COLUMN: 3D PHOTOGRAPHER (Hidden on small mobile to prevent scrolling, Large on Desktop) ── */}
+        <div className="hidden lg:flex w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto items-center justify-center relative">
           <Image
             src="/3D Photographer.png"
             alt="3D Photographer Character Workspace"
             fill
             priority
             className="object-contain object-center select-none"
-            sizes="(max-width: 1024px) 95vw, (max-width: 1440px) 64vw, 860px"
+            sizes="(max-width: 1024px) 0vw, (max-width: 1440px) 64vw, 860px"
           />
         </div>
 
       </div>
-
-      {/* WhatsApp OTP Modal for Sign Up */}
-      <OtpModal
-        isOpen={isOtpOpen}
-        onClose={() => setIsOtpOpen(false)}
-        phone={pendingSignupData?.phone || ''}
-        name={pendingSignupData?.name}
-        onVerify={handleVerifyOtp}
-        onResendOtp={handleResendOtp}
-        loading={loading}
-      />
     </main>
   );
 }
