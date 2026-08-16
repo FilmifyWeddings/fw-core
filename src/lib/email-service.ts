@@ -15,14 +15,12 @@ interface SendWelcomeEmailParams {
 }
 
 /**
- * Creates a configured Nodemailer transporter using Hostinger SMTP credentials
+ * Creates a configured Nodemailer transporter with tight timeouts (5s) for high responsiveness
  */
-export function getEmailTransporter() {
+function createTransporter(port: number, secure: boolean) {
   const host = process.env.SMTP_HOST || 'smtp.hostinger.com';
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
   const user = process.env.SMTP_USER || process.env.EMAIL_USER || 'support@studiocore.in';
   const pass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || 'Sushant@102310#';
-  const secure = port === 465;
 
   return nodemailer.createTransport({
     host,
@@ -35,10 +33,40 @@ export function getEmailTransporter() {
     tls: {
       rejectUnauthorized: false,
     },
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 8000,
   });
+}
+
+/**
+ * Dispatches email using Hostinger SMTP with automatic Port 465 (SSL) -> Port 587 (STARTTLS) fallback
+ */
+async function sendMailWithFallback(mailOptions: any) {
+  const defaultPort = parseInt(process.env.SMTP_PORT || '465', 10);
+  
+  // Attempt 1: Default port (465 SSL or configured)
+  try {
+    const isSecure = defaultPort === 465;
+    const transporter = createTransporter(defaultPort, isSecure);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[Hostinger SMTP Port ${defaultPort} Success] MessageID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err1: any) {
+    console.warn(`[Hostinger SMTP Port ${defaultPort} Warning]: ${err1.message}. Trying fallback port...`);
+  }
+
+  // Attempt 2: Fallback to Port 587 STARTTLS (if 465 was blocked by VPS firewall)
+  try {
+    const fallbackPort = defaultPort === 465 ? 587 : 465;
+    const transporterFallback = createTransporter(fallbackPort, fallbackPort === 465);
+    const info = await transporterFallback.sendMail(mailOptions);
+    console.log(`[Hostinger SMTP Fallback Port ${fallbackPort} Success] MessageID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err2: any) {
+    console.error(`[Hostinger SMTP Fallback Error]:`, err2.message);
+    return { success: false, error: err2.message || 'SMTP Connection failed' };
+  }
 }
 
 /**
@@ -52,7 +80,7 @@ export async function sendWelcomeEmail({
 }: SendWelcomeEmailParams) {
   const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://test.studiocore.in';
   const targetUrl = workspaceUrl || `${defaultAppUrl.replace(/\/$/, '')}/workspace`;
-  const fromAddress = process.env.SMTP_FROM || `"StudioCore Support" <${process.env.SMTP_USER || 'support@studiocore.in'}>`;
+  const fromAddress = process.env.SMTP_FROM || `"StudioCore Support" <support@studiocore.in>`;
   const studioTitle = businessName || `${name}'s Studio`;
 
   const htmlContent = `
@@ -215,23 +243,13 @@ Capture · Manage · Deliver · Grow
 StudioCore Support (support@studiocore.in)
   `.trim();
 
-  try {
-    const transporter = getEmailTransporter();
-    console.log(`[Hostinger SMTP] Dispatching Welcome email to ${toEmail}...`);
-    const info = await transporter.sendMail({
-      from: fromAddress,
-      to: toEmail,
-      subject: `Welcome to StudioCore, ${name}! 🎉 Your Account is Ready`,
-      text: textContent,
-      html: htmlContent,
-    });
-
-    console.log(`[Hostinger SMTP] Welcome email delivered successfully! MessageID: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
-  } catch (err: any) {
-    console.error('[Hostinger SMTP Welcome Email Error]:', err);
-    return { success: false, error: err.message || 'Failed to send welcome email.' };
-  }
+  return sendMailWithFallback({
+    from: fromAddress,
+    to: toEmail,
+    subject: `Welcome to StudioCore, ${name}! 🎉 Your Account is Ready`,
+    text: textContent,
+    html: htmlContent,
+  });
 }
 
 /**
@@ -243,7 +261,7 @@ export async function sendPasswordResetEmail({
   resetUrl,
   expiresInMinutes = 15,
 }: SendPasswordResetEmailParams) {
-  const fromAddress = process.env.SMTP_FROM || `"StudioCore Security" <${process.env.SMTP_USER || 'support@studiocore.in'}>`;
+  const fromAddress = process.env.SMTP_FROM || `"StudioCore Security" <support@studiocore.in>`;
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -422,28 +440,11 @@ StudioCore Security
 support@studiocore.in
   `.trim();
 
-  try {
-    const transporter = getEmailTransporter();
-    console.log(`[Hostinger SMTP] Dispatching Password Reset email to ${toEmail}...`);
-    const info = await transporter.sendMail({
-      from: fromAddress,
-      to: toEmail,
-      subject: 'Reset Your StudioCore Password',
-      text: textContent,
-      html: htmlContent,
-    });
-
-    console.log(`[Hostinger SMTP] Password reset email delivered successfully! MessageID: ${info.messageId}`);
-    return {
-      success: true,
-      messageId: info.messageId,
-    };
-  } catch (error: any) {
-    console.error('[Hostinger SMTP Password Reset Error]:', error);
-    return {
-      success: false,
-      error: error.message || 'Failed to send email via SMTP server.',
-      resetUrl,
-    };
-  }
+  return sendMailWithFallback({
+    from: fromAddress,
+    to: toEmail,
+    subject: 'Reset Your StudioCore Password',
+    text: textContent,
+    html: htmlContent,
+  });
 }

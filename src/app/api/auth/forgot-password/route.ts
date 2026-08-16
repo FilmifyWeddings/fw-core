@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { supabaseAdmin, supabase } from '@/lib/supabase';
 import { generateAndStoreResetToken } from '@/lib/auth-otp-store';
 import { sendPasswordResetEmail } from '@/lib/email-service';
 
@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/forgot-password
- * Generates secure 15-minute reset token and sends modern HTML email via Nodemailer Hostinger SMTP.
+ * Generates secure 15-minute reset token and sends modern HTML email via Hostinger SMTP (with Supabase fallback).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -53,7 +53,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // If still not found, create a placeholder token so that anyone who registered or entered valid email gets instructions
     if (!userId) {
       userId = 'anon-' + Buffer.from(targetEmail).toString('hex').slice(0, 16);
     }
@@ -69,8 +68,16 @@ export async function POST(req: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || req.nextUrl.origin;
     const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password/${token}`;
 
-    // 5. Send email via Nodemailer Hostinger SMTP
     console.log(`[Forgot Password] Initiating reset email to ${targetEmail} | Reset URL: ${resetUrl}`);
+
+    // 5. Also trigger Supabase Recovery link in parallel as backup
+    try {
+      supabase.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: resetUrl,
+      }).catch(() => {});
+    } catch (_) {}
+
+    // 6. Send email via Hostinger SMTP with automatic Port 465 -> Port 587 fallback
     const emailResult = await sendPasswordResetEmail({
       toEmail: targetEmail,
       recipientName,
@@ -79,16 +86,6 @@ export async function POST(req: NextRequest) {
     });
 
     console.log(`[Forgot Password Result]:`, emailResult);
-
-    if (!emailResult.success) {
-      console.error(`[Forgot Password SMTP Error]:`, emailResult.error);
-      // Return helpful message
-      return NextResponse.json({
-        success: true,
-        message: 'Password reset link dispatched. Please check your inbox and spam folder.',
-        simulatedUrl: resetUrl,
-      });
-    }
 
     return NextResponse.json({
       success: true,
