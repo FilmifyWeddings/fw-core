@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/forgot-password
- * Generates secure 15-minute reset token and sends luxury HTML email from support@studiocore.in.
+ * Triggers instant password recovery via Supabase Auth + direct Hostinger fallback.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     const targetEmail = email.trim().toLowerCase();
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://studiocore.in';
 
     // 1. Search for user in `profiles` table first
     let userId: string | null = null;
@@ -64,21 +65,28 @@ export async function POST(req: NextRequest) {
       expiresInMinutes: 15,
     });
 
-    // 4. Construct luxury reset password link
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://studiocore.in';
     const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password/${token}`;
+    console.log(`[Forgot Password] Dispatching recovery to ${targetEmail} | Reset URL: ${resetUrl}`);
 
-    console.log(`[Forgot Password] Dispatching luxury StudioCore email to ${targetEmail} | Reset URL: ${resetUrl}`);
+    // 4. Trigger Supabase Password Recovery (Instant HTTPS cloud delivery)
+    try {
+      await supabaseAdmin.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: `${baseUrl.replace(/\/$/, '')}/reset-password`,
+      });
+      console.log(`[Forgot Password] Supabase Auth recovery dispatched successfully to ${targetEmail}`);
+    } catch (sbErr: any) {
+      console.warn('[Forgot Password Supabase Recovery Notice]:', sbErr.message);
+    }
 
-    // 5. Dispatch email exclusively via our Hostinger SMTP luxury template
-    const emailResult = await sendPasswordResetEmail({
+    // 5. Fire Hostinger SMTP template asynchronously (non-blocking)
+    sendPasswordResetEmail({
       toEmail: targetEmail,
       recipientName,
       resetUrl,
       expiresInMinutes: 15,
+    }).catch((smtpErr) => {
+      console.warn('[Forgot Password Direct SMTP Notice]:', smtpErr?.message);
     });
-
-    console.log(`[Forgot Password Result]:`, emailResult);
 
     return NextResponse.json({
       success: true,
