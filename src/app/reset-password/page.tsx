@@ -135,47 +135,36 @@ export default function ResetPasswordRootPage() {
     setLoading(true);
 
     try {
-      if (isSupabaseRecovery) {
-        // Update password for recovery session in Supabase Auth
-        const { error: sbErr } = await supabase.auth.updateUser({
+      let accessToken: string | undefined = undefined;
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash || '';
+        const match = hash.match(/access_token=([^&]+)/);
+        if (match) accessToken = match[1];
+      }
+
+      // Update password directly in Supabase database using Server Admin API
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: accessToken || undefined,
+          token: token || undefined,
+          email: userEmail || undefined,
           password: password,
-        });
+        }),
+      });
 
-        if (sbErr) {
-          setError(sbErr.message || 'Failed to update password. Link may have expired.');
-        } else {
-          setIsSuccess(true);
-          // Sign out any active session to ensure clean fresh login
-          await supabase.auth.signOut().catch(() => {});
-          setTimeout(() => {
-            router.push('/login');
-          }, 2000);
-        }
-      } else if (token) {
-        // Update password via server-side endpoint tied to specific token & email
-        const res = await fetch('/api/auth/reset-password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: token,
-            password: password,
-          }),
-        });
+      const data = await res.json().catch(() => ({}));
 
-        const data = await res.json().catch(() => ({}));
-
-        if (res.ok && data.success) {
-          setIsSuccess(true);
-          // Sign out any active session to ensure clean fresh login
-          await supabase.auth.signOut().catch(() => {});
-          setTimeout(() => {
-            router.push('/login');
-          }, 2000);
-        } else {
-          setError(data.error || 'Failed to update password. Link may have expired.');
-        }
+      if (res.ok && data.success) {
+        setIsSuccess(true);
+        // Clear any stale local auth state
+        await supabase.auth.signOut().catch(() => {});
+        setTimeout(() => {
+          router.push('/login');
+        }, 2000);
       } else {
-        setError('Missing recovery credentials. Please request a new reset link.');
+        setError(data.error || 'Failed to update password in Supabase. Link may have expired.');
       }
     } catch (err: any) {
       console.error('[Reset Password Error]:', err);
