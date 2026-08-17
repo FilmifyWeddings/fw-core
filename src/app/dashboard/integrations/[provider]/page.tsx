@@ -42,6 +42,11 @@ function ProviderConfigCore() {
     );
   }
 
+  // Google Account Profile State
+  const [connectedEmail, setConnectedEmail] = useState('');
+  const [connectedName, setConnectedName] = useState('');
+  const [connectedPicture, setConnectedPicture] = useState('');
+
   // Custom Website Hook States
   const [webhookUrl, setWebhookUrl] = useState('');
   
@@ -419,8 +424,16 @@ function ProviderConfigCore() {
 
         if (data) {
           setStatus(data.status as any);
+          const cfg = (data.config as any) || {};
+          const meta = (data.metadata as any) || {};
+          const email = cfg.connected_email || meta.email || data.account_id || '';
+          const name = cfg.connected_name || meta.name || '';
+          const pic = cfg.connected_picture || meta.picture || '';
+          setConnectedEmail(email);
+          setConnectedName(name);
+          setConnectedPicture(pic);
+
           if (provider === 'google-sheets' && data.config && typeof data.config === 'object') {
-            const cfg = data.config as any;
             const restoredConfig = {
               spreadsheet_id: cfg.spreadsheet_id || '',
               sync_trigger: cfg.sync_trigger || 'any',
@@ -844,6 +857,39 @@ function ProviderConfigCore() {
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* Connected Account Banner */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-sky-100 border border-sky-200 flex items-center justify-center text-sky-700 font-extrabold text-sm uppercase overflow-hidden shrink-0">
+                          {connectedPicture ? (
+                            <img src={connectedPicture} alt={connectedName || 'Google User'} className="w-full h-full object-cover" />
+                          ) : (
+                            connectedEmail ? connectedEmail[0].toUpperCase() : 'G'
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-zinc-900">{connectedName || 'Google Account'}</span>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              Connected ✓
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-600 font-mono mt-0.5 font-medium">
+                            {connectedEmail || 'Google Contacts OAuth Connected'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="hidden sm:flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={startGoogleOAuth}
+                          className="px-3 py-1.5 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg shadow-2xs cursor-pointer"
+                        >
+                          Switch Account
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Standalone Tabbed Sub-navigation */}
                     <div className="flex border-b border-zinc-200 mb-6">
                       <button
@@ -1191,6 +1237,39 @@ function ProviderConfigCore() {
 
                 {status === 'connected' && (
                   <div className="space-y-6">
+                    {/* Connected Account Banner */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 font-extrabold text-sm uppercase overflow-hidden shrink-0">
+                          {connectedPicture ? (
+                            <img src={connectedPicture} alt={connectedName || 'Google User'} className="w-full h-full object-cover" />
+                          ) : (
+                            connectedEmail ? connectedEmail[0].toUpperCase() : 'G'
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-zinc-900">{connectedName || 'Google Account'}</span>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              Connected ✓
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-600 font-mono mt-0.5 font-medium">
+                            {connectedEmail || 'Google Workspace Sheets Linked'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="hidden sm:flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={startGoogleOAuth}
+                          className="px-3 py-1.5 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg shadow-2xs cursor-pointer"
+                        >
+                          Switch Account
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Standalone Tabbed Sub-navigation */}
                     <div className="flex border-b border-zinc-200 mb-6">
                       <button

@@ -158,6 +158,24 @@ export async function GET(req: NextRequest) {
 
     if (!accessToken) throw new Error('Access token not found in response');
 
+    // Fetch Google User Profile (Email, Name, Picture)
+    let connectedEmail = '';
+    let connectedName = '';
+    let connectedPicture = '';
+    try {
+      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (userInfoRes.ok) {
+        const userInfo = await userInfoRes.json();
+        connectedEmail = userInfo.email || '';
+        connectedName = userInfo.name || '';
+        connectedPicture = userInfo.picture || '';
+      }
+    } catch (e) {
+      console.warn('[Google Callback] Failed to fetch profile userinfo:', e);
+    }
+
     // Save tokens in database (upsert with preserving old refresh token if missing)
     const updatePayload: Record<string, any> = {
       access_token: accessToken,
@@ -167,13 +185,34 @@ export async function GET(req: NextRequest) {
     if (refreshToken) {
       updatePayload.refresh_token = refreshToken;
     }
+    if (connectedEmail) {
+      updatePayload.account_id = connectedEmail;
+    }
 
     const { data: existing } = await supabaseAdmin
       .from('integration_credentials')
-      .select('id')
+      .select('id, config, metadata')
       .eq('user_id', workspaceId)
       .eq('provider', 'google')
       .maybeSingle();
+
+    const existingConfig = (existing?.config as Record<string, any>) || {};
+    const existingMetadata = (existing?.metadata as Record<string, any>) || {};
+
+    updatePayload.config = {
+      ...existingConfig,
+      connected_email: connectedEmail || existingConfig.connected_email,
+      connected_name: connectedName || existingConfig.connected_name,
+      connected_picture: connectedPicture || existingConfig.connected_picture,
+      connected_at: new Date().toISOString(),
+    };
+
+    updatePayload.metadata = {
+      ...existingMetadata,
+      email: connectedEmail || existingMetadata.email,
+      name: connectedName || existingMetadata.name,
+      picture: connectedPicture || existingMetadata.picture,
+    };
 
     if (existing) {
       const { error: dbErr } = await supabaseAdmin
@@ -197,7 +236,7 @@ export async function GET(req: NextRequest) {
     await supabaseAdmin.from('live_logs').insert({
       workspace_id: workspaceId,
       event_type: 'google_oauth_connected',
-      message: 'Google Workspace account connected successfully. Sheets and Drive APIs active.',
+      message: `Google Account (${connectedEmail || 'connected'}) linked successfully. People & Contacts API active.`,
     });
 
     return closeWindowWithHTML(true, 'Google Account linked successfully! This window will close shortly.');
