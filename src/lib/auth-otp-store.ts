@@ -49,7 +49,7 @@ export function isDisposableEmail(rawEmail: string): boolean {
 }
 
 /**
- * Standardize phone number format (removes +, spaces, dashes; ensures clean digits)
+ * Standardize phone number format
  */
 export function normalizePhoneNumber(rawPhone: string): string {
   const digits = rawPhone.replace(/\D/g, '');
@@ -61,6 +61,7 @@ export function normalizePhoneNumber(rawPhone: string): string {
 
 /**
  * Check if a phone number is already registered in active profiles
+ * Only accounts that have completed OTP verification and have a profile in `profiles` table are considered registered.
  */
 export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
   const digits = rawPhone.replace(/\D/g, '');
@@ -68,7 +69,6 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
   const raw10 = digits.slice(-10);
 
   try {
-    // 1. Check in profiles table (confirmed active users)
     const { data: profiles, error } = await supabaseAdmin
       .from('profiles')
       .select('id, phone')
@@ -78,18 +78,6 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
     if (!error && profiles && profiles.length > 0) {
       return true;
     }
-
-    // 2. Check in Auth user metadata if profile exists
-    const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-    if (userList?.users) {
-      const match = userList.users.some(u => {
-        // Only consider if user has confirmed email or workspace
-        if (!u.email_confirmed_at && !u.user_metadata?.workspace_name) return false;
-        const uPhone = (u.user_metadata?.phone || u.phone || '').replace(/\D/g, '');
-        return uPhone && (uPhone === digits || uPhone.endsWith(raw10) || digits.endsWith(uPhone.slice(-10)));
-      });
-      if (match) return true;
-    }
   } catch (err) {
     console.error('[isPhoneRegistered Check Error]:', err);
   }
@@ -98,30 +86,22 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
 }
 
 /**
- * Check if an email is already registered in active profiles or confirmed users
+ * Check if an email is already registered in active profiles
+ * Only accounts that have verified their OTP and have an active row in the `profiles` table are considered registered.
+ * Unverified signups that never submitted OTP are NEVER blocked.
  */
 export async function isEmailRegistered(rawEmail: string): Promise<boolean> {
   const email = rawEmail.trim().toLowerCase();
 
   try {
-    // 1. Check profiles table (completed active accounts)
-    const { data: profiles } = await supabaseAdmin
+    const { data: profiles, error } = await supabaseAdmin
       .from('profiles')
       .select('id')
       .eq('email', email)
       .limit(1);
 
-    if (profiles && profiles.length > 0) {
+    if (!error && profiles && profiles.length > 0) {
       return true;
-    }
-
-    // 2. Check auth users who have completed registration
-    const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-    if (userList?.users) {
-      const existing = userList.users.find(u => u.email?.toLowerCase() === email);
-      if (existing && (existing.email_confirmed_at || existing.user_metadata?.workspace_name)) {
-        return true;
-      }
     }
   } catch (err) {
     console.error('[isEmailRegistered Check Error]:', err);
