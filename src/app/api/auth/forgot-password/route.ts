@@ -58,22 +58,21 @@ export async function POST(req: NextRequest) {
       userId = 'anon-' + Buffer.from(targetEmail).toString('hex').slice(0, 16);
     }
 
-    // 3. Generate secure 15-minute token & 6-digit code & persist in database
-    const { token, otp } = await generateAndStoreResetToken({
+    // 3. Generate secure 15-minute token & persist in database
+    const { token } = await generateAndStoreResetToken({
       email: targetEmail,
       userId: userId,
       expiresInMinutes: 15,
     });
 
     const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password/${token}`;
-    console.log(`[Forgot Password] Dispatching recovery to ${targetEmail} | OTP: ${otp} | Reset URL: ${resetUrl}`);
+    console.log(`[Forgot Password] Dispatching 1-click recovery to ${targetEmail} | Reset URL: ${resetUrl}`);
 
-    // 4. Send Branded Password Reset Email with 6-digit OTP and direct 1-click button via Hostinger SMTP
+    // 4. Send Branded Password Reset Email with direct 1-click button via Hostinger SMTP
     const emailResult = await sendPasswordResetEmail({
       toEmail: targetEmail,
       recipientName,
       resetUrl,
-      otp,
       expiresInMinutes: 15,
     });
 
@@ -83,7 +82,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'A 6-digit verification code and password reset link have been sent to your email.',
+      message: 'Password reset link sent to your email. Please check your inbox.',
     });
   } catch (err: any) {
     console.error('[Forgot Password Error]:', err);

@@ -105,20 +105,20 @@ export default function ForgotPasswordPage() {
                 <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-left space-y-3 shadow-xs">
                   <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <span>Reset Code Sent Successfully!</span>
+                    <span>Reset Link Sent Successfully!</span>
                   </div>
                   <p className="text-xs text-emerald-800 leading-relaxed">
-                    We have dispatched a <strong>6-digit verification code</strong> and a direct reset link to <strong>{email}</strong>.
+                    We have sent a secure password reset link to <strong>{email}</strong>. Please check your inbox (or spam folder) and click the link to set a new password.
                   </p>
                   <div className="pt-2 space-y-2">
                     <Link
-                      href={`/reset-password?email=${encodeURIComponent(email)}`}
+                      href="/login"
                       className="w-full py-2.5 px-4 bg-[#F36F21] hover:bg-[#E05E10] text-white font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all"
                     >
-                      <span>Enter 6-Digit Code & Reset Password</span>
+                      <span>Return to Sign In</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </Link>
-                    <div className="flex items-center justify-between pt-1 text-xs">
+                    <div className="flex items-center justify-center pt-1 text-xs">
                       <button
                         type="button"
                         onClick={() => setIsSubmitted(false)}
@@ -126,12 +126,6 @@ export default function ForgotPasswordPage() {
                       >
                         Resend / Change Email
                       </button>
-                      <Link
-                        href="/login"
-                        className="font-bold text-[#F36F21] hover:underline"
-                      >
-                        Return to Sign In
-                      </Link>
                     </div>
                   </div>
                 </div>

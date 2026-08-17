@@ -451,7 +451,6 @@ export async function sendPasswordResetEmail({
   toEmail,
   recipientName = 'Creator',
   resetUrl,
-  otp,
   expiresInMinutes = 15,
 }: SendPasswordResetEmailParams) {
   const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
@@ -518,25 +517,9 @@ export async function sendPasswordResetEmail({
       color: #52525b;
       margin: 0 0 18px 0;
     }
-    .otp-box {
-      background: #FFF7ED;
-      border: 2px dashed #FDBA74;
-      border-radius: 16px;
-      padding: 20px;
-      text-align: center;
-      margin: 24px 0;
-    }
-    .otp-code {
-      font-size: 32px;
-      font-weight: 900;
-      letter-spacing: 6px;
-      color: #18181B;
-      font-family: monospace;
-      margin-top: 6px;
-    }
     .button-container {
       text-align: center;
-      margin: 28px 0;
+      margin: 32px 0;
     }
     .cta-btn-3d {
       display: inline-block;
@@ -609,28 +592,23 @@ export async function sendPasswordResetEmail({
       </table>
     </div>
     <div class="content">
-      <div class="badge">🔒 Password Reset Request</div>
+      <div class="badge">🔒 Password Reset</div>
       <h1>Reset Your Password</h1>
       <p>Hello <strong>${recipientName}</strong>,</p>
       <p>We received a request to reset the password for your StudioCore account associated with <strong>${toEmail}</strong>.</p>
-      
-      ${otp ? `
-      <div class="otp-box">
-        <div style="font-size: 11px; font-weight: 800; color: #EA580C; text-transform: uppercase; letter-spacing: 1px;">Your 6-Digit Reset Code</div>
-        <div class="otp-code">${otp}</div>
-      </div>
-      ` : ''}
+      <p>Click the button below to choose a new password:</p>
 
       <div class="button-container">
-        <a href="${resetUrl}" target="_blank" class="cta-btn-3d">Click to Reset Password →</a>
+        <a href="${resetUrl}" target="_blank" class="cta-btn-3d">Reset Password Now →</a>
       </div>
 
       <div class="notice-box">
-        <p>⏱️ This password reset request is valid for <strong>${expiresInMinutes} minutes</strong>. If you did not make this request, your account is safe and you can ignore this email.</p>
+        <p>⏱️ This password reset link is valid for <strong>${expiresInMinutes} minutes</strong>. If you did not make this request, your account is secure and you can ignore this email.</p>
       </div>
 
       <p class="link-fallback">
-        Direct link: <a href="${resetUrl}" style="color: #F36F21; text-decoration: underline;">${resetUrl}</a>
+        If the button above does not work, copy and paste this link into your browser:<br>
+        <a href="${resetUrl}" style="color: #F36F21; text-decoration: underline;">${resetUrl}</a>
       </p>
     </div>
     <div class="footer">
@@ -646,8 +624,8 @@ export async function sendPasswordResetEmail({
 Hello ${recipientName},
 
 We received a request to reset your StudioCore password (${toEmail}).
-${otp ? `Your 6-digit Reset Code: ${otp}\n` : ''}
 Click the link below to set your new password (valid for ${expiresInMinutes} minutes):
+
 ${resetUrl}
 
 If you did not request this, please ignore this email.
@@ -659,7 +637,7 @@ support@studiocore.in
   return sendMailWithFallback({
     from: fromAddress,
     to: toEmail,
-    subject: `${otp ? `${otp} is your ` : ''}StudioCore Password Reset Code`,
+    subject: 'Reset Your StudioCore Password',
     text: textContent,
     html: htmlContent,
   });
