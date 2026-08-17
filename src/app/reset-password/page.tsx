@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, ArrowLeft, ShieldCheck, Mail } from 'lucide-react';
+import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function ResetPasswordRootPage() {
   const router = useRouter();
@@ -21,48 +22,98 @@ export default function ResetPasswordRootPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [validating, setValidating] = useState(!!tokenParam);
+  const [validating, setValidating] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isTokenValid, setIsTokenValid] = useState(false);
+  const [isSupabaseRecovery, setIsSupabaseRecovery] = useState(false);
 
   useEffect(() => {
-    // Check if token is present in searchParams or URL hash
-    let activeToken = tokenParam;
-    
-    if (!activeToken && typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      if (hash.includes('access_token=')) {
-        // Fallback for any Supabase hash redirect
-        const match = hash.match(/access_token=([^&]+)/);
-        if (match) activeToken = match[1];
-      }
-    }
+    let isMounted = true;
 
-    if (activeToken) {
-      setToken(activeToken);
-      setValidating(true);
-
-      // Validate token with backend
-      fetch(`/api/auth/reset-password?token=${encodeURIComponent(activeToken)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.valid) {
-            setIsTokenValid(true);
-            if (data.email) setUserEmail(data.email);
-          } else {
-            setError(data.error || 'This reset link has expired or is invalid. Please request a new link.');
-          }
-        })
-        .catch(() => {
-          setError('Failed to validate reset link. Please try again.');
-        })
-        .finally(() => {
+    const checkSessionAndTokens = async () => {
+      // 1. Check for active Supabase Auth session or hash
+      const hash = typeof window !== 'undefined' ? window.location.hash : '';
+      
+      if (hash.includes('error=')) {
+        if (isMounted) {
+          setError('This password reset link is invalid or has expired. Please request a fresh reset link.');
           setValidating(false);
-        });
-    } else {
-      setValidating(false);
-    }
+        }
+        return;
+      }
+
+      // Check if hash has access_token
+      if (hash.includes('access_token=')) {
+        setIsSupabaseRecovery(true);
+        setIsTokenValid(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.email && isMounted) {
+          setUserEmail(session.user.email);
+        }
+        if (isMounted) setValidating(false);
+        return;
+      }
+
+      // Check active Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        if (isMounted) {
+          setIsSupabaseRecovery(true);
+          setIsTokenValid(true);
+          if (session.user.email) setUserEmail(session.user.email);
+          setValidating(false);
+        }
+        return;
+      }
+
+      // 2. Check for custom token parameter
+      if (tokenParam) {
+        try {
+          const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(tokenParam)}`);
+          const data = await res.json().catch(() => ({}));
+
+          if (isMounted) {
+            if (res.ok && data.valid) {
+              setIsTokenValid(true);
+              setToken(tokenParam);
+              if (data.email) setUserEmail(data.email);
+            } else {
+              setError(data.error || 'This reset link has expired or is invalid. Please request a fresh link.');
+            }
+          }
+        } catch {
+          if (isMounted) setError('Failed to validate password reset link.');
+        } finally {
+          if (isMounted) setValidating(false);
+        }
+        return;
+      }
+
+      // 3. No token and no recovery session
+      if (isMounted) {
+        setValidating(false);
+      }
+    };
+
+    // Listen to Supabase PASSWORD_RECOVERY auth state event
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && window.location.hash.includes('type=recovery'))) {
+        if (isMounted) {
+          setIsSupabaseRecovery(true);
+          setIsTokenValid(true);
+          if (session?.user?.email) setUserEmail(session.user.email);
+          setValidating(false);
+        }
+      }
+    });
+
+    checkSessionAndTokens();
+
+    return () => {
+      isMounted = false;
+      authListener?.subscription?.unsubscribe();
+    };
   }, [tokenParam]);
 
   const calculateStrength = (pass: string) => {
@@ -80,11 +131,6 @@ export default function ResetPasswordRootPage() {
     e.preventDefault();
     setError(null);
 
-    if (!token) {
-      setError('Invalid or missing reset token. Please request a new link.');
-      return;
-    }
-
     if (password.length < 6) {
       setError('Password must be at least 6 characters long.');
       return;
@@ -98,24 +144,43 @@ export default function ResetPasswordRootPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: token,
+      if (isSupabaseRecovery) {
+        // Use Supabase native updateUser
+        const { error: sbErr } = await supabase.auth.updateUser({
           password: password,
-        }),
-      });
+        });
 
-      const data = await res.json().catch(() => ({}));
+        if (sbErr) {
+          setError(sbErr.message || 'Failed to update password. Link may have expired.');
+        } else {
+          setIsSuccess(true);
+          setTimeout(() => {
+            router.push('/login');
+          }, 2000);
+        }
+      } else if (token) {
+        // Use Server-side Token validation & update
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: token,
+            password: password,
+          }),
+        });
 
-      if (res.ok && data.success) {
-        setIsSuccess(true);
-        setTimeout(() => {
-          router.push('/login');
-        }, 2000);
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.success) {
+          setIsSuccess(true);
+          setTimeout(() => {
+            router.push('/login');
+          }, 2000);
+        } else {
+          setError(data.error || 'Failed to update password. Link may have expired.');
+        }
       } else {
-        setError(data.error || 'Failed to update password. Link may have expired.');
+        setError('Missing recovery credentials. Please request a new reset link.');
       }
     } catch (err: any) {
       console.error('[Reset Password Error]:', err);
@@ -205,7 +270,7 @@ export default function ResetPasswordRootPage() {
                   Sign In Now →
                 </Link>
               </div>
-            ) : !token || !isTokenValid ? (
+            ) : !isTokenValid ? (
               /* Missing or Invalid Link State */
               <div className="mt-4 p-5 rounded-2xl bg-rose-50 border border-rose-200 text-left space-y-3 shadow-xs">
                 <div className="flex items-center gap-2 text-rose-800 font-bold text-sm">

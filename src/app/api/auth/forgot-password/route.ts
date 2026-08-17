@@ -68,17 +68,29 @@ export async function POST(req: NextRequest) {
     const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password/${token}`;
     console.log(`[Forgot Password] Dispatching 1-click recovery to ${targetEmail} | Reset URL: ${resetUrl}`);
 
-    // 4. Send Branded Password Reset Email with direct 1-click button via Hostinger SMTP
-    const emailResult = await sendPasswordResetEmail({
+    // 4. Trigger Supabase Password Recovery (uses Supabase dashboard's configured SMTP / email templates)
+    try {
+      const { error: sbErr } = await supabaseAdmin.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: 'https://studiocore.in/reset-password',
+      });
+      if (sbErr) {
+        console.warn('[Forgot Password Supabase Recovery Notice]:', sbErr.message);
+      } else {
+        console.log(`[Forgot Password] Supabase Auth recovery dispatched successfully to ${targetEmail}`);
+      }
+    } catch (sbErr: any) {
+      console.warn('[Forgot Password Supabase Recovery Exception]:', sbErr.message);
+    }
+
+    // 5. Send Branded Password Reset Email with direct 1-click button via Hostinger SMTP fallback
+    sendPasswordResetEmail({
       toEmail: targetEmail,
       recipientName,
       resetUrl,
       expiresInMinutes: 15,
+    }).catch((emailErr) => {
+      console.warn('[Forgot Password Direct SMTP Notice]:', emailErr?.message);
     });
-
-    if (!emailResult.success) {
-      console.warn('[Forgot Password Direct SMTP Notice]:', emailResult.error);
-    }
 
     return NextResponse.json({
       success: true,
