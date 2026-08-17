@@ -10,14 +10,6 @@ export const supabase = typeof window !== 'undefined'
   ? createBrowserClient(supabaseUrl, supabaseAnonKey)
   : createClient(supabaseUrl, supabaseAnonKey);
 
-// Clean up bloated legacy cookies on client mount to prevent HTTP 400/431 (Header Too Large)
-if (typeof window !== 'undefined') {
-  try {
-    document.cookie = 'sb-access-token=; path=/; max-age=0; SameSite=Lax';
-    document.cookie = 'sb-refresh-token=; path=/; max-age=0; SameSite=Lax';
-  } catch (_) {}
-}
-
 // Admin client for backend operations (webhooks, cron tasks) that bypass RLS
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {

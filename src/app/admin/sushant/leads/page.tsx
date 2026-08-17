@@ -181,27 +181,16 @@ export default function LeadsPage() {
         setStages(DEFAULT_STAGES);
       }
 
-      // Load Layout Configurations (try table_layouts first, fallback to profiles)
-      const { data: layout, error: layoutErr } = await supabase
-        .from('table_layouts')
-        .select('columns')
-        .eq('workspace_id', targetUserId)
-        .eq('layout_name', 'default')
-        .single();
-
-      if (!layoutErr && layout?.columns) {
-        setPreferences(layout.columns);
-      } else {
-        const { data: profile, error: profileErr } = await supabase
-          .from('profiles')
-          .select('leads_table_preferences')
-          .eq('id', targetUserId)
-          .single();
-
-        if (!profileErr && profile?.leads_table_preferences) {
-          setPreferences(profile.leads_table_preferences);
+      // Load Layout Configurations safely from LocalStorage
+      try {
+        const localPrefs = localStorage.getItem(`leads_table_preferences_${targetUserId}`) || localStorage.getItem('leads_table_preferences');
+        if (localPrefs) {
+          const parsed = JSON.parse(localPrefs);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setPreferences(parsed);
+          }
         }
-      }
+      } catch (_) {}
     } catch (err) {
       console.log('Database read error, falling back to mock leads data.', err);
     } finally {
@@ -367,29 +356,14 @@ export default function LeadsPage() {
     }
   };
 
-  const handlePreferencesChange = async (newPrefs: any) => {
+  const handlePreferencesChange = (newPrefs: any) => {
     setPreferences(newPrefs);
-    if (!isDemoMode && userId) {
+    if (userId) {
       try {
-        // Try saving layout to table_layouts first
-        const { error } = await supabase
-          .from('table_layouts')
-          .upsert({
-            workspace_id: userId,
-            layout_name: 'default',
-            columns: newPrefs,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'workspace_id,layout_name' });
-
-        if (error) {
-          // Fallback to profiles table if table_layouts is not created yet
-          await supabase
-            .from('profiles')
-            .update({ leads_table_preferences: newPrefs })
-            .eq('id', userId);
-        }
+        localStorage.setItem(`leads_table_preferences_${userId}`, JSON.stringify(newPrefs));
+        localStorage.setItem('leads_table_preferences', JSON.stringify(newPrefs));
       } catch (err) {
-        console.error("Preferences sync error:", err);
+        console.warn("Preferences save error:", err);
       }
     }
   };
