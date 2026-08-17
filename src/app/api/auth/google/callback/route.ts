@@ -189,9 +189,6 @@ export async function GET(req: NextRequest) {
     if (refreshToken) {
       updatePayload.refresh_token = refreshToken;
     }
-    if (connectedEmail) {
-      updatePayload.account_id = connectedEmail;
-    }
 
     // Query for existing record for this workspace and this specific provider
     const { data: existing } = await supabaseAdmin

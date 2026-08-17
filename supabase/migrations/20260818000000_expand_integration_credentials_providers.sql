@@ -10,6 +10,11 @@ EXCEPTION
     WHEN undefined_object THEN NULL;
 END $$;
 
+-- Ensure columns exist safely
+ALTER TABLE public.integration_credentials ADD COLUMN IF NOT EXISTS config JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.integration_credentials ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.integration_credentials ADD COLUMN IF NOT EXISTS account_id TEXT;
+
 -- Ensure RLS is active and policy is intact
 ALTER TABLE public.integration_credentials ENABLE ROW LEVEL SECURITY;
 
