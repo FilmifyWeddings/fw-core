@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin, supabase } from '@/lib/supabase';
 import { verifyEmailOtp, isDisposableEmail, isPhoneRegistered } from '@/lib/auth-otp-store';
 import { sendWelcomeEmail } from '@/lib/email-service';
