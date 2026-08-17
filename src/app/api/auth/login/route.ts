@@ -58,10 +58,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Authenticate with Supabase using resolved email
-    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+    // Authenticate with Supabase using resolved email via clean isolated auth client
+    const authClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nviwtgnqplebzsgdemlm.supabase.co',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_HaCj2xEYg_e98o-UJccdvA_5OUl9t63',
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      }
+    );
+
+    const { data: signInData, error: signInErr } = await authClient.auth.signInWithPassword({
       email: targetEmail,
-      password,
+      password: (password || '').trim(),
     });
 
     if (signInErr || !signInData?.session) {
