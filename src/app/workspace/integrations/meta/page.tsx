@@ -1717,74 +1717,97 @@ export default function MetaIntegrationPage() {
             <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-slate-800">
               
               {/* Step-by-Step Guide Card */}
-              <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200">
+              <div className="bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-50 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#0866FF]" />
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-900">How to get your Facebook Access Token</span>
+                    <div className="w-7 h-7 rounded-lg bg-[#0866FF]/10 text-[#0866FF] flex items-center justify-center font-bold">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">How to get your Facebook Access Token</h4>
+                      <p className="text-[11px] text-slate-500 font-medium">Follow these 4 simple steps to connect in under 1 minute</p>
+                    </div>
                   </div>
                   <a
                     href="https://developers.facebook.com/tools/explorer/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs transition-all shadow-md shadow-[#0866FF]/20 cursor-pointer self-start sm:self-auto"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs transition-all shadow-md shadow-[#0866FF]/25 hover:shadow-[#0866FF]/35 active:scale-95 cursor-pointer self-start sm:self-auto shrink-0"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>Open Graph API Explorer ↗</span>
                   </a>
                 </div>
 
+                {/* 4 Premium Numbered Step Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  
                   {/* Step 1 */}
-                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">1</span>
-                      <p className="font-extrabold text-slate-900">Open Explorer</p>
+                  <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-blue-300 transition-all">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#0866FF] font-black text-[10px] uppercase tracking-wider border border-blue-100">
+                        STEP 01
+                      </span>
+                      <span className="text-slate-300 font-mono text-[10px]">1 of 4</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
-                      Click the blue button above to open Meta's official Graph API Explorer.
+                    <p className="font-black text-slate-900 text-xs mt-1">Open Graph Explorer</p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Click the blue <strong>"Open Graph API Explorer ↗"</strong> button above to open Facebook Developer tools.
                     </p>
                   </div>
 
                   {/* Step 2 */}
-                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">2</span>
-                      <p className="font-extrabold text-slate-900">Add 5 Permissions</p>
+                  <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-blue-300 transition-all">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#0866FF] font-black text-[10px] uppercase tracking-wider border border-blue-100">
+                        STEP 02
+                      </span>
+                      <span className="text-slate-300 font-mono text-[10px]">2 of 4</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
-                      Under <strong>Permissions</strong> dropdown, select the 5 required scopes listed below.
+                    <p className="font-black text-slate-900 text-xs mt-1">Add 5 Permissions</p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Under <strong>Permissions dropdown</strong>, search and select the <strong>5 required permissions</strong> listed below.
                     </p>
                   </div>
 
                   {/* Step 3 */}
-                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">3</span>
-                      <p className="font-extrabold text-slate-900">Select Your Page</p>
+                  <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-blue-300 transition-all">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#0866FF] font-black text-[10px] uppercase tracking-wider border border-blue-100">
+                        STEP 03
+                      </span>
+                      <span className="text-slate-300 font-mono text-[10px]">3 of 4</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
-                      In <strong>User or Page</strong> dropdown, select your <strong>Facebook Page</strong> (Permanent Token).
+                    <p className="font-black text-slate-900 text-xs mt-1">Get User Token</p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Click <strong>"Get Token" → "Get User Access Token"</strong> and approve all page access permissions in the Facebook popup.
                     </p>
                   </div>
 
                   {/* Step 4 */}
-                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">4</span>
-                      <p className="font-extrabold text-slate-900">Generate &amp; Paste</p>
+                  <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5 hover:border-blue-300 transition-all">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#0866FF] font-black text-[10px] uppercase tracking-wider border border-blue-100">
+                        STEP 04
+                      </span>
+                      <span className="text-slate-300 font-mono text-[10px]">4 of 4</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
-                      Click <strong>Generate Access Token</strong>, copy the token and paste it below.
+                    <p className="font-black text-slate-900 text-xs mt-1">Copy &amp; Paste Below</p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Copy the generated <strong>Access Token</strong>, paste it into the box below and click <strong>Fetch Pages &amp; Connect</strong>.
                     </p>
                   </div>
+
                 </div>
 
                 {/* Required Permissions List Tags */}
                 <div className="pt-2">
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Required Meta Permissions (Ensure all 5 are added):
-                  </p>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                      <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Required Permissions (Check all 5 in Step 2):</span>
+                    </p>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {[
                       { name: 'leads_retrieval', desc: 'Read Leads' },
@@ -1795,7 +1818,7 @@ export default function MetaIntegrationPage() {
                     ].map(perm => (
                       <span
                         key={perm.name}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-mono font-bold"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-mono font-bold shadow-2xs"
                       >
                         <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                         <span>{perm.name}</span>
