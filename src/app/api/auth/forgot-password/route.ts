@@ -58,39 +58,32 @@ export async function POST(req: NextRequest) {
       userId = 'anon-' + Buffer.from(targetEmail).toString('hex').slice(0, 16);
     }
 
-    // 3. Generate secure 15-minute token & persist in database
-    const { token } = await generateAndStoreResetToken({
+    // 3. Generate secure 15-minute token & 6-digit code & persist in database
+    const { token, otp } = await generateAndStoreResetToken({
       email: targetEmail,
       userId: userId,
       expiresInMinutes: 15,
     });
 
     const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password/${token}`;
-    console.log(`[Forgot Password] Dispatching recovery to ${targetEmail} | Reset URL: ${resetUrl}`);
+    console.log(`[Forgot Password] Dispatching recovery to ${targetEmail} | OTP: ${otp} | Reset URL: ${resetUrl}`);
 
-    // 4. Trigger Supabase Password Recovery (Instant HTTPS cloud delivery)
-    try {
-      await supabaseAdmin.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: `${baseUrl.replace(/\/$/, '')}/reset-password`,
-      });
-      console.log(`[Forgot Password] Supabase Auth recovery dispatched successfully to ${targetEmail}`);
-    } catch (sbErr: any) {
-      console.warn('[Forgot Password Supabase Recovery Notice]:', sbErr.message);
-    }
-
-    // 5. Fire Hostinger SMTP template asynchronously (non-blocking)
-    sendPasswordResetEmail({
+    // 4. Send Branded Password Reset Email with 6-digit OTP and direct 1-click button via Hostinger SMTP
+    const emailResult = await sendPasswordResetEmail({
       toEmail: targetEmail,
       recipientName,
       resetUrl,
+      otp,
       expiresInMinutes: 15,
-    }).catch((smtpErr) => {
-      console.warn('[Forgot Password Direct SMTP Notice]:', smtpErr?.message);
     });
+
+    if (!emailResult.success) {
+      console.warn('[Forgot Password Direct SMTP Notice]:', emailResult.error);
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Password reset link sent to your email. Valid for 15 minutes.',
+      message: 'A 6-digit verification code and password reset link have been sent to your email.',
     });
   } catch (err: any) {
     console.error('[Forgot Password Error]:', err);

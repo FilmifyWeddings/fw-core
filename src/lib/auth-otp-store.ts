@@ -15,6 +15,7 @@ interface ResetTokenRecord {
   email: string;
   userId?: string;
   token: string;
+  otp?: string;
   expiresAt: number;
   used: boolean;
 }
@@ -61,7 +62,6 @@ export function normalizePhoneNumber(rawPhone: string): string {
 
 /**
  * Check if a phone number is already registered in active profiles
- * Only accounts that have completed OTP verification and have a profile in `profiles` table are considered registered.
  */
 export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
   const digits = rawPhone.replace(/\D/g, '');
@@ -87,8 +87,6 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
 
 /**
  * Check if an email is already registered in active profiles
- * Only accounts that have verified their OTP and have an active row in the `profiles` table are considered registered.
- * Unverified signups that never submitted OTP are NEVER blocked.
  */
 export async function isEmailRegistered(rawEmail: string): Promise<boolean> {
   const email = rawEmail.trim().toLowerCase();
@@ -111,7 +109,50 @@ export async function isEmailRegistered(rawEmail: string): Promise<boolean> {
 }
 
 /**
- * Generate and store a 6-digit Email OTP
+ * Store an OTP code (in-memory + database fallback)
+ */
+export async function storeOtp({
+  phone,
+  email,
+  otp,
+  type = 'signup',
+  metadata = {},
+  expiresInMinutes = 10,
+}: {
+  phone?: string;
+  email?: string;
+  otp: string;
+  type?: string;
+  metadata?: any;
+  expiresInMinutes?: number;
+}): Promise<void> {
+  const expiresAt = Date.now() + expiresInMinutes * 60 * 1000;
+  const record: OtpRecord = { phone, email, otp, type, metadata, expiresAt, verified: false };
+
+  if (phone) {
+    otpCache.set(phone, record);
+  }
+  if (email) {
+    emailOtpCache.set(email.toLowerCase(), record);
+  }
+
+  try {
+    await supabaseAdmin.from('auth_otps').insert({
+      phone: phone || null,
+      email: email ? email.toLowerCase() : null,
+      otp,
+      type,
+      metadata,
+      expires_at: new Date(expiresAt).toISOString(),
+      verified: false,
+    });
+  } catch (err) {
+    console.warn('[storeOtp DB fallback to in-memory]:', err);
+  }
+}
+
+/**
+ * Generate a 6-digit OTP and store it for email verification
  */
 export async function generateAndStoreEmailOtp({
   email: rawEmail,
@@ -317,7 +358,7 @@ export async function verifyOtp({
 }
 
 /**
- * Generate a 15-minute Password Reset Token
+ * Generate a 15-minute Password Reset Token & 6-Digit Code
  */
 export async function generateAndStoreResetToken({
   email: rawEmail,
@@ -327,15 +368,26 @@ export async function generateAndStoreResetToken({
   email: string;
   userId?: string;
   expiresInMinutes?: number;
-}): Promise<{ token: string; expiresAt: Date }> {
+}): Promise<{ token: string; otp: string; expiresAt: Date }> {
   const email = rawEmail.trim().toLowerCase();
   const token = crypto.randomBytes(32).toString('hex');
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
   resetCache.set(token, {
     email,
     userId,
     token,
+    otp,
+    expiresAt: expiresAt.getTime(),
+    used: false,
+  });
+
+  resetCache.set(`otp_${email}_${otp}`, {
+    email,
+    userId,
+    token,
+    otp,
     expiresAt: expiresAt.getTime(),
     used: false,
   });
@@ -352,7 +404,7 @@ export async function generateAndStoreResetToken({
     console.warn('[password_resets DB fallback to cache]:', err);
   }
 
-  return { token, expiresAt };
+  return { token, otp, expiresAt };
 }
 
 /**
@@ -396,6 +448,44 @@ export async function validateResetToken(
 }
 
 /**
+ * Validate either a reset token OR a 6-digit OTP code + email
+ */
+export async function validateResetTokenOrOtp({
+  token,
+  email: rawEmail,
+  otp,
+}: {
+  token?: string;
+  email?: string;
+  otp?: string;
+}): Promise<{ valid: boolean; email?: string; userId?: string; token?: string; error?: string }> {
+  if (token) {
+    const res = await validateResetToken(token);
+    return { ...res, token };
+  }
+
+  if (rawEmail && otp) {
+    const email = rawEmail.trim().toLowerCase();
+    const cleanOtp = otp.trim();
+    const key = `otp_${email}_${cleanOtp}`;
+    const cached = resetCache.get(key);
+
+    if (cached) {
+      if (cached.used) {
+        return { valid: false, error: 'This verification code has already been used.' };
+      }
+      if (Date.now() > cached.expiresAt) {
+        resetCache.delete(key);
+        return { valid: false, error: 'This verification code has expired (15-min limit).' };
+      }
+      return { valid: true, email: cached.email, userId: cached.userId, token: cached.token };
+    }
+  }
+
+  return { valid: false, error: 'Invalid or expired reset code. Please check your email.' };
+}
+
+/**
  * Mark reset token as used
  */
 export async function markResetTokenUsed(token: string): Promise<void> {
@@ -403,6 +493,9 @@ export async function markResetTokenUsed(token: string): Promise<void> {
   const cached = resetCache.get(cleanToken);
   if (cached) {
     cached.used = true;
+    if (cached.otp && cached.email) {
+      resetCache.delete(`otp_${cached.email}_${cached.otp}`);
+    }
   }
 
   try {
