@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { 
   ArrowLeft, ShieldCheck, RefreshCw, Key, Copy, Check,
   BarChart3, Globe, Mail, Calendar, UserPlus,
-  CheckCircle2, Lock, FileSpreadsheet
+  CheckCircle2, Lock, FileSpreadsheet, Trash2, LogOut
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -930,13 +930,20 @@ function ProviderConfigCore() {
                           </p>
                         </div>
                       </div>
-                      <div className="hidden sm:flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={startGoogleOAuth}
-                          className="px-3 py-1.5 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg shadow-2xs cursor-pointer"
+                          className="px-3 py-2 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-xl shadow-2xs cursor-pointer"
                         >
-                          Switch Account
+                          Switch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDisconnect}
+                          className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Disconnect
                         </button>
                       </div>
                     </div>
@@ -1296,13 +1303,22 @@ function ProviderConfigCore() {
                           </p>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleDisconnect}
-                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
-                      >
-                        Disconnect Calendar
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={startGoogleOAuth}
+                          className="px-3 py-2 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-xl shadow-2xs cursor-pointer"
+                        >
+                          Switch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDisconnect}
+                          className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Disconnect
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-3">
@@ -1395,13 +1411,20 @@ function ProviderConfigCore() {
                           </p>
                         </div>
                       </div>
-                      <div className="hidden sm:flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={startGoogleOAuth}
-                          className="px-3 py-1.5 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg shadow-2xs cursor-pointer"
+                          className="px-3 py-2 bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-semibold rounded-xl shadow-2xs cursor-pointer"
                         >
-                          Switch Account
+                          Switch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDisconnect}
+                          className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Disconnect
                         </button>
                       </div>
                     </div>
