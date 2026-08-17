@@ -6,7 +6,8 @@ import { motion } from 'framer-motion';
 import { 
   ArrowLeft, ShieldCheck, RefreshCw, Key, Copy, Check,
   BarChart3, Globe, Mail, Calendar, UserPlus,
-  CheckCircle2, Lock, FileSpreadsheet, Trash2, LogOut
+  CheckCircle2, Lock, FileSpreadsheet, Trash2, LogOut,
+  Search, Clock, Phone, User, Tag, AlertTriangle, Activity
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -74,6 +75,9 @@ function ProviderConfigCore() {
   const [contactsTab, setContactsTab] = useState<'configure' | 'status'>('configure');
   const [contactsSearchQuery, setContactsSearchQuery] = useState('');
   const [showLabelsDropdown, setShowLabelsDropdown] = useState(false);
+  const [contactsLogs, setContactsLogs] = useState<any[]>([]);
+  const [isLoadingContactsLogs, setIsLoadingContactsLogs] = useState(false);
+  const [contactsLogSearch, setContactsLogSearch] = useState('');
 
   // Google Sheets States
   const [spreadsheets, setSpreadsheets] = useState<{ id: string; name: string }[]>([]);
@@ -385,10 +389,35 @@ function ProviderConfigCore() {
     }
   };
 
+  const fetchContactsLogs = async () => {
+    if (!userId) return;
+    try {
+      setIsLoadingContactsLogs(true);
+      const { data, error } = await supabase
+        .from('live_logs')
+        .select('*')
+        .eq('workspace_id', userId)
+        .in('event_type', ['sync_google_contacts_success', 'sync_google_contacts_duplicate', 'sync_google_contacts_failed'])
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (!error && data) {
+        setContactsLogs(data);
+      }
+    } catch (err) {
+      console.error('Error loading contacts sync logs:', err);
+    } finally {
+      setIsLoadingContactsLogs(false);
+    }
+  };
+
   useEffect(() => {
     if (provider !== 'google-contacts' || status !== 'connected') return;
     fetchContactsLabels();
-  }, [provider, status]);
+    if (contactsTab === 'status') {
+      fetchContactsLogs();
+    }
+  }, [provider, status, contactsTab]);
 
   useEffect(() => {
     if (provider !== 'google-sheets' || status !== 'connected') return;
@@ -1149,34 +1178,236 @@ function ProviderConfigCore() {
                     )}
 
                     {contactsTab === 'status' && (
-                      <div className="space-y-4">
-                        {/* Status Check card */}
-                        <div className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center">
-                          <div>
-                            <h4 className="text-xs font-bold text-zinc-900">OAuth Credentials State</h4>
-                            <p className="text-[11px] text-zinc-500 mt-1">
-                              {status === 'connected' 
-                                ? 'Authorized ✓. Real-time background People API sync active.'
-                                : 'No valid Google OAuth credentials connected.'
-                              }
-                            </p>
+                      <div className="space-y-6">
+                        {/* Status Check & Counter Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center shadow-2xs">
+                            <div>
+                              <h4 className="text-xs font-bold text-zinc-900">OAuth Credentials State</h4>
+                              <p className="text-[11px] text-zinc-500 mt-1">
+                                {status === 'connected' 
+                                  ? 'Authorized ✓. Real-time background People API sync active.'
+                                  : 'No valid Google OAuth credentials connected.'
+                                }
+                              </p>
+                            </div>
+                            <div className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 ${
+                              status === 'connected' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}>
+                              {status === 'connected' ? 'Authorized ✓' : 'Unauthorized'}
+                            </div>
                           </div>
-                          <div className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                            status === 'connected' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
-                          }`}>
-                            {status === 'connected' ? 'Authorized ✓' : 'Unauthorized'}
+
+                          <div className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center shadow-2xs">
+                            <div>
+                              <h4 className="text-xs font-bold text-zinc-900">Total Synced Contacts</h4>
+                              <p className="text-[11px] text-zinc-500 mt-1">Total leads provisioned in Google Contacts.</p>
+                            </div>
+                            <div className="text-2xl font-mono font-extrabold text-sky-600 shrink-0">{contactsCount}</div>
                           </div>
                         </div>
 
-                        {/* Total Synced Contacts Counter */}
-                        <div className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center">
-                          <div>
-                            <h4 className="text-xs font-bold text-zinc-900">Synced Contacts Count</h4>
-                            <p className="text-[11px] text-zinc-500 mt-1">Total leads provisioned in Google Contacts.</p>
+                        {/* Top Action Buttons Bar */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
+                          <div className="flex items-center gap-2 text-xs font-bold text-zinc-700">
+                            <Activity className="w-4 h-4 text-sky-600" />
+                            <span>Live Multi-Tenant Sync Activity &amp; Audit Logs</span>
                           </div>
-                          <div className="text-xl font-mono font-extrabold text-sky-600">{contactsCount}</div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={fetchContactsLogs}
+                              disabled={isLoadingContactsLogs}
+                              className="px-3 py-1.5 bg-white hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
+                            >
+                              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingContactsLogs ? 'animate-spin' : ''}`} /> Refresh Logs
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  setLoading(true);
+                                  const { data: latestLeads } = await supabase
+                                    .from('leads')
+                                    .select('id')
+                                    .eq('workspace_id', userId)
+                                    .limit(1);
+
+                                  if (latestLeads && latestLeads.length > 0) {
+                                    const leadId = latestLeads[0].id;
+                                    const { data: { session } } = await supabase.auth.getSession();
+                                    if (!session) return;
+                                    
+                                    const res = await fetch('/api/workflows/google-contacts/sync-lead', {
+                                      method: 'POST',
+                                      headers: {
+                                       'Content-Type': 'application/json',
+                                        Authorization: `Bearer ${session.access_token}`
+                                      },
+                                      body: JSON.stringify({ leadId, workspaceId: userId })
+                                    });
+
+                                    const json = await res.json();
+                                    if (res.ok && json.success) {
+                                      alert(json.duplicate ? 'Lead is already present in your Google Contacts.' : 'Manual test sync succeeded!');
+                                      fetchContactsLogs();
+                                      const { count } = await supabase
+                                        .from('live_logs')
+                                        .select('*', { count: 'exact', head: true })
+                                        .eq('workspace_id', userId)
+                                        .eq('event_type', 'sync_google_contacts_success');
+                                      setContactsCount(count || 0);
+                                    } else {
+                                      alert(`Test Sync failed: ${json.error || json.message || 'Unknown error'}`);
+                                    }
+                                  } else {
+                                    alert('No leads found in your account to sync.');
+                                  }
+                                } catch (err: any) {
+                                  alert(`Error: ${err.message}`);
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" /> Trigger Test Sync
+                            </button>
+                          </div>
                         </div>
 
+                        {/* Search in logs */}
+                        <div className="flex items-center gap-2 px-3.5 py-2 bg-white border border-zinc-200 rounded-xl">
+                          <Search className="w-4 h-4 text-zinc-400 shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Filter sync logs by contact name, phone, or group..."
+                            value={contactsLogSearch}
+                            onChange={e => setContactsLogSearch(e.target.value)}
+                            className="w-full text-xs text-zinc-800 bg-transparent focus:outline-none placeholder:text-zinc-400 font-medium"
+                          />
+                          {contactsLogSearch && (
+                            <button 
+                              type="button" 
+                              onClick={() => setContactsLogSearch('')}
+                              className="text-xs text-zinc-400 hover:text-zinc-700 font-bold px-1"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Contacts Sync Logs Table */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-2xs">
+                          {isLoadingContactsLogs ? (
+                            <div className="py-12 text-center text-zinc-400 text-xs flex items-center justify-center gap-2">
+                              <RefreshCw className="w-4 h-4 animate-spin text-sky-600" />
+                              Loading sync activity logs...
+                            </div>
+                          ) : contactsLogs.filter(log => {
+                            if (!contactsLogSearch.trim()) return true;
+                            const query = contactsLogSearch.toLowerCase();
+                            const msg = (log.message || '').toLowerCase();
+                            const metaStr = JSON.stringify(log.metadata || {}).toLowerCase();
+                            return msg.includes(query) || metaStr.includes(query);
+                          }).length === 0 ? (
+                            <div className="py-12 text-center text-zinc-500 space-y-2">
+                              <div className="w-10 h-10 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center mx-auto text-zinc-400">
+                                <Clock className="w-5 h-5" />
+                              </div>
+                              <p className="text-xs font-bold text-zinc-700">No Sync Activity Found</p>
+                              <p className="text-[11px] text-zinc-400 max-w-sm mx-auto">
+                                When incoming leads arrive from Meta, Website, or Sheets, or when you sync a lead from the Leads table, live logs with timestamp and contact details will appear here.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto max-h-96">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-500 uppercase text-[10px] font-bold tracking-wider sticky top-0 z-10">
+                                  <tr>
+                                    <th className="py-3 px-4">Date &amp; Time</th>
+                                    <th className="py-3 px-4">Contact Details</th>
+                                    <th className="py-3 px-4">Phone Number</th>
+                                    <th className="py-3 px-4">Google Group</th>
+                                    <th className="py-3 px-4">Status</th>
+                                    <th className="py-3 px-4">Activity Log Details</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-100 font-sans">
+                                  {contactsLogs.filter(log => {
+                                    if (!contactsLogSearch.trim()) return true;
+                                    const query = contactsLogSearch.toLowerCase();
+                                    const msg = (log.message || '').toLowerCase();
+                                    const metaStr = JSON.stringify(log.metadata || {}).toLowerCase();
+                                    return msg.includes(query) || metaStr.includes(query);
+                                  }).map(log => {
+                                    const isSuccess = log.event_type === 'sync_google_contacts_success';
+                                    const isDuplicate = log.event_type === 'sync_google_contacts_duplicate';
+                                    const meta = log.metadata || {};
+                                    const name = meta.name || log.message?.match(/["']([^"']+)["']/)?.[1] || 'Lead Contact';
+                                    const phone = meta.phone || log.message?.match(/(\+?[0-9]{10,14})/)?.[1] || '-';
+                                    const group = meta.group || contactsLabelName || 'Default';
+
+                                    const formattedDate = new Date(log.created_at).toLocaleString('en-IN', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: true
+                                    });
+
+                                    return (
+                                      <tr key={log.id} className="hover:bg-zinc-50/70 transition-colors">
+                                        <td className="py-3 px-4 text-zinc-500 font-mono text-[11px] whitespace-nowrap">
+                                          {formattedDate}
+                                        </td>
+                                        <td className="py-3 px-4 font-bold text-zinc-800 whitespace-nowrap">
+                                          <div className="flex items-center gap-1.5">
+                                            <User className="w-3.5 h-3.5 text-zinc-400" />
+                                            <span>{name}</span>
+                                          </div>
+                                        </td>
+                                        <td className="py-3 px-4 font-mono text-zinc-600 text-[11px] whitespace-nowrap">
+                                          <div className="flex items-center gap-1.5">
+                                            <Phone className="w-3.5 h-3.5 text-zinc-400" />
+                                            <span>{phone}</span>
+                                          </div>
+                                        </td>
+                                        <td className="py-3 px-4 text-zinc-600 whitespace-nowrap">
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-100 border border-zinc-200 text-[10px] font-bold text-zinc-700">
+                                            <Tag className="w-3 h-3 text-sky-600" />
+                                            {group}
+                                          </span>
+                                        </td>
+                                        <td className="py-3 px-4 whitespace-nowrap">
+                                          {isSuccess ? (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                              <Check className="w-3 h-3 stroke-[3]" /> Synced
+                                            </span>
+                                          ) : isDuplicate ? (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-sky-50 text-sky-700 border border-sky-200">
+                                              ℹ️ Duplicate Skipped
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                                              ✕ Failed
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="py-3 px-4 text-zinc-500 text-[11px] max-w-xs truncate" title={log.message}>
+                                          {log.message}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Footer Disconnect & Switch bar */}
                         <div className="flex justify-end gap-3 pt-4 border-t border-zinc-200">
                           <button
                             type="button"
@@ -1191,56 +1422,6 @@ function ProviderConfigCore() {
                             className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
                           >
                             Disconnect Google Contacts
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                setLoading(true);
-                                const { data: latestLeads } = await supabase
-                                  .from('leads')
-                                  .select('id')
-                                  .eq('workspace_id', userId)
-                                  .limit(1);
-
-                                if (latestLeads && latestLeads.length > 0) {
-                                  const leadId = latestLeads[0].id;
-                                  const { data: { session } } = await supabase.auth.getSession();
-                                  if (!session) return;
-                                  
-                                  const res = await fetch('/api/workflows/google-contacts/sync-lead', {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      Authorization: `Bearer ${session.access_token}`
-                                    },
-                                    body: JSON.stringify({ leadId })
-                                  });
-
-                                  if (res.ok) {
-                                    alert('Manual test sync triggered successfully!');
-                                    const { count } = await supabase
-                                      .from('live_logs')
-                                      .select('*', { count: 'exact', head: true })
-                                      .eq('workspace_id', userId)
-                                      .eq('event_type', 'sync_google_contacts_success');
-                                    setContactsCount(count || 0);
-                                  } else {
-                                    const text = await res.text();
-                                    alert(`Test Sync failed: ${text}`);
-                                  }
-                                } else {
-                                  alert('No leads available in this workspace to sync.');
-                                }
-                              } catch (err: any) {
-                                alert(`Error: ${err.message}`);
-                              } finally {
-                                setLoading(false);
-                              }
-                            }}
-                            className="px-4 py-2 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-                          >
-                            Trigger Test Sync
                           </button>
                         </div>
                       </div>

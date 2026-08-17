@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase';
 import { getGoogleCreds } from './google-auth';
+import { syncLeadToGoogleContacts } from './google-contacts';
 
 export async function syncGoogleSheetData(
   userId: string,
@@ -121,15 +122,25 @@ export async function syncGoogleSheetData(
 
     let insertedCount = 0;
     if (leadsToInsert.length > 0) {
-      const { error: insertErr } = await supabaseAdmin
+      const { data: insertedData, error: insertErr } = await supabaseAdmin
         .from('leads')
-        .insert(leadsToInsert);
+        .insert(leadsToInsert)
+        .select('*');
 
       if (insertErr) {
         console.error('[Sync] Lead insert error:', insertErr);
         return { success: false, error: `Lead insert error: ${insertErr.message}` };
       }
-      insertedCount = leadsToInsert.length;
+      insertedCount = insertedData?.length || leadsToInsert.length;
+
+      // Auto-sync ingested leads to user's Google Contacts in background
+      if (insertedData && insertedData.length > 0) {
+        insertedData.forEach((leadItem: any) => {
+          syncLeadToGoogleContacts(userId, leadItem).catch(e =>
+            console.error('[Google Sheets Auto Google Contacts Sync Error]:', e)
+          );
+        });
+      }
     }
 
     // Update config last_row_count

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
 
 // GET verification for Meta webhook registration
 export async function GET(req: NextRequest) {
@@ -108,8 +109,17 @@ export async function POST(req: NextRequest) {
                 metadata: { form_id, leadgen_id }
               });
 
-              // 5. Trigger async sequence enqueue webhook trigger if sequence exists
-              // Next.js server instantly responds with success, delegating drip actions to queue triggers (Law 3)
+              // 5. Auto-sync lead to user's Google Contacts in background
+              syncLeadToGoogleContacts(workspaceId, {
+                id: newLead.id,
+                workspace_id: workspaceId,
+                name: mockLeadDetails.name,
+                email: mockLeadDetails.email,
+                phone: mockLeadDetails.phone,
+                source: 'facebook',
+                raw_payload: mockLeadDetails.raw_payload,
+              }).catch(err => console.error('[Meta Webhook Auto Google Contacts Sync Error]:', err));
+
               console.log('[Meta Webhook] Successfully ingested lead:', newLead.id);
             }
           }

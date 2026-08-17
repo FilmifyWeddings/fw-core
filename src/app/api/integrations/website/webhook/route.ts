@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
 
 // POST webhook handler for personal portfolio websites (WordPress / Elementor / Webflow)
 // Expects: POST /api/integrations/website/webhook?key=web_sec_xxxxxx
@@ -94,6 +95,18 @@ export async function POST(req: NextRequest) {
       message: `Lead ingested from custom website form: "${name}". Score: ${score}.`,
       metadata: { budget, venue: body.venue || '' }
     });
+
+    // 5. Auto-sync lead to Google Contacts in background
+    syncLeadToGoogleContacts(workspaceId, {
+      id: newLead.id,
+      workspace_id: workspaceId,
+      name,
+      email,
+      phone,
+      source: 'website',
+      score,
+      raw_payload: body
+    }).catch(err => console.error('[Website Webhook Auto Google Contacts Sync Error]:', err));
 
     // Return immediate success 201 Created (Law 3 Asynchronous Background Workers)
     console.log('[Website Webhook] Ingestion successful:', newLead.id);

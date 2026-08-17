@@ -527,31 +527,39 @@ export function LeadTable({
 
 
   const handleGoogleContactsSync = async (lead: Lead) => {
-    if (lead.google_synced) return;
+    const isAlreadySynced = (lead as any).google_synced || lead.raw_payload?.google_synced;
+    if (isAlreadySynced) {
+      alert(`Lead "${lead.name || lead.phone}" is already synced to your Google Contacts.`);
+      return;
+    }
+
     setSyncingLeadId(lead.id);
     try {
-      const res = await fetch('/api/integrations/google-contacts', {
+      const res = await fetch('/api/workflows/google-contacts/sync-lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: lead.id })
+        body: JSON.stringify({ leadId: lead.id, workspaceId: lead.workspace_id })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, google_synced: true } : l));
+        setLeads(prev => prev.map(l => l.id === lead.id ? { 
+          ...l, 
+          google_synced: true,
+          raw_payload: { ...(l.raw_payload || {}), google_synced: true, google_contact_id: data.contactId }
+        } : l));
         if (onLeadUpdate) {
-          onLeadUpdate(lead.id, { google_synced: true });
+          onLeadUpdate(lead.id, { 
+            google_synced: true,
+            raw_payload: { ...(lead.raw_payload || {}), google_synced: true, google_contact_id: data.contactId }
+          });
         }
-        alert(`Google contact sync successful for ${lead.name || lead.phone}!`);
+        alert(data.duplicate ? `Lead "${lead.name || lead.phone}" is already in your Google Contacts.` : `Successfully synced "${lead.name || lead.phone}" to Google Contacts!`);
       } else {
-        alert('Sync failed: ' + (data.error || 'Unknown error'));
+        alert('Sync failed: ' + (data.error || data.message || 'Unknown error. Please check Google Contacts connection.'));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Google sync fetch error:', err);
-      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, google_synced: true } : l));
-      if (onLeadUpdate) {
-        onLeadUpdate(lead.id, { google_synced: true });
-      }
-      alert(`Google contact sync simulated for ${lead.name || lead.phone}.`);
+      alert(`Sync failed: ${err.message || 'Network error'}`);
     } finally {
       setSyncingLeadId(null);
     }
@@ -982,6 +990,7 @@ export function LeadTable({
     comments: true,
     followup: true,
     whatsapp: true,
+    google_contact: true,
     delete: false,
   });
 
@@ -3043,26 +3052,26 @@ export function LeadTable({
                                   </MotionTd>
                                 );
                               case 'google_sync':
-                                const gs = (lead as any).google_synced ?? false;
+                                const isGoogleSynced = Boolean((lead as any).google_synced || lead.raw_payload?.google_synced);
                                 const isSyncing = syncingLeadId === lead.id;
                                 return (
                                   <MotionTd key={col.id} className="py-2 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                                     <button
                                       onClick={() => handleGoogleContactsSync(lead)}
-                                      disabled={gs || isSyncing}
-                                      title={gs ? "Client Metadata Synced" : isSyncing ? "Syncing contacts..." : "Click to Sync Google Contact"}
+                                      disabled={isSyncing}
+                                      title={isGoogleSynced ? "Already Synced to Google Contacts (Click to verify)" : isSyncing ? "Syncing contacts..." : "Click to Sync Google Contact"}
                                       className={`inline-flex px-1.5 py-1.5 rounded-lg border transition-all ${
-                                        gs 
-                                          ? 'bg-blue-600/10 border-blue-500/20 text-blue-600 dark:text-blue-400 cursor-default' 
+                                        isGoogleSynced 
+                                          ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/80 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 ring-1 ring-blue-400/40 cursor-pointer shadow-2xs' 
                                           : isSyncing 
-                                            ? 'bg-[#FAF8F5] dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-400 dark:text-zinc-500 animate-pulse'
+                                            ? 'bg-[#FAF8F5] dark:bg-[#1C1A18] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-400 dark:text-zinc-500 animate-pulse cursor-wait'
                                             : 'bg-white dark:bg-[#1C1A18] hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] border-[#E8E5DF] dark:border-[#2C2926] text-zinc-500 dark:text-zinc-400 hover:text-blue-500 dark:hover:text-blue-400 cursor-pointer shadow-sm'
                                       }`}
                                     >
                                       {isSyncing ? (
-                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
                                       ) : (
-                                        <UserCheck className="w-3.5 h-3.5" />
+                                        <UserCheck className={`w-3.5 h-3.5 ${isGoogleSynced ? 'text-blue-600 dark:text-blue-400' : ''}`} />
                                       )}
                                     </button>
                                   </MotionTd>
@@ -3357,26 +3366,31 @@ export function LeadTable({
                             )}
 
                             {/* Google Contact Sync Quick Action */}
-                            {quickActionsConfig.google_contact === true && (
-                              <PremiumTooltip content={(lead as any).google_synced ? "Google Contact Synced" : syncingLeadId === lead.id ? "Syncing..." : "Sync Google Contact"}>
-                                <button
-                                  onClick={() => handleGoogleContactsSync(lead)}
-                                  disabled={syncingLeadId === lead.id}
-                                  className={`p-1.5 rounded-lg border transition-all ${
-                                    (lead as any).google_synced 
-                                      ? 'bg-blue-100 dark:bg-blue-950 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-400' 
-                                      : syncingLeadId === lead.id 
-                                        ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse'
-                                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500'
-                                  }`}
-                                >
-                                  {syncingLeadId === lead.id ? (
-                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <UserCheck className="w-3.5 h-3.5" />
-                                  )}
-                                </button>
-                              </PremiumTooltip>
+                            {quickActionsConfig.google_contact !== false && (
+                              (() => {
+                                const isGoogleSynced = Boolean((lead as any).google_synced || lead.raw_payload?.google_synced);
+                                return (
+                                  <PremiumTooltip content={isGoogleSynced ? "Already Synced to Google Contacts (Click to verify)" : syncingLeadId === lead.id ? "Syncing to Google Contacts..." : "Sync Lead to Google Contacts"}>
+                                    <button
+                                      onClick={() => handleGoogleContactsSync(lead)}
+                                      disabled={syncingLeadId === lead.id}
+                                      className={`p-1.5 rounded-lg border transition-all ${
+                                        isGoogleSynced 
+                                          ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/80 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 ring-1 ring-blue-400/40 cursor-pointer shadow-2xs' 
+                                          : syncingLeadId === lead.id 
+                                            ? 'bg-zinc-800 border-zinc-700 text-zinc-400 animate-pulse cursor-wait'
+                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-blue-500 cursor-pointer'
+                                      }`}
+                                    >
+                                      {syncingLeadId === lead.id ? (
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                                      ) : (
+                                        <UserCheck className={`w-3.5 h-3.5 ${isGoogleSynced ? 'text-blue-600 dark:text-blue-400' : ''}`} />
+                                      )}
+                                    </button>
+                                  </PremiumTooltip>
+                                );
+                              })()
                             )}
 
                             {/* WGL Status / Dispatch Quick Action */}

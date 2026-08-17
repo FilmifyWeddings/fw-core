@@ -4,6 +4,7 @@ import { verifyMetaAuth } from '@/lib/meta-auth';
 import { classifyLead } from '@/lib/classification';
 import { LeadStatus } from '@/types';
 import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
+import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
 
 // Fuzzy auto-mapper: Meta field key se system field guess karo
 function fuzzyMapField(key: string): string | null {
@@ -170,7 +171,7 @@ export async function POST(req: NextRequest) {
       const scoringResult = classifyLead(rawPayload);
 
       // Save Lead to Supabase
-      const { error: insertErr } = await supabaseAdmin
+      const { data: insertedLead, error: insertErr } = await supabaseAdmin
         .from('leads')
         .insert({
           workspace_id:      workspaceId,
@@ -188,11 +189,16 @@ export async function POST(req: NextRequest) {
           form_tag:          isTaggingEnabled && formName ? formName : null,
           created_at:        lead.created_time || new Date().toISOString(),
           updated_at:        new Date().toISOString(),
-        });
+        })
+        .select('*')
+        .single();
 
-      if (!insertErr) {
+      if (!insertErr && insertedLead) {
         importedCount++;
-      } else {
+        syncLeadToGoogleContacts(workspaceId, insertedLead).catch(e =>
+          console.error('[FB Import Auto Google Contacts Sync Error]:', e)
+        );
+      } else if (insertErr) {
         console.error('[FB Import Leads] DB Insert Error:', insertErr.message);
       }
     }

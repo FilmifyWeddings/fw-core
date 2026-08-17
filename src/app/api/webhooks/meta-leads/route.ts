@@ -10,6 +10,7 @@ import {
 } from '@/lib/meta-observability';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
 import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
+import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
 
 // ── GET: Meta Webhook Subscription Verification ──────────────
 export async function GET(req: NextRequest) {
@@ -556,6 +557,11 @@ export async function POST(req: NextRequest) {
             });
 
             insertedLeads.push(inserted);
+
+            // Trigger Google Contacts Auto-Sync in background (Multi-tenant isolated)
+            syncLeadToGoogleContacts(targetWorkspaceId, inserted).catch(err =>
+              console.error('[Meta Webhook Auto Google Contacts Sync Error]:', err)
+            );
 
             if (newLeadRecord.whatsapp_group_id) {
               console.log(`[Meta Webhook] Triggering queue wake for workspace: ${targetWorkspaceId} due to group: ${newLeadRecord.whatsapp_group_id}`);

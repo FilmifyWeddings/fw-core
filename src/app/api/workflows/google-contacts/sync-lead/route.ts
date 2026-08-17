@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
-import { getGoogleCreds } from '@/lib/google-auth';
-import { parsePhoneNumberFromString } from 'libphonenumber-js';
+import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
 
 export const maxDuration = 45;
 export const runtime = 'nodejs';
@@ -20,21 +19,6 @@ async function getAuthUser(req: NextRequest) {
   return user;
 }
 
-function formatPhoneNumber(phone: string): string {
-  const clean = phone.replace(/[^0-9]/g, '');
-  const phoneNumber = parsePhoneNumberFromString(clean, 'IN');
-  if (phoneNumber) {
-    return phoneNumber.format('E.164');
-  }
-  if (clean.length === 10) {
-    return `+91${clean}`;
-  }
-  if (clean.length > 10 && !phone.startsWith('+')) {
-    return `+${clean}`;
-  }
-  return phone;
-}
-
 export async function POST(req: NextRequest) {
   try {
     let workspaceId: string | null = null;
@@ -48,163 +32,51 @@ export async function POST(req: NextRequest) {
     const { leadId, workspaceId: bodyWorkspaceId } = await req.json();
     
     if (!workspaceId && bodyWorkspaceId) {
-      // Backend/Worker call context
       workspaceId = bodyWorkspaceId;
     }
 
-    if (!workspaceId || !leadId) {
-      return NextResponse.json({ error: 'Missing leadId or workspaceId context' }, { status: 400 });
+    if (!leadId) {
+      return NextResponse.json({ error: 'Missing leadId context' }, { status: 400 });
     }
 
     // 1. Fetch Lead
-    const { data: lead, error: leadErr } = await supabaseAdmin
+    let leadQuery = supabaseAdmin
       .from('leads')
       .select('*')
-      .eq('id', leadId)
-      .eq('workspace_id', workspaceId)
-      .maybeSingle();
+      .eq('id', leadId);
+    
+    if (workspaceId) {
+      leadQuery = leadQuery.eq('workspace_id', workspaceId);
+    }
+
+    const { data: lead, error: leadErr } = await leadQuery.maybeSingle();
 
     if (leadErr || !lead) {
       console.error(`[Google Contacts Sync] Lead not found: ${leadId}`);
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    // 2. Fetch Google Integration Credentials for Google Contacts
-    const creds = await getGoogleCreds(supabaseAdmin, workspaceId, 'google_contacts');
-    if (!creds) {
-      console.log(`[Google Contacts Sync] Google Contacts integration not active for workspace ${workspaceId}. Skipping.`);
-      return NextResponse.json({ success: true, message: 'Google Contacts account not connected.' });
+    const targetWorkspaceId = workspaceId || lead.workspace_id;
+    if (!targetWorkspaceId) {
+      return NextResponse.json({ error: 'No workspace context for lead' }, { status: 400 });
     }
 
-    // 3. Load configuration settings from provider config
-    const { data: integration } = await supabaseAdmin
-      .from('integration_credentials')
-      .select('config')
-      .eq('user_id', workspaceId)
-      .in('provider', ['google_contacts', 'google'])
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // 2. Perform isolated sync to user's Google Contacts
+    const result = await syncLeadToGoogleContacts(targetWorkspaceId, lead);
 
-    const config = (integration?.config as Record<string, any>) || {};
-    
-    // Google Contacts active check (default is true if Google OAuth is connected)
-    const contactsEnabled = config.contacts_enabled !== false;
-    if (!contactsEnabled) {
-      console.log(`[Google Contacts Sync] Google Contacts sync disabled in settings. Skipping.`);
-      return NextResponse.json({ success: true, message: 'Google Contacts sync disabled in configuration.' });
-    }
-
-    const labelId = config.contacts_label_id || null;
-    const prefix = config.contacts_prefix || '';
-    const suffix = config.contacts_suffix || '';
-
-    // 4. Format Phone Number
-    if (!lead.phone) {
-      console.log(`[Google Contacts Sync] Lead has no phone number. Skipping.`);
-      return NextResponse.json({ success: true, message: 'Skipped: No phone number.' });
-    }
-    const formattedPhone = formatPhoneNumber(lead.phone);
-
-    // 5. Duplicate Detection Matrix: Check if phone already exists in user's contacts
-    const searchUrl = `https://people.googleapis.com/v1/people:searchContacts?query=${encodeURIComponent(formattedPhone)}&readMask=names,phoneNumbers`;
-    const searchRes = await fetch(searchUrl, {
-      headers: {
-        Authorization: `Bearer ${creds.access_token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (searchRes.ok) {
-      const searchData = await searchRes.json();
-      const results = searchData.results || [];
-      const duplicateFound = results.some((r: any) => {
-        const contact = r.person || {};
-        const numbers = contact.phoneNumbers || [];
-        return numbers.some((n: any) => {
-          const cleanExist = (n.value || '').replace(/[^0-9]/g, '');
-          const cleanNew = formattedPhone.replace(/[^0-9]/g, '');
-          return cleanExist === cleanNew || cleanExist.endsWith(cleanNew) || cleanNew.endsWith(cleanExist);
-        });
+    if (result.success) {
+      return NextResponse.json({ 
+        success: true, 
+        contactId: result.contactId,
+        duplicate: result.duplicate,
+        message: result.message 
       });
-
-      if (duplicateFound) {
-        console.log(`[Google Contacts Sync] Contact with phone ${formattedPhone} already exists. Skipping.`);
-        await supabaseAdmin.from('live_logs').insert({
-          workspace_id: workspaceId,
-          lead_id: leadId,
-          event_type: 'sync_google_contacts_duplicate',
-          message: `Google Contacts: Skip sync for lead "${lead.name}". Phone number ${formattedPhone} is already in your contacts.`,
-        });
-        return NextResponse.json({ success: true, message: 'Duplicate found. Ignored.' });
-      }
+    } else {
+      return NextResponse.json({ 
+        success: false, 
+        error: result.message 
+      }, { status: 400 });
     }
-
-    // 6. Name Template Interpolation
-    const finalName = `${prefix}${lead.name || 'Sheet Lead'}${suffix}`;
-
-    // 7. Call People API to create contact
-    const contactPayload = {
-      names: [{ givenName: finalName }],
-      phoneNumbers: [{ value: formattedPhone, type: 'mobile' }],
-      emailAddresses: lead.email ? [{ value: lead.email, type: 'home' }] : [],
-      biographies: [
-        {
-          value: `Lead Source: ${lead.source || 'N/A'}\nStatus: ${lead.status || 'N/A'}\nCreated via StudioCore Leads Hub on ${new Date().toLocaleDateString()}`,
-          contentType: 'TEXT_PLAIN',
-        },
-      ],
-    };
-
-    const createRes = await fetch('https://people.googleapis.com/v1/people:createContact', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${creds.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(contactPayload),
-    });
-
-    if (!createRes.ok) {
-      const errText = await createRes.text();
-      throw new Error(`Google createContact API failed: ${errText}`);
-    }
-
-    const contactData = await createRes.json();
-    const contactResourceName = contactData.resourceName; // e.g. people/c1234567
-
-    // 8. Associate with Label/Group if specified
-    if (labelId) {
-      console.log(`[Google Contacts Sync] Associating contact ${contactResourceName} with group ${labelId}...`);
-      const modifyGroupUrl = `https://people.googleapis.com/v1/${labelId}/members:modify`;
-      
-      const groupRes = await fetch(modifyGroupUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${creds.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          resourceNamesToAdd: [contactResourceName],
-        }),
-      });
-
-      if (!groupRes.ok) {
-        const groupErrText = await groupRes.text();
-        console.warn(`[Google Contacts Sync] Failed to associate contact with group ${labelId}:`, groupErrText);
-      }
-    }
-
-    // 9. Write live logs on success
-    await supabaseAdmin.from('live_logs').insert({
-      workspace_id: workspaceId,
-      lead_id: leadId,
-      event_type: 'sync_google_contacts_success',
-      message: `Successfully synced lead "${finalName}" to Google Contacts.`,
-      metadata: { googleContactId: contactResourceName },
-    });
-
-    return NextResponse.json({ success: true, contactId: contactResourceName });
   } catch (err: any) {
     console.error('[POST /api/workflows/google-contacts/sync-lead] Error:', err);
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
