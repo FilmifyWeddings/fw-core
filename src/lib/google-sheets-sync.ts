@@ -8,7 +8,7 @@ export async function syncGoogleSheetData(
   mappings: Record<string, string>
 ) {
   try {
-    const creds = await getGoogleCreds(supabaseAdmin, userId);
+    const creds = await getGoogleCreds(supabaseAdmin, userId, 'google_sheets');
     if (!creds) {
       console.warn(`[Sync] No Google credentials found for user ${userId}`);
       return { success: false, error: 'Google Account not connected or credentials expired.' };
@@ -35,9 +35,11 @@ export async function syncGoogleSheetData(
     // Read the integration config to find last_row_count
     const { data: dbIntegration } = await supabaseAdmin
       .from('integration_credentials')
-      .select('config')
+      .select('id, config, provider')
       .eq('user_id', userId)
-      .eq('provider', 'google')
+      .in('provider', ['google_sheets', 'google'])
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     const config = (dbIntegration?.config as Record<string, any>) || {};
@@ -143,11 +145,18 @@ export async function syncGoogleSheetData(
       config.last_row_count = rows.length;
     }
 
-    await supabaseAdmin
-      .from('integration_credentials')
-      .update({ config })
-      .eq('user_id', userId)
-      .eq('provider', 'google');
+    if (dbIntegration?.id) {
+      await supabaseAdmin
+        .from('integration_credentials')
+        .update({ config })
+        .eq('id', dbIntegration.id);
+    } else {
+      await supabaseAdmin
+        .from('integration_credentials')
+        .update({ config })
+        .eq('user_id', userId)
+        .in('provider', ['google_sheets', 'google']);
+    }
 
     return { success: true, count: insertedCount, lastRowCount: rows.length };
   } catch (err: any) {

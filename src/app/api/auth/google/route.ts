@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const workspaceId = searchParams.get('workspace_id');
+  const integrationType = searchParams.get('integration_type') || 'google_contacts'; // 'google_contacts' | 'google_sheets' | 'google_calendar'
 
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspace_id required' }, { status: 400 });
@@ -45,21 +46,41 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  console.log('[Google OAuth] Initiating flow. redirect_uri:', redirectUri);
+  console.log(`[Google OAuth] Initiating flow for ${integrationType}. redirect_uri:`, redirectUri);
 
-  // Encode state as base64url
-  const state = Buffer.from(JSON.stringify({ workspace_id: workspaceId })).toString('base64url');
+  // Encode state as base64url with both workspace_id and integration_type
+  const state = Buffer.from(JSON.stringify({ 
+    workspace_id: workspaceId,
+    integration_type: integrationType 
+  })).toString('base64url');
 
-  // Scopes needed: Drive (read spreadsheets), Sheets (read/write), Contacts (create), Userinfo (display connected email)
-  // Note: contacts.labels is deprecated by Google — use contactGroups via People API instead
-  const scopes = [
+  // Tailored Scopes for individual services
+  const baseScopes = [
     'openid',
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/contacts',
-  ].join(' ');
+  ];
+
+  let serviceScopes: string[] = [];
+  if (integrationType === 'google_contacts') {
+    serviceScopes = ['https://www.googleapis.com/auth/contacts'];
+  } else if (integrationType === 'google_sheets') {
+    serviceScopes = [
+      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/spreadsheets',
+    ];
+  } else if (integrationType === 'google_calendar') {
+    serviceScopes = ['https://www.googleapis.com/auth/calendar'];
+  } else {
+    // All
+    serviceScopes = [
+      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/contacts',
+    ];
+  }
+
+  const scopes = [...baseScopes, ...serviceScopes].join(' ');
 
   // Build Google OAuth Authorize URL
   const oauthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');

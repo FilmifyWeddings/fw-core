@@ -3,40 +3,57 @@ import { SupabaseClient } from '@supabase/supabase-js';
 interface GoogleCreds {
   access_token: string;
   refresh_token?: string;
+  id?: string;
+  provider?: string;
 }
 
 /**
  * Gets active Google OAuth credentials for a workspace.
+ * Supports isolated providers (google_contacts, google_sheets, google_calendar) with fallback to legacy 'google'.
  * Automatically handles token refresh if necessary.
  */
 export async function getGoogleCreds(
   supabaseAdmin: SupabaseClient,
-  workspaceId: string
+  workspaceId: string,
+  providerName: 'google_contacts' | 'google_sheets' | 'google_calendar' | string = 'google_contacts'
 ): Promise<GoogleCreds | null> {
-  const { data: creds, error } = await supabaseAdmin
+  // Query specific provider first, fallback to legacy 'google'
+  const { data: credsList, error } = await supabaseAdmin
     .from('integration_credentials')
-    .select('access_token, refresh_token')
+    .select('id, access_token, refresh_token, provider, status')
     .eq('user_id', workspaceId)
-    .eq('provider', 'google')
-    .maybeSingle();
+    .in('provider', [providerName, 'google'])
+    .eq('status', 'connected')
+    .order('updated_at', { ascending: false });
 
-  if (error || !creds || !creds.access_token) {
+  if (error || !credsList || credsList.length === 0) {
+    return null;
+  }
+
+  // Find exact provider match first, else use first item
+  const creds = credsList.find(c => c.provider === providerName) || credsList[0];
+  if (!creds || !creds.access_token) {
     return null;
   }
 
   // Check if token is valid by performing a lightweight call, or if we need to refresh it.
   const isValid = await testToken(creds.access_token);
   if (isValid) {
-    return { access_token: creds.access_token, refresh_token: creds.refresh_token || undefined };
+    return { 
+      access_token: creds.access_token, 
+      refresh_token: creds.refresh_token || undefined,
+      id: creds.id,
+      provider: creds.provider
+    };
   }
 
   // Token is expired, try to refresh if we have a refresh token
   if (!creds.refresh_token) {
-    console.warn('[google-auth] Access token expired and no refresh token available.');
+    console.warn(`[google-auth] Access token expired for ${creds.provider} and no refresh token available.`);
     return null;
   }
 
-  console.log('[google-auth] Access token expired, attempting refresh...');
+  console.log(`[google-auth] Access token expired for ${creds.provider}, attempting refresh...`);
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -59,7 +76,7 @@ export async function getGoogleCreds(
     const newAccessToken = data.access_token;
     if (!newAccessToken) return null;
 
-    // Update credentials in database
+    // Update credentials in database targeting this exact row ID
     const updatePayload: Record<string, string> = {
       access_token: newAccessToken,
       updated_at: new Date().toISOString(),
@@ -71,13 +88,14 @@ export async function getGoogleCreds(
     await supabaseAdmin
       .from('integration_credentials')
       .update(updatePayload)
-      .eq('user_id', workspaceId)
-      .eq('provider', 'google');
+      .eq('id', creds.id);
 
-    console.log('[google-auth] Token refreshed successfully.');
+    console.log(`[google-auth] Token refreshed successfully for ${creds.provider}.`);
     return {
       access_token: newAccessToken,
       refresh_token: data.refresh_token || creds.refresh_token || undefined,
+      id: creds.id,
+      provider: creds.provider
     };
   } catch (err) {
     console.error('[google-auth] Error refreshing token:', err);

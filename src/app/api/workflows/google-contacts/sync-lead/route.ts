@@ -69,19 +69,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    // 2. Fetch Google Integration Credentials
-    const creds = await getGoogleCreds(supabaseAdmin, workspaceId);
+    // 2. Fetch Google Integration Credentials for Google Contacts
+    const creds = await getGoogleCreds(supabaseAdmin, workspaceId, 'google_contacts');
     if (!creds) {
-      console.log(`[Google Contacts Sync] Google integration not active for workspace ${workspaceId}. Skipping.`);
-      return NextResponse.json({ success: true, message: 'Google account not connected.' });
+      console.log(`[Google Contacts Sync] Google Contacts integration not active for workspace ${workspaceId}. Skipping.`);
+      return NextResponse.json({ success: true, message: 'Google Contacts account not connected.' });
     }
 
-    // 3. Load configuration settings from unified config
+    // 3. Load configuration settings from provider config
     const { data: integration } = await supabaseAdmin
       .from('integration_credentials')
       .select('config')
       .eq('user_id', workspaceId)
-      .eq('provider', 'google')
+      .in('provider', ['google_contacts', 'google'])
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     const config = (integration?.config as Record<string, any>) || {};

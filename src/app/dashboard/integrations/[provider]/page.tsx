@@ -108,6 +108,56 @@ function ProviderConfigCore() {
 
   const [customMappingsState, setCustomMappingsState] = useState<Record<string, CustomMappingEntry[]>>({});
 
+  const getDbProvider = () => {
+    return provider === 'personal-website' ? 'custom_website' :
+           provider === 'whatsapp-web' ? 'whatsapp' :
+           provider === 'meta-ads' ? 'meta' :
+           provider === 'google-contacts' ? 'google_contacts' :
+           provider === 'google-sheets' ? 'google_sheets' :
+           provider === 'google-calendar' ? 'google_calendar' :
+           provider === 'gmail-smtp' ? 'smtp' : 'google';
+  };
+
+  const handleDisconnect = async () => {
+    const provTitle = provider?.replace('-', ' ') || 'Integration';
+    if (!confirm(`Are you sure you want to disconnect ${provTitle}?`)) return;
+
+    try {
+      setLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const targetDbProvider = getDbProvider();
+
+      await supabase
+        .from('integration_credentials')
+        .delete()
+        .eq('user_id', session.user.id)
+        .in('provider', [targetDbProvider, 'google']);
+
+      setStatus('disconnected');
+      setConnectedEmail('');
+      setConnectedName('');
+      setConnectedPicture('');
+      if (provider === 'google-contacts') {
+        setContactsLabelId('');
+        setContactsLabelName('');
+        setContactsCount(0);
+      }
+      if (provider === 'google-sheets') {
+        setSpreadsheets([]);
+        setWorksheets([]);
+        setSheetsConfig({ spreadsheet_id: '', sync_trigger: 'any', active_sheets: {} });
+      }
+      alert(`${provTitle} disconnected successfully.`);
+    } catch (err: any) {
+      console.error('Error disconnecting:', err);
+      alert(`Failed to disconnect: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const startGoogleOAuth = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -118,9 +168,10 @@ function ProviderConfigCore() {
       const left = window.screen.width / 2 - width / 2;
       const top = window.screen.height / 2 - height / 2;
 
-      console.log('[Google OAuth] Opening popup window...');
+      const dbProv = getDbProvider();
+      console.log(`[Google OAuth] Opening popup window for ${dbProv}...`);
       const popup = window.open(
-        `/api/auth/google?workspace_id=${session.user.id}`,
+        `/api/auth/google?workspace_id=${session.user.id}&integration_type=${dbProv}`,
         'Google OAuth',
         `width=${width},height=${height},top=${top},left=${left}`
       );
@@ -129,8 +180,10 @@ function ProviderConfigCore() {
         if (event.data && event.data.type === 'GOOGLE_AUTH_CALLBACK') {
           window.removeEventListener('message', handler);
           if (event.data.success) {
-            console.log('[Google OAuth] Connected successfully.');
+            console.log(`[Google OAuth] Connected successfully for ${dbProv}.`);
             setStatus('connected');
+            // Refresh data
+            window.location.reload();
           } else {
             alert(`Authentication failed: ${event.data.message}`);
           }
@@ -411,15 +464,15 @@ function ProviderConfigCore() {
 
     const loadCred = async () => {
       try {
-        const dbProvider = provider === 'personal-website' ? 'custom_website' :
-                           provider === 'whatsapp-web' ? 'whatsapp' :
-                           provider === 'meta-ads' ? 'meta' : 'google';
+        const dbProvider = getDbProvider();
 
         const { data } = await supabase
           .from('integration_credentials')
           .select('*')
           .eq('user_id', userId)
-          .eq('provider', dbProvider)
+          .in('provider', [dbProvider, 'google'])
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         if (data) {
@@ -508,9 +561,7 @@ function ProviderConfigCore() {
       setStatus('connected');
 
       try {
-        const dbProvider = provider === 'personal-website' ? 'custom_website' :
-                           provider === 'whatsapp-web' ? 'whatsapp' :
-                           provider === 'meta-ads' ? 'meta' : 'google';
+        const dbProvider = getDbProvider();
 
         // Build upsert payload
         const upsertPayload: Record<string, unknown> = {
@@ -527,7 +578,7 @@ function ProviderConfigCore() {
             .from('integration_credentials')
             .select('config')
             .eq('user_id', userId)
-            .eq('provider', 'google')
+            .in('provider', [dbProvider, 'google'])
             .maybeSingle();
 
           const existingConfig = (existing?.config as Record<string, any>) || {};
@@ -1119,7 +1170,21 @@ function ProviderConfigCore() {
                           <div className="text-xl font-mono font-extrabold text-sky-600">{contactsCount}</div>
                         </div>
 
-                        <div className="flex justify-end gap-3 pt-2">
+                        <div className="flex justify-end gap-3 pt-4 border-t border-zinc-200">
+                          <button
+                            type="button"
+                            onClick={startGoogleOAuth}
+                            className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
+                          >
+                            Reconnect Account
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDisconnect}
+                            className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Disconnect Google Contacts
+                          </button>
                           <button
                             type="button"
                             onClick={async () => {
@@ -1166,9 +1231,9 @@ function ProviderConfigCore() {
                                 setLoading(false);
                               }
                             }}
-                            className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
+                            className="px-4 py-2 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
                           >
-                            Trigger Manual Test Sync
+                            Trigger Test Sync
                           </button>
                         </div>
                       </div>
@@ -1180,7 +1245,7 @@ function ProviderConfigCore() {
 
             {/* 5. GOOGLE CALENDAR VIEW */}
             {provider === 'google-calendar' && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="p-4 rounded-2xl bg-red-50 border border-red-100 flex items-start gap-3">
                   <Calendar className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-red-900 leading-normal font-medium">
@@ -1188,13 +1253,84 @@ function ProviderConfigCore() {
                   </p>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Sync Target Calendar</label>
-                  <select className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-red-500">
-                    <option value="cal-1">Primary Calendar - Studio Bookings</option>
-                    <option value="cal-2">Personal Tasks - Amit</option>
-                  </select>
-                </div>
+                {status !== 'connected' ? (
+                  <div className="p-8 rounded-2xl border border-zinc-200 bg-zinc-50/50 text-center space-y-4">
+                    <div className="w-14 h-14 rounded-2xl bg-red-100/80 border border-red-200 flex items-center justify-center mx-auto text-red-600">
+                      <Calendar className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-zinc-900">Google Calendar Not Connected</h3>
+                      <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                        Authorize your Google Calendar to sync studio bookings and avoid scheduling overlaps.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startGoogleOAuth}
+                      className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-2"
+                    >
+                      <Calendar className="w-4 h-4" /> Connect Google Calendar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Connected Account Banner */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-red-100 border border-red-200 flex items-center justify-center text-red-700 font-extrabold text-sm uppercase overflow-hidden shrink-0">
+                          {connectedPicture ? (
+                            <img src={connectedPicture} alt={connectedName || 'Google User'} className="w-full h-full object-cover" />
+                          ) : (
+                            connectedEmail ? connectedEmail[0].toUpperCase() : 'G'
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-zinc-900">{connectedName || 'Google Account'}</span>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              Connected ✓
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-600 font-mono mt-0.5 font-medium">
+                            {connectedEmail || 'Google Calendar Connected'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDisconnect}
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                      >
+                        Disconnect Calendar
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Sync Target Calendar</label>
+                      <select className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-red-500">
+                        <option value="cal-1">Primary Calendar - Studio Bookings</option>
+                        <option value="cal-2">Personal Tasks - Amit</option>
+                      </select>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={startGoogleOAuth}
+                        className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
+                      >
+                        Reconnect Calendar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDisconnect}
+                        className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Disconnect Calendar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1571,25 +1707,10 @@ function ProviderConfigCore() {
                     </button>
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (confirm('Disconnect Google Sheets integration?')) {
-                          try {
-                            const { data: { session } } = await supabase.auth.getSession();
-                            if (!session) return;
-                            await supabase
-                              .from('integration_credentials')
-                              .delete()
-                              .eq('user_id', userId)
-                              .eq('provider', 'google');
-                            setStatus('disconnected');
-                          } catch (err) {
-                            console.error(err);
-                          }
-                        }
-                      }}
+                      onClick={handleDisconnect}
                       className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
                     >
-                      Disconnect Account
+                      Disconnect Google Sheets
                     </button>
                   </div>
                 )}

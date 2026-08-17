@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const creds = await getGoogleCreds(supabaseAdmin, user.id);
+    const creds = await getGoogleCreds(supabaseAdmin, user.id, 'google_sheets');
     if (!creds) {
       return NextResponse.json({ error: 'Google Account not connected or credentials expired.' }, { status: 400 });
     }

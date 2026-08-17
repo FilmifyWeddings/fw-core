@@ -56,10 +56,19 @@ function IntegrationsCore() {
             if (c.provider === 'meta') setMetaConnected(c.status === 'connected');
             if (c.provider === 'custom_website') setWebsiteConnected(c.status === 'connected');
             if (c.provider === 'whatsapp') setWhatsappConnected(c.status === 'connected');
+            if (c.provider === 'smtp') setSmtpConnected(c.status === 'connected');
+            if (c.provider === 'google_contacts') setGoogleContactsConnected(c.status === 'connected');
+            if (c.provider === 'google_sheets') setGoogleSheetsConnected(c.status === 'connected');
+            if (c.provider === 'google_calendar') setGoogleCalendarConnected(c.status === 'connected');
+            // Legacy fallback if single 'google' credential exists
             if (c.provider === 'google') {
-              setGoogleContactsConnected(c.status === 'connected');
-              setGoogleCalendarConnected(c.status === 'connected');
-              setGoogleSheetsConnected(c.status === 'connected');
+              const cfg = (c.config as any) || {};
+              if (cfg.contacts_enabled !== undefined) {
+                setGoogleContactsConnected(c.status === 'connected' && cfg.contacts_enabled !== false);
+              }
+              if (cfg.spreadsheet_id || cfg.active_sheets) {
+                setGoogleSheetsConnected(c.status === 'connected');
+              }
             }
           });
         }
@@ -84,15 +93,19 @@ function IntegrationsCore() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       
-      const provider = id === 'personal-website' ? 'custom_website' : 
-                       id === 'whatsapp-web' ? 'whatsapp' : 
-                       id === 'meta-ads' ? 'meta' : 'google';
+      const targetDbProvider = id === 'personal-website' ? 'custom_website' : 
+                               id === 'whatsapp-web' ? 'whatsapp' : 
+                               id === 'meta-ads' ? 'meta' : 
+                               id === 'google-contacts' ? 'google_contacts' :
+                               id === 'google-sheets' ? 'google_sheets' :
+                               id === 'google-calendar' ? 'google_calendar' :
+                               id === 'gmail-smtp' ? 'smtp' : 'google';
 
       await supabase
         .from('integration_credentials')
         .upsert({
           user_id: session.user.id,
-          provider,
+          provider: targetDbProvider,
           status: nextStatus ? 'connected' : 'disconnected',
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id, provider' });

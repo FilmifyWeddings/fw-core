@@ -99,9 +99,13 @@ export async function GET(req: NextRequest) {
 
   // Decode State
   let workspaceId: string;
+  let integrationType: string = 'google_contacts';
   try {
     const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
     workspaceId = decoded.workspace_id;
+    if (decoded.integration_type) {
+      integrationType = decoded.integration_type;
+    }
     if (!workspaceId) throw new Error('workspace_id missing in state');
   } catch (err: any) {
     console.error('[Google OAuth Callback] State decode error:', err.message);
@@ -131,7 +135,7 @@ export async function GET(req: NextRequest) {
       throw new Error('Invalid Google Redirect URI configuration.');
     }
 
-    console.log('[Google Callback] Exchanging code. redirect_uri:', redirectUri);
+    console.log(`[Google Callback] Exchanging code for ${integrationType}. redirect_uri:`, redirectUri);
 
     // Exchange Authorization Code for Access & Refresh Tokens
     const tokenUrl = 'https://oauth2.googleapis.com/token';
@@ -176,7 +180,7 @@ export async function GET(req: NextRequest) {
       console.warn('[Google Callback] Failed to fetch profile userinfo:', e);
     }
 
-    // Save tokens in database (upsert with preserving old refresh token if missing)
+    // Save tokens in database for specific isolated provider (e.g. google_contacts, google_sheets, google_calendar)
     const updatePayload: Record<string, any> = {
       access_token: accessToken,
       status: 'connected',
@@ -189,11 +193,12 @@ export async function GET(req: NextRequest) {
       updatePayload.account_id = connectedEmail;
     }
 
+    // Query for existing record for this workspace and this specific provider
     const { data: existing } = await supabaseAdmin
       .from('integration_credentials')
       .select('id, config, metadata')
       .eq('user_id', workspaceId)
-      .eq('provider', 'google')
+      .eq('provider', integrationType)
       .maybeSingle();
 
     const existingConfig = (existing?.config as Record<string, any>) || {};
@@ -225,7 +230,7 @@ export async function GET(req: NextRequest) {
         .from('integration_credentials')
         .insert({
           user_id: workspaceId,
-          provider: 'google',
+          provider: integrationType,
           ...updatePayload,
           refresh_token: refreshToken || null,
         });
@@ -235,11 +240,15 @@ export async function GET(req: NextRequest) {
     // Log live activity event
     await supabaseAdmin.from('live_logs').insert({
       workspace_id: workspaceId,
-      event_type: 'google_oauth_connected',
-      message: `Google Account (${connectedEmail || 'connected'}) linked successfully. People & Contacts API active.`,
+      event_type: `${integrationType}_connected`,
+      message: `Google Account (${connectedEmail || 'connected'}) linked for ${integrationType.replace('_', ' ')}.`,
     });
 
-    return closeWindowWithHTML(true, 'Google Account linked successfully! This window will close shortly.');
+    const niceTitle = integrationType === 'google_contacts' ? 'Google Contacts' :
+                      integrationType === 'google_sheets' ? 'Google Sheets' :
+                      integrationType === 'google_calendar' ? 'Google Calendar' : 'Google Services';
+
+    return closeWindowWithHTML(true, `${niceTitle} connected successfully! This window will close shortly.`);
   } catch (err: any) {
     console.error('[Google OAuth Callback] Error:', err.message);
     return closeWindowWithHTML(false, err.message || 'Token exchange request failed');
