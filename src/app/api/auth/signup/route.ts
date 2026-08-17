@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
     const targetStudioName = (businessName || '').trim();
     const targetEmail = (email || '').trim().toLowerCase();
     const targetPassword = password || '';
-    const code = (countryCode || '+91').trim();
+    const targetCountryCode = (countryCode || '+91').trim();
+    const code = targetCountryCode;
     const cleanPhoneDigits = (phone || '').replace(/\D/g, '');
     const fullPhoneNumber = cleanPhoneDigits ? `${code}${cleanPhoneDigits}` : '';
     const cleanOtp = (otp || '').trim();
@@ -181,9 +182,6 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin.from('profiles').upsert({
           id: userId,
           workspace_name: targetStudioName,
-          full_name: targetName,
-          email: targetEmail,
-          phone: fullPhoneNumber,
           updated_at: new Date().toISOString(),
         });
       } catch (profileErr) {
@@ -202,8 +200,20 @@ export async function POST(req: NextRequest) {
       console.warn('[Async Welcome Email Notice]:', err);
     });
 
-    // 6. Authenticate and sign in user immediately
-    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+    // 6. Authenticate and sign in user immediately via clean isolated client
+    const authClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nviwtgnqplebzsgdemlm.supabase.co',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_HaCj2xEYg_e98o-UJccdvA_5OUl9t63',
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      }
+    );
+
+    const { data: signInData, error: signInErr } = await authClient.auth.signInWithPassword({
       email: targetEmail,
       password: targetPassword,
     });
