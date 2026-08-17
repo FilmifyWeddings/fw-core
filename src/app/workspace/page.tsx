@@ -1,16 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   Database, Users, FileText, Calendar, Film, DollarSign, 
   Clock, Plug, Settings, HelpCircle, ArrowRight, Sparkles, 
   CheckCircle2, Layers, ShieldCheck
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import OnboardingCelebrationModal from '@/components/workspace/OnboardingCelebrationModal';
 
 const WORKSPACE_MODULES = [
   {
@@ -136,51 +133,6 @@ const WORKSPACE_MODULES = [
 ];
 
 export default function WorkspaceHubPage() {
-  const searchParams = useSearchParams();
-
-  // Onboarding Celebration Modal state
-  const [showOnboardingModal, setShowOnboardingModal] = useState<boolean>(false);
-  const [currentUserName, setCurrentUserName] = useState<string>('Studio Owner');
-  const [currentStudioName, setCurrentStudioName] = useState<string>('My Studio');
-  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
-  const [currentUserId, setCurrentUserId] = useState<string>('');
-
-  useEffect(() => {
-    async function checkUserOnboarding() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const u = session.user;
-          setCurrentUserId(u.id);
-          setCurrentUserEmail(u.email || '');
-
-          const name = u.user_metadata?.full_name || u.user_metadata?.name || 'Studio Owner';
-          const studio = u.user_metadata?.workspace_name || 'My Studio';
-
-          setCurrentUserName(name);
-          setCurrentStudioName(studio);
-
-          // Check if onboarding trigger is explicitly present
-          const onboardingParam = searchParams.get('onboarding') === 'true';
-          const userSeenKey = `sc_welcome_seen_${u.id}`;
-          const alreadySeen = localStorage.getItem(userSeenKey) === 'true' || localStorage.getItem('sc_welcome_completed') === 'true';
-
-          if (onboardingParam && !alreadySeen) {
-            setShowOnboardingModal(true);
-            localStorage.setItem(userSeenKey, 'true');
-            localStorage.setItem('sc_welcome_completed', 'true');
-            if (typeof window !== 'undefined' && window.history.replaceState) {
-              window.history.replaceState({}, '', '/workspace');
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[Onboarding check notice]:', err);
-      }
-    }
-    checkUserOnboarding();
-  }, [searchParams]);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-amber-50/20 p-4 sm:p-6 lg:p-10 font-sans selection:bg-amber-500 selection:text-white">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -295,19 +247,6 @@ export default function WorkspaceHubPage() {
         </div>
 
       </div>
-
-      {/* ── ONBOARDING CELEBRATION MODAL (Confetti + Congratulations + Profile Setup) ── */}
-      <OnboardingCelebrationModal
-        isOpen={showOnboardingModal}
-        onClose={() => setShowOnboardingModal(false)}
-        userName={currentUserName}
-        initialStudioName={currentStudioName}
-        userEmail={currentUserEmail}
-        userId={currentUserId}
-        onProfileUpdated={(data) => {
-          if (data.studioName) setCurrentStudioName(data.studioName);
-        }}
-      />
     </div>
   );
 }

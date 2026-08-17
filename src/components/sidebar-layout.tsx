@@ -55,6 +55,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       setCollapsed(savedCollapsed === 'true');
     }
 
+    // Instant client-side check for onboarding celebration
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const isParamPresent = params.get('onboarding') === 'true' || params.get('welcome') === 'true';
+      const isPending = localStorage.getItem('sc_show_onboarding_celebration') === 'true';
+      if (isParamPresent || isPending) {
+        setShowOnboardingCelebration(true);
+      }
+    }
+
     const fetchUserProfile = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -86,22 +96,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             setWorkspaceName(defaultName);
           }
 
-          // Check if onboarding celebration should trigger
-          const onboardingParam = searchParams?.get('onboarding') === 'true';
+          // Check if onboarding celebration should trigger for fresh accounts
+          const onboardingParam = searchParams?.get('onboarding') === 'true' || searchParams?.get('welcome') === 'true';
           const pendingCelebration = typeof window !== 'undefined' && localStorage.getItem('sc_show_onboarding_celebration') === 'true';
           const userSeenKey = `sc_welcome_seen_${session.user.id}`;
-          const alreadySeen = typeof window !== 'undefined' && (localStorage.getItem(userSeenKey) === 'true' || localStorage.getItem('sc_welcome_completed') === 'true');
+          const alreadySeen = typeof window !== 'undefined' && localStorage.getItem(userSeenKey) === 'true';
 
-          if ((onboardingParam || pendingCelebration) && !alreadySeen) {
+          if (onboardingParam || pendingCelebration || (!alreadySeen && session.user.user_metadata?.is_onboarded !== true)) {
             setShowOnboardingCelebration(true);
             try {
               localStorage.removeItem('sc_show_onboarding_celebration');
-              localStorage.setItem(userSeenKey, 'true');
-              localStorage.setItem('sc_welcome_completed', 'true');
-              if (typeof window !== 'undefined' && window.history.replaceState) {
-                const cleanUrl = window.location.pathname;
-                window.history.replaceState({}, '', cleanUrl);
-              }
             } catch (e) {}
           }
         }
