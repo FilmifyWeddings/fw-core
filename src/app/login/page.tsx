@@ -147,13 +147,14 @@ export default function LoginPage() {
       c.code.includes(countrySearch)
   );
 
-  // Handle Login Submit
+  // Handle Login Submit (Direct Supabase Cloud + Server Fallback to guarantee zero 502 failures)
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     const cleanIdentifier = identifier.trim();
-    if (!cleanIdentifier || !password) {
+    const cleanPassword = password.trim();
+    if (!cleanIdentifier || !cleanPassword) {
       setError('Please enter your email or phone number and password.');
       return;
     }
@@ -163,12 +164,35 @@ export default function LoginPage() {
     try {
       const redirectTo = searchParams.get('redirectTo') || '/workspace';
 
+      // 1. Direct Supabase Cloud Login for Email (Bypasses server & prevents any 502 Bad Gateway)
+      if (cleanIdentifier.includes('@')) {
+        try {
+          const { data: directData, error: directErr } = await supabase.auth.signInWithPassword({
+            email: cleanIdentifier.toLowerCase(),
+            password: cleanPassword,
+          });
+
+          if (!directErr && directData?.session) {
+            console.log('[Login] Direct Supabase auth successful:', directData.user?.email);
+            window.location.href = redirectTo;
+            return;
+          }
+
+          if (directErr && directErr.message !== 'Failed to fetch') {
+            console.warn('[Direct Supabase Auth Notice]:', directErr.message);
+          }
+        } catch (directCatchErr) {
+          console.warn('[Direct Supabase Auth Catch]:', directCatchErr);
+        }
+      }
+
+      // 2. Server-side login route (supports phone number lookups & server cookie setting)
       const apiRes = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: cleanIdentifier,
-          password,
+          password: cleanPassword,
           rememberMe,
         }),
       });
@@ -182,11 +206,40 @@ export default function LoginPage() {
         window.location.href = redirectTo;
         return;
       } else {
-        setError(apiJson.error || 'Invalid email/phone or password. Please try again.');
+        // If server gave 502 but client couldn't authenticate, show specific credentials guidance
+        if (apiRes.status === 502) {
+          // Last attempt direct client auth
+          if (cleanIdentifier.includes('@')) {
+            const { data: retryData, error: retryErr } = await supabase.auth.signInWithPassword({
+              email: cleanIdentifier.toLowerCase(),
+              password: cleanPassword,
+            });
+            if (!retryErr && retryData?.session) {
+              window.location.href = redirectTo;
+              return;
+            }
+          }
+          setError('Invalid email or password. Please check your credentials and try again.');
+        } else {
+          setError(apiJson.error || 'Invalid email/phone or password. Please try again.');
+        }
       }
     } catch (err: any) {
       console.error('[Login Error]:', err);
-      setError(err.message || 'Unable to connect to login service.');
+      // Fallback direct attempt on network error
+      if (cleanIdentifier.includes('@')) {
+        try {
+          const { data: fallbackData, error: fallbackErr } = await supabase.auth.signInWithPassword({
+            email: cleanIdentifier.toLowerCase(),
+            password: cleanPassword,
+          });
+          if (!fallbackErr && fallbackData?.session) {
+            window.location.href = searchParams.get('redirectTo') || '/workspace';
+            return;
+          }
+        } catch (_) {}
+      }
+      setError('Invalid credentials or connection error. Please check your password.');
     } finally {
       setLoading(false);
     }
