@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       emailAddresses: lead.email ? [{ value: lead.email, type: 'home' }] : [],
       biographies: [
         {
-          value: `Lead Source: ${lead.source || 'N/A'}\nStatus: ${lead.status || 'N/A'}\nCreated via Brahmastra Leads Ingestion Hub on ${new Date().toLocaleDateString()}`,
+          value: `Lead Source: ${lead.source || 'N/A'}\nStatus: ${lead.status || 'N/A'}\nCreated via StudioCore Leads Hub on ${new Date().toLocaleDateString()}`,
           contentType: 'TEXT_PLAIN',
         },
       ],
