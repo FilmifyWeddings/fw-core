@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
         token_type: session.token_type,
         user: session.user,
       },
-      redirectUrl: '/workspace',
+      redirectUrl: '/workspace?onboarding=true',
     });
 
     // Set auth cookies directly

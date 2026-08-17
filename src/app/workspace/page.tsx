@@ -1,13 +1,16 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   Database, Users, FileText, Calendar, Film, DollarSign, 
   Clock, Plug, Settings, HelpCircle, ArrowRight, Sparkles, 
   CheckCircle2, Layers, ShieldCheck
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import OnboardingCelebrationModal from '@/components/workspace/OnboardingCelebrationModal';
 
 const WORKSPACE_MODULES = [
   {
@@ -98,55 +101,98 @@ const WORKSPACE_MODULES = [
     id: 'integrations',
     title: 'Integrations & Automations',
     subtitle: 'Meta Ads, WhatsApp & Webhooks',
-    description: 'Connect Facebook & Instagram Lead Forms, WhatsApp Cloud API, QR-code devices, and automated drip sequences.',
+    description: 'Connect WhatsApp Cloud API, Facebook Lead Ads, Google Contacts, Google Sheets, and webhook triggers with automated syncing.',
     href: '/workspace/integrations',
     icon: Plug,
     accentGradient: 'from-blue-500 to-cyan-600',
-    badge: 'Channels',
+    badge: 'Connectivity',
     badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
     shadowGlow: 'hover:shadow-blue-500/15',
   },
   {
     id: 'settings',
-    title: 'Workspace Settings',
-    subtitle: 'Studio Profile & Preferences',
-    description: 'Configure studio branding, default quotation templates, custom WhatsApp templates, and team member permissions.',
-    href: '/settings',
+    title: 'Studio Settings & Branding',
+    subtitle: 'Profile, Rates & Watermarks',
+    description: 'Manage studio profile, primary branding, default tax rates, terms of service, custom domain, and billing subscriptions.',
+    href: '/workspace/settings',
     icon: Settings,
-    accentGradient: 'from-slate-600 to-zinc-700',
-    badge: 'Admin',
+    accentGradient: 'from-slate-600 to-zinc-800',
+    badge: 'Configuration',
     badgeColor: 'bg-slate-100 text-slate-700 border-slate-300',
     shadowGlow: 'hover:shadow-slate-500/15',
   },
   {
     id: 'support',
-    title: 'Help Desk & Support',
-    subtitle: 'WhatsApp Chat & Documentation',
-    description: 'Instant technical support, video tutorials, FAQ guides, and live WhatsApp assistance for studio operations.',
+    title: 'Help Center & Onboarding',
+    subtitle: 'Tutorials & VIP WhatsApp Support',
+    description: 'Master StudioCore workflows with step-by-step video guides, documentation, FAQs, and direct 24/7 VIP engineer assistance.',
     href: '/support',
     icon: HelpCircle,
-    accentGradient: 'from-teal-500 to-emerald-600',
-    badge: '24/7 Support',
-    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
-    shadowGlow: 'hover:shadow-teal-500/15',
-  },
+    accentGradient: 'from-rose-500 to-orange-500',
+    badge: 'Assistance',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+    shadowGlow: 'hover:shadow-rose-500/15',
+  }
 ];
 
 export default function WorkspaceHubPage() {
-  return (
-    <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100">
-      <div className="max-w-7xl mx-auto space-y-8">
+  const searchParams = useSearchParams();
 
+  // Onboarding Celebration Modal state
+  const [showOnboardingModal, setShowOnboardingModal] = useState<boolean>(false);
+  const [currentUserName, setCurrentUserName] = useState<string>('Studio Owner');
+  const [currentStudioName, setCurrentStudioName] = useState<string>('My Studio');
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+
+  useEffect(() => {
+    async function checkUserOnboarding() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const u = session.user;
+          setCurrentUserId(u.id);
+          setCurrentUserEmail(u.email || '');
+
+          const name = u.user_metadata?.full_name || u.user_metadata?.name || 'Studio Owner';
+          const studio = u.user_metadata?.workspace_name || 'My Studio';
+
+          setCurrentUserName(name);
+          setCurrentStudioName(studio);
+
+          // Check if onboarding trigger is present
+          const onboardingParam = searchParams.get('onboarding');
+          const alreadyCompleted = localStorage.getItem('sc_welcome_completed') === 'true';
+
+          if (onboardingParam === 'true' || !alreadyCompleted) {
+            setShowOnboardingModal(true);
+          }
+        }
+      } catch (err) {
+        console.warn('[Onboarding check notice]:', err);
+      }
+    }
+    checkUserOnboarding();
+  }, [searchParams]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-amber-50/20 p-4 sm:p-6 lg:p-10 font-sans selection:bg-amber-500 selection:text-white">
+      <div className="max-w-7xl mx-auto space-y-8">
+        
         {/* ─────────────────────────────────────────────────────────────
-            HERO HEADER
+            HERO HEADER WITH BRAND IDENTITY
         ───────────────────────────────────────────────────────────── */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="bg-white/90 backdrop-blur-md rounded-3xl p-8 border border-amber-200/70 shadow-sm relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
+          className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-sm relative overflow-hidden"
         >
-          <div className="space-y-2 max-w-2xl">
+          {/* Subtle Ambient Glow */}
+          <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="space-y-2 max-w-2xl relative z-10">
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1.5 shadow-2xs">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" />
@@ -166,7 +212,7 @@ export default function WorkspaceHubPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0 relative z-10">
             <div className="w-16 h-16 rounded-2xl bg-black border border-amber-500/40 p-2 shadow-lg shadow-black/10 flex items-center justify-center">
               <img
                 src="/StudioCorelogo1.png"
@@ -243,6 +289,19 @@ export default function WorkspaceHubPage() {
         </div>
 
       </div>
+
+      {/* ── ONBOARDING CELEBRATION MODAL (Confetti + Congratulations + Profile Setup) ── */}
+      <OnboardingCelebrationModal
+        isOpen={showOnboardingModal}
+        onClose={() => setShowOnboardingModal(false)}
+        userName={currentUserName}
+        initialStudioName={currentStudioName}
+        userEmail={currentUserEmail}
+        userId={currentUserId}
+        onProfileUpdated={(data) => {
+          if (data.studioName) setCurrentStudioName(data.studioName);
+        }}
+      />
     </div>
   );
 }

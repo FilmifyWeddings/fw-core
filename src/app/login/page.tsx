@@ -267,7 +267,7 @@ export default function LoginPage() {
       const cleanStudioName = businessName.trim();
       const cleanEmail = signupEmail.trim().toLowerCase();
       const cleanPhoneDigits = signupPhone.replace(/\D/g, '');
-      const redirectTo = searchParams.get('redirectTo') || '/workspace';
+      const redirectTo = searchParams.get('redirectTo') || '/workspace?onboarding=true';
 
       const apiRes = await fetch('/api/auth/signup', {
         method: 'POST',
