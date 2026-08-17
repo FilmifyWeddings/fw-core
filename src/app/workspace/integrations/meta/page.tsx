@@ -435,9 +435,7 @@ export default function MetaIntegrationPage() {
 
   // Direct Token Sync States
   const [showDirectTokenModal, setShowDirectTokenModal] = useState(false);
-  const [directPageId, setDirectPageId] = useState('');
   const [directPageToken, setDirectPageToken] = useState('');
-  const [directFormId, setDirectFormId] = useState('');
   const [directTokenConnecting, setDirectTokenConnecting] = useState(false);
 
   // Auth Header helper
@@ -904,18 +902,10 @@ export default function MetaIntegrationPage() {
 
                 <button
                   onClick={() => setShowDirectTokenModal(true)}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
                   <Key className="w-3.5 h-3.5 text-emerald-600" />
-                  Connect via Page Token
-                </button>
-
-                <button
-                  onClick={handleConnectFacebook}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  Switch Account
+                  Connect via Token
                 </button>
 
                 <button
@@ -928,31 +918,23 @@ export default function MetaIntegrationPage() {
               </div>
             </div>
           ) : (
-            /* PROMINENT DISCONNECTED STATE WITH OFFICIAL FACEBOOK LOGO BUTTON & DIRECT TOKEN SYNC */
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-2 sm:p-4 bg-gradient-to-r from-blue-50/50 via-white to-slate-50 rounded-2xl border border-blue-100">
+            /* PROMINENT DISCONNECTED STATE WITH CONNECT VIA TOKEN BUTTON */
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-3 sm:p-5 bg-gradient-to-r from-blue-50/50 via-white to-slate-50 rounded-2xl border border-blue-100">
               <div className="flex items-center gap-3 text-center sm:text-left">
                 <FacebookMetaLogo size="lg" />
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-slate-900">Connect Facebook Account</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Link Meta Lead Ads to automatically receive instant leads into StudioCore CRM.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Link Meta Lead Ads via Page Access Token to automatically receive instant leads into StudioCore CRM.</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
                 <button
-                  onClick={handleConnectFacebook}
-                  className="px-4 py-2.5 rounded-2xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs shadow-md shadow-[#0866FF]/25 transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
-                >
-                  <FacebookMetaLogo size="sm" />
-                  <span>OAuth Connect</span>
-                </button>
-
-                <button
                   onClick={() => setShowDirectTokenModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-extrabold text-xs shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="px-5 py-3 rounded-2xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs shadow-md shadow-[#0866FF]/25 transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
                 >
-                  <Key className="w-4 h-4 text-emerald-600" />
-                  <span>Connect via Page Token</span>
+                  <Key className="w-4 h-4 text-white" />
+                  <span>Connect via Token</span>
                 </button>
               </div>
             </div>
@@ -1705,156 +1687,214 @@ export default function MetaIntegrationPage() {
 
       {/* ─── FACEBOOK DIRECT TOKEN SYNC MODAL ───────────────────────────────────── */}
       {showDirectTokenModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-3 sm:p-4 animate-fadeIn overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-5 flex items-start justify-between">
+            <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-4 sm:p-5 flex items-start justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 flex items-center justify-center font-bold shrink-0">
                   <Key className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold flex items-center gap-2">
-                    Facebook Direct Token Sync
+                    Connect Meta via Token
                   </h3>
                   <p className="text-xs text-slate-300 font-medium">
-                    Meta Token Connection Alternative
+                    Fast, secure &amp; permanent connection with automatic page &amp; lead form discovery
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowDirectTokenModal(false)}
-                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer"
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Body */}
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!directPageToken.trim()) {
-                  showToast('Access Token is required.', 'error');
-                  return;
-                }
-                setDirectTokenConnecting(true);
-                try {
-                  const { data: { session } } = await supabase.auth.getSession();
-                  const wsId = session?.user?.id || '';
-                  const headers = await getAuthHeaders();
-                  const res = await fetch('/api/meta/direct-token', {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
-                      workspace_id: wsId,
-                      page_id: directPageId.trim(),
-                      page_access_token: directPageToken.trim(),
-                      form_id: directFormId.trim(),
-                    }),
-                  });
-                  const data = await res.json().catch(() => ({}));
-                  if (res.ok && data.success) {
-                    const pagesMsg = data.pages_count ? `Connected ${data.pages_count} Page(s)` : `Connected Page "${data.page?.page_name || directPageId}"`;
-                    showToast(`🎯 ${pagesMsg}! Discovered ${data.forms_count || 0} form(s).`);
-                    setShowDirectTokenModal(false);
-                    setDirectPageId('');
-                    setDirectPageToken('');
-                    setDirectFormId('');
-                    fetchMetaSyncData();
-                  } else {
-                    showToast(data.error || 'Direct Token Connection failed.', 'error');
+            {/* Scrollable Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-slate-800">
+              
+              {/* Step-by-Step Guide Card */}
+              <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#0866FF]" />
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-900">How to get your Facebook Access Token</span>
+                  </div>
+                  <a
+                    href="https://developers.facebook.com/tools/explorer/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0866FF] hover:bg-blue-600 text-white font-extrabold text-xs transition-all shadow-md shadow-[#0866FF]/20 cursor-pointer self-start sm:self-auto"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open Graph API Explorer ↗</span>
+                  </a>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {/* Step 1 */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">1</span>
+                      <p className="font-extrabold text-slate-900">Open Explorer</p>
+                    </div>
+                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
+                      Click the blue button above to open Meta's official Graph API Explorer.
+                    </p>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">2</span>
+                      <p className="font-extrabold text-slate-900">Add 5 Permissions</p>
+                    </div>
+                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
+                      Under <strong>Permissions</strong> dropdown, select the 5 required scopes listed below.
+                    </p>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">3</span>
+                      <p className="font-extrabold text-slate-900">Select Your Page</p>
+                    </div>
+                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
+                      In <strong>User or Page</strong> dropdown, select your <strong>Facebook Page</strong> (Permanent Token).
+                    </p>
+                  </div>
+
+                  {/* Step 4 */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-blue-100 text-[#0866FF] font-black text-[11px] flex items-center justify-center shrink-0">4</span>
+                      <p className="font-extrabold text-slate-900">Generate &amp; Paste</p>
+                    </div>
+                    <p className="text-[11px] text-slate-600 pl-7 leading-relaxed">
+                      Click <strong>Generate Access Token</strong>, copy the token and paste it below.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Required Permissions List Tags */}
+                <div className="pt-2">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Required Meta Permissions (Ensure all 5 are added):
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { name: 'leads_retrieval', desc: 'Read Leads' },
+                      { name: 'pages_show_list', desc: 'List Pages' },
+                      { name: 'pages_read_engagement', desc: 'Engagement' },
+                      { name: 'pages_manage_ads', desc: 'Lead Ads' },
+                      { name: 'pages_manage_metadata', desc: 'Webhook Sync' },
+                    ].map(perm => (
+                      <span
+                        key={perm.name}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-mono font-bold"
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                        <span>{perm.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Input: Access Token ONLY */}
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!directPageToken.trim()) {
+                    showToast('Facebook Access Token is required.', 'error');
+                    return;
                   }
-                } catch (err: any) {
-                  showToast('Connection Error: ' + err.message, 'error');
-                } finally {
-                  setDirectTokenConnecting(false);
-                }
-              }}
-              className="p-5 space-y-4 text-slate-800"
-            >
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-slate-600">
-                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <p className="text-[11px] leading-relaxed">
-                  Paste your <strong>Facebook Access Token</strong> (User or Page Token). Page ID is <strong>optional</strong> — the system will automatically discover all Pages & Lead Forms associated with your token!
-                </p>
-              </div>
+                  setDirectTokenConnecting(true);
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const wsId = session?.user?.id || '';
+                    const headers = await getAuthHeaders();
+                    const res = await fetch('/api/meta/direct-token', {
+                      method: 'POST',
+                      headers,
+                      body: JSON.stringify({
+                        workspace_id: wsId,
+                        page_access_token: directPageToken.trim(),
+                      }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok && data.success) {
+                      const pagesMsg = data.pages_count ? `Connected ${data.pages_count} Page(s)` : `Connected Page "${data.page?.page_name || 'Facebook Page'}"`;
+                      showToast(`🎯 ${pagesMsg}! Discovered ${data.forms_count || 0} form(s).`);
+                      setShowDirectTokenModal(false);
+                      setDirectPageToken('');
+                      fetchMetaSyncData();
+                    } else {
+                      showToast(data.error || 'Direct Token Connection failed.', 'error');
+                    }
+                  } catch (err: any) {
+                    showToast('Connection Error: ' + err.message, 'error');
+                  } finally {
+                    setDirectTokenConnecting(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-slate-800 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Paste Facebook Access Token</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">Starts with EAAB... or EAA...</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="Paste your generated Facebook Access Token here (e.g. EAABw...)"
+                    value={directPageToken}
+                    onChange={(e) => setDirectPageToken(e.target.value)}
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none transition-all shadow-inner"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    💡 <em>All Facebook Pages and Active Lead Instant Forms will be auto-discovered and linked to your CRM automatically.</em>
+                  </p>
+                </div>
 
-              {/* Input 1: Page ID (Optional) */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
-                  <span>Facebook Page ID (page_id) — <em className="text-emerald-600 font-normal">Optional</em></span>
-                  <span className="text-[10px] text-slate-400 font-mono">Auto-Discovered if Blank</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 335849269615110 (Leave blank for Auto-Discovery)"
-                  value={directPageId}
-                  onChange={(e) => setDirectPageId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
+                {/* Footer Buttons */}
+                <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowDirectTokenModal(false)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={directTokenConnecting || !directPageToken.trim()}
+                    className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer"
+                  >
+                    {directTokenConnecting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Verifying Token &amp; Discovering Forms…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Fetch Pages, Forms &amp; Connect</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
 
-              {/* Input 2: Access Token (Required) */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
-                  <span>Access Token (User or Page Token)</span>
-                  <span className="text-[10px] text-slate-400 font-mono">EAA... Token</span>
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="Paste Access Token here (e.g. EAAXXXXXX...)"
-                  value={directPageToken}
-                  onChange={(e) => setDirectPageToken(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
-                />
-              </div>
-
-              {/* Input 3: Optional Form ID */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
-                  <span>Lead Form ID (form_id) — <em className="text-emerald-600 font-normal">Optional</em></span>
-                  <span className="text-[10px] text-slate-400 font-mono">Form Numeric ID</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 102938475610293 (Leave blank for auto-fetch)"
-                  value={directFormId}
-                  onChange={(e) => setDirectFormId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              {/* Submit Footer */}
-              <div className="pt-2 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setShowDirectTokenModal(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={directTokenConnecting}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {directTokenConnecting ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Testing Token & Connecting…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Fetch Forms & Connect</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+            </div>
 
           </div>
         </div>
