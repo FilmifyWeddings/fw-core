@@ -13,7 +13,9 @@ import { supabase } from '@/lib/supabase';
 interface UserTelemetryRow {
   id: string;
   workspace_name: string;
+  full_name?: string;
   email: string;
+  phone?: string;
   active_sub_apps: string[];
   r2_storage_used_bytes: number;
   last_active_timestamp: string;
@@ -321,7 +323,30 @@ function AdminDashboardCore() {
                         <tr key={u.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20 transition-all">
                           <td className="py-3.5 px-2">
                             <div className="font-bold text-zinc-800 dark:text-zinc-200">{u.workspace_name}</div>
-                            <div className="text-[10px] text-zinc-450 mt-0.5">{u.email}</div>
+                            <div className="text-[11px] text-zinc-400 font-semibold mt-0.5">👤 {u.full_name || 'Studio Owner'}</div>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span className="text-[10px] text-zinc-450">{u.email}</span>
+                              {u.phone && (
+                                <div className="flex items-center gap-1">
+                                  <a
+                                    href={`tel:${u.phone.replace(/\s+/g, '')}`}
+                                    className="px-1.5 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-mono text-[9px] font-bold border border-emerald-500/20 flex items-center gap-1"
+                                    title="Call mobile number"
+                                  >
+                                    📞 {u.phone}
+                                  </a>
+                                  <a
+                                    href={`https://wa.me/${u.phone.replace(/\D/g, '')}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-1.5 py-0.5 rounded bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 font-mono text-[9px] font-bold border border-green-500/20"
+                                    title="WhatsApp"
+                                  >
+                                    💬 WA
+                                  </a>
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3.5 px-2">
                             <div className="flex flex-wrap gap-1">

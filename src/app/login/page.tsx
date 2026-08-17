@@ -217,9 +217,22 @@ export default function LoginPage() {
       return;
     }
 
-    if (!cleanPhoneDigits || cleanPhoneDigits.length < 7) {
-      setError('A valid Mobile Number is required.');
-      return;
+    const isIndia = selectedCountry.code === '+91' || selectedCountry.iso === 'in';
+
+    if (isIndia) {
+      if (cleanPhoneDigits.length !== 10) {
+        setError('Indian mobile number must be exactly 10 digits (e.g. 9876543210).');
+        return;
+      }
+      if (!/^[6-9]\d{9}$/.test(cleanPhoneDigits)) {
+        setError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
+        return;
+      }
+    } else {
+      if (!cleanPhoneDigits || cleanPhoneDigits.length < 7 || cleanPhoneDigits.length > 15) {
+        setError('Please enter a valid mobile number (7 to 15 digits).');
+        return;
+      }
     }
 
     if (!signupPassword || signupPassword.length < 6) {
@@ -631,17 +644,38 @@ export default function LoginPage() {
                         name="sc_signup_phone_input"
                         autoComplete="off"
                         value={signupPhone}
+                        maxLength={selectedCountry.code === '+91' || selectedCountry.iso === 'in' ? 10 : 15}
                         onChange={(e) => {
                           const digitsOnly = e.target.value.replace(/\D/g, '');
                           setSignupPhone(digitsOnly);
                           setError(null);
                         }}
-                        placeholder="Mobile Number *"
+                        placeholder="Mobile Number (10 digits) *"
                         required
-                        className="w-full pl-8.5 sm:pl-9 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                        className={`w-full pl-8.5 sm:pl-9 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:outline-none transition-all shadow-2xs ${
+                          (selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length > 0 && signupPhone.length < 10
+                            ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 ring-1 ring-red-400'
+                            : (selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length === 10
+                            ? 'border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
+                            : 'border-zinc-300 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20'
+                        }`}
                       />
                     </div>
                   </div>
+
+                  {/* 🔴 Live 10-Digit Mobile Alert for India */}
+                  {(selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length > 0 && signupPhone.length < 10 && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[11px] font-bold text-rose-600 animate-pulse">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <span>Mobile number 10 digit ka hona chahiye (Entered: {signupPhone.length}/10)</span>
+                    </div>
+                  )}
+                  {(selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length === 10 && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] font-bold text-emerald-600">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span>✓ 10-Digit Mobile Number Valid</span>
+                    </div>
+                  )}
 
                   {/* 5. Password (Required) */}
                   <div className="relative flex items-center">

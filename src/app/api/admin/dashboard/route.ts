@@ -47,13 +47,19 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: `Failed to fetch versions: ${versionsError.message}` }, { status: 500 });
     }
 
-    // 4. Retrieve user emails from auth schema securely (bypasses RLS using Service Role Client)
+    // 4. Retrieve user emails, phones and metadata from auth schema securely
     const userEmails: Record<string, string> = {};
+    const userPhones: Record<string, string> = {};
+    const userNames: Record<string, string> = {};
     try {
       const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
       if (authUsers?.users) {
         authUsers.users.forEach(u => {
           if (u.email) userEmails[u.id] = u.email;
+          const phone = u.phone || u.user_metadata?.phone || '';
+          if (phone) userPhones[u.id] = phone;
+          const name = u.user_metadata?.full_name || u.user_metadata?.name || '';
+          if (name) userNames[u.id] = name;
         });
       }
     } catch (authListErr) {
@@ -87,8 +93,10 @@ export async function GET(req: NextRequest) {
       return {
         id: profile.id,
         tenant_id: profile.id,
-        workspace_name: profile.workspace_name,
-        email: userEmails[profile.id] || 'active-user@bhamstra.com',
+        workspace_name: profile.workspace_name || 'Unnamed Studio',
+        full_name: profile.full_name || userNames[profile.id] || 'Studio Owner',
+        email: userEmails[profile.id] || profile.email || 'user@studiocore.in',
+        phone: profile.phone || userPhones[profile.id] || '',
         active_sub_apps: userTelemetry?.active_sub_apps || ['WhatsBoost Engine', 'Canva Proposals', 'FW Team Operations'],
         r2_storage_used_bytes: actual_r2_physical_bytes,
         frontend_visible_bytes,

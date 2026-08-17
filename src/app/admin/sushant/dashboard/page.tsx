@@ -18,7 +18,9 @@ interface UserTelemetryRow {
   id: string;
   tenant_id: string;
   workspace_name: string;
+  full_name?: string;
   email: string;
+  phone?: string;
   active_sub_apps: string[];
   r2_storage_used_bytes: number;
   frontend_visible_bytes: number;
@@ -527,7 +529,19 @@ function AdminDashboardCore() {
                                 </button>
                               )}
                             </div>
-                            <div className="text-[10px] text-zinc-500 mt-1 font-mono">{u.email}</div>
+                            <div className="text-[11px] text-zinc-300 font-semibold mt-1 flex items-center gap-2">
+                              <span>👤 {u.full_name || 'Studio Owner'}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span className="text-[10px] text-zinc-400 font-mono">{u.email}</span>
+                              {u.phone ? (
+                                <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                  📞 {u.phone}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-zinc-600 font-mono">No phone</span>
+                              )}
+                            </div>
                             <div className="text-[9px] text-zinc-600 mt-0.5 font-mono select-all">UUID: {u.tenant_id}</div>
                           </td>
                           <td className="py-4 px-4 text-center">
@@ -559,9 +573,51 @@ function AdminDashboardCore() {
                         {isExpanded && (
                           <tr>
                             <td colSpan={6} className="bg-[#0b0b0d] px-6 py-6 border-t border-b border-zinc-900">
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 
-                                {/* Active Sub-Apps Column */}
+                                {/* 1. Owner Calling & Contact Card */}
+                                <div className="p-4 rounded-2xl bg-zinc-950/60 border border-zinc-900 space-y-3 flex flex-col justify-between">
+                                  <div className="space-y-2">
+                                    <div className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-wide flex items-center gap-1.5">
+                                      <Users className="w-3.5 h-3.5 text-orange-500" /> Owner Contact Card
+                                    </div>
+                                    <div className="text-sm font-black text-white">{u.full_name || 'Studio Owner'}</div>
+                                    <div className="text-[11px] text-zinc-400 font-mono truncate" title={u.email}>{u.email}</div>
+                                    <div className="text-xs text-emerald-400 font-mono font-bold">
+                                      {u.phone ? `📱 ${u.phone}` : 'No phone provided'}
+                                    </div>
+                                  </div>
+
+                                  {/* Direct Dial & WhatsApp Action Buttons */}
+                                  <div className="grid grid-cols-2 gap-2 pt-2">
+                                    {u.phone ? (
+                                      <>
+                                        <a
+                                          href={`tel:${u.phone.replace(/\s+/g, '')}`}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="py-2 px-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                                        >
+                                          📞 Call
+                                        </a>
+                                        <a
+                                          href={`https://wa.me/${u.phone.replace(/\D/g, '')}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="py-2 px-2.5 rounded-xl bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                                        >
+                                          💬 WhatsApp
+                                        </a>
+                                      </>
+                                    ) : (
+                                      <span className="col-span-2 text-[10px] text-zinc-600 text-center py-2 bg-zinc-900/50 rounded-xl">
+                                        No phone number
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* 2. Active Sub-Apps Column */}
                                 <div className="p-4 rounded-2xl bg-zinc-950/60 border border-zinc-900 space-y-3">
                                   <div className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-wide flex items-center gap-1.5">
                                     <Layers className="w-3.5 h-3.5 text-orange-500" /> Active Sub-Apps
@@ -583,7 +639,7 @@ function AdminDashboardCore() {
                                   </div>
                                 </div>
 
-                                {/* Wedding/Event Projects Column */}
+                                {/* 3. Wedding/Event Projects Column */}
                                 <div className="p-4 rounded-2xl bg-zinc-950/60 border border-zinc-900 flex flex-col justify-between">
                                   <div className="space-y-2">
                                     <div className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-wide flex items-center gap-1.5">
@@ -597,14 +653,17 @@ function AdminDashboardCore() {
                                   
                                   {/* Tunnel Action */}
                                   <button 
-                                    onClick={() => handleImpersonateStudio(u.tenant_id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleImpersonateStudio(u.tenant_id);
+                                    }}
                                     className="w-full py-2.5 bg-gradient-to-r from-orange-500/10 to-red-600/10 hover:from-orange-500/20 hover:to-red-600/20 border border-orange-500/20 hover:border-orange-500/40 text-orange-400 text-[10px] font-black rounded-xl uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
                                   >
                                     <Eye className="w-3.5 h-3.5" /> Impersonate Workspace
                                   </button>
                                 </div>
 
-                                {/* Storage Auditing comparison */}
+                                {/* 4. Storage Auditing comparison */}
                                 <div className="p-4 rounded-2xl bg-zinc-950/60 border border-zinc-900 space-y-3">
                                   <div className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-wide flex items-center gap-1.5">
                                     <HardDriveDownload className="w-3.5 h-3.5 text-orange-500" /> Dual-Storage Audit
@@ -612,11 +671,11 @@ function AdminDashboardCore() {
                                   
                                   <div className="space-y-2.5 text-xs">
                                     <div className="flex justify-between">
-                                      <span className="text-zinc-500">Frontend Visible size (Billed):</span>
+                                      <span className="text-zinc-500">Frontend Visible:</span>
                                       <span className="font-mono font-bold text-zinc-300">{formatBytes(u.frontend_visible_bytes)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                      <span className="text-zinc-500">Actual R2 Physical size:</span>
+                                      <span className="text-zinc-500">Actual R2:</span>
                                       <span className="font-mono font-bold text-orange-400">{formatBytes(u.actual_r2_physical_bytes)}</span>
                                     </div>
 
@@ -625,7 +684,7 @@ function AdminDashboardCore() {
                                       <div className="flex justify-between text-[9px] text-zinc-500 font-bold uppercase">
                                         <span>R2 Payload Efficiency</span>
                                         <span className="text-emerald-400">
-                                          {Math.round((1 - (u.actual_r2_physical_bytes / u.frontend_visible_bytes)) * 100)}% optimized
+                                          {Math.round((1 - (u.actual_r2_physical_bytes / u.frontend_visible_bytes)) * 100)}%
                                         </span>
                                       </div>
                                       <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden border border-zinc-800">

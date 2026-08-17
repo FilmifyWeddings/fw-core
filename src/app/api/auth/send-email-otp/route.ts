@@ -32,9 +32,24 @@ export async function POST(req: NextRequest) {
     if (!targetEmail || !targetEmail.includes('@') || !targetEmail.includes('.')) {
       return NextResponse.json({ success: false, error: 'Please enter a valid email address.' }, { status: 400 });
     }
-    if (!cleanPhone || cleanPhone.length < 7) {
-      return NextResponse.json({ success: false, error: 'Please enter a valid mobile number.' }, { status: 400 });
+    const isIndia = code === '+91' || code === '91';
+    if (isIndia) {
+      if (cleanPhone.length !== 10) {
+        return NextResponse.json({
+          success: false,
+          error: 'Indian mobile numbers must be exactly 10 digits (e.g. 9876543210).'
+        }, { status: 400 });
+      }
+      if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+        return NextResponse.json({
+          success: false,
+          error: 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.'
+        }, { status: 400 });
+      }
+    } else if (!cleanPhone || cleanPhone.length < 7 || cleanPhone.length > 15) {
+      return NextResponse.json({ success: false, error: 'Please enter a valid mobile number (7 to 15 digits).' }, { status: 400 });
     }
+
     if (!password || password.length < 6) {
       return NextResponse.json({ success: false, error: 'Password must be at least 6 characters.' }, { status: 400 });
     }

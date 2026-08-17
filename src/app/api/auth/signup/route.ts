@@ -46,8 +46,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Disposable email addresses are not permitted.' }, { status: 400 });
     }
 
-    if (!cleanPhoneDigits || cleanPhoneDigits.length < 7) {
-      return NextResponse.json({ success: false, error: 'Valid mobile number is required.' }, { status: 400 });
+    const isIndia = targetCountryCode === '+91' || targetCountryCode === '91';
+    if (isIndia) {
+      if (cleanPhoneDigits.length !== 10) {
+        return NextResponse.json({
+          success: false,
+          error: 'Indian mobile numbers must be exactly 10 digits (e.g. 9876543210).'
+        }, { status: 400 });
+      }
+      if (!/^[6-9]\d{9}$/.test(cleanPhoneDigits)) {
+        return NextResponse.json({
+          success: false,
+          error: 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.'
+        }, { status: 400 });
+      }
+    } else if (!cleanPhoneDigits || cleanPhoneDigits.length < 7 || cleanPhoneDigits.length > 15) {
+      return NextResponse.json({ success: false, error: 'Valid mobile number is required (7 to 15 digits).' }, { status: 400 });
     }
 
     if (!targetPassword || targetPassword.length < 6) {
