@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight, Building2, ChevronDown, Search } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight, Building2, ChevronDown, Search, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import OtpModal from '@/components/auth/OtpModal';
 
