@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
+import OnboardingCelebrationModal from '@/components/workspace/OnboardingCelebrationModal';
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
@@ -38,9 +39,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const [collapsed, setCollapsed] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('user@studiocore.in');
+  const [userName, setUserName] = useState<string>('Studio Owner');
   const [workspaceName, setWorkspaceName] = useState<string>('StudioCore Workspace');
   const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
   const [leadsSubmenuOpen, setLeadsSubmenuOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
@@ -61,9 +64,12 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
           const { data: profile } = await supabase
             .from('profiles')
-            .select('workspace_name, avatar_url, logo_url')
+            .select('workspace_name, avatar_url, logo_url, full_name')
             .eq('id', session.user.id)
             .maybeSingle();
+
+          const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+          setUserName(name);
 
           if (profile?.avatar_url) {
             setUserAvatarUrl(profile.avatar_url);
@@ -79,6 +85,25 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             const defaultName = session.user.email ? `${session.user.email.split('@')[0]}'s Studio` : 'My StudioCore';
             setWorkspaceName(defaultName);
           }
+
+          // Check if onboarding celebration should trigger
+          const onboardingParam = searchParams?.get('onboarding') === 'true';
+          const pendingCelebration = typeof window !== 'undefined' && localStorage.getItem('sc_show_onboarding_celebration') === 'true';
+          const userSeenKey = `sc_welcome_seen_${session.user.id}`;
+          const alreadySeen = typeof window !== 'undefined' && (localStorage.getItem(userSeenKey) === 'true' || localStorage.getItem('sc_welcome_completed') === 'true');
+
+          if ((onboardingParam || pendingCelebration) && !alreadySeen) {
+            setShowOnboardingCelebration(true);
+            try {
+              localStorage.removeItem('sc_show_onboarding_celebration');
+              localStorage.setItem(userSeenKey, 'true');
+              localStorage.setItem('sc_welcome_completed', 'true');
+              if (typeof window !== 'undefined' && window.history.replaceState) {
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, '', cleanUrl);
+              }
+            } catch (e) {}
+          }
         }
       } catch (err) {
         console.error('Error loading user profile in sidebar:', err);
@@ -86,7 +111,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     };
 
     fetchUserProfile();
-  }, []);
+  }, [searchParams]);
 
   // Save collapsed preference
   useEffect(() => {
@@ -595,6 +620,20 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         onProfileSaved={(p) => {
+          if (p.studioName) setWorkspaceName(p.studioName);
+          if (p.avatarUrl !== undefined) setUserAvatarUrl(p.avatarUrl);
+        }}
+      />
+
+      {/* ── ONBOARDING CELEBRATION MODAL (Dual-Cannon Confetti + Welcome + Profile Setup) ── */}
+      <OnboardingCelebrationModal
+        isOpen={showOnboardingCelebration}
+        onClose={() => setShowOnboardingCelebration(false)}
+        userName={userName}
+        initialStudioName={workspaceName}
+        userEmail={userEmail}
+        userId={userId}
+        onProfileUpdated={(p) => {
           if (p.studioName) setWorkspaceName(p.studioName);
           if (p.avatarUrl !== undefined) setUserAvatarUrl(p.avatarUrl);
         }}

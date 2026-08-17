@@ -290,6 +290,9 @@ export default function LoginPage() {
           await supabase.auth.setSession(apiJson.session).catch(() => {});
         }
         setShowOtpModal(false);
+        try {
+          localStorage.setItem('sc_show_onboarding_celebration', 'true');
+        } catch (e) {}
         window.location.href = apiJson.redirectUrl || redirectTo;
       } else {
         throw new Error(apiJson.error || 'Invalid verification code.');
