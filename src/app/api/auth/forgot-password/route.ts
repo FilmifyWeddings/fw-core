@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     const targetEmail = email.trim().toLowerCase();
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://studiocore.in';
+    const baseUrl = 'https://studiocore.in';
 
     // 1. Search for user in `profiles` table first
     let userId: string | null = null;
