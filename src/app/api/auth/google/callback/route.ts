@@ -191,47 +191,103 @@ export async function GET(req: NextRequest) {
     }
 
     // Query for existing record for this workspace and this specific provider
-    const { data: existing } = await supabaseAdmin
-      .from('integration_credentials')
-      .select('id, config, metadata')
-      .eq('user_id', workspaceId)
-      .eq('provider', integrationType)
-      .maybeSingle();
+    let existing: any = null;
+    let hasConfigColumn = true;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('integration_credentials')
+        .select('id, config, metadata')
+        .eq('user_id', workspaceId)
+        .eq('provider', integrationType)
+        .maybeSingle();
+      
+      if (error && error.message?.includes('schema cache')) {
+        hasConfigColumn = false;
+        const { data: baseData } = await supabaseAdmin
+          .from('integration_credentials')
+          .select('id')
+          .eq('user_id', workspaceId)
+          .eq('provider', integrationType)
+          .maybeSingle();
+        existing = baseData;
+      } else {
+        existing = data;
+      }
+    } catch {
+      hasConfigColumn = false;
+    }
 
-    const existingConfig = (existing?.config as Record<string, any>) || {};
-    const existingMetadata = (existing?.metadata as Record<string, any>) || {};
+    if (hasConfigColumn) {
+      const existingConfig = (existing?.config as Record<string, any>) || {};
+      const existingMetadata = (existing?.metadata as Record<string, any>) || {};
 
-    updatePayload.config = {
-      ...existingConfig,
-      connected_email: connectedEmail || existingConfig.connected_email,
-      connected_name: connectedName || existingConfig.connected_name,
-      connected_picture: connectedPicture || existingConfig.connected_picture,
-      connected_at: new Date().toISOString(),
-    };
+      updatePayload.config = {
+        ...existingConfig,
+        connected_email: connectedEmail || existingConfig.connected_email,
+        connected_name: connectedName || existingConfig.connected_name,
+        connected_picture: connectedPicture || existingConfig.connected_picture,
+        connected_at: new Date().toISOString(),
+      };
 
-    updatePayload.metadata = {
-      ...existingMetadata,
-      email: connectedEmail || existingMetadata.email,
-      name: connectedName || existingMetadata.name,
-      picture: connectedPicture || existingMetadata.picture,
-    };
+      updatePayload.metadata = {
+        ...existingMetadata,
+        email: connectedEmail || existingMetadata.email,
+        name: connectedName || existingMetadata.name,
+        picture: connectedPicture || existingMetadata.picture,
+      };
+    }
 
     if (existing) {
-      const { error: dbErr } = await supabaseAdmin
-        .from('integration_credentials')
-        .update(updatePayload)
-        .eq('id', existing.id);
-      if (dbErr) throw dbErr;
+      try {
+        const { error: dbErr } = await supabaseAdmin
+          .from('integration_credentials')
+          .update(updatePayload)
+          .eq('id', existing.id);
+        if (dbErr) throw dbErr;
+      } catch (err: any) {
+        // Fallback without config/metadata if schema cache doesn't have them yet
+        if (err.message?.includes('schema cache')) {
+          const minimalPayload: Record<string, any> = {
+            access_token: accessToken,
+            status: 'connected',
+            updated_at: new Date().toISOString(),
+          };
+          if (refreshToken) minimalPayload.refresh_token = refreshToken;
+          await supabaseAdmin
+            .from('integration_credentials')
+            .update(minimalPayload)
+            .eq('id', existing.id);
+        } else {
+          throw err;
+        }
+      }
     } else {
-      const { error: dbErr } = await supabaseAdmin
-        .from('integration_credentials')
-        .insert({
-          user_id: workspaceId,
-          provider: integrationType,
-          ...updatePayload,
-          refresh_token: refreshToken || null,
-        });
-      if (dbErr) throw dbErr;
+      try {
+        const { error: dbErr } = await supabaseAdmin
+          .from('integration_credentials')
+          .insert({
+            user_id: workspaceId,
+            provider: integrationType,
+            ...updatePayload,
+            refresh_token: refreshToken || null,
+          });
+        if (dbErr) throw dbErr;
+      } catch (err: any) {
+        if (err.message?.includes('schema cache')) {
+          await supabaseAdmin
+            .from('integration_credentials')
+            .insert({
+              user_id: workspaceId,
+              provider: integrationType,
+              access_token: accessToken,
+              refresh_token: refreshToken || null,
+              status: 'connected',
+              updated_at: new Date().toISOString(),
+            });
+        } else {
+          throw err;
+        }
+      }
     }
 
     // Log live activity event
