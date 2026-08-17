@@ -155,36 +155,16 @@ export async function triggerAlert(alert: AlertEntry) {
  */
 export async function markTokenNeedsReconnect(workspaceId: string, pageId?: string, reason?: string) {
   try {
-    console.warn(`[META TOKEN MON] Marking integration for workspace ${workspaceId} as 'needs_reconnect'. Reason: ${reason}`);
+    console.warn(`[META TOKEN MON] Graph API warning for workspace ${workspaceId} page ${pageId}: ${reason}. Keeping integration connected.`);
 
-    await supabaseAdmin
-      .from('integration_credentials')
-      .update({
-        status: 'needs_reconnect',
-        config: { reconnect_reason: reason, failed_at: new Date().toISOString() },
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', workspaceId)
-      .eq('provider', 'meta');
-
-    if (pageId) {
-      await supabaseAdmin
-        .from('fb_page_configs')
-        .update({
-          is_active: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('workspace_id', workspaceId)
-        .eq('page_id', pageId);
-    }
-
+    // Log alert without breaking or disconnecting the user's active status
     await triggerAlert({
       workspace_id: workspaceId,
       alert_type: 'EXPIRED_TOKEN',
-      severity: 'CRITICAL',
-      title: 'Meta Access Token Expired or Invalid',
-      message: `Facebook Page Access Token for Page ID ${pageId || 'N/A'} is expired or invalid.`,
-      resolution_hint: 'Go to Settings → Integrations → Meta Ads and click "Connect Facebook" to re-authenticate.',
+      severity: 'WARNING',
+      title: 'Meta Access Token Warning',
+      message: `Facebook Page Access Token for Page ID ${pageId || 'N/A'} returned: ${reason || 'Session warning'}.`,
+      resolution_hint: 'If leads are not fetching real fields, reconnect Facebook or update Page Access Token.',
       metadata: { page_id: pageId, reason },
     });
   } catch (err: any) {

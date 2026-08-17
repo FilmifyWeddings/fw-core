@@ -665,7 +665,7 @@ function ProviderConfigCore() {
               updated_at: new Date().toISOString()
             })
             .eq('user_id', userId)
-            .eq('provider', 'google');
+            .in('provider', [dbProvider, 'google']);
 
           if (saveErr) {
             console.error('[Save Config] DB Update Error:', saveErr);

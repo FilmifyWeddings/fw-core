@@ -35,11 +35,31 @@ export async function POST(req: NextRequest) {
     console.log(`[Direct Token Sync] Inspecting token & running page auto-discovery...`);
     const discoveredPagesMap = new Map<string, { page_id: string; page_name: string; page_category: string; access_token: string }>();
 
-    // Step A: Check token type via debug_token
+    let workingToken = page_access_token;
+    const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
+    const appSecret = process.env.FACEBOOK_APP_SECRET || '4da60a4bc30f64db3570ffde1508b2b6';
+
+    // Step A: Attempt exchange for 60-day Long-Lived Token if possible
+    try {
+      const longRes = await fetch(
+        `https://graph.facebook.com/v20.0/oauth/access_token?` +
+        `grant_type=fb_exchange_token&client_id=${appId}&` +
+        `client_secret=${appSecret}&fb_exchange_token=${encodeURIComponent(page_access_token)}`
+      );
+      if (longRes.ok) {
+        const longJson = await longRes.json();
+        if (longJson.access_token) {
+          workingToken = longJson.access_token;
+          console.log('[Direct Token Sync] Successfully upgraded to Long-Lived Token ✓');
+        }
+      }
+    } catch (_) {}
+
+    // Step B: Check token type via debug_token
     let tokenType = 'UNKNOWN';
     try {
       const debugRes = await fetch(
-        `https://graph.facebook.com/v20.0/debug_token?input_token=${page_access_token}&access_token=${page_access_token}`
+        `https://graph.facebook.com/v20.0/debug_token?input_token=${workingToken}&access_token=${workingToken}`
       );
       const debugJson = await debugRes.json().catch(() => ({}));
       if (debugRes.ok && debugJson.data?.type) {
@@ -48,12 +68,12 @@ export async function POST(req: NextRequest) {
       }
     } catch (_) {}
 
-    // Step B: Query /me to discover primary page/user node
+    // Step C: Query /me to discover primary page/user node
     let primaryName = 'Facebook Account';
     let primaryCategory = 'Business Page';
     try {
       const meRes = await fetch(
-        `https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${page_access_token}`
+        `https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${workingToken}`
       );
       const meJson = await meRes.json().catch(() => ({}));
       if (meRes.ok && meJson.id) {
@@ -63,26 +83,26 @@ export async function POST(req: NextRequest) {
           page_id: meJson.id,
           page_name: meJson.name || `Page ${meJson.id}`,
           page_category: meJson.category || 'Business Page',
-          access_token: page_access_token,
+          access_token: workingToken,
         });
       }
     } catch (_) {}
 
-    // Step C: Query /me/accounts to auto-discover ALL managed pages
+    // Step D: Query /me/accounts to auto-discover ALL managed pages (returns Permanent Page Access Tokens)
     try {
       const accountsRes = await fetch(
-        `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token&limit=100&access_token=${page_access_token}`
+        `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token&limit=100&access_token=${workingToken}`
       );
       const accountsJson = await accountsRes.json().catch(() => ({}));
       if (accountsRes.ok && Array.isArray(accountsJson.data)) {
-        console.log(`[Direct Token Sync] Auto-discovered ${accountsJson.data.length} page(s) via /me/accounts`);
+        console.log(`[Direct Token Sync] Auto-discovered ${accountsJson.data.length} page(s) via /me/accounts with Permanent Page Tokens`);
         accountsJson.data.forEach((p: any) => {
           if (p.id) {
             discoveredPagesMap.set(p.id, {
               page_id: p.id,
               page_name: p.name || `Page ${p.id}`,
               page_category: p.category || 'Business Page',
-              access_token: p.access_token || page_access_token,
+              access_token: p.access_token || workingToken,
             });
           }
         });
