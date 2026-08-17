@@ -10,6 +10,7 @@ import {
   Layers, Users, FileText, Check, Loader2 
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { compressImageToDataUrl } from '@/lib/image-compression';
 
 function InstagramIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -51,6 +52,8 @@ export default function OnboardingCelebrationModal({
   const [address, setAddress] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState<boolean>(false);
+  const [isCompressingAvatar, setIsCompressingAvatar] = useState<boolean>(false);
+  const [isCompressingLogo, setIsCompressingLogo] = useState<boolean>(false);
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -69,7 +72,7 @@ export default function OnboardingCelebrationModal({
       
       // Left Cannon
       confetti({
-        particleCount: 75,
+        particleCount: 80,
         angle: 60,
         spread: 60,
         origin: { x: 0, y: 0.72 },
@@ -80,7 +83,7 @@ export default function OnboardingCelebrationModal({
 
       // Right Cannon
       confetti({
-        particleCount: 75,
+        particleCount: 80,
         angle: 120,
         spread: 60,
         origin: { x: 1, y: 0.72 },
@@ -106,36 +109,48 @@ export default function OnboardingCelebrationModal({
     }
   }, [isOpen]);
 
-  // Handle Avatar Image Selection & Base64 preview
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Avatar Image Selection & Compression to KB
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Please choose an image under 5MB');
-        return;
+      try {
+        setIsCompressingAvatar(true);
+        const compressedDataUrl = await compressImageToDataUrl(file, 400, 0.82);
+        setAvatarUrl(compressedDataUrl);
+      } catch (err) {
+        console.error('Avatar compression error:', err);
+      } finally {
+        setIsCompressingAvatar(false);
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        setAvatarUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
     }
   };
 
-  // Handle Logo Image Selection & Base64 preview
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Logo Image Selection & Compression to KB
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Please choose a logo under 5MB');
-        return;
+      try {
+        setIsCompressingLogo(true);
+        const compressedDataUrl = await compressImageToDataUrl(file, 400, 0.85);
+        setLogoUrl(compressedDataUrl);
+      } catch (err) {
+        console.error('Logo compression error:', err);
+      } finally {
+        setIsCompressingLogo(false);
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        setLogoUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
     }
+  };
+
+  const markCompletedGlobally = () => {
+    try {
+      localStorage.setItem('sc_welcome_completed', 'true');
+      if (userId) {
+        localStorage.setItem(`sc_welcome_seen_${userId}`, 'true');
+      }
+      if (typeof window !== 'undefined' && window.history.replaceState) {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch (e) {}
   };
 
   // Save Profile Setup
@@ -170,17 +185,16 @@ export default function OnboardingCelebrationModal({
         if (onProfileUpdated) {
           onProfileUpdated(payload);
         }
-        localStorage.setItem('sc_welcome_completed', 'true');
+        markCompletedGlobally();
         setTimeout(() => {
           onClose();
-        }, 1200);
+        }, 1000);
       } else {
         throw new Error(json.error || 'Failed to save profile');
       }
     } catch (err: any) {
       console.error('[Save Profile Error]:', err);
-      // Even on network error, close smoothly and persist locally
-      localStorage.setItem('sc_welcome_completed', 'true');
+      markCompletedGlobally();
       onClose();
     } finally {
       setIsSaving(false);
@@ -189,7 +203,7 @@ export default function OnboardingCelebrationModal({
 
   // Skip Profile Setup
   const handleSkip = () => {
-    localStorage.setItem('sc_welcome_completed', 'true');
+    markCompletedGlobally();
     onClose();
   };
 
@@ -213,12 +227,12 @@ export default function OnboardingCelebrationModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 25 }}
           transition={{ type: 'spring', damping: 26, stiffness: 340 }}
-          className="relative w-full max-w-[540px] bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden z-10 my-auto"
+          className="relative w-full max-w-[540px] bg-[#FDFBF7] rounded-3xl shadow-2xl border border-amber-200/60 overflow-hidden z-10 my-auto"
         >
           {/* Close Button */}
           <button
             onClick={handleSkip}
-            className="absolute top-4 right-4 p-2 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-all cursor-pointer z-20"
+            className="absolute top-4 right-4 p-2 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-amber-100/50 transition-all cursor-pointer z-20"
           >
             <X className="w-5 h-5" />
           </button>
@@ -246,7 +260,7 @@ export default function OnboardingCelebrationModal({
               </div>
 
               {/* Onboarding Pill */}
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50 border border-orange-200 text-[#F36F21] text-[11px] font-extrabold uppercase tracking-wider mb-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100/80 border border-amber-300 text-[#c25310] text-[11px] font-extrabold uppercase tracking-wider mb-2">
                 <Sparkles className="w-3.5 h-3.5 text-[#F36F21]" />
                 <span>Welcome to StudioCore</span>
               </div>
@@ -261,7 +275,7 @@ export default function OnboardingCelebrationModal({
 
               {/* Highlights Feature Cards */}
               <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-2.5 my-5 text-left">
-                <div className="p-3 rounded-2xl bg-orange-50/60 border border-orange-100 flex flex-col gap-1.5">
+                <div className="p-3 rounded-2xl bg-white border border-amber-200/80 shadow-2xs flex flex-col gap-1.5">
                   <div className="w-7 h-7 rounded-xl bg-[#F36F21] text-white flex items-center justify-center shadow-xs">
                     <FileText className="w-3.5 h-3.5" />
                   </div>
@@ -269,7 +283,7 @@ export default function OnboardingCelebrationModal({
                   <span className="text-[10px] text-zinc-500">Luxury PDFs & interactive web proposals</span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 flex flex-col gap-1.5">
+                <div className="p-3 rounded-2xl bg-white border border-emerald-200/80 shadow-2xs flex flex-col gap-1.5">
                   <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
                     <Layers className="w-3.5 h-3.5" />
                   </div>
@@ -277,7 +291,7 @@ export default function OnboardingCelebrationModal({
                   <span className="text-[10px] text-zinc-500">Automated WhatsApp & Meta Ads</span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100 flex flex-col gap-1.5">
+                <div className="p-3 rounded-2xl bg-white border border-indigo-200/80 shadow-2xs flex flex-col gap-1.5">
                   <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
                     <Users className="w-3.5 h-3.5" />
                   </div>
@@ -317,10 +331,10 @@ export default function OnboardingCelebrationModal({
               STAGE 2: STUDIO PROFILE SETUP MODAL
               ═══════════════════════════════════════════════════════════════ */}
           {stage === 'profile-setup' && (
-            <div className="p-5 sm:p-7">
+            <div className="p-5 sm:p-7 bg-[#FDFBF7]">
               {/* Header */}
-              <div className="flex items-center gap-3 mb-4 pb-3 border-b border-zinc-100">
-                <div className="w-10 h-10 rounded-2xl bg-orange-100 text-[#F36F21] flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-3 mb-4 pb-3 border-b border-amber-200/60">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-[#F36F21] flex items-center justify-center shrink-0 border border-amber-300">
                   <Building2 className="w-5 h-5" />
                 </div>
                 <div>
@@ -336,7 +350,7 @@ export default function OnboardingCelebrationModal({
               <form onSubmit={handleSaveProfile} className="space-y-3.5">
                 
                 {/* 1. Dual Image Uploads: Profile Photo & Studio Logo */}
-                <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-zinc-50 border border-zinc-200/80">
+                <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-white border border-amber-200/80 shadow-2xs">
                   
                   {/* Avatar Upload */}
                   <div className="flex flex-col items-center text-center">
@@ -350,14 +364,16 @@ export default function OnboardingCelebrationModal({
                     />
                     <div
                       onClick={() => avatarInputRef.current?.click()}
-                      className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-dashed border-zinc-300 hover:border-[#F36F21] bg-white flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all group shadow-2xs"
+                      className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-dashed border-amber-300 hover:border-[#F36F21] bg-amber-50/50 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all group shadow-2xs"
                     >
-                      {avatarUrl ? (
+                      {isCompressingAvatar ? (
+                        <Loader2 className="w-5 h-5 text-[#F36F21] animate-spin" />
+                      ) : avatarUrl ? (
                         <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                       ) : (
                         <>
-                          <Camera className="w-5 h-5 text-zinc-400 group-hover:text-[#F36F21] transition-colors" />
-                          <span className="text-[9px] font-bold text-zinc-400 mt-1">Upload</span>
+                          <Camera className="w-5 h-5 text-amber-500/80 group-hover:text-[#F36F21] transition-colors" />
+                          <span className="text-[9px] font-bold text-amber-700 mt-1">Upload</span>
                         </>
                       )}
                     </div>
@@ -375,14 +391,16 @@ export default function OnboardingCelebrationModal({
                     />
                     <div
                       onClick={() => logoInputRef.current?.click()}
-                      className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border-2 border-dashed border-zinc-300 hover:border-[#F36F21] bg-white flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all group shadow-2xs"
+                      className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border-2 border-dashed border-amber-300 hover:border-[#F36F21] bg-amber-50/50 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all group shadow-2xs"
                     >
-                      {logoUrl ? (
+                      {isCompressingLogo ? (
+                        <Loader2 className="w-5 h-5 text-[#F36F21] animate-spin" />
+                      ) : logoUrl ? (
                         <img src={logoUrl} alt="Studio Logo" className="w-full h-full object-contain p-1" />
                       ) : (
                         <>
-                          <Upload className="w-5 h-5 text-zinc-400 group-hover:text-[#F36F21] transition-colors" />
-                          <span className="text-[9px] font-bold text-zinc-400 mt-1">Brand Logo</span>
+                          <Upload className="w-5 h-5 text-amber-500/80 group-hover:text-[#F36F21] transition-colors" />
+                          <span className="text-[9px] font-bold text-amber-700 mt-1">Brand Logo</span>
                         </>
                       )}
                     </div>
@@ -399,9 +417,9 @@ export default function OnboardingCelebrationModal({
                     type="text"
                     value={studioName}
                     onChange={(e) => setStudioName(e.target.value)}
-                    placeholder="Studio / Business Name"
+                    placeholder="Studio / Business Name *"
                     required
-                    className="w-full pl-10 pr-3.5 h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-semibold placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    className="w-full pl-10 pr-3.5 h-10 rounded-xl bg-white border border-amber-200 text-zinc-900 text-xs sm:text-sm font-semibold placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                   />
                 </div>
 
@@ -415,7 +433,7 @@ export default function OnboardingCelebrationModal({
                     value={instagram}
                     onChange={(e) => setInstagram(e.target.value)}
                     placeholder="Instagram Handle (e.g. @yourstudio)"
-                    className="w-full pl-10 pr-3.5 h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    className="w-full pl-10 pr-3.5 h-10 rounded-xl bg-white border border-amber-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                   />
                 </div>
 
@@ -429,7 +447,7 @@ export default function OnboardingCelebrationModal({
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="Studio Address / City (e.g. Mumbai, Maharashtra)"
-                    className="w-full pl-10 pr-3.5 h-10 rounded-xl bg-white border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    className="w-full pl-10 pr-3.5 h-10 rounded-xl bg-white border border-amber-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
                   />
                 </div>
 

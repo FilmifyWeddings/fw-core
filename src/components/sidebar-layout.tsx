@@ -11,6 +11,7 @@ import {
   Layers, Archive, UserX, CheckCircle2, ArrowUpRight
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
@@ -38,6 +39,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('user@studiocore.in');
   const [workspaceName, setWorkspaceName] = useState<string>('StudioCore Workspace');
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [leadsSubmenuOpen, setLeadsSubmenuOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
@@ -58,12 +61,20 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
           const { data: profile } = await supabase
             .from('profiles')
-            .select('workspace_name')
+            .select('workspace_name, avatar_url, logo_url')
             .eq('id', session.user.id)
             .maybeSingle();
 
+          if (profile?.avatar_url) {
+            setUserAvatarUrl(profile.avatar_url);
+          } else if (session.user.user_metadata?.avatar_url) {
+            setUserAvatarUrl(session.user.user_metadata.avatar_url);
+          }
+
           if (profile?.workspace_name) {
             setWorkspaceName(profile.workspace_name);
+          } else if (session.user.user_metadata?.workspace_name) {
+            setWorkspaceName(session.user.user_metadata.workspace_name);
           } else {
             const defaultName = session.user.email ? `${session.user.email.split('@')[0]}'s Studio` : 'My StudioCore';
             setWorkspaceName(defaultName);
@@ -378,21 +389,33 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           })}
         </nav>
 
-        {/* Bottom Profile & Studio Section (Light/Dark Toggle REMOVED) */}
+        {/* Bottom Profile & Studio Section (Clickable to open Profile Modal) */}
         <div className="p-3 border-t border-slate-100 shrink-0 bg-slate-50/50">
           <div
             className={`flex items-center rounded-xl p-2 transition ${
               collapsed ? 'justify-center' : 'justify-between bg-white border border-slate-200/80 shadow-2xs'
             }`}
           >
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs border border-amber-300 shrink-0">
-                {userEmail.slice(0, 2).toUpperCase()}
-              </div>
+            <div
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center gap-2.5 overflow-hidden cursor-pointer group flex-1 hover:opacity-90 transition-opacity"
+              title="Click to view & edit Studio Profile"
+            >
+              {userAvatarUrl ? (
+                <img
+                  src={userAvatarUrl}
+                  alt="Avatar"
+                  className="w-8 h-8 rounded-xl object-cover border border-amber-400 shrink-0 shadow-2xs group-hover:scale-105 transition-transform"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs border border-amber-300 shrink-0 group-hover:scale-105 transition-transform">
+                  {userEmail.slice(0, 2).toUpperCase()}
+                </div>
+              )}
 
               {!collapsed && (
                 <div className="overflow-hidden text-left">
-                  <h4 className="text-xs font-black text-slate-900 truncate max-w-[120px]">
+                  <h4 className="text-xs font-black text-slate-900 truncate max-w-[120px] group-hover:text-[#F36F21] transition-colors">
                     {workspaceName}
                   </h4>
                   <p className="text-[10px] text-slate-400 truncate max-w-[120px] font-mono">
@@ -405,7 +428,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             {!collapsed && (
               <button
                 onClick={handleSignOut}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0 ml-1"
                 title="Sign out"
               >
                 <LogOut className="w-4 h-4" />
@@ -515,12 +538,26 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               {/* Bottom Profile Card */}
               <div className="p-4 border-t border-slate-100 bg-slate-50">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-amber-400 text-slate-900 font-black text-xs flex items-center justify-center">
-                      {userEmail.slice(0, 2).toUpperCase()}
-                    </div>
+                  <div
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      setShowProfileModal(true);
+                    }}
+                    className="flex items-center gap-2.5 cursor-pointer group flex-1"
+                  >
+                    {userAvatarUrl ? (
+                      <img
+                        src={userAvatarUrl}
+                        alt="Avatar"
+                        className="w-8 h-8 rounded-xl object-cover border border-amber-400 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-xl bg-amber-400 text-slate-900 font-black text-xs flex items-center justify-center">
+                        {userEmail.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
                     <div>
-                      <p className="text-xs font-black text-slate-900">{workspaceName}</p>
+                      <p className="text-xs font-black text-slate-900 group-hover:text-[#F36F21] transition-colors">{workspaceName}</p>
                       <p className="text-[10px] text-slate-400 font-mono">{userEmail}</p>
                     </div>
                   </div>
@@ -552,6 +589,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       >
         {children}
       </main>
+
+      {/* ── STUDIO PROFILE EDIT MODAL ── */}
+      <StudioProfileEditModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onProfileSaved={(p) => {
+          if (p.studioName) setWorkspaceName(p.studioName);
+          if (p.avatarUrl !== undefined) setUserAvatarUrl(p.avatarUrl);
+        }}
+      />
 
     </div>
   );

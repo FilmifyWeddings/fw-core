@@ -1,12 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 
 export const runtime = 'nodejs';
 
 /**
+ * GET /api/user/profile-setup
+ * Returns full profile details for the authenticated user.
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { userId, userEmail } = await resolveRequestUser(req);
+    const targetUserId = userId;
+
+    if (!targetUserId || targetUserId === 'demo_user') {
+      return NextResponse.json({
+        success: true,
+        profile: {
+          id: 'demo_user',
+          fullName: 'Studio Owner',
+          studioName: 'StudioCore Workspace',
+          email: userEmail || 'user@studiocore.in',
+          phone: '',
+          address: '',
+          avatarUrl: '',
+          logoUrl: '',
+          instagram: '',
+          youtube: '',
+          facebook: '',
+        },
+      });
+    }
+
+    // 1. Fetch Profile row
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', targetUserId)
+      .maybeSingle();
+
+    // 2. Fetch Auth User metadata
+    let userMeta: Record<string, any> = {};
+    let email = userEmail;
+    try {
+      const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
+      if (userRec?.user) {
+        userMeta = userRec.user.user_metadata || {};
+        email = userRec.user.email || email;
+      }
+    } catch (e) {}
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        id: targetUserId,
+        fullName: profile?.full_name || userMeta.full_name || userMeta.name || '',
+        studioName: profile?.workspace_name || userMeta.workspace_name || 'My Studio',
+        email: email || '',
+        phone: profile?.phone || userMeta.phone || '',
+        address: profile?.address || userMeta.address || '',
+        avatarUrl: profile?.avatar_url || userMeta.avatar_url || '',
+        logoUrl: profile?.logo_url || userMeta.logo_url || '',
+        instagram: profile?.instagram_handle || userMeta.instagram_handle || '',
+        youtube: profile?.youtube_handle || userMeta.youtube_handle || '',
+        facebook: profile?.facebook_handle || userMeta.facebook_handle || '',
+        isOnboarded: !!userMeta.is_onboarded,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Get Profile Error]:', err);
+    return NextResponse.json({ error: err.message || 'Failed to fetch profile' }, { status: 500 });
+  }
+}
+
+/**
  * POST /api/user/profile-setup
- * Saves initial or updated Studio Profile details (Avatar, Logo, Studio Name, Instagram, Address).
+ * Saves or updates complete Studio Profile details in Supabase.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +87,8 @@ export async function POST(req: NextRequest) {
       logoUrl,
       studioName,
       instagram,
+      youtube,
+      facebook,
       address,
       fullName,
       phone,
@@ -31,6 +102,8 @@ export async function POST(req: NextRequest) {
 
     const cleanStudioName = (studioName || '').trim();
     const cleanInstagram = (instagram || '').trim();
+    const cleanYoutube = (youtube || '').trim();
+    const cleanFacebook = (facebook || '').trim();
     const cleanAddress = (address || '').trim();
     const cleanFullName = (fullName || '').trim();
     const cleanPhone = (phone || '').trim();
@@ -44,10 +117,12 @@ export async function POST(req: NextRequest) {
     if (cleanStudioName) profilePayload.workspace_name = cleanStudioName;
     if (cleanFullName) profilePayload.full_name = cleanFullName;
     if (cleanPhone) profilePayload.phone = cleanPhone;
-    if (avatarUrl) profilePayload.avatar_url = avatarUrl;
-    if (logoUrl) profilePayload.logo_url = logoUrl;
-    if (cleanInstagram) profilePayload.instagram_handle = cleanInstagram;
-    if (cleanAddress) profilePayload.address = cleanAddress;
+    if (avatarUrl !== undefined) profilePayload.avatar_url = avatarUrl;
+    if (logoUrl !== undefined) profilePayload.logo_url = logoUrl;
+    if (cleanInstagram !== undefined) profilePayload.instagram_handle = cleanInstagram;
+    if (cleanYoutube !== undefined) profilePayload.youtube_handle = cleanYoutube;
+    if (cleanFacebook !== undefined) profilePayload.facebook_handle = cleanFacebook;
+    if (cleanAddress !== undefined) profilePayload.address = cleanAddress;
 
     try {
       await supabaseAdmin.from('profiles').upsert(profilePayload, { onConflict: 'id' });
@@ -61,10 +136,12 @@ export async function POST(req: NextRequest) {
       if (cleanStudioName) userMeta.workspace_name = cleanStudioName;
       if (cleanFullName) userMeta.full_name = cleanFullName;
       if (cleanPhone) userMeta.phone = cleanPhone;
-      if (avatarUrl) userMeta.avatar_url = avatarUrl;
-      if (logoUrl) userMeta.logo_url = logoUrl;
-      if (cleanInstagram) userMeta.instagram_handle = cleanInstagram;
-      if (cleanAddress) userMeta.address = cleanAddress;
+      if (avatarUrl !== undefined) userMeta.avatar_url = avatarUrl;
+      if (logoUrl !== undefined) userMeta.logo_url = logoUrl;
+      if (cleanInstagram !== undefined) userMeta.instagram_handle = cleanInstagram;
+      if (cleanYoutube !== undefined) userMeta.youtube_handle = cleanYoutube;
+      if (cleanFacebook !== undefined) userMeta.facebook_handle = cleanFacebook;
+      if (cleanAddress !== undefined) userMeta.address = cleanAddress;
       userMeta.is_onboarded = true;
 
       await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
@@ -80,9 +157,13 @@ export async function POST(req: NextRequest) {
       profile: {
         userId: targetUserId,
         studioName: cleanStudioName,
+        fullName: cleanFullName,
+        phone: cleanPhone,
         avatarUrl,
         logoUrl,
         instagram: cleanInstagram,
+        youtube: cleanYoutube,
+        facebook: cleanFacebook,
         address: cleanAddress,
       },
     });

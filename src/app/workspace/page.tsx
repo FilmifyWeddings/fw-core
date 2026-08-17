@@ -160,12 +160,18 @@ export default function WorkspaceHubPage() {
           setCurrentUserName(name);
           setCurrentStudioName(studio);
 
-          // Check if onboarding trigger is present
-          const onboardingParam = searchParams.get('onboarding');
-          const alreadyCompleted = localStorage.getItem('sc_welcome_completed') === 'true';
+          // Check if onboarding trigger is explicitly present
+          const onboardingParam = searchParams.get('onboarding') === 'true';
+          const userSeenKey = `sc_welcome_seen_${u.id}`;
+          const alreadySeen = localStorage.getItem(userSeenKey) === 'true' || localStorage.getItem('sc_welcome_completed') === 'true';
 
-          if (onboardingParam === 'true' || !alreadyCompleted) {
+          if (onboardingParam && !alreadySeen) {
             setShowOnboardingModal(true);
+            localStorage.setItem(userSeenKey, 'true');
+            localStorage.setItem('sc_welcome_completed', 'true');
+            if (typeof window !== 'undefined' && window.history.replaceState) {
+              window.history.replaceState({}, '', '/workspace');
+            }
           }
         }
       } catch (err) {
