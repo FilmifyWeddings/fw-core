@@ -7,13 +7,13 @@ export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/signup
- * Instant Signup API for StudioCore accounts with 6-digit Email OTP Verification:
+ * Instant Signup API for StudioCore accounts with Dual OTP Verification:
  * - Validates Full Name, Studio Name, Email, Phone, Country Code, Password
  * - Enforces Duplicate Mobile & Disposable Email protections
- * - Verifies 6-digit Email OTP
- * - Creates user in Supabase Auth (email_confirm: true)
- * - Creates profile in public.profiles table
- * - Sends Congratulations / Welcome email
+ * - Verifies Email OTP (via in-memory store or Supabase Cloud Auth verifyOtp)
+ * - Confirms/Creates user in Supabase Auth (email_confirm: true)
+ * - Upserts profile in public.profiles table
+ * - Sends Welcome email
  * - Sets auth cookies and signs user in
  */
 export async function POST(req: NextRequest) {
@@ -58,16 +58,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Verification code is required.' }, { status: 400 });
     }
 
-    // 1. Verify 6-digit Email OTP
+    // 1. Dual OTP Verification (Local Store OR Supabase Cloud verifyOtp)
+    let isOtpValid = false;
+
+    // Check local store first
     const otpVerification = await verifyEmailOtp({
       email: targetEmail,
       otp: cleanOtp,
     });
 
-    if (!otpVerification.valid) {
+    if (otpVerification.valid) {
+      isOtpValid = true;
+    } else {
+      // Fallback: Check Supabase Auth verifyOtp
+      try {
+        const { data: sbVerifyData, error: sbVerifyErr } = await supabase.auth.verifyOtp({
+          email: targetEmail,
+          token: cleanOtp,
+          type: 'email',
+        });
+
+        if (!sbVerifyErr && (sbVerifyData?.user || sbVerifyData?.session)) {
+          isOtpValid = true;
+        }
+      } catch (sbErr) {
+        console.warn('[Supabase VerifyOtp Fallback Notice]:', sbErr);
+      }
+    }
+
+    if (!isOtpValid) {
       return NextResponse.json({
         success: false,
-        error: otpVerification.error || 'Invalid or expired verification code.',
+        error: otpVerification.error || 'Invalid or expired verification code. Please check your email.',
       }, { status: 400 });
     }
 
@@ -80,7 +102,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 3. Check if user already exists
+    // 3. Find or Create User in Supabase Auth
     let existingUser = null;
     try {
       const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
@@ -127,7 +149,7 @@ export async function POST(req: NextRequest) {
         userId = createdData?.user?.id;
       }
     } else {
-      // User already exists, update password and metadata
+      // User already exists in draft state: update password, confirm email, and set metadata
       await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
         password: targetPassword,
         email_confirm: true,
@@ -139,7 +161,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Upsert profile in `profiles` table
+    // 4. Upsert profile in `profiles` table (Official Account Activation)
     if (userId) {
       try {
         await supabaseAdmin.from('profiles').upsert({

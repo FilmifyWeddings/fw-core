@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isEmailRegistered, isPhoneRegistered, isDisposableEmail, generateAndStoreEmailOtp } from '@/lib/auth-otp-store';
 import { sendEmailOtp } from '@/lib/email-service';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 
 /**
  * POST /api/auth/send-email-otp
  * Validates signup details, blocks duplicate mobile & email, blocks disposable emails,
- * and delivers 6-digit OTP instantly without pre-creating accounts.
+ * and triggers instant 6-digit OTP delivery via Supabase Cloud Mailer (HTTPS) + Hostinger fallback.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 3. Duplicate Email Check (against completed profiles)
+    // 3. Duplicate Email Check (only checks completed active accounts in profiles)
     const emailExists = await isEmailRegistered(targetEmail);
     if (emailExists) {
       return NextResponse.json({
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 4. Duplicate Mobile Number Check (against completed profiles)
+    // 4. Duplicate Mobile Number Check
     const phoneExists = await isPhoneRegistered(cleanPhone);
     if (phoneExists) {
       return NextResponse.json({
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 5. Generate secure 6-digit OTP (valid for 10 minutes)
+    // 5. Generate secure 6-digit OTP in our local store
     const { otp } = await generateAndStoreEmailOtp({
       email: targetEmail,
       name: targetName,
@@ -74,7 +75,24 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Email OTP Generated for ${targetEmail}]: ${otp}`);
 
-    // 6. Fast non-blocking Hostinger SMTP Dispatch in background (Zero Delay)
+    // 6. Trigger Supabase Cloud Mailer (Over HTTPS 443 - Never blocked on VPS!)
+    try {
+      supabaseAdmin.auth.signInWithOtp({
+        email: targetEmail,
+        options: {
+          shouldCreateUser: true,
+          data: {
+            full_name: targetName,
+            workspace_name: targetStudio,
+            phone: fullPhone,
+          },
+        },
+      }).catch((sbErr) => {
+        console.warn('[Supabase Cloud Mailer Warning]:', sbErr?.message);
+      });
+    } catch (_) {}
+
+    // 7. Non-blocking Hostinger SMTP Dispatch in background
     sendEmailOtp({
       toEmail: targetEmail,
       recipientName: targetName,
@@ -86,7 +104,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `A 6-digit verification code has been sent to ${targetEmail}.`,
+      message: `A verification code has been sent to ${targetEmail}.`,
     });
   } catch (err: any) {
     console.error('[Send Email OTP Error]:', err);
