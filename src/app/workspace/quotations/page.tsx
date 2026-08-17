@@ -668,18 +668,15 @@ export default function WorkspaceQuotationsGalleryPage() {
             });
         }
 
-        // Ensure Global System Default is included
-        if (!combined.some(q => (q.quotation_number || q.id) === 'FW-2WT85Y0')) {
+        // Only inject fallback if user has absolutely zero templates loaded
+        if (combined.length === 0) {
           combined.unshift(globalSystemTemplate);
         }
 
-        // Check if any template has is_default = true; if none at all, default to global system template
+        // Check if any template has is_default = true; if none at all, default to first template
         const hasAnyDefault = combined.some(q => q.is_default);
-        if (!hasAnyDefault) {
-          combined = combined.map(q => ({
-            ...q,
-            is_default: (q.quotation_number || q.id) === 'FW-2WT85Y0'
-          }));
+        if (!hasAnyDefault && combined.length > 0) {
+          combined[0].is_default = true;
         }
 
         setQuotations(combined);
