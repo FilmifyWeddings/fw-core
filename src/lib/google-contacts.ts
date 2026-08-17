@@ -107,16 +107,27 @@ export async function syncLeadToGoogleContacts(
       
       // Mark lead as synced in database
       const existingRaw = (lead.raw_payload && typeof lead.raw_payload === 'object') ? lead.raw_payload : {};
-      await supabaseAdmin
-        .from('leads')
-        .update({
-          raw_payload: {
-            ...existingRaw,
+      const updatedRaw = {
+        ...existingRaw,
+        google_synced: true,
+        google_synced_at: new Date().toISOString(),
+      };
+
+      try {
+        await supabaseAdmin
+          .from('leads')
+          .update({
             google_synced: true,
             google_synced_at: new Date().toISOString(),
-          }
-        })
-        .eq('id', lead.id);
+            raw_payload: updatedRaw,
+          })
+          .eq('id', lead.id);
+      } catch (_) {
+        await supabaseAdmin
+          .from('leads')
+          .update({ raw_payload: updatedRaw })
+          .eq('id', lead.id);
+      }
 
       await supabaseAdmin.from('live_logs').insert({
         workspace_id: workspaceId,
@@ -193,12 +204,22 @@ export async function syncLeadToGoogleContacts(
       google_synced_at: new Date().toISOString(),
     };
 
-    await supabaseAdmin
-      .from('leads')
-      .update({
-        raw_payload: updatedRaw,
-      })
-      .eq('id', lead.id);
+    try {
+      await supabaseAdmin
+        .from('leads')
+        .update({
+          google_synced: true,
+          google_contact_id: contactResourceName,
+          google_synced_at: new Date().toISOString(),
+          raw_payload: updatedRaw,
+        })
+        .eq('id', lead.id);
+    } catch (_) {
+      await supabaseAdmin
+        .from('leads')
+        .update({ raw_payload: updatedRaw })
+        .eq('id', lead.id);
+    }
 
     // 9. Write Detailed Live Activity Log
     await supabaseAdmin.from('live_logs').insert({
