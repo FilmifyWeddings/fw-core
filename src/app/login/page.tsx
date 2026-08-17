@@ -192,7 +192,7 @@ export default function LoginPage() {
     }
   };
 
-  // Handle Sign Up Submit: Validates fields & sends 6-digit Email OTP
+  // Handle Sign Up Submit: Validates fields & sends 6-digit Email OTP instantly
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -344,6 +344,7 @@ export default function LoginPage() {
                   src="/images/auth/sc-orange-logo.png"
                   alt="StudioCore SC Logo"
                   fill
+                  unoptimized
                   className="object-contain"
                   priority
                 />
@@ -716,9 +717,10 @@ export default function LoginPage() {
             {/* Capture Graphic (Centered right below login button) */}
             <div className="mt-2.5 sm:mt-3.5 lg:mt-8 relative w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[450px] h-[44px] sm:h-[54px] lg:h-[78px] mx-auto">
               <Image
-                src="/Capture · Manage · Deliver · Grow.png"
+                src="/images/auth/capture-manage-deliver-grow.png"
                 alt="Capture · Manage · Deliver · Grow"
                 fill
+                unoptimized
                 className="object-contain object-center"
                 priority
               />
@@ -728,9 +730,10 @@ export default function LoginPage() {
           {/* 3. Mobile 3D Photographer (Directly below capture with minimal gap) */}
           <div className="block lg:hidden w-full max-w-[340px] sm:max-w-[400px] aspect-[1292/1217] max-h-[30vh] sm:max-h-[34vh] mx-auto mt-1 sm:mt-2 relative shrink-0">
             <Image
-              src="/3D Photographer.png"
+              src="/images/auth/3D-Photographer.png"
               alt="3D Photographer Workspace"
               fill
+              unoptimized
               className="object-contain object-bottom select-none"
               sizes="(max-width: 1024px) 400px, 0px"
               priority
@@ -742,9 +745,10 @@ export default function LoginPage() {
         {/* ── RIGHT COLUMN: LARGE 3D PHOTOGRAPHER (Desktop Only) ── */}
         <div className="hidden lg:flex w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto items-center justify-center relative">
           <Image
-            src="/3D Photographer.png"
+            src="/images/auth/3D-Photographer.png"
             alt="3D Photographer Character Workspace"
             fill
+            unoptimized
             priority
             className="object-contain object-center select-none"
             sizes="(max-width: 1024px) 0vw, (max-width: 1440px) 64vw, 860px"

@@ -60,7 +60,7 @@ export function normalizePhoneNumber(rawPhone: string): string {
 }
 
 /**
- * Check if a phone number is already registered in profiles or user metadata
+ * Check if a phone number is already registered in active profiles
  */
 export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
   const digits = rawPhone.replace(/\D/g, '');
@@ -68,7 +68,7 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
   const raw10 = digits.slice(-10);
 
   try {
-    // 1. Check in profiles table
+    // 1. Check in profiles table (confirmed active users)
     const { data: profiles, error } = await supabaseAdmin
       .from('profiles')
       .select('id, phone')
@@ -79,10 +79,12 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
       return true;
     }
 
-    // 2. Check in Auth user metadata
+    // 2. Check in Auth user metadata if profile exists
     const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
     if (userList?.users) {
       const match = userList.users.some(u => {
+        // Only consider if user has confirmed email or workspace
+        if (!u.email_confirmed_at && !u.user_metadata?.workspace_name) return false;
         const uPhone = (u.user_metadata?.phone || u.phone || '').replace(/\D/g, '');
         return uPhone && (uPhone === digits || uPhone.endsWith(raw10) || digits.endsWith(uPhone.slice(-10)));
       });
@@ -96,13 +98,13 @@ export async function isPhoneRegistered(rawPhone: string): Promise<boolean> {
 }
 
 /**
- * Check if an email is already registered in profiles or auth.users
+ * Check if an email is already registered in active profiles or confirmed users
  */
 export async function isEmailRegistered(rawEmail: string): Promise<boolean> {
   const email = rawEmail.trim().toLowerCase();
 
   try {
-    // 1. Check profiles
+    // 1. Check profiles table (completed active accounts)
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
       .select('id')
@@ -113,10 +115,13 @@ export async function isEmailRegistered(rawEmail: string): Promise<boolean> {
       return true;
     }
 
-    // 2. Check auth users
+    // 2. Check auth users who have completed registration
     const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-    if (userList?.users?.some(u => u.email?.toLowerCase() === email)) {
-      return true;
+    if (userList?.users) {
+      const existing = userList.users.find(u => u.email?.toLowerCase() === email);
+      if (existing && (existing.email_confirmed_at || existing.user_metadata?.workspace_name)) {
+        return true;
+      }
     }
   } catch (err) {
     console.error('[isEmailRegistered Check Error]:', err);

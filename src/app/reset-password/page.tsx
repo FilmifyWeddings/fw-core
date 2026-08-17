@@ -105,6 +105,7 @@ export default function ResetPasswordRootPage() {
                   src="/images/auth/sc-orange-logo.png"
                   alt="StudioCore SC Logo"
                   fill
+                  unoptimized
                   className="object-contain"
                   priority
                 />
@@ -131,21 +132,17 @@ export default function ResetPasswordRootPage() {
               </p>
             </div>
 
-            <div className="mt-3 sm:mt-4">
+            <div className="mt-4 sm:mt-6">
               {isSuccess ? (
-                <div className="p-4 sm:p-6 rounded-2xl bg-white border border-emerald-300 text-center space-y-2.5 shadow-sm">
-                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-md">
-                    <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center mx-auto text-emerald-600">
+                    <CheckCircle2 className="w-6 h-6" />
                   </div>
-                  <div>
-                    <h3 className="text-xs sm:text-base font-extrabold text-zinc-900">
-                      Password Updated
-                    </h3>
-                    <p className="text-[11px] sm:text-xs text-zinc-600 mt-0.5 leading-relaxed">
-                      Your password has been updated. Redirecting to login...
-                    </p>
-                  </div>
-                  <div className="pt-1">
+                  <h3 className="font-black text-base text-zinc-900">Password Updated!</h3>
+                  <p className="text-xs text-zinc-600">
+                    Your password has been changed. Redirecting you to login...
+                  </p>
+                  <div className="pt-2">
                     <Link
                       href="/login"
                       className="inline-block px-4 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition-all"
@@ -248,9 +245,10 @@ export default function ResetPasswordRootPage() {
             {/* Capture graphic */}
             <div className="mt-3 sm:mt-4 lg:mt-8 relative w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[450px] h-[46px] sm:h-[58px] lg:h-[78px] mx-auto">
               <Image
-                src="/Capture · Manage · Deliver · Grow.png"
+                src="/images/auth/capture-manage-deliver-grow.png"
                 alt="Capture · Manage · Deliver · Grow"
                 fill
+                unoptimized
                 className="object-contain object-center"
                 priority
               />
@@ -260,9 +258,10 @@ export default function ResetPasswordRootPage() {
           {/* Mobile 3D Photographer */}
           <div className="block lg:hidden w-full max-w-[340px] sm:max-w-[400px] aspect-[1292/1217] max-h-[33vh] sm:max-h-[36vh] mx-auto mt-1 sm:mt-2 relative shrink-0">
             <Image
-              src="/3D Photographer.png"
+              src="/images/auth/3D-Photographer.png"
               alt="3D Photographer Workspace"
               fill
+              unoptimized
               className="object-contain object-bottom select-none"
               sizes="(max-width: 1024px) 400px, 0px"
               priority
@@ -274,9 +273,10 @@ export default function ResetPasswordRootPage() {
         {/* Right: 3D Photographer (Desktop Only) */}
         <div className="hidden lg:flex w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto items-center justify-center relative">
           <Image
-            src="/3D Photographer.png"
+            src="/images/auth/3D-Photographer.png"
             alt="3D StudioCore Photographer Workspace"
             fill
+            unoptimized
             priority
             className="object-contain object-center select-none"
             sizes="(max-width: 1024px) 0vw, (max-width: 1440px) 64vw, 860px"

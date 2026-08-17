@@ -62,6 +62,7 @@ export default function ForgotPasswordPage() {
                   src="/images/auth/sc-orange-logo.png"
                   alt="StudioCore SC Logo"
                   fill
+                  unoptimized
                   className="object-contain"
                   priority
                 />
@@ -77,63 +78,61 @@ export default function ForgotPasswordPage() {
             </div>
           </div>
 
-          {/* Form Block */}
-          <div className="my-auto pt-3 sm:pt-5 lg:pt-0 lg:mt-10 xl:mt-12 flex flex-col">
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-600 hover:text-[#F36F21] transition-colors mb-2 sm:mb-4"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Login</span>
-            </Link>
+          {/* Form Card */}
+          <div className="my-auto pt-4 sm:pt-6 lg:pt-0 lg:mt-6 xl:mt-8 flex flex-col">
+            
+            <div className="mb-4">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-zinc-900 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Sign In</span>
+              </Link>
+            </div>
 
             <div>
-              <h1 className="text-2xl sm:text-3xl xl:text-[36px] font-black text-zinc-900 tracking-tight leading-tight">
-                Reset Password
+              <h1 className="text-xl sm:text-2xl xl:text-[30px] font-black text-zinc-900 tracking-tight leading-tight">
+                Reset Your Password
               </h1>
-              <p className="text-xs sm:text-sm text-zinc-600 mt-0.5 font-normal">
-                Enter your email address to receive a secure reset link.
+              <p className="text-[11px] sm:text-xs text-zinc-600 mt-1 font-normal">
+                Enter your registered email and we&apos;ll send you a secure link to create a new password.
               </p>
             </div>
 
-            <div className="mt-3 sm:mt-4">
+            <div className="mt-3.5 sm:mt-4">
               {isSubmitted ? (
-                <div className="p-4 sm:p-6 rounded-2xl bg-white border border-emerald-300 text-center space-y-2.5 shadow-sm">
-                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-md">
-                    <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-left space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Reset Link Dispatched</span>
                   </div>
-                  <div>
-                    <h3 className="text-xs sm:text-base font-extrabold text-zinc-900">
-                      Reset Link Dispatched
-                    </h3>
-                    <p className="text-[11px] sm:text-xs text-zinc-600 mt-0.5 leading-relaxed">
-                      Check your inbox at <strong className="font-mono text-zinc-900">{email}</strong> for instructions.
-                    </p>
-                  </div>
-                  <div className="pt-1">
+                  <p className="text-xs text-emerald-700 leading-relaxed">
+                    If an account is associated with <strong>{email}</strong>, you will receive an email with reset instructions in a moment.
+                  </p>
+                  <div className="pt-2">
                     <Link
                       href="/login"
-                      className="inline-block px-4 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition-all"
+                      className="text-xs font-bold text-[#F36F21] hover:underline flex items-center gap-1"
                     >
-                      Return to Log In &rarr;
+                      Return to login <ArrowRight className="w-3 h-3" />
                     </Link>
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3.5">
-                  <div>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3.5 pointer-events-none text-zinc-400">
-                        <Mail className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => { setEmail(e.target.value); setError(null); }}
-                        placeholder="Email Address"
-                        className="w-full pl-10 pr-3 h-10 sm:h-[48px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                      />
+                <form onSubmit={handleSubmit} className="space-y-3" autoComplete="off">
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                      <Mail className="w-4 h-4 stroke-[2]" />
                     </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); setError(null); }}
+                      placeholder="Registered Email Address"
+                      required
+                      className="w-full pl-10 pr-4 h-10 sm:h-[46px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                    />
                   </div>
 
                   {error && (
@@ -164,9 +163,10 @@ export default function ForgotPasswordPage() {
             {/* Capture graphic */}
             <div className="mt-3 sm:mt-4 lg:mt-8 relative w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[450px] h-[46px] sm:h-[58px] lg:h-[78px] mx-auto">
               <Image
-                src="/Capture · Manage · Deliver · Grow.png"
+                src="/images/auth/capture-manage-deliver-grow.png"
                 alt="Capture · Manage · Deliver · Grow"
                 fill
+                unoptimized
                 className="object-contain object-center"
                 priority
               />
@@ -176,9 +176,10 @@ export default function ForgotPasswordPage() {
           {/* Mobile 3D Photographer */}
           <div className="block lg:hidden w-full max-w-[340px] sm:max-w-[400px] aspect-[1292/1217] max-h-[33vh] sm:max-h-[36vh] mx-auto mt-1 sm:mt-2 relative shrink-0">
             <Image
-              src="/3D Photographer.png"
+              src="/images/auth/3D-Photographer.png"
               alt="3D Photographer Workspace"
               fill
+              unoptimized
               className="object-contain object-bottom select-none"
               sizes="(max-width: 1024px) 400px, 0px"
               priority
@@ -190,9 +191,10 @@ export default function ForgotPasswordPage() {
         {/* Right: 3D Photographer (Desktop Only) */}
         <div className="hidden lg:flex w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto items-center justify-center relative">
           <Image
-            src="/3D Photographer.png"
+            src="/images/auth/3D-Photographer.png"
             alt="3D StudioCore Photographer Workspace"
             fill
+            unoptimized
             priority
             className="object-contain object-center select-none"
             sizes="(max-width: 1024px) 0vw, (max-width: 1440px) 64vw, 860px"
