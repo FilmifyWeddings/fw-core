@@ -7,15 +7,27 @@ import Image from 'next/image';
 import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
+// Helper to safely parse email from Supabase recovery JWT
+function getEmailFromRecoveryToken(tokenStr: string): string | null {
+  try {
+    const payloadBase64 = tokenStr.split('.')[1];
+    if (!payloadBase64) return null;
+    const jsonStr = atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(jsonStr);
+    return payload?.email || payload?.user_metadata?.email || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function ResetPasswordRootPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const tokenParam = searchParams.get('token') || '';
-  const emailParam = searchParams.get('email') || '';
 
   const [token, setToken] = useState(tokenParam);
-  const [userEmail, setUserEmail] = useState(emailParam);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -31,10 +43,10 @@ export default function ResetPasswordRootPage() {
   useEffect(() => {
     let isMounted = true;
 
-    const checkSessionAndTokens = async () => {
-      // 1. Check for active Supabase Auth session or hash
+    const validateAccess = async () => {
       const hash = typeof window !== 'undefined' ? window.location.hash : '';
       
+      // 1. Check for error in hash
       if (hash.includes('error=')) {
         if (isMounted) {
           setError('This password reset link is invalid or has expired. Please request a fresh reset link.');
@@ -43,41 +55,32 @@ export default function ResetPasswordRootPage() {
         return;
       }
 
-      // Check if hash has access_token
-      if (hash.includes('access_token=')) {
-        setIsSupabaseRecovery(true);
-        setIsTokenValid(true);
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.email && isMounted) {
-          setUserEmail(session.user.email);
-        }
-        if (isMounted) setValidating(false);
-        return;
-      }
+      // 2. Check for Supabase Auth recovery token in URL hash
+      if (hash.includes('type=recovery') && hash.includes('access_token=')) {
+        const match = hash.match(/access_token=([^&]+)/);
+        const accessToken = match ? match[1] : '';
+        const emailFromJwt = accessToken ? getEmailFromRecoveryToken(accessToken) : null;
 
-      // Check active Supabase session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        if (isMounted) {
+        if (emailFromJwt && isMounted) {
           setIsSupabaseRecovery(true);
           setIsTokenValid(true);
-          if (session.user.email) setUserEmail(session.user.email);
+          setUserEmail(emailFromJwt);
           setValidating(false);
+          return;
         }
-        return;
       }
 
-      // 2. Check for custom token parameter
+      // 3. Check for custom token in query params
       if (tokenParam) {
         try {
           const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(tokenParam)}`);
           const data = await res.json().catch(() => ({}));
 
           if (isMounted) {
-            if (res.ok && data.valid) {
+            if (res.ok && data.valid && data.email) {
               setIsTokenValid(true);
               setToken(tokenParam);
-              if (data.email) setUserEmail(data.email);
+              setUserEmail(data.email);
             } else {
               setError(data.error || 'This reset link has expired or is invalid. Please request a fresh link.');
             }
@@ -90,29 +93,17 @@ export default function ResetPasswordRootPage() {
         return;
       }
 
-      // 3. No token and no recovery session
+      // 4. No valid recovery token found
       if (isMounted) {
+        setIsTokenValid(false);
         setValidating(false);
       }
     };
 
-    // Listen to Supabase PASSWORD_RECOVERY auth state event
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && window.location.hash.includes('type=recovery'))) {
-        if (isMounted) {
-          setIsSupabaseRecovery(true);
-          setIsTokenValid(true);
-          if (session?.user?.email) setUserEmail(session.user.email);
-          setValidating(false);
-        }
-      }
-    });
-
-    checkSessionAndTokens();
+    validateAccess();
 
     return () => {
       isMounted = false;
-      authListener?.subscription?.unsubscribe();
     };
   }, [tokenParam]);
 
@@ -145,7 +136,7 @@ export default function ResetPasswordRootPage() {
 
     try {
       if (isSupabaseRecovery) {
-        // Use Supabase native updateUser
+        // Update password for recovery session in Supabase Auth
         const { error: sbErr } = await supabase.auth.updateUser({
           password: password,
         });
@@ -154,12 +145,14 @@ export default function ResetPasswordRootPage() {
           setError(sbErr.message || 'Failed to update password. Link may have expired.');
         } else {
           setIsSuccess(true);
+          // Sign out any active session to ensure clean fresh login
+          await supabase.auth.signOut().catch(() => {});
           setTimeout(() => {
             router.push('/login');
           }, 2000);
         }
       } else if (token) {
-        // Use Server-side Token validation & update
+        // Update password via server-side endpoint tied to specific token & email
         const res = await fetch('/api/auth/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -173,6 +166,8 @@ export default function ResetPasswordRootPage() {
 
         if (res.ok && data.success) {
           setIsSuccess(true);
+          // Sign out any active session to ensure clean fresh login
+          await supabase.auth.signOut().catch(() => {});
           setTimeout(() => {
             router.push('/login');
           }, 2000);
@@ -241,7 +236,7 @@ export default function ResetPasswordRootPage() {
                 Create New Password
               </h1>
               <p className="text-[11px] sm:text-xs text-zinc-600 mt-1 font-normal">
-                Enter your new password below to secure your StudioCore workspace account.
+                Enter your new password below to update credentials for this account.
               </p>
             </div>
 
@@ -249,7 +244,7 @@ export default function ResetPasswordRootPage() {
             {validating ? (
               <div className="mt-6 p-8 rounded-2xl bg-white border border-zinc-200 text-center space-y-3 shadow-2xs">
                 <div className="w-6 h-6 border-2 border-[#F36F21] border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-xs font-bold text-zinc-600">Verifying secure reset link...</p>
+                <p className="text-xs font-bold text-zinc-600">Verifying secure account link...</p>
               </div>
             ) : isSuccess ? (
               /* Success State */
@@ -260,7 +255,7 @@ export default function ResetPasswordRootPage() {
                 <div>
                   <h3 className="text-sm font-black text-emerald-950">Password Updated Successfully!</h3>
                   <p className="text-xs text-emerald-700 mt-1">
-                    Your new password has been set. Redirecting to sign in...
+                    Password for <strong>{userEmail}</strong> has been changed. Redirecting to sign in...
                   </p>
                 </div>
                 <Link
@@ -270,7 +265,7 @@ export default function ResetPasswordRootPage() {
                   Sign In Now →
                 </Link>
               </div>
-            ) : !isTokenValid ? (
+            ) : !isTokenValid || !userEmail ? (
               /* Missing or Invalid Link State */
               <div className="mt-4 p-5 rounded-2xl bg-rose-50 border border-rose-200 text-left space-y-3 shadow-xs">
                 <div className="flex items-center gap-2 text-rose-800 font-bold text-sm">
@@ -293,12 +288,11 @@ export default function ResetPasswordRootPage() {
             ) : (
               /* Password Reset Form */
               <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
-                {userEmail && (
-                  <div className="p-2.5 rounded-xl bg-orange-50/80 border border-orange-200/80 flex items-center gap-2 text-xs font-semibold text-orange-900">
-                    <ShieldCheck className="w-4 h-4 text-[#F36F21] shrink-0" />
-                    <span className="truncate">Account: <strong>{userEmail}</strong></span>
-                  </div>
-                )}
+                {/* Specific Account Badge */}
+                <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 flex items-center gap-2.5 text-xs font-semibold text-orange-950">
+                  <ShieldCheck className="w-4 h-4 text-[#F36F21] shrink-0" />
+                  <span className="truncate">Resetting password for: <strong className="font-bold text-zinc-900">{userEmail}</strong></span>
+                </div>
 
                 {error && (
                   <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
