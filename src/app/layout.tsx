@@ -4,6 +4,7 @@ import { SidebarLayout } from "@/components/sidebar-layout";
 import { Suspense } from "react";
 
 import { VersionGuard } from "@/components/VersionGuard";
+import { AuthRedirectGuard } from "@/components/AuthRedirectGuard";
 
 export const metadata: Metadata = {
   title: "FW Studio Suite - Lead Management & WhatsApp Drip Automation Platform",
@@ -30,6 +31,7 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-zinc-50 dark:bg-[#070708] text-zinc-900 dark:text-white transition-colors duration-200" suppressHydrationWarning>
+        <AuthRedirectGuard />
         <Suspense fallback={<div className="min-h-screen w-full bg-zinc-50 dark:bg-[#070708]" />}>
           <VersionGuard>
             <SidebarLayout>{children}</SidebarLayout>
