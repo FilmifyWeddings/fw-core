@@ -14,12 +14,12 @@ export async function GET(req: NextRequest) {
       `<!DOCTYPE html>
       <html>
         <head>
-          <title>Google Authentication</title>
+          <title>Google Authentication - StudioCore</title>
           <style>
             body {
-              background-color: #070708;
-              color: white;
-              font-family: sans-serif;
+              background-color: #f8f9fa;
+              color: #18181b;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
               display: flex;
               align-items: center;
               justify-content: center;
@@ -27,31 +27,46 @@ export async function GET(req: NextRequest) {
               margin: 0;
             }
             .card {
-              background: #0d0d0e;
-              border: 1px solid #1f1f23;
-              padding: 24px;
-              border-radius: 16px;
+              background: #ffffff;
+              border: 1px solid #e4e4e7;
+              padding: 32px 24px;
+              border-radius: 20px;
               text-align: center;
               max-width: 320px;
-              box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+              box-shadow: 0 10px 25px rgba(0,0,0,0.06);
             }
-            h3 { color: ${success ? '#10b981' : '#f43f5e'}; margin-top: 0; }
-            p { color: #a1a1aa; font-size: 13px; line-height: 1.5; }
+            .icon {
+              width: 48px;
+              height: 48px;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              margin: 0 auto 16px;
+              font-size: 22px;
+              background: ${success ? '#ecfdf5' : '#fff1f2'};
+              color: ${success ? '#059669' : '#e11d48'};
+            }
+            h3 { color: #09090b; margin: 0 0 8px; font-size: 17px; font-weight: 700; }
+            p { color: #71717a; font-size: 13px; line-height: 1.5; margin: 0 0 16px; }
             button {
-              background: #f97316;
+              background: #09090b;
               border: none;
-              color: black;
-              font-weight: bold;
-              padding: 8px 16px;
-              border-radius: 8px;
+              color: white;
+              font-weight: 600;
+              font-size: 12px;
+              padding: 10px 20px;
+              border-radius: 10px;
               cursor: pointer;
-              margin-top: 12px;
+              transition: opacity 0.2s;
             }
+            button:hover { opacity: 0.9; }
           </style>
         </head>
         <body>
           <div class="card">
-            <h3>${success ? 'Connected!' : 'Error'}</h3>
+            <div class="icon">${success ? '✓' : '✕'}</div>
+            <h3>${success ? 'Connected Successfully!' : 'Authentication Failed'}</h3>
             <p>${message}</p>
             <button onclick="window.close()">Close Window</button>
           </div>
@@ -107,8 +122,9 @@ export async function GET(req: NextRequest) {
     // ── Redirect URI: Reads env var first, then dynamically falls back ────────
     let redirectUri = process.env.GOOGLE_REDIRECT_URI;
     if (!redirectUri) {
-      const origin = req.nextUrl.origin;
-      redirectUri = `${origin}/api/auth/google/callback`;
+      const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
+      const proto = req.headers.get('x-forwarded-proto') || (req.nextUrl.protocol ? req.nextUrl.protocol.replace(':', '') : 'https');
+      redirectUri = `${proto}://${host}/api/auth/google/callback`;
     }
 
     if (!redirectUri || !redirectUri.startsWith('http')) {

@@ -690,28 +690,25 @@ function ProviderConfigCore() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070708] text-white overflow-y-auto font-sans p-6 relative">
-      {/* Glow effect */}
-      <div className="absolute top-0 right-1/4 w-[400px] h-[400px] bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
-
+    <div className="min-h-screen bg-[#F8F9FA] text-zinc-900 overflow-y-auto font-sans p-4 sm:p-6 lg:p-8 relative">
       <div className="max-w-5xl mx-auto space-y-6">
         
         {/* Back navigation */}
         <button
           onClick={() => router.push('/dashboard/integrations')}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-zinc-400 hover:text-white transition-all shadow-md"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-600 hover:text-zinc-900 transition-all shadow-2xs cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" /> Back to Integrations
         </button>
 
         {/* Dynamic configuration view */}
-        <div className="p-6 rounded-3xl border border-zinc-805 bg-zinc-950/40 backdrop-blur-md space-y-6 shadow-2xl relative overflow-hidden">
+        <div className="p-6 sm:p-8 rounded-3xl border border-zinc-200 bg-white shadow-xs space-y-6 relative overflow-hidden">
           
           {/* Header */}
-          <div className="flex justify-between items-start pb-5 border-b border-zinc-900">
+          <div className="flex justify-between items-start pb-5 border-b border-zinc-100">
             <div className="flex items-center gap-4">
               {getProviderLogo(provider) && (
-                <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm p-2 bg-white/5">
+                <div className="w-12 h-12 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-center shrink-0 shadow-2xs p-2.5">
                   <img 
                     src={`/images/integrations/${getProviderLogo(provider)}`} 
                     alt={provider} 
@@ -720,16 +717,20 @@ function ProviderConfigCore() {
                 </div>
               )}
               <div>
-                <span className="text-[10px] text-zinc-550 font-mono tracking-widest uppercase">CONFIGURATION PANEL</span>
-                <h1 className="text-2xl font-extrabold tracking-tight text-white capitalize mt-0.5 flex items-center gap-2">
+                <span className="text-[10px] text-zinc-400 font-mono tracking-widest uppercase font-semibold">CONFIGURATION PANEL</span>
+                <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 capitalize mt-0.5 flex items-center gap-2">
                   {provider?.replace('-', ' ')}
                 </h1>
               </div>
             </div>
             
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-850">
-              <span className={`w-1.5 h-1.5 rounded-full ${status === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              <span className="text-[10px] font-bold text-zinc-400 capitalize">{status}</span>
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-bold capitalize ${
+              status === 'connected' 
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
+              <span>{status}</span>
             </div>
           </div>
 
@@ -738,19 +739,19 @@ function ProviderConfigCore() {
             {/* 1. META ADS MANAGER VIEW */}
             {provider === 'meta-ads' && (
               <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
-                  <BarChart3 className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-zinc-400 leading-normal">
+                <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-100 flex items-start gap-3">
+                  <BarChart3 className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-900 leading-normal">
                     Connect your Facebook Business Account to retrieve leads from Facebook Ads Instant Forms.
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Facebook Page</label>
+                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Facebook Page</label>
                   <select 
                     value={selectedPage} 
                     onChange={e => setSelectedPage(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="">Select Connected Facebook Page</option>
                     <option value="page-1">Sushant Photography - Facebook Page</option>
@@ -758,52 +759,47 @@ function ProviderConfigCore() {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-zinc-900/30 border border-zinc-850/60">
-                  <span className="text-xs text-zinc-300">Synchronize all active forms</span>
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
+                  <span className="text-xs font-semibold text-zinc-800">Synchronize all active forms</span>
                   <button 
                     type="button"
                     onClick={() => setSyncForms(!syncForms)}
-                    className={`w-9 h-5 rounded-full p-0.5 transition-colors ${syncForms ? 'bg-emerald-500' : 'bg-zinc-800'}`}
+                    className={`w-10 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${syncForms ? 'bg-emerald-600' : 'bg-zinc-300'}`}
                   >
-                    <div className={`w-4 h-4 rounded-full bg-white dark:bg-zinc-950 transition-transform ${syncForms ? 'translate-x-4' : 'translate-x-0'}`} />
+                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${syncForms ? 'translate-x-5' : 'translate-x-0'}`} />
                   </button>
                 </div>
               </div>
             )}
 
-
-            {/* WhatsApp Web — now handled by dedicated full-screen /dashboard/integrations/whatsapp-web route */}
-
-
-
             {/* 3. PERSONAL WEBSITE WEBHOOK VIEW */}
             {provider === 'personal-website' && (
               <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
-                  <Globe className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-zinc-400 leading-normal">
+                <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-100 flex items-start gap-3">
+                  <Globe className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-900 leading-normal">
                     Ingest leads from WordPress Contact Form 7, Elementor Forms, or Webflow. Copy the endpoint URL below.
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Key className="w-4 h-4 text-amber-400" /> Webhook API URL
+                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Key className="w-4 h-4 text-amber-500" /> Webhook API URL
                   </label>
                   
-                  <div className="flex items-center gap-2 p-3 bg-zinc-950 border border-zinc-900 rounded-xl overflow-hidden">
+                  <div className="flex items-center gap-2 p-3 bg-zinc-50 border border-zinc-200 rounded-xl overflow-hidden">
                     <input
                       type="text"
                       readOnly
                       value={webhookUrl || 'Loading...'}
-                      className="bg-transparent border-none text-[11px] text-zinc-300 font-mono focus:outline-none flex-1 truncate"
+                      className="bg-transparent border-none text-[11px] text-zinc-800 font-mono focus:outline-none flex-1 truncate font-semibold"
                     />
                     <button
                       type="button"
                       onClick={copyUrlToClipboard}
-                      className="p-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all shrink-0"
+                      className="p-2 bg-white hover:bg-zinc-100 border border-zinc-200 rounded-lg text-zinc-600 hover:text-zinc-900 transition-all shrink-0 cursor-pointer shadow-2xs"
                     >
-                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -812,49 +808,51 @@ function ProviderConfigCore() {
 
             {/* 4. GOOGLE CONTACTS VIEW */}
             {provider === 'google-contacts' && (
-              <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
-                  <UserPlus className="w-5 h-5 text-sky-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-zinc-400 leading-normal">
+              <div className="space-y-5">
+                <div className="p-4 rounded-2xl bg-sky-50 border border-sky-100 flex items-start gap-3">
+                  <UserPlus className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-sky-900 leading-normal font-medium">
                     Auto-sync incoming lead contact details directly to Google Contacts with custom labels and prefix/suffix name formatting rules.
                   </p>
                 </div>
 
                 {sheetsError && (
-                  <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs leading-normal">
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs leading-normal">
                     <strong className="block font-bold">Error:</strong>
                     <p className="opacity-90">{sheetsError}</p>
                   </div>
                 )}
 
                 {status !== 'connected' ? (
-                  <div className="p-6 rounded-2xl border border-zinc-850 bg-zinc-900/10 text-center space-y-4">
-                    <UserPlus className="w-12 h-12 text-zinc-650 mx-auto" />
+                  <div className="p-8 rounded-2xl border border-zinc-200 bg-zinc-50/50 text-center space-y-4">
+                    <div className="w-14 h-14 rounded-2xl bg-sky-100/80 border border-sky-200 flex items-center justify-center mx-auto text-sky-600">
+                      <UserPlus className="w-7 h-7" />
+                    </div>
                     <div className="space-y-1">
-                      <h3 className="text-sm font-bold text-zinc-200">Google Account Not Connected</h3>
-                      <p className="text-xs text-zinc-555 max-w-sm mx-auto">
-                        Authorize your Google account to enable automatic sync to Google Contacts and create labels.
+                      <h3 className="text-sm font-bold text-zinc-900">Google Account Not Connected</h3>
+                      <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                        Authorize your Google account to enable automatic sync to Google Contacts and create contact labels.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={startGoogleOAuth}
-                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-black text-xs font-bold rounded-xl transition-all shadow-md"
+                      className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-2"
                     >
-                      Connect Google Account
+                      <UserPlus className="w-4 h-4" /> Connect Google Account
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-6">
                     {/* Standalone Tabbed Sub-navigation */}
-                    <div className="flex border-b border-zinc-800 mb-6">
+                    <div className="flex border-b border-zinc-200 mb-6">
                       <button
                         type="button"
                         onClick={() => setContactsTab('configure')}
-                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider ${
+                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider cursor-pointer ${
                           contactsTab === 'configure'
-                            ? 'border-sky-500 text-white'
-                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                            ? 'border-sky-600 text-sky-700'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-700'
                         }`}
                       >
                         Configuration
@@ -862,37 +860,37 @@ function ProviderConfigCore() {
                       <button
                         type="button"
                         onClick={() => setContactsTab('status')}
-                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider flex items-center gap-2 ${
+                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider flex items-center gap-2 cursor-pointer ${
                           contactsTab === 'status'
-                            ? 'border-sky-500 text-white'
-                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                            ? 'border-sky-600 text-sky-700'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-700'
                         }`}
                       >
-                        Status & History
+                        Status &amp; History
                       </button>
                     </div>
 
                     {contactsTab === 'configure' && (
                       <div className="space-y-6">
                         {/* 1. Global Enable Ingest Switch */}
-                        <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 flex justify-between items-center">
+                        <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center">
                           <div>
-                            <h4 className="text-xs font-bold text-zinc-200">Enable Google Contacts Ingestion Sync</h4>
-                            <p className="text-[10px] text-zinc-500 mt-0.5">Automatically sync all newly captured leads into your phone contacts in real-time.</p>
+                            <h4 className="text-xs font-bold text-zinc-900">Enable Google Contacts Ingestion Sync</h4>
+                            <p className="text-[11px] text-zinc-500 mt-0.5">Automatically sync all newly captured leads into your phone contacts in real-time.</p>
                           </div>
                           
                           {/* Premium Animated iOS Toggle switch */}
                           <button
                             type="button"
                             onClick={() => setContactsEnabled(!contactsEnabled)}
-                            className={`w-10 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 focus:outline-none ${
-                              contactsEnabled ? 'bg-sky-500' : 'bg-zinc-700'
+                            className={`w-11 h-6 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 focus:outline-none ${
+                              contactsEnabled ? 'bg-sky-600' : 'bg-zinc-300'
                             }`}
                           >
                             <motion.div
                               layout
                               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                              className="bg-white w-4 h-4 rounded-full shadow-md"
+                              className="bg-white w-5 h-5 rounded-full shadow-md"
                               animate={{ x: contactsEnabled ? 20 : 0 }}
                             />
                           </button>
@@ -903,8 +901,8 @@ function ProviderConfigCore() {
                             
                             {/* 2. Contact Label Selector (Combobox) */}
                             <div className="space-y-2 relative">
-                              <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Contact Group / Label</label>
-                              <p className="text-[10px] text-zinc-500">Associate synced contacts with a specific group/label for easier phone filtering.</p>
+                              <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider block">Contact Group / Label</label>
+                              <p className="text-[11px] text-zinc-500">Associate synced contacts with a specific group/label for easier phone filtering.</p>
                               
                               <div className="flex gap-2">
                                 <div className="relative flex-1">
@@ -917,15 +915,15 @@ function ProviderConfigCore() {
                                       setShowLabelsDropdown(true);
                                     }}
                                     onFocus={() => setShowLabelsDropdown(true)}
-                                    className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
+                                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-sky-500"
                                   />
                                   {contactsLabelName && !contactsSearchQuery && (
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded-md border border-sky-200">
                                       {contactsLabelName}
                                     </span>
                                   )}
                                   {showLabelsDropdown && (
-                                    <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-zinc-950 border border-zinc-900 rounded-xl shadow-xl">
+                                    <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-white border border-zinc-200 rounded-2xl shadow-xl">
                                       {isLoadingLabels ? (
                                         <div className="px-4 py-3 text-xs text-zinc-500 italic flex items-center gap-2">
                                           <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading labels...
@@ -941,7 +939,7 @@ function ProviderConfigCore() {
                                               setContactsSearchQuery('');
                                               setShowLabelsDropdown(false);
                                             }}
-                                            className="w-full text-left px-4 py-2.5 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-white transition-colors border-b border-zinc-900"
+                                            className="w-full text-left px-4 py-2.5 text-xs text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors border-b border-zinc-100 font-medium cursor-pointer"
                                           >
                                             -- No Label / Default Group --
                                           </button>
@@ -957,14 +955,14 @@ function ProviderConfigCore() {
                                                   setContactsSearchQuery('');
                                                   setShowLabelsDropdown(false);
                                                 }}
-                                                className="w-full text-left px-4 py-2.5 text-xs text-zinc-350 hover:bg-zinc-900 hover:text-white transition-colors flex justify-between items-center"
+                                                className="w-full text-left px-4 py-2.5 text-xs text-zinc-800 hover:bg-sky-50 hover:text-sky-900 transition-colors flex justify-between items-center font-medium cursor-pointer"
                                               >
                                                 <span>{l.name}</span>
-                                                <span className="text-[10px] text-zinc-500 font-mono">{l.memberCount} members</span>
+                                                <span className="text-[10px] text-zinc-400 font-mono font-bold">{l.memberCount} members</span>
                                               </button>
                                             ))}
                                           {labelsList.filter(l => l.name.toLowerCase().includes(contactsSearchQuery.toLowerCase())).length === 0 && (
-                                            <div className="px-4 py-3 text-xs text-zinc-500 italic">No labels found. Create one below!</div>
+                                            <div className="px-4 py-3 text-xs text-zinc-400 italic">No labels found. Create one below!</div>
                                           )}
                                         </>
                                       )}
@@ -975,7 +973,7 @@ function ProviderConfigCore() {
                                   type="button"
                                   onClick={fetchContactsLabels}
                                   title="Refresh label list"
-                                  className="p-3 bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 rounded-xl text-zinc-400 hover:text-white transition-all shrink-0"
+                                  className="p-3 bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 rounded-xl text-zinc-600 hover:text-zinc-900 transition-all shrink-0 cursor-pointer shadow-2xs"
                                 >
                                   <RefreshCw className={`w-4 h-4 ${isLoadingLabels ? 'animate-spin' : ''}`} />
                                 </button>
@@ -983,22 +981,22 @@ function ProviderConfigCore() {
                             </div>
 
                             {/* 3. Inline Label Provisioning Portal */}
-                            <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 space-y-3">
-                              <h4 className="text-xs font-bold text-zinc-350">Create New Label</h4>
-                              <p className="text-[10px] text-zinc-500">Type a name to instantly create and select a new label group in your Google Account.</p>
+                            <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                              <h4 className="text-xs font-bold text-zinc-900">Create New Label</h4>
+                              <p className="text-[11px] text-zinc-500">Type a name to instantly create and select a new label group in your Google Account.</p>
                               <div className="flex gap-2">
                                 <input
                                   type="text"
-                                  placeholder="e.g., Filmify Leads 2026"
+                                  placeholder="e.g., Studio Leads 2026"
                                   value={newLabelName}
                                   onChange={e => setNewLabelName(e.target.value)}
-                                  className="flex-1 px-4 py-2.5 bg-zinc-950 border border-zinc-900 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-sky-500/40"
+                                  className="flex-1 px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:outline-none focus:border-sky-500"
                                 />
                                 <button
                                   type="button"
                                   onClick={createNewLabel}
                                   disabled={isCreatingLabel || !newLabelName.trim()}
-                                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-xs text-zinc-200 border border-zinc-800 rounded-xl font-bold transition-all flex items-center gap-1.5"
+                                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-xs text-white rounded-xl font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
                                 >
                                   {isCreatingLabel ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Create Label'}
                                 </button>
@@ -1006,36 +1004,36 @@ function ProviderConfigCore() {
                             </div>
 
                             {/* 4. Name Template Configuration (Prefix/Suffix) */}
-                            <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 space-y-4">
-                              <h4 className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">Name Customization Template</h4>
-                              <p className="text-[10px] text-zinc-500">Configure naming prefix/postfix structures to tag contacts in your address book.</p>
+                            <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-4">
+                              <h4 className="text-xs font-bold text-zinc-900 flex items-center gap-1.5">Name Customization Template</h4>
+                              <p className="text-[11px] text-zinc-500">Configure naming prefix/postfix structures to tag contacts in your address book.</p>
                               
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase">Prefix Template</label>
+                                  <label className="text-[10px] font-bold text-zinc-600 uppercase">Prefix Template</label>
                                   <input
                                     type="text"
                                     placeholder="e.g., FW "
                                     value={contactsPrefix}
                                     onChange={e => setContactsPrefix(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-900 rounded-xl text-xs text-zinc-350 focus:outline-none focus:border-sky-500/40"
+                                    className="w-full px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:outline-none focus:border-sky-500"
                                   />
                                 </div>
                                 <div className="space-y-1.5">
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase">Suffix Template</label>
+                                  <label className="text-[10px] font-bold text-zinc-600 uppercase">Suffix Template</label>
                                   <input
                                     type="text"
                                     placeholder="e.g.,  Lead 2026"
                                     value={contactsSuffix}
                                     onChange={e => setContactsSuffix(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-zinc-955 border border-zinc-900 rounded-xl text-xs text-zinc-350 focus:outline-none focus:border-sky-500/40"
+                                    className="w-full px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:outline-none focus:border-sky-500"
                                   />
                                 </div>
                               </div>
 
-                              <div className="p-3 bg-zinc-955 border border-zinc-900 rounded-xl">
-                                <span className="text-[9px] text-zinc-500 uppercase font-mono tracking-wider">Contact Preview</span>
-                                <div className="text-xs font-bold text-sky-400 mt-1">
+                              <div className="p-3 bg-sky-50/70 border border-sky-100 rounded-xl">
+                                <span className="text-[9px] text-sky-600 uppercase font-mono tracking-wider font-bold">Contact Preview</span>
+                                <div className="text-xs font-extrabold text-sky-900 mt-1">
                                   {contactsPrefix || ''}Sushant Nawale{contactsSuffix || ''}
                                 </div>
                               </div>
@@ -1047,12 +1045,12 @@ function ProviderConfigCore() {
                     )}
 
                     {contactsTab === 'status' && (
-                      <div className="space-y-6">
+                      <div className="space-y-4">
                         {/* Status Check card */}
-                        <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-850/60 flex justify-between items-center">
+                        <div className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center">
                           <div>
-                            <h4 className="text-xs font-bold text-zinc-200">OAuth Credentials State</h4>
-                            <p className="text-[10px] text-zinc-500 mt-1">
+                            <h4 className="text-xs font-bold text-zinc-900">OAuth Credentials State</h4>
+                            <p className="text-[11px] text-zinc-500 mt-1">
                               {status === 'connected' 
                                 ? 'Authorized ✓. Real-time background People API sync active.'
                                 : 'No valid Google OAuth credentials connected.'
@@ -1060,22 +1058,22 @@ function ProviderConfigCore() {
                             </p>
                           </div>
                           <div className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                            status === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                            status === 'connected' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
                           }`}>
                             {status === 'connected' ? 'Authorized ✓' : 'Unauthorized'}
                           </div>
                         </div>
 
                         {/* Total Synced Contacts Counter */}
-                        <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-850/60 flex justify-between items-center">
+                        <div className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center">
                           <div>
-                            <h4 className="text-xs font-bold text-zinc-200">Synced Contacts Count</h4>
-                            <p className="text-[10px] text-zinc-500 mt-1">Total leads provisioned in Google Contacts.</p>
+                            <h4 className="text-xs font-bold text-zinc-900">Synced Contacts Count</h4>
+                            <p className="text-[11px] text-zinc-500 mt-1">Total leads provisioned in Google Contacts.</p>
                           </div>
-                          <div className="text-lg font-mono font-bold text-sky-450">{contactsCount}</div>
+                          <div className="text-xl font-mono font-extrabold text-sky-600">{contactsCount}</div>
                         </div>
 
-                        <div className="flex justify-end gap-3">
+                        <div className="flex justify-end gap-3 pt-2">
                           <button
                             type="button"
                             onClick={async () => {
@@ -1122,7 +1120,7 @@ function ProviderConfigCore() {
                                 setLoading(false);
                               }
                             }}
-                            className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-xl text-xs font-bold text-zinc-300 hover:text-white transition-all"
+                            className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
                           >
                             Trigger Manual Test Sync
                           </button>
@@ -1137,16 +1135,16 @@ function ProviderConfigCore() {
             {/* 5. GOOGLE CALENDAR VIEW */}
             {provider === 'google-calendar' && (
               <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
-                  <Calendar className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-zinc-400 leading-normal">
+                <div className="p-4 rounded-2xl bg-red-50 border border-red-100 flex items-start gap-3">
+                  <Calendar className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-900 leading-normal font-medium">
                     Sync confirmed wedding shoots automatically to Google Calendar to prevent scheduling conflicts.
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Sync Target Calendar</label>
-                  <select className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40">
+                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Sync Target Calendar</label>
+                  <select className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-red-500">
                     <option value="cal-1">Primary Calendar - Studio Bookings</option>
                     <option value="cal-2">Personal Tasks - Amit</option>
                   </select>
@@ -1156,18 +1154,18 @@ function ProviderConfigCore() {
 
             {/* 7. GOOGLE SHEETS VIEW */}
             {provider === 'google-sheets' && (
-              <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
-                  <FileSpreadsheet className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-zinc-400 leading-normal">
+              <div className="space-y-5">
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-start gap-3">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-emerald-900 leading-normal font-medium">
                     Link your Google Workspace spreadsheet documents to dynamically map columns and sync data.
                   </p>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-850/60 flex justify-between items-center">
+                <div className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center">
                   <div>
-                    <h4 className="text-xs font-bold text-zinc-200">OAuth Credentials State</h4>
-                    <p className="text-[10px] text-zinc-500 mt-1">
+                    <h4 className="text-xs font-bold text-zinc-900">OAuth Credentials State</h4>
+                    <p className="text-[11px] text-zinc-500 mt-1">
                       {status === 'connected' 
                         ? 'Authenticated workspace active. Google Sheets node active in builder.'
                         : 'No valid Google OAuth credentials found for this workspace.'
@@ -1175,14 +1173,14 @@ function ProviderConfigCore() {
                     </p>
                   </div>
                   <div className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                    status === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                    status === 'connected' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
                   }`}>
                     {status === 'connected' ? 'Authorized ✓' : 'Unauthorized'}
                   </div>
                 </div>
 
                 {sheetsError && (
-                  <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs leading-normal space-y-1">
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs leading-normal space-y-1">
                     <strong className="block font-bold">Google API Integration Error:</strong>
                     <p className="opacity-90">{sheetsError}</p>
                     <p className="text-[10px] opacity-75 mt-1">
@@ -1194,30 +1192,30 @@ function ProviderConfigCore() {
                 {status === 'connected' && (
                   <div className="space-y-6">
                     {/* Standalone Tabbed Sub-navigation */}
-                    <div className="flex border-b border-zinc-800 mb-6">
+                    <div className="flex border-b border-zinc-200 mb-6">
                       <button
                         type="button"
                         onClick={() => setActiveTab('configure')}
-                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider ${
+                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider cursor-pointer ${
                           activeTab === 'configure'
-                            ? 'border-emerald-500 text-white'
-                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                            ? 'border-emerald-600 text-emerald-700'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-700'
                         }`}
                       >
-                        Connect & Configure
+                        Connect &amp; Configure
                       </button>
                       <button
                         type="button"
                         onClick={() => setActiveTab('active')}
-                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider flex items-center gap-2 ${
+                        className={`px-5 py-3 text-xs font-bold transition-all border-b-2 uppercase tracking-wider flex items-center gap-2 cursor-pointer ${
                           activeTab === 'active'
-                            ? 'border-emerald-500 text-white'
-                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                            ? 'border-emerald-600 text-emerald-700'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-700'
                         }`}
                       >
                         Currently Active Syncs
                         {Object.values(sheetsConfig.active_sheets || {}).filter((s: any) => s.enabled).length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-extrabold">
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
                             {Object.values(sheetsConfig.active_sheets || {}).filter((s: any) => s.enabled).length}
                           </span>
                         )}
@@ -1228,7 +1226,7 @@ function ProviderConfigCore() {
                       <div className="space-y-6">
                         {/* Searchable Spreadsheet Selector */}
                         <div className="space-y-1.5 relative">
-                          <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Select Spreadsheet</label>
+                          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Select Spreadsheet</label>
                           <div className="relative">
                             <input
                               type="text"
@@ -1239,10 +1237,10 @@ function ProviderConfigCore() {
                                 setShowSpreadsheetDropdown(true);
                               }}
                               onFocus={() => setShowSpreadsheetDropdown(true)}
-                              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-350 focus:outline-none"
+                              className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-emerald-500"
                             />
                             {showSpreadsheetDropdown && (
-                              <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-zinc-950 border border-zinc-900 rounded-xl shadow-xl">
+                              <div className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-white border border-zinc-200 rounded-2xl shadow-xl">
                                 {spreadsheets
                                   .filter(s => s.name.toLowerCase().includes(spreadsheetSearch.toLowerCase()))
                                   .map(s => (
@@ -1254,13 +1252,13 @@ function ProviderConfigCore() {
                                         setSpreadsheetSearch(s.name);
                                         setShowSpreadsheetDropdown(false);
                                       }}
-                                      className="w-full text-left px-4 py-3 text-xs text-zinc-350 hover:bg-zinc-900 hover:text-white transition-colors"
+                                      className="w-full text-left px-4 py-3 text-xs text-zinc-700 hover:bg-emerald-50 hover:text-emerald-900 transition-colors font-medium cursor-pointer"
                                     >
                                       {s.name}
                                     </button>
                                   ))}
                                 {spreadsheets.filter(s => s.name.toLowerCase().includes(spreadsheetSearch.toLowerCase())).length === 0 && (
-                                  <div className="px-4 py-3 text-xs text-zinc-550 italic">No spreadsheets found</div>
+                                  <div className="px-4 py-3 text-xs text-zinc-400 italic">No spreadsheets found</div>
                                 )}
                               </div>
                             )}
@@ -1270,7 +1268,7 @@ function ProviderConfigCore() {
                         {/* Worksheets Toggle List & Mapping */}
                         {sheetsConfig.spreadsheet_id && worksheets.length > 0 && (
                           <div className="space-y-4">
-                            <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Worksheet Configurations</label>
+                            <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider block">Worksheet Configurations</label>
                             <div className="space-y-4">
                               {worksheets.map(w => {
                                 const spreadsheetName = spreadsheets.find(s => s.id === sheetsConfig.spreadsheet_id)?.name || 'Spreadsheet';
@@ -1282,11 +1280,11 @@ function ProviderConfigCore() {
                                 const customMappings = customMappingsState[compositeKey] || [];
 
                                 return (
-                                  <div key={w.title} className="p-5 rounded-2xl bg-zinc-900/30 border border-zinc-850/60 space-y-4">
+                                  <div key={w.title} className="p-5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-4">
                                     <div className="flex justify-between items-center">
                                       <div className="flex items-center gap-2.5">
-                                        <div className={`w-2 h-2 rounded-full ${isEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-650'}`} />
-                                        <span className="text-sm font-bold text-zinc-200">{w.title}</span>
+                                        <div className={`w-2.5 h-2.5 rounded-full ${isEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300'}`} />
+                                        <span className="text-sm font-bold text-zinc-900">{w.title}</span>
                                       </div>
                                       
                                       {/* Premium Animated iOS Toggle switch */}
@@ -1312,30 +1310,30 @@ function ProviderConfigCore() {
                                             fetchHeadersForSheet(sheetsConfig.spreadsheet_id, w.title);
                                           }
                                         }}
-                                        className={`w-10 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 focus:outline-none ${
-                                          isEnabled ? 'bg-emerald-500' : 'bg-zinc-700'
+                                        className={`w-11 h-6 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 focus:outline-none ${
+                                          isEnabled ? 'bg-emerald-600' : 'bg-zinc-300'
                                         }`}
                                       >
                                         <motion.div
                                           layout
                                           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                          className="bg-white w-4 h-4 rounded-full shadow-md"
+                                          className="bg-white w-5 h-5 rounded-full shadow-md"
                                           animate={{ x: isEnabled ? 20 : 0 }}
                                         />
                                       </button>
                                     </div>
 
                                     {isEnabled && (
-                                      <div className="space-y-4 pt-4 border-t border-zinc-900/50">
+                                      <div className="space-y-4 pt-4 border-t border-zinc-200">
                                         <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Column Mapping</h5>
                                         
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                           <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-zinc-400 uppercase">Name Field</label>
+                                            <label className="text-[10px] font-bold text-zinc-600 uppercase">Name Field</label>
                                             <select
                                               value={mappings.name || ''}
                                               onChange={e => updateMapping(sheetsConfig.spreadsheet_id, spreadsheetName, w.title, 'name', e.target.value)}
-                                              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                              className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 font-medium focus:outline-none focus:border-emerald-500"
                                             >
                                               <option value="">-- Select Header --</option>
                                               {headers.map(h => <option key={h} value={h}>{h}</option>)}
@@ -1343,11 +1341,11 @@ function ProviderConfigCore() {
                                           </div>
 
                                           <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-zinc-400 uppercase">Phone Field</label>
+                                            <label className="text-[10px] font-bold text-zinc-600 uppercase">Phone Field</label>
                                             <select
                                               value={mappings.phone || ''}
                                               onChange={e => updateMapping(sheetsConfig.spreadsheet_id, spreadsheetName, w.title, 'phone', e.target.value)}
-                                              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                              className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 font-medium focus:outline-none focus:border-emerald-500"
                                             >
                                               <option value="">-- Select Header --</option>
                                               {headers.map(h => <option key={h} value={h}>{h}</option>)}
@@ -1355,11 +1353,11 @@ function ProviderConfigCore() {
                                           </div>
 
                                           <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-zinc-400 uppercase">Email Field</label>
+                                            <label className="text-[10px] font-bold text-zinc-600 uppercase">Email Field</label>
                                             <select
                                               value={mappings.email || ''}
                                               onChange={e => updateMapping(sheetsConfig.spreadsheet_id, spreadsheetName, w.title, 'email', e.target.value)}
-                                              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                              className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 font-medium focus:outline-none focus:border-emerald-500"
                                             >
                                               <option value="">-- Select Header --</option>
                                               {headers.map(h => <option key={h} value={h}>{h}</option>)}
@@ -1374,7 +1372,7 @@ function ProviderConfigCore() {
                                             <button
                                               type="button"
                                               onClick={() => addCustomField(sheetsConfig.spreadsheet_id, w.title)}
-                                              className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] font-extrabold uppercase hover:bg-emerald-500/20"
+                                              className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-extrabold uppercase hover:bg-emerald-100 cursor-pointer"
                                             >
                                               + Add Custom Mapping
                                             </button>
@@ -1388,12 +1386,12 @@ function ProviderConfigCore() {
                                                   value={entry.key}
                                                   onChange={e => handleCustomKeyChange(compositeKey, entry.id, e.target.value)}
                                                   placeholder="Field Name (e.g. venue)"
-                                                  className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
-                                            />
+                                                  className="w-1/2 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 font-medium focus:outline-none focus:border-emerald-500"
+                                                />
                                                 <select
                                                   value={entry.value}
                                                   onChange={e => handleCustomValueChange(compositeKey, entry.id, e.target.value)}
-                                                  className="w-1/2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-350 focus:outline-none"
+                                                  className="w-1/2 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 font-medium focus:outline-none focus:border-emerald-500"
                                                 >
                                                   <option value="">-- Map to Header --</option>
                                                   {headers.map(h => <option key={h} value={h}>{h}</option>)}
@@ -1401,7 +1399,7 @@ function ProviderConfigCore() {
                                                 <button
                                                   type="button"
                                                   onClick={() => removeCustomField(compositeKey, entry.id)}
-                                                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold"
+                                                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold cursor-pointer"
                                                 >
                                                   Delete
                                                 </button>
@@ -1420,15 +1418,15 @@ function ProviderConfigCore() {
 
                         {/* Sync Trigger Mode */}
                         <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Sync Trigger Mode</label>
+                          <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">Sync Trigger Mode</label>
                           <select 
                             value={sheetsConfig.sync_trigger}
                             onChange={e => setSheetsConfig(prev => ({ ...prev, sync_trigger: e.target.value }))}
-                            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-355 focus:outline-none"
+                            className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-emerald-500"
                           >
                             <option value="any">Export all leads immediately upon ingestion</option>
-                            <option value="high_value">Export only "High-Value 🔥" scored leads</option>
-                            <option value="won">Export leads only when marked "Won" or "Warm"</option>
+                            <option value="high_value">Export only &quot;High-Value 🔥&quot; scored leads</option>
+                            <option value="won">Export leads only when marked &quot;Won&quot; or &quot;Warm&quot;</option>
                           </select>
                         </div>
                       </div>
@@ -1436,31 +1434,31 @@ function ProviderConfigCore() {
 
                     {activeTab === 'active' && (
                       <div className="space-y-4">
-                        <div className="p-4 rounded-2xl bg-zinc-900/20 border border-zinc-850 flex items-start gap-3">
-                          <Check className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                          <p className="text-xs text-zinc-400 leading-normal">
+                        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-start gap-3">
+                          <Check className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                          <p className="text-xs text-emerald-900 leading-normal font-medium">
                             All sheets listed below are actively synced in the background. You can turn off any sheet sync directly by clicking the Deactivate button.
                           </p>
                         </div>
 
                         {Object.entries(sheetsConfig.active_sheets || {}).filter(([_, s]) => s.enabled).length === 0 ? (
-                          <div className="p-10 rounded-2xl bg-zinc-900/10 border border-zinc-850/60 text-center text-xs text-zinc-500 italic">
-                            No worksheets are currently synced. Go to the "Connect & Configure" tab to set up a new sheet.
+                          <div className="p-10 rounded-2xl bg-zinc-50 border border-zinc-200 text-center text-xs text-zinc-400 italic">
+                            No worksheets are currently synced. Go to the &quot;Connect &amp; Configure&quot; tab to set up a new sheet.
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 gap-3">
                             {Object.entries(sheetsConfig.active_sheets || {})
                               .filter(([_, s]) => s.enabled)
                               .map(([key, s]) => (
-                                <div key={key} className="flex justify-between items-center p-5 bg-zinc-900/30 border border-zinc-850/50 rounded-2xl">
+                                <div key={key} className="flex justify-between items-center p-5 bg-zinc-50 border border-zinc-200 rounded-2xl">
                                   <div className="space-y-1">
-                                    <div className="text-xs font-bold text-zinc-200">{s.spreadsheet_name || 'Spreadsheet'}</div>
+                                    <div className="text-xs font-bold text-zinc-900">{s.spreadsheet_name || 'Spreadsheet'}</div>
                                     <div className="text-[10px] text-zinc-500 font-mono">Worksheet: {s.sheet_name}</div>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => deactivateSheetSync(key)}
-                                    className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-bold rounded-xl transition-all"
+                                    className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
                                   >
                                     Deactivate
                                   </button>
@@ -1478,17 +1476,17 @@ function ProviderConfigCore() {
                     <button
                       type="button"
                       onClick={startGoogleOAuth}
-                      className="px-5 py-2.5 bg-orange-500 text-black hover:bg-orange-400 font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       Connect Google Account
                     </button>
                   </div>
                 ) : (
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-end gap-3 pt-2">
                     <button
                       type="button"
                       onClick={startGoogleOAuth}
-                      className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 rounded-xl text-xs text-zinc-350 hover:text-white"
+                      className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
                     >
                       Reconnect Account
                     </button>
@@ -1510,7 +1508,7 @@ function ProviderConfigCore() {
                           }
                         }
                       }}
-                      className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 rounded-xl text-xs"
+                      className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
                     >
                       Disconnect Account
                     </button>
@@ -1523,44 +1521,44 @@ function ProviderConfigCore() {
             {provider === 'gmail-smtp' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SMTP Host Address</label>
+                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">SMTP Host Address</label>
                   <input
                     type="text"
                     value={smtpHost}
                     onChange={e => setSmtpHost(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SMTP Port</label>
+                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">SMTP Port</label>
                   <input
                     type="text"
                     value={smtpPort}
                     onChange={e => setSmtpPort(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">User Account / Email</label>
+                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">User Account / Email</label>
                   <input
                     type="email"
                     value={smtpUser}
                     onChange={e => setSmtpUser(e.target.value)}
                     placeholder="user@gmail.com"
-                    className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">App Password / Secret Key</label>
+                  <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider">App Password / Secret Key</label>
                   <input
                     type="password"
                     value={smtpPass}
                     onChange={e => setSmtpPass(e.target.value)}
                     placeholder="••••••••••••••••"
-                    className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40"
+                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 font-medium focus:bg-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -1568,16 +1566,16 @@ function ProviderConfigCore() {
 
             {/* Submit Actions Footer (Only render for non-WhatsApp setups as WhatsApp has its own controls) */}
             {provider !== 'whatsapp-web' && (
-              <div className="flex justify-between items-center pt-5 border-t border-zinc-900">
-                <span className="text-[10px] text-zinc-550 font-mono tracking-tight flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> auth.uid() bound validation
+              <div className="flex justify-between items-center pt-5 border-t border-zinc-100">
+                <span className="text-[10px] text-zinc-400 font-mono tracking-tight flex items-center gap-1.5 font-medium">
+                  <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> auth.uid() bound validation
                 </span>
 
                 <button
                   type="button"
                   onClick={handleSaveConfig}
                   disabled={loading}
-                  className="px-5 py-2.5 bg-emerald-500 text-black hover:bg-emerald-600 font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-2"
+                  className="px-5 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {loading ? (
                     <>
@@ -1585,7 +1583,7 @@ function ProviderConfigCore() {
                     </>
                   ) : success ? (
                     <>
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Saved & Connected!
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Saved &amp; Connected!
                     </>
                   ) : (
                     <>

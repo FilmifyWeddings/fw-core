@@ -30,8 +30,9 @@ export async function GET(req: NextRequest) {
   // ── Redirect URI: Reads env var first, then dynamically falls back ────────
   let redirectUri = process.env.GOOGLE_REDIRECT_URI;
   if (!redirectUri) {
-    const origin = req.nextUrl.origin;
-    redirectUri = `${origin}/api/auth/google/callback`;
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
+    const proto = req.headers.get('x-forwarded-proto') || (req.nextUrl.protocol ? req.nextUrl.protocol.replace(':', '') : 'https');
+    redirectUri = `${proto}://${host}/api/auth/google/callback`;
   }
 
   if (!redirectUri || !redirectUri.startsWith('http')) {
