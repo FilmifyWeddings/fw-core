@@ -588,28 +588,35 @@ export default function LoginPage() {
           <div className="w-full lg:col-span-4 xl:col-span-4 flex justify-center lg:justify-end order-1 lg:order-3">
             <div className="w-full max-w-[440px] bg-white/95 backdrop-blur-md rounded-3xl p-5 sm:p-7 border border-amber-200/60 shadow-xl shadow-amber-950/5">
               
-              {/* Mobile Hero Header Badge + Mini Character Peek on Mobile */}
-              <div className="flex lg:hidden items-center justify-between pb-3 mb-3 border-b border-zinc-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="relative w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200/80 overflow-hidden shrink-0">
-                    <Image
-                      src="/images/auth/42.png"
-                      alt="Photographer"
-                      fill
-                      unoptimized
-                      className="object-cover object-top scale-125 translate-y-1"
-                    />
+              {/* 3D Character Pop-Out Badge on Mobile */}
+              <div className="flex lg:hidden items-center justify-between pb-3.5 mb-3.5 border-b border-zinc-100/90 relative pt-1.5">
+                <div className="flex items-center gap-3">
+                  {/* 3D Pop-Out Frame (No overflow-hidden so head and thumbs-up pop out) */}
+                  <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
+                    {/* Circle Podium Background */}
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-200 via-amber-100 to-amber-50 border border-amber-300 shadow-sm" />
+                    {/* 3D Character with Head & Thumbs Popping OUT */}
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 w-16 h-20 pointer-events-none animate-subtle-float select-none">
+                      <Image
+                        src="/images/auth/42.png"
+                        alt="StudioCore Photographer"
+                        fill
+                        unoptimized
+                        priority
+                        className="object-contain object-top drop-shadow-md"
+                      />
+                    </div>
                   </div>
                   <div>
                     <h3 className="text-sm font-serif font-black text-zinc-900 leading-tight">
                       StudioCore Suite
                     </h3>
-                    <p className="text-[11px] text-amber-700 font-semibold">
+                    <p className="text-[11px] text-[#bf7304] font-bold">
                       Focus on Art, We Manage
                     </p>
                   </div>
                 </div>
-                <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100/80 text-[#92400e] text-[10px] font-bold">
+                <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100/90 border border-amber-200 text-[#92400e] text-[10px] font-bold shadow-2xs">
                   {authMode === 'login' ? 'Sign In' : 'Sign Up'}
                 </div>
               </div>
