@@ -11,12 +11,17 @@ export async function GET(req: NextRequest) {
   try {
     const { userId, userEmail, isSuperAdmin } = await resolveRequestUser(req);
     const { searchParams } = new URL(req.url);
-    const workspaceIdParam = searchParams.get('workspace_id') || userId;
+    const workspaceIdParam = searchParams.get('workspace_id');
+    
+    // Effective tenant/user ID
+    const effectiveUserId = (userId && userId !== 'demo_user')
+      ? userId
+      : (workspaceIdParam && workspaceIdParam !== 'demo_user' ? workspaceIdParam : '');
 
     let activeDefaultId: string | null = null;
-    if (userId && userId !== 'demo_user') {
+    if (effectiveUserId) {
       try {
-        const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(userId);
+        const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(effectiveUserId);
         if (userRec?.user?.user_metadata?.default_template_id) {
           activeDefaultId = userRec.user.user_metadata.default_template_id;
         }
@@ -25,12 +30,19 @@ export async function GET(req: NextRequest) {
 
     let query = supabaseAdmin
       .from('quotation_templates')
-      .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at');
+      .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+      .not('status', 'in', '("archived","deleted")')
+      .not('id', 'ilike', 'FW-Q-%')
+      .not('id', 'ilike', 'FW-L-%');
 
-    if (isSuperAdmin) {
-      query = query.or(`workspace_id.eq.${workspaceIdParam},user_id.eq.${userId},is_system_template.eq.true,user_id.eq.SYSTEM`);
+    if (effectiveUserId) {
+      // Strictly only this user's templates
+      query = query.or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`);
+    } else if (isSuperAdmin && searchParams.get('admin_all') === 'true') {
+      // Super admin overview only when explicitly requested
     } else {
-      query = query.or(`and(is_system_template.eq.true,status.eq.published),workspace_id.eq.${workspaceIdParam},user_id.eq.${userId}`);
+      // Unauthenticated fallback: only published system templates
+      query = query.eq('is_system_template', true).eq('status', 'published');
     }
 
     const { data: templates, error: tmplErr } = await query.order('updated_at', { ascending: false });
@@ -40,7 +52,45 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: tmplErr.message }, { status: 500 });
     }
 
-    const validTemplates = (templates || []).filter(t => t.id && !t.id.startsWith('FW-Q-') && !t.id.startsWith('FW-L-'));
+    // Deduplicate by ID and clean list
+    const seenIds = new Set<string>();
+    let validTemplates = (templates || []).filter(t => {
+      if (!t.id || seenIds.has(t.id)) return false;
+      if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
+      if (t.status === 'archived' || t.status === 'deleted') return false;
+      seenIds.add(t.id);
+      return true;
+    });
+
+    // If a user has NO custom templates yet, provide the system default template so they can fork it
+    if (validTemplates.length === 0) {
+      const { data: sysTmpl } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+        .eq('is_system_template', true)
+        .eq('status', 'published')
+        .limit(1);
+
+      if (sysTmpl && sysTmpl.length > 0) {
+        validTemplates = [{
+          ...sysTmpl[0],
+          is_default: true
+        }];
+      } else {
+        validTemplates = [{
+          id: 'FW-2WT85Y0',
+          user_id: 'SYSTEM',
+          workspace_id: null,
+          title: 'Wedding - Design 1',
+          category: 'Wedding',
+          is_default: true,
+          is_system_template: true,
+          status: 'published',
+          updated_at: new Date().toISOString()
+        }];
+      }
+    }
+
     const templateIds = validTemplates.map(t => t.id);
 
     // Fetch document content_json using supabaseAdmin (bypasses RLS)
@@ -58,27 +108,6 @@ export async function GET(req: NextRequest) {
           }
         });
       }
-
-      // Fallback query to quotations table for missing content_json
-      const missingIds = templateIds.filter(id => !docsMap[id]);
-      if (missingIds.length > 0) {
-        try {
-          const { data: quoteDocs } = await supabaseAdmin
-            .from('quotations')
-            .select('id, quotation_number, content_json, canvas_data');
-
-          if (quoteDocs) {
-            quoteDocs.forEach((q: any) => {
-              const key = q.quotation_number || q.id;
-              if (key && missingIds.includes(key) && !docsMap[key]) {
-                docsMap[key] = q.content_json || q.canvas_data || null;
-              }
-            });
-          }
-        } catch (e) {
-          console.warn('[Fallback Quotation Docs Notice]:', e);
-        }
-      }
     }
 
     const hasAnyDefaultInDb = validTemplates.some(t => t.is_default);
@@ -89,7 +118,7 @@ export async function GET(req: NextRequest) {
         isDefault = t.id === activeDefaultId;
       } else if (t.is_default) {
         isDefault = true;
-      } else if (!hasAnyDefaultInDb && t.id === 'FW-2WT85Y0') {
+      } else if (!hasAnyDefaultInDb && t.id === validTemplates[0]?.id) {
         isDefault = true;
       }
 
@@ -99,6 +128,9 @@ export async function GET(req: NextRequest) {
         content_json: docsMap[t.id] || null
       };
     });
+
+    // Ensure Default template is at the top of the array
+    results.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
 
     return NextResponse.json({
       success: true,

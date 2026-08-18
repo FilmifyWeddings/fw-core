@@ -80,25 +80,30 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   }, [isOpen, lead?.id]);
 
   const loadAvailableTemplates = async () => {
-    // 1. INSTANT SESSION STORAGE CACHE HYDRATION (<1ms)
-    const cacheKey = 'studio_templates_cache';
-    const cached = sessionStorage.getItem(cacheKey);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setAvailableTemplates(parsed);
-          const activeDefault = parsed.find((t: StudioTemplateItem) => t.is_default) || parsed[0];
-          if (activeDefault) setSelectedTemplateId(activeDefault.id);
-        }
-      } catch (e) {}
-    }
-
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const currentUserId = session?.user?.id || '';
+      const token = session?.access_token || '';
 
-      const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`);
+      // User-scoped cache hydration
+      const cacheKey = currentUserId ? `studio_templates_cache_${currentUserId}` : 'studio_templates_cache';
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setAvailableTemplates(parsed);
+            const activeDefault = parsed.find((t: StudioTemplateItem) => t.is_default) || parsed[0];
+            if (activeDefault) setSelectedTemplateId(activeDefault.id);
+          }
+        } catch (e) {}
+      }
+
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (session?.user?.email) headers['x-user-email'] = session.user.email;
+
+      const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
       const text = await res.text();
       let json: any = {};
       try {
@@ -117,10 +122,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
           setSelectedTemplateId(activeDefault.id);
         }
       } else if (availableTemplates.length === 0) {
-        // Fallback standard templates
         const defaultTemplates: StudioTemplateItem[] = [
-          { id: 'GLOBAL_DEFAULT', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' },
-          { id: 'GLOBAL_DARK', title: 'Wedding - Royal Heritage', is_default: false, category: 'Wedding' }
+          { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
         ];
         setAvailableTemplates(defaultTemplates);
         setSelectedTemplateId(defaultTemplates[0].id);
@@ -129,7 +132,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       console.warn('[LeadQuotationModal] Templates fetch warning:', e);
       if (availableTemplates.length === 0) {
         const defaultTemplates: StudioTemplateItem[] = [
-          { id: 'GLOBAL_DEFAULT', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
+          { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
         ];
         setAvailableTemplates(defaultTemplates);
         setSelectedTemplateId(defaultTemplates[0].id);
