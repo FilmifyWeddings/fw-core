@@ -492,7 +492,7 @@ export default function LoginPage() {
             {/* Welcome Badge */}
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100/80 border border-amber-300/60 text-[#92400e] text-xs sm:text-sm font-bold shadow-xs w-fit">
               <span>👋</span>
-              <span>{authMode === 'login' ? 'Welcome Back!' : 'Start 14-Day Free Trial'}</span>
+              <span>{authMode === 'login' ? 'Welcome Back!' : 'Start 7-Day Free Trial'}</span>
               <span>👋</span>
             </div>
 
@@ -546,7 +546,7 @@ export default function LoginPage() {
                   <Heart className="w-4 h-4 stroke-[2.2]" />
                 </div>
                 <span className="text-xs sm:text-sm font-semibold text-zinc-800">
-                  Loved by 2,500+ photographers
+                  Loved by 600+ photographers
                 </span>
               </div>
 
@@ -735,42 +735,6 @@ export default function LoginPage() {
                       </>
                     )}
                   </button>
-
-                  {/* Divider */}
-                  <div className="relative flex items-center justify-center my-3">
-                    <div className="border-t border-zinc-200 w-full" />
-                    <span className="bg-white px-2.5 text-[11px] font-medium text-zinc-400 uppercase tracking-wider absolute">
-                      or continue with
-                    </span>
-                  </div>
-
-                  {/* Social Buttons (Grid 2x2) */}
-                  <div className="grid grid-cols-2 gap-2 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => { window.location.href = '/api/auth/google'; }}
-                      className="h-10 px-3 rounded-xl border border-zinc-200 hover:border-zinc-300 bg-white hover:bg-zinc-50 flex items-center justify-center gap-2 text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
-                        <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/>
-                        <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/>
-                        <path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.1c0 2.8.7 5.4 1.9 7.8l3.7-2.9z"/>
-                        <path fill="#34A853" d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16.5C3.7 20.2 7.5 23.5 12 23.5z"/>
-                      </svg>
-                      <span>Google</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => { window.location.href = '/api/auth/facebook'; }}
-                      className="h-10 px-3 rounded-xl border border-zinc-200 hover:border-zinc-300 bg-white hover:bg-zinc-50 flex items-center justify-center gap-2 text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
-                    >
-                      <svg className="w-4 h-4 fill-[#1877F2]" viewBox="0 0 24 24">
-                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                      </svg>
-                      <span>Facebook</span>
-                    </button>
-                  </div>
 
                   {/* Footer Switch */}
                   <div className="text-center pt-2">
@@ -1073,7 +1037,7 @@ export default function LoginPage() {
             </div>
             <div>
               <h4 className="text-xs sm:text-sm font-bold text-zinc-900">No Credit Card</h4>
-              <p className="text-[11px] text-zinc-500 font-medium">14-day free trial</p>
+              <p className="text-[11px] text-zinc-500 font-medium">7-day free trial</p>
             </div>
           </div>
 
