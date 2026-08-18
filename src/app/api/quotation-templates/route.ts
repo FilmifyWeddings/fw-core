@@ -62,8 +62,9 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    // If a user has NO custom templates yet, provide the system default template so they can fork it
-    if (validTemplates.length === 0) {
+    // Ensure the base System Default Template is always available for every user
+    const hasSystemDefault = validTemplates.some(t => t.id === 'FW-2WT85Y0' || t.is_system_template);
+    if (!hasSystemDefault) {
       const { data: sysTmpl } = await supabaseAdmin
         .from('quotation_templates')
         .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
@@ -72,22 +73,22 @@ export async function GET(req: NextRequest) {
         .limit(1);
 
       if (sysTmpl && sysTmpl.length > 0) {
-        validTemplates = [{
+        validTemplates.push({
           ...sysTmpl[0],
-          is_default: true
-        }];
+          is_default: validTemplates.length === 0
+        });
       } else {
-        validTemplates = [{
+        validTemplates.push({
           id: 'FW-2WT85Y0',
           user_id: 'SYSTEM',
           workspace_id: null,
-          title: 'Wedding - Design 1',
+          title: 'System Default Wedding Template',
           category: 'Wedding',
-          is_default: true,
+          is_default: validTemplates.length === 0,
           is_system_template: true,
           status: 'published',
           updated_at: new Date().toISOString()
-        }];
+        });
       }
     }
 
