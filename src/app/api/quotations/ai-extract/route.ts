@@ -123,7 +123,56 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Executes AI Extraction using OpenAI API (if OPENAI_API_KEY present) or Gemini API (if GEMINI_API_KEY present),
+ * Standardized Crew Role Normalization Dictionary
+ */
+function normalizeCrewRoleName(rawRole: string): string {
+  if (!rawRole) return 'Candid Photographer';
+  const s = rawRole.toLowerCase().trim();
+  if (s.includes('cinematog') || s === 'cv' || s.includes('cine video') || s.includes('cinematic video') || s === 'cinematic') {
+    return 'Cinematographer';
+  }
+  if (s.includes('traditional photo') || s === 'tp' || s.includes('trad photo') || s.includes('tred photo') || s.includes('treational photo')) {
+    return 'Traditional Photographer';
+  }
+  if (s.includes('candid photo') || s === 'cp' || s.includes('candid photog') || s.includes('candid photos')) {
+    return 'Candid Photographer';
+  }
+  if (s.includes('traditional video') || s === 'tv' || s.includes('trad video') || s.includes('tred video') || s.includes('tred videography')) {
+    return 'Traditional Videographer';
+  }
+  if (s.includes('social media') || s.includes('story creator') || s.includes('social media manager')) {
+    return 'Social Media Person';
+  }
+  if (s.includes('semi cine') || s.includes('semi-cine') || s.includes('sami cinematic')) {
+    return 'Semi Cinematic';
+  }
+  if (s.includes('reel') || s.includes('reels') || s.includes('reel person') || s.includes('reel creator') || s.includes('reel maker')) {
+    return 'Reel Creator';
+  }
+  if (s.includes('live') || s.includes('streaming') || s.includes('led') || s.includes('live videography')) {
+    return 'Live Videography';
+  }
+  if (s.includes('drone') || s.includes('aerial')) {
+    return 'Drone Pilot';
+  }
+  if (s.includes('assistant') || s === 'ass' || s.includes('helper') || s.includes('light boy')) {
+    return 'Assistant';
+  }
+  if (s.includes('team manager') || s === 'tm' || s.includes('coordinator') || s.includes('event manager')) {
+    return 'Team Manager';
+  }
+  if (s.includes('makeup') || s === 'mua' || s.includes('makup artist')) {
+    return 'Makeup Artist';
+  }
+  if (s.includes('family photo') || s.includes('family photography') || s.includes('family photos')) {
+    return 'Family Photographer';
+  }
+  // Capitalize custom role nicely
+  return rawRole.trim().replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
+ * Executes AI Extraction using OpenAI API or Gemini API,
  * or falls back to an intelligent structured extraction engine.
  */
 async function performAiExtraction(contextData: any, baseDoc: any) {
@@ -139,28 +188,73 @@ Analyze the following lead and quotation context:
 
 ${JSON.stringify(contextData, null, 2)}
 
-INSTRUCTIONS:
-0. CRITICAL RULE: If 'additional_user_notes' is present in the context, the information inside 'additional_user_notes' MUST take 100% OVERRIDING PRIORITY over lead_info and raw_form_fields. User prompt notes are the source of truth!
-1. Extract couple names (Groom & Bride), event type, wedding location, dates.
-2. Extract all event functions (Haldi, Mehendi, Sangeet, Wedding, Reception, Engagement, etc.) with dates, times, venues, and team coverage (photographers, cinematographers, drone, live streaming).
-3. Extract deliverables (photos, videos, reels, albums, USB, RAW files, SDE).
-4. Extract pricing details (base price, travel, accommodation, discount, GST, total).
-5. Extract payment terms & milestones.
-6. Extract terms & conditions and special notes.
-7. NEVER invent data not in context. Use null for missing fields.
-8. Support custom values if not matching default options.
-9. If two values conflict, flag them in the conflicts array.
+PAGE-BY-PAGE RULES & MAPPING:
+1. COVER (cover):
+- coupleName: Exact couple name (e.g. "Sagar & Vruddhi").
+- groomName: Groom name (e.g. "Sagar").
+- brideName: Bride name (e.g. "Vruddhi").
+- eventType: Title (e.g. "Wedding", "Pre-Wedding", "Pre-Wedding & Wedding", "Engagement", "Reception", "Maternity").
+- locationName: Exact city/venue if mentioned. If NOT mentioned, keep it EMPTY string "" (DO NOT invent fake locations).
 
-Return ONLY a JSON object with:
+2. ABOUT US: Keep template defaults.
+
+3. PRE-WEDDING SHOOT (shootDetails):
+- If pre-wedding is mentioned or requested:
+  - visible: true
+  - daysText: e.g. "1 Day Shoot" (Default) or "2 Days Shoot"
+  - crewText: "Candid Photography\\nCinematography\\nDrone Pilot"
+  - deliverablesText: Expected pre-wedding deliverables
+  - showExclusionsNote: true
+
+4. FUNCTIONS & COVERAGE (functionsPage):
+- items: Array of event objects:
+  - id: Unique string "func_1", "func_2", etc.
+  - name: Function name. Combine multi-events on same slot with " + " (e.g. "Haldi + Sangeet").
+  - date: Exact date string if specified, or "Date Not Fixed" with dateNotFixed: true if not specified.
+  - startTime / endTime: Exact time if specified, else EMPTY string "".
+  - location: Venue or city if specified, else EMPTY string "".
+  - notes: Special notes if specified, else EMPTY string "".
+  - requirements: Array of { name: string, qty: number } using standard normalized names:
+    * "Cinematographer", "Traditional Photographer", "Candid Photographer", "Traditional Videographer", "Social Media Person", "Semi Cinematic", "Reel Creator", "Live Videography", "Drone Pilot", "Assistant", "Team Manager", "Makeup Artist", "Family Photographer". (Custom roles allowed).
+
+5. DELIVERABLES (deliverablesPage):
+- selectedItems: Array of deliverable strings requested by user.
+
+6. SPECIAL VALUE ADDITIONS (specialValueAdditions):
+- selectedItems: Array of complimentary bonus items. If none, empty array [].
+
+7. PRICING (pricingPage):
+- basePrice: Total amount / package budget (Number).
+- discountAmount, gstPct, travelCharges, accommodationCharges, additionalCharges (Numbers, default 0 if not mentioned).
+- showExclusionsNote: true.
+
+8. PAYMENT TERMS & SCHEDULE (paymentTermsPage):
+- steps: Array of [{ name: string, pct: string, amount: number, status: "Pending" }]. Calculate amounts based on percentage breakdown if given.
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object matching:
 {
-  "couple": { "groomName": string | null, "brideName": string | null, "coupleName": string | null },
-  "cover": { "eventType": string | null, "locationName": string | null, "weddingDate": string | null },
-  "functions": [
-    { "name": string, "date": string | null, "venue": string | null, "photographers": number | null, "cinematographers": number | null, "drone": boolean }
-  ],
-  "deliverables": [string],
-  "pricing": { "basePrice": number | null, "discountAmount": number | null, "travelCharges": number | null, "accommodationCharges": number | null, "totalAmount": number | null },
-  "payment_schedule": [ { "name": string, "pct": string, "amount": number | null } ],
+  "cover": { "coupleName": string, "groomName": string, "brideName": string, "eventType": string, "locationName": string },
+  "shootDetails": { "visible": boolean, "daysText": string, "crewText": string, "deliverablesText": string, "showExclusionsNote": boolean },
+  "functionsPage": {
+    "items": [
+      {
+        "id": string,
+        "name": string,
+        "date": string,
+        "dateNotFixed": boolean,
+        "startTime": string,
+        "endTime": string,
+        "location": string,
+        "requirements": [ { "name": string, "qty": number } ],
+        "notes": string
+      }
+    ]
+  },
+  "deliverablesPage": { "selectedItems": [string] },
+  "specialValueAdditions": { "selectedItems": [string], "note": string },
+  "pricingPage": { "basePrice": number, "discountAmount": number, "gstPct": number, "travelCharges": number, "accommodationCharges": number, "additionalCharges": number, "showExclusionsNote": boolean, "note": string },
+  "paymentTermsPage": { "steps": [ { "name": string, "pct": string, "amount": number, "status": string } ] },
   "missingInformation": [string],
   "conflicts": [ { "field": string, "values": [string] } ]
 }
@@ -238,7 +332,7 @@ function fallbackHeuristicExtractor(contextData: any) {
       const jsonMatch = userNotes.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.quotation || parsed.pages || parsed.cover || parsed.functionsPage || parsed.functions_coverage) {
+        if (parsed.quotation || parsed.pages || parsed.cover || parsed.functionsPage || parsed.functions_coverage || parsed.pricingPage) {
           return mapAiOutputToQuotationDocument(parsed, {}, contextData);
         }
       }
@@ -249,10 +343,9 @@ function fallbackHeuristicExtractor(contextData: any) {
   const raw = contextData.raw_form_fields || {};
   const meta = contextData.meta_fields || {};
   const notes = `${userNotes}\n${contextData.notes_and_comments || ''}`;
-
   const fullText = `${notes} ${JSON.stringify(raw)} ${JSON.stringify(meta)}`.toLowerCase();
 
-  // 1. Couple & Names (Prioritize user notes over leadInfo)
+  // 1. Couple & Names
   let leadName = '';
   const noteNameMatch = userNotes.match(/(?:couple|client|bride|groom|name)[:\s]+([A-Za-z0-9\s&]+)/i);
   if (noteNameMatch) {
@@ -264,31 +357,49 @@ function fallbackHeuristicExtractor(contextData: any) {
 
   let groomName = '';
   let brideName = '';
+  let coupleName = '';
 
   if (leadName.includes('&')) {
     const parts = leadName.split('&');
     groomName = parts[0].trim();
     brideName = parts[1].trim();
+    coupleName = `${groomName} & ${brideName}`;
   } else if (leadName.toLowerCase().includes(' weds ')) {
     const parts = leadName.split(/weds/i);
     groomName = parts[0].trim();
     brideName = parts[1].trim();
+    coupleName = `${groomName} & ${brideName}`;
+  } else if (leadName.toLowerCase().includes(' and ')) {
+    const parts = leadName.split(/and/i);
+    groomName = parts[0].trim();
+    brideName = parts[1].trim();
+    coupleName = `${groomName} & ${brideName}`;
   } else {
-    groomName = leadName || 'Groom';
-    brideName = 'Bride';
+    groomName = leadName || 'Client';
+    brideName = 'Partner';
+    coupleName = leadName || 'Valued Client';
   }
 
-  // 2. Dates (Prioritize user notes over leadInfo)
-  let weddingDate = null;
-  const dateMatch = userNotes.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(?:\d{2,4})?)\b/i);
-  if (dateMatch) {
-    weddingDate = dateMatch[1];
-  } else {
-    weddingDate = raw.event_date || raw.wedding_date || raw.date || null;
+  // 2. Event Type
+  let eventType = 'Wedding';
+  const hasPreWed = fullText.includes('pre wedding') || fullText.includes('pre-wedding') || fullText.includes('prewedding');
+  const hasWed = fullText.includes('wedding') || fullText.includes('marriage') || fullText.includes('shaadi');
+  const hasEng = fullText.includes('engagement') || fullText.includes('roka') || fullText.includes('ring ceremony');
+
+  if (hasPreWed && hasWed) {
+    eventType = 'Pre-Wedding & Wedding';
+  } else if (hasPreWed && !hasWed) {
+    eventType = 'Pre-Wedding';
+  } else if (hasEng && !hasWed) {
+    eventType = 'Engagement';
+  } else if (fullText.includes('reception')) {
+    eventType = 'Wedding & Reception';
+  } else if (fullText.includes('maternity')) {
+    eventType = 'Maternity Shoot';
   }
 
-  // 3. Location / Venue (Prioritize user notes over leadInfo)
-  let location: string | null = null;
+  // 3. Location / Venue
+  let location = '';
   if (userNotes) {
     const locMatch = userNotes.match(/(?:at|in|venue|location|city|destination)[:\s]+([A-Za-z0-9\s,]+)/i);
     if (locMatch) {
@@ -296,13 +407,26 @@ function fallbackHeuristicExtractor(contextData: any) {
     }
   }
   if (!location) {
-    location = raw.venue || raw.location || raw.city || raw.destination || null;
+    location = raw.venue || raw.location || raw.city || raw.destination || '';
   }
 
-  // 4. Budget / Pricing (Prioritize user notes over leadInfo)
+  // 4. Dates
+  let weddingDate = '';
+  const dateMatch = userNotes.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(?:\d{2,4})?)\b/i);
+  if (dateMatch) {
+    weddingDate = dateMatch[1];
+  } else if (raw.event_date || raw.wedding_date || raw.date) {
+    weddingDate = raw.event_date || raw.wedding_date || raw.date;
+  }
+  const isDateNotFixed = !weddingDate || fullText.includes('not fix') || fullText.includes('not fixed') || fullText.includes('tbd');
+  if (isDateNotFixed && !weddingDate) {
+    weddingDate = 'Date Not Fixed';
+  }
+
+  // 5. Budget / Pricing
   let budget: number | null = null;
   if (userNotes) {
-    const bMatch = userNotes.match(/(?:₹|rs\.?|inr|budget|price|cost|investment)[:\s]*([0-9,]+(?:\s*lakh|\s*k)?)/i) ||
+    const bMatch = userNotes.match(/(?:₹|rs\.?|inr|budget|price|cost|investment|amount)[:\s]*([0-9,]+(?:\s*lakh|\s*k)?)/i) ||
                    userNotes.match(/\b([0-9]{2,3},[0-9]{3})\b/);
     if (bMatch) {
       let valStr = bMatch[1].toLowerCase();
@@ -325,35 +449,81 @@ function fallbackHeuristicExtractor(contextData: any) {
       if (!isNaN(num) && num > 0) budget = num;
     }
   }
+  const finalBudget = budget || 150000;
 
-  // 5. Functions & Coverage
+  // 6. Functions & Coverage Extraction
   const functions: any[] = [];
-  const functionNames = ['Haldi', 'Mehendi', 'Sangeet', 'Wedding', 'Reception', 'Engagement', 'Cocktail', 'Mayra', 'Ganesh Puja'];
-  functionNames.forEach(fn => {
-    if (fullText.includes(fn.toLowerCase())) {
+  const knownEvents = [
+    { key: 'haldi + sangeet', name: 'Haldi + Sangeet' },
+    { key: 'haldi', name: 'Haldi Ceremony' },
+    { key: 'mehendi', name: 'Mehendi Ceremony' },
+    { key: 'sangeet', name: 'Sangeet Night' },
+    { key: 'wedding', name: 'Wedding Ceremony' },
+    { key: 'reception', name: 'Reception' },
+    { key: 'engagement', name: 'Ring Ceremony' },
+    { key: 'cocktail', name: 'Cocktail Party' },
+    { key: 'mayra', name: 'Mayra Function' },
+    { key: 'ganesh puja', name: 'Ganesh Puja' }
+  ];
+
+  // Check multi-event combinations first
+  let remainingText = fullText;
+  if (remainingText.includes('haldi') && remainingText.includes('sangeet') && (remainingText.includes('same day') || remainingText.includes('haldi + sangeet') || remainingText.includes('haldi & sangeet'))) {
+    functions.push({
+      id: 'func-ai-1',
+      name: 'Haldi + Sangeet',
+      date: weddingDate || 'Date Not Fixed',
+      dateNotFixed: isDateNotFixed,
+      startTime: '',
+      endTime: '',
+      location: location || '',
+      requirements: [
+        { name: 'Candid Photographer', qty: 1 },
+        { name: 'Cinematographer', qty: 1 },
+        { name: 'Traditional Photographer', qty: 1 }
+      ],
+      notes: ''
+    });
+    remainingText = remainingText.replace(/haldi/g, '').replace(/sangeet/g, '');
+  }
+
+  knownEvents.forEach((evt, idx) => {
+    if (remainingText.includes(evt.key)) {
       functions.push({
-        name: fn,
-        date: weddingDate,
-        venue: location,
-        photographers: fullText.includes('photo') ? 2 : 1,
-        cinematographers: fullText.includes('video') || fullText.includes('cinema') ? 2 : 1,
-        drone: fullText.includes('drone')
+        id: `func-ai-${idx + 2}`,
+        name: evt.name,
+        date: weddingDate || 'Date Not Fixed',
+        dateNotFixed: isDateNotFixed,
+        startTime: '',
+        endTime: '',
+        location: location || '',
+        requirements: [
+          { name: 'Candid Photographer', qty: 1 },
+          { name: 'Cinematographer', qty: 1 }
+        ],
+        notes: ''
       });
     }
   });
 
   if (functions.length === 0) {
     functions.push({
+      id: 'func-ai-def',
       name: 'Wedding Ceremony',
-      date: weddingDate,
-      venue: location,
-      photographers: 2,
-      cinematographers: 2,
-      drone: fullText.includes('drone')
+      date: weddingDate || 'Date Not Fixed',
+      dateNotFixed: isDateNotFixed,
+      startTime: '',
+      endTime: '',
+      location: location || '',
+      requirements: [
+        { name: 'Candid Photographer', qty: 1 },
+        { name: 'Cinematographer', qty: 1 }
+      ],
+      notes: ''
     });
   }
 
-  // 6. Deliverables
+  // 7. Deliverables
   const deliverables: string[] = [
     'Full Ultra HD Super-Fine Raw Photos',
     'High Resolution Edited Photos (300+)',
@@ -362,40 +532,75 @@ function fallbackHeuristicExtractor(contextData: any) {
   ];
   if (fullText.includes('reel')) deliverables.push('Instagram Reels Package (5 Reels)');
   if (fullText.includes('drone')) deliverables.push('Drone Aerial Videography');
-  if (fullText.includes('album')) deliverables.push('Premium Photobook Album');
+  if (fullText.includes('album') || fullText.includes('photobook')) deliverables.push('Premium Photobook Album');
 
-  // 7. Conflicts detection
-  const conflicts: any[] = [];
-  if (raw.event_date && notes.includes('date') && !notes.includes(raw.event_date)) {
-    const noteDateMatch = notes.match(/\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
-    if (noteDateMatch && noteDateMatch[0] !== raw.event_date) {
-      conflicts.push({
-        field: 'wedding_date',
-        values: [raw.event_date, noteDateMatch[0]],
-        message: `Conflict in Wedding Date: Lead form states "${raw.event_date}" vs notes state "${noteDateMatch[0]}"`
-      });
-    }
+  // 8. Payment Schedule Installments (Custom percentages)
+  let paymentSteps: any[] = [];
+  if (fullText.includes('30%') && fullText.includes('50%') && fullText.includes('20%')) {
+    paymentSteps = [
+      { name: 'Advance Token', pct: '30%', amount: Math.round(finalBudget * 0.30), status: 'Pending' },
+      { name: 'On Event Day', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' },
+      { name: 'On Final Delivery', pct: '20%', amount: Math.round(finalBudget * 0.20), status: 'Pending' }
+    ];
+  } else if (fullText.includes('50%') && (fullText.includes('50%') || fullText.includes('half'))) {
+    paymentSteps = [
+      { name: 'Advance Booking', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' },
+      { name: 'On Event Day / Delivery', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' }
+    ];
+  } else if (fullText.includes('20%') && fullText.includes('40%')) {
+    paymentSteps = [
+      { name: 'Advance Token', pct: '20%', amount: Math.round(finalBudget * 0.20), status: 'Pending' },
+      { name: 'On Event Day', pct: '40%', amount: Math.round(finalBudget * 0.40), status: 'Pending' },
+      { name: 'On Final Delivery', pct: '40%', amount: Math.round(finalBudget * 0.40), status: 'Pending' }
+    ];
+  } else {
+    paymentSteps = [
+      { name: 'Advance Booking Token', pct: '25%', amount: Math.round(finalBudget * 0.25), status: 'Pending' },
+      { name: 'On Wedding Event Day', pct: '50%', amount: Math.round(finalBudget * 0.50), status: 'Pending' },
+      { name: 'On Final Deliverables', pct: '25%', amount: Math.round(finalBudget * 0.25), status: 'Pending' }
+    ];
   }
 
-  // 8. Missing Information
-  const missingInformation: string[] = [];
-  if (!location) missingInformation.push('Wedding venue / location');
-  if (!budget) missingInformation.push('Package pricing & investment');
-  if (!weddingDate) missingInformation.push('Wedding date');
-
   return {
-    couple: { groomName, brideName, coupleName: `${groomName} & ${brideName}` },
-    cover: { eventType: 'Wedding', locationName: location || 'MUMBAI', weddingDate },
-    functions,
-    deliverables,
-    pricing: { basePrice: budget || 150000, discountAmount: 0, travelCharges: 0, accommodationCharges: 0, totalAmount: budget || 150000 },
-    payment_schedule: [
-      { name: 'Advance Booking', pct: '25%', amount: budget ? Math.round(budget * 0.25) : 37500 },
-      { name: 'On Event Day', pct: '50%', amount: budget ? Math.round(budget * 0.50) : 75000 },
-      { name: 'On Delivery', pct: '25%', amount: budget ? Math.round(budget * 0.25) : 37500 }
-    ],
-    missingInformation,
-    conflicts
+    cover: {
+      coupleName,
+      groomName,
+      brideName,
+      eventType,
+      locationName: location
+    },
+    shootDetails: {
+      visible: hasPreWed,
+      daysText: '1 Day Shoot',
+      crewText: 'Candid Photography\nCinematography\nDrone Pilot',
+      deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n1 Teaser Video Reel',
+      showExclusionsNote: true
+    },
+    functionsPage: {
+      items: functions
+    },
+    deliverablesPage: {
+      selectedItems: deliverables
+    },
+    specialValueAdditions: {
+      selectedItems: fullText.includes('free drone') ? ['Complimentary Drone Coverage'] : [],
+      note: ''
+    },
+    pricingPage: {
+      basePrice: finalBudget,
+      discountAmount: 0,
+      gstPct: 0,
+      travelCharges: 0,
+      accommodationCharges: 0,
+      additionalCharges: 0,
+      showExclusionsNote: true,
+      note: ''
+    },
+    paymentTermsPage: {
+      steps: paymentSteps
+    },
+    missingInformation: location ? [] : ['Wedding venue / location'],
+    conflicts: []
   };
 }
 
@@ -405,9 +610,37 @@ function fallbackHeuristicExtractor(contextData: any) {
 function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextData: any) {
   const rootObj = aiData.quotation || aiData;
 
-  // Check if aiData is ALREADY a structured StudioCore Quotation JSON document (e.g. pasted by user or output by LLM prompt)
+  // Check if rootObj is ALREADY a structured StudioCore Quotation JSON document
   if (rootObj.cover || rootObj.functionsPage || rootObj.pricingPage || rootObj.pages) {
     const normDoc = normalizeQuotationData(rootObj);
+
+    // Normalize crew role names across all functions in the document
+    if (normDoc.functionsPage?.items && Array.isArray(normDoc.functionsPage.items)) {
+      normDoc.functionsPage.items = normDoc.functionsPage.items.map((fn: any) => ({
+        ...fn,
+        name: fn.name || 'Wedding',
+        date: fn.date || (fn.dateNotFixed ? 'Date Not Fixed' : 'Date Not Fixed'),
+        dateNotFixed: fn.dateNotFixed ?? (!fn.date || fn.date === 'Date Not Fixed'),
+        startTime: fn.startTime || '',
+        endTime: fn.endTime || '',
+        location: fn.location || '',
+        notes: fn.notes || '',
+        requirements: Array.isArray(fn.requirements)
+          ? fn.requirements.map((r: any) => ({
+              name: normalizeCrewRoleName(typeof r === 'string' ? r : r.name || ''),
+              qty: Number(r.qty || 1)
+            }))
+          : [
+              { name: 'Candid Photographer', qty: 1 },
+              { name: 'Cinematographer', qty: 1 }
+            ]
+      }));
+    }
+
+    // Ensure showExclusionsNote is default ON (true)
+    if (normDoc.shootDetails) normDoc.shootDetails.showExclusionsNote = true;
+    if (normDoc.pricingPage) normDoc.pricingPage.showExclusionsNote = true;
+
     const cName = normDoc.cover?.coupleName || (normDoc.cover?.groomName ? `${normDoc.cover.groomName} & ${normDoc.cover.brideName}` : 'Client & Partner');
     const baseP = normDoc.pricingPage?.basePrice || 0;
     const discP = normDoc.pricingPage?.discountAmount || 0;
@@ -436,62 +669,115 @@ function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextDat
 
   const doc = JSON.parse(JSON.stringify(baseSchema));
 
-  const couple = aiData.couple || {};
-  const cover = aiData.cover || {};
-  const pricing = aiData.pricing || {};
+  const cover = aiData.cover || aiData.couple || {};
+  const shootDetails = aiData.shootDetails || {};
+  const functionsPage = aiData.functionsPage || {};
+  const deliverablesPage = aiData.deliverablesPage || {};
+  const specialValueAdditions = aiData.specialValueAdditions || {};
+  const pricingPage = aiData.pricingPage || aiData.pricing || {};
+  const paymentTermsPage = aiData.paymentTermsPage || aiData.payment_schedule || {};
 
-  // Cover Page
+  // 1. Cover Page
   if (!doc.cover) doc.cover = {};
-  if (couple.coupleName) doc.cover.coupleName = couple.coupleName;
-  if (couple.groomName) doc.cover.groomName = couple.groomName;
-  if (couple.brideName) doc.cover.brideName = couple.brideName;
-  if (cover.locationName) doc.cover.locationName = cover.locationName;
+  if (cover.coupleName) doc.cover.coupleName = cover.coupleName;
+  if (cover.groomName) doc.cover.groomName = cover.groomName;
+  if (cover.brideName) doc.cover.brideName = cover.brideName;
   if (cover.eventType) doc.cover.eventType = cover.eventType;
+  doc.cover.locationName = cover.locationName || '';
 
-  // Functions Page
+  // 2. Pre-Wedding Shoot Details Page
+  if (shootDetails.visible || shootDetails.daysText || shootDetails.crewText) {
+    if (!doc.shootDetails) doc.shootDetails = {};
+    doc.shootDetails.visible = true;
+    doc.shootDetails.daysText = shootDetails.daysText || '1 Day Shoot';
+    if (shootDetails.crewText) doc.shootDetails.crewText = shootDetails.crewText;
+    if (shootDetails.deliverablesText) doc.shootDetails.deliverablesText = shootDetails.deliverablesText;
+    doc.shootDetails.showExclusionsNote = true;
+  }
+
+  // 3. Functions Page
   if (!doc.functionsPage) doc.functionsPage = {};
-  if (Array.isArray(aiData.functions) && aiData.functions.length > 0) {
-    doc.functionsPage.items = aiData.functions.map((fn: any, idx: number) => ({
-      id: `func-ai-${Date.now()}-${idx}`,
-      name: fn.name || `Function ${idx + 1}`,
-      date: fn.date || cover.weddingDate || 'TBD',
-      time: fn.time || 'Full Day',
-      venue: fn.venue || cover.locationName || 'Venue TBD',
-      team: `${fn.photographers || 2} Photographers, ${fn.cinematographers || 2} Cinematographers${fn.drone ? ', Drone' : ''}`
-    }));
+  const rawFuncs = functionsPage.items || aiData.functions || [];
+  if (Array.isArray(rawFuncs) && rawFuncs.length > 0) {
+    doc.functionsPage.items = rawFuncs.map((fn: any, idx: number) => {
+      let requirementsList: { name: string; qty: number }[] = [];
+      if (Array.isArray(fn.requirements)) {
+        requirementsList = fn.requirements.map((r: any) => ({
+          name: normalizeCrewRoleName(typeof r === 'string' ? r : r.name || ''),
+          qty: Number(r.qty || 1)
+        }));
+      } else {
+        if (fn.photographers) requirementsList.push({ name: 'Candid Photographer', qty: Number(fn.photographers) });
+        if (fn.cinematographers) requirementsList.push({ name: 'Cinematographer', qty: Number(fn.cinematographers) });
+        if (fn.drone) requirementsList.push({ name: 'Drone Pilot', qty: 1 });
+      }
+
+      if (requirementsList.length === 0) {
+        requirementsList = [
+          { name: 'Candid Photographer', qty: 1 },
+          { name: 'Cinematographer', qty: 1 }
+        ];
+      }
+
+      const isNotFixed = fn.dateNotFixed ?? (!fn.date || fn.date === 'Date Not Fixed' || fn.date === 'TBD');
+
+      return {
+        id: fn.id || `func-ai-${Date.now()}-${idx}`,
+        name: fn.name || `Function ${idx + 1}`,
+        date: isNotFixed ? 'Date Not Fixed' : fn.date,
+        dateNotFixed: isNotFixed,
+        startTime: fn.startTime || '',
+        endTime: fn.endTime || '',
+        location: fn.location || fn.venue || '',
+        requirements: requirementsList,
+        notes: fn.notes || ''
+      };
+    });
   }
 
-  // Deliverables Page
+  // 4. Deliverables Page
   if (!doc.deliverablesPage) doc.deliverablesPage = {};
-  if (Array.isArray(aiData.deliverables) && aiData.deliverables.length > 0) {
-    doc.deliverablesPage.selectedItems = aiData.deliverables;
+  const rawDeliv = deliverablesPage.selectedItems || aiData.deliverables || [];
+  if (Array.isArray(rawDeliv) && rawDeliv.length > 0) {
+    doc.deliverablesPage.selectedItems = rawDeliv;
   }
 
-  // Pricing Page
-  if (!doc.pricingPage) doc.pricingPage = {};
-  if (pricing.basePrice) doc.pricingPage.basePrice = Number(pricing.basePrice);
-  if (pricing.discountAmount !== undefined) doc.pricingPage.discountAmount = Number(pricing.discountAmount);
-  if (pricing.travelCharges !== undefined) doc.pricingPage.travelCharges = Number(pricing.travelCharges);
-  if (pricing.accommodationCharges !== undefined) doc.pricingPage.accommodationCharges = Number(pricing.accommodationCharges);
+  // 5. Special Value Additions Page
+  if (!doc.specialValueAdditions) doc.specialValueAdditions = {};
+  const rawSpecial = specialValueAdditions.selectedItems || [];
+  if (Array.isArray(rawSpecial)) {
+    doc.specialValueAdditions.selectedItems = rawSpecial;
+  }
 
-  // Payment Schedule
+  // 6. Pricing Page
+  if (!doc.pricingPage) doc.pricingPage = {};
+  if (pricingPage.basePrice !== undefined) doc.pricingPage.basePrice = Number(pricingPage.basePrice);
+  if (pricingPage.discountAmount !== undefined) doc.pricingPage.discountAmount = Number(pricingPage.discountAmount);
+  if (pricingPage.gstPct !== undefined) doc.pricingPage.gstPct = Number(pricingPage.gstPct);
+  if (pricingPage.travelCharges !== undefined) doc.pricingPage.travelCharges = Number(pricingPage.travelCharges);
+  if (pricingPage.accommodationCharges !== undefined) doc.pricingPage.accommodationCharges = Number(pricingPage.accommodationCharges);
+  if (pricingPage.additionalCharges !== undefined) doc.pricingPage.additionalCharges = Number(pricingPage.additionalCharges);
+  doc.pricingPage.showExclusionsNote = true;
+
+  // 7. Payment Terms Page
   if (!doc.paymentTermsPage) doc.paymentTermsPage = {};
-  if (Array.isArray(aiData.payment_schedule) && aiData.payment_schedule.length > 0) {
-    doc.paymentTermsPage.steps = aiData.payment_schedule.map((step: any) => ({
+  const rawSteps = paymentTermsPage.steps || (Array.isArray(paymentTermsPage) ? paymentTermsPage : aiData.payment_schedule) || [];
+  if (Array.isArray(rawSteps) && rawSteps.length > 0) {
+    doc.paymentTermsPage.steps = rawSteps.map((step: any) => ({
       name: step.name || 'Payment Milestone',
       pct: step.pct || '30%',
       amount: Number(step.amount || 0),
-      status: 'Pending'
+      status: step.status || 'Pending'
     }));
   }
 
   // Calculate Summary
-  const coupleName = doc.cover.coupleName || `${doc.cover.groomName || 'Rahul'} & ${doc.cover.brideName || 'Neha'}`;
-  const totalAmount = (doc.pricingPage.basePrice || 150000) - (doc.pricingPage.discountAmount || 0) + (doc.pricingPage.travelCharges || 0) + (doc.pricingPage.accommodationCharges || 0);
+  const coupleName = doc.cover.coupleName || `${doc.cover.groomName || 'Client'} & ${doc.cover.brideName || 'Partner'}`;
+  const totalAmount = (doc.pricingPage.basePrice || 150000) - (doc.pricingPage.discountAmount || 0) + (doc.pricingPage.travelCharges || 0) + (doc.pricingPage.accommodationCharges || 0) + (doc.pricingPage.additionalCharges || 0);
 
   const summary = {
     coupleName,
-    weddingDate: cover.weddingDate || doc.functionsPage?.items?.[0]?.date || 'Date TBD',
+    weddingDate: doc.functionsPage?.items?.[0]?.date || 'Date TBD',
     location: doc.cover.locationName || 'Location TBD',
     functionsCount: doc.functionsPage?.items?.length || 0,
     functionsList: (doc.functionsPage?.items || []).map((f: any) => f.name),
@@ -499,34 +785,6 @@ function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextDat
     cinematographers: 2,
     totalInvestment: `₹${totalAmount.toLocaleString('en-IN')}`
   };
-
-  // Handle Page Sequence Visibility (Remove pages if explicitly not required or empty)
-  if (Array.isArray(doc.pageSequence)) {
-    let filteredSeq = [...doc.pageSequence];
-
-    // Pre-wedding shoot page check
-    const hasPreWedding = aiData.pre_wedding?.pre_wedding_included !== false && (doc.shootDetails?.daysText || doc.shootDetails?.text || contextData.notes_and_comments?.toLowerCase().includes('pre wedding') || contextData.additional_user_notes?.toLowerCase().includes('pre wedding'));
-    if (!hasPreWedding) {
-      filteredSeq = filteredSeq.filter(p => (typeof p === 'string' ? p : p.id) !== 'shootDetails');
-      if (doc.shootDetails) doc.shootDetails.visible = false;
-    }
-
-    // Special value additions check
-    const hasSpecialValues = doc.specialValueAdditions?.selectedItems && doc.specialValueAdditions.selectedItems.length > 0;
-    if (!hasSpecialValues) {
-      filteredSeq = filteredSeq.filter(p => (typeof p === 'string' ? p : p.id) !== 'specialValueAdditions');
-      if (doc.specialValueAdditions) doc.specialValueAdditions.visible = false;
-    }
-
-    // Add-ons page check
-    const hasAddOns = doc.addOnsPage?.items && doc.addOnsPage.items.length > 0;
-    if (!hasAddOns) {
-      filteredSeq = filteredSeq.filter(p => (typeof p === 'string' ? p : p.id) !== 'addOnsPage');
-      if (doc.addOnsPage) doc.addOnsPage.visible = false;
-    }
-
-    doc.pageSequence = filteredSeq;
-  }
 
   return {
     document: doc,
