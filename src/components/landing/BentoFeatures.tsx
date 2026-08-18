@@ -1,333 +1,199 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { 
-  User, 
-  Workflow, 
-  FileText, 
-  Users, 
-  MessageSquare, 
-  CheckCircle2
+  Database, Layers, MessageSquare, Camera, CheckSquare, 
+  Users, FileText, TrendingUp, Sparkles, ArrowRight, CheckCircle2, Shield
 } from 'lucide-react';
 
 export function BentoFeatures() {
+  const [activeTab, setActiveTab] = useState(0);
+
+  const features = [
+    {
+      id: 'crm',
+      title: 'Intelligent CRM & Lead Management',
+      badge: 'Core Engine',
+      desc: 'Capture, categorize, score, and track wedding leads across all pipeline stages with standard and custom metadata columns.',
+      icon: Database,
+      span: 'lg:col-span-8',
+      preview: (
+        <div className="bg-[#FAF8F5] dark:bg-[#1C1A18] rounded-xl p-4 border border-[#EAE3D2] dark:border-[#2C2926] text-xs">
+          <div className="flex items-center justify-between pb-2 border-b border-[#EAE3D2]">
+            <span className="font-bold text-[#1A1917] dark:text-white">Active Lead: Priyanka & Kabir</span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 font-bold text-[10px]">Retainer Paid ₹1,50,000</span>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-[#5A554E]">
+            <div><strong>Location:</strong> Udaipur</div>
+            <div><strong>Event Date:</strong> 12 Dec 2026</div>
+            <div><strong>Lead Score:</strong> 98/100 (Hot)</div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'whatsapp',
+      title: 'WhatsApp Drip & Baileys Automation',
+      badge: 'Automation',
+      desc: 'Send instant PDF brochures, payment receipts, and automated followup drips directly from your official WhatsApp number.',
+      icon: MessageSquare,
+      span: 'lg:col-span-4',
+      preview: (
+        <div className="bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/20 text-xs">
+          <div className="font-bold text-emerald-700 dark:text-emerald-400">Automated WhatsApp Message</div>
+          <p className="text-[11px] text-[#5A554E] mt-1">"Hi Ananya! Thanks for inquiring. Here is our 2026 Wedding Portfolio & Rate Card."</p>
+        </div>
+      )
+    },
+    {
+      id: 'meta',
+      title: 'Meta Lead Ads & Webhook Sync',
+      badge: 'Realtime Sync',
+      desc: 'Direct integration with Facebook Lead Forms & Instagram Ads. Zero lead drop with 1-second instant CRM entry.',
+      icon: Layers,
+      span: 'lg:col-span-4',
+      preview: (
+        <div className="bg-[#FFFDF9] dark:bg-[#1A1816] p-3 rounded-xl border border-[#EAE3D2] text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-[#B89047]">Meta Webhook Connected</span>
+            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">Active</span>
+          </div>
+          <p className="text-[10px] text-[#7A756E] mt-1">Synced 420+ leads from IG Story Lead Forms</p>
+        </div>
+      )
+    },
+    {
+      id: 'postprod',
+      title: 'Post-Production & Edit Tracker',
+      badge: 'Workflow OS',
+      desc: 'Track photo selections, RAW backups, Lightroom color grading, teaser cuts, and physical album printing deadlines.',
+      icon: Camera,
+      span: 'lg:col-span-4',
+      preview: (
+        <div className="bg-[#FAF8F5] dark:bg-[#1A1816] p-3 rounded-xl border border-[#EAE3D2] text-xs space-y-1.5">
+          <div className="flex justify-between text-[11px]">
+            <span>RAW Backup & Selection</span>
+            <span className="text-emerald-600 font-bold">Done ✓</span>
+          </div>
+          <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div className="h-full bg-[#D4AF37] w-4/5" />
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'quotations',
+      title: 'Luxury 3D PDF Proposal & Quotation Builder',
+      badge: 'Revenue Builder',
+      desc: 'Generate interactive PDF proposals with breakdown of photography, cinematography, drone footage, and retainer payment schedules.',
+      icon: FileText,
+      span: 'lg:col-span-4',
+      preview: (
+        <div className="bg-amber-500/5 p-3 rounded-xl border border-amber-500/20 text-xs">
+          <div className="font-bold text-[#B89047]">Quotation #QT-8890</div>
+          <div className="text-[11px] text-[#5A554E] mt-0.5">3-Day Destination Package — ₹6,50,000</div>
+          <div className="text-[10px] text-emerald-600 font-bold mt-1">Status: Approved by Couple</div>
+        </div>
+      )
+    },
+    {
+      id: 'tasks',
+      title: 'Task Management & Shoot Allocation',
+      badge: 'Team Dispatch',
+      desc: 'Assign lead photographers, drone operators, sound engineers, and video editors with automated schedule reminders.',
+      icon: CheckSquare,
+      span: 'lg:col-span-6',
+      preview: (
+        <div className="bg-[#FAF8F5] dark:bg-[#1A1816] p-3 rounded-xl border border-[#EAE3D2] text-xs flex items-center justify-between">
+          <div>
+            <div className="font-bold text-[#1A1917] dark:text-white">Udaipur Sangeet & Wedding</div>
+            <div className="text-[10px] text-[#7A756E]">4 Shooters Assigned • Gear Checklist Approved</div>
+          </div>
+          <span className="px-2 py-1 bg-blue-50 text-blue-600 font-bold text-[10px] rounded-md">Assigned</span>
+        </div>
+      )
+    },
+    {
+      id: 'revenue',
+      title: 'Financial Matrix & Retainer Analytics',
+      badge: 'Analytics',
+      desc: 'Track monthly recurring revenue, pending retainers, shooter payouts, and profit margins with live dynamic charts.',
+      icon: TrendingUp,
+      span: 'lg:col-span-6',
+      preview: (
+        <div className="bg-[#FFFDF9] dark:bg-[#1A1816] p-3 rounded-xl border border-[#EAE3D2] text-xs">
+          <div className="flex justify-between items-center">
+            <span className="font-bold text-[#1A1917] dark:text-white">Total Revenue YTD</span>
+            <span className="text-emerald-600 font-bold">₹1,24,50,000</span>
+          </div>
+          <div className="text-[10px] text-[#7A756E] mt-1">Average Deal Value: ₹4,20,000</div>
+        </div>
+      )
+    },
+  ];
+
   return (
-    <section id="features" className="py-20 md:py-32 bg-[#FAF7F2] dark:bg-[#0C0B0A] relative selection:bg-[#F36F21] selection:text-white">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+    <section className="py-24 md:py-32 bg-[#FFFDF9] dark:bg-[#0C0B0A] relative">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
         
-        {/* ── SECTION HEADER ── */}
-        <div className="mb-14 sm:mb-20 space-y-3">
-          <h2 className="text-3xl sm:text-5xl lg:text-6xl font-serif font-black tracking-tight text-zinc-900 dark:text-white leading-[1.15]">
-            Everything You Need.{' '}
-            <span className="font-serif italic font-normal text-[#bf7304] dark:text-[#d97706] block sm:inline">
-              In One Place.
-            </span>
-          </h2>
-          <p className="text-xs sm:text-base text-zinc-600 dark:text-zinc-400 max-w-xl mx-auto font-medium">
-            Purpose-built studio management suite for photography teams, cinematographers, and luxury wedding studios.
-          </p>
+        {/* BADGE */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#B89047] text-xs font-black uppercase tracking-widest mb-6">
+          <Sparkles className="w-3.5 h-3.5" />
+          Complete Studio Feature Architecture
         </div>
 
-        {/* ── 4 CARDS CONTAINER: STICKY STACKING ON MOBILE + 2x2 GRID ON DESKTOP ── */}
-        <div className="relative text-left space-y-8 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-8 max-w-5xl mx-auto">
-          
-          {/* ═══════════════════════════════════════════════════════════════
-              CARD 1: SMART CRM (Sticky top-20 on mobile)
-              ═══════════════════════════════════════════════════════════════ */}
-          <div className="sticky top-20 lg:static z-10 bg-white/95 dark:bg-[#161514] rounded-[28px] sm:rounded-[32px] p-6 sm:p-7 border border-amber-200/70 dark:border-zinc-800 shadow-xl shadow-amber-950/5 flex flex-col justify-between transition-transform duration-300">
-            <div>
-              {/* Header Icon + Title */}
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-center justify-center text-rose-500 shrink-0">
-                  <User className="w-5 h-5 stroke-[2.2]" />
-                </div>
-                <h3 className="text-lg sm:text-xl font-bold font-serif text-zinc-900 dark:text-white">
-                  Smart CRM
-                </h3>
-              </div>
+        {/* HEADLINE */}
+        <h2 className="text-4xl sm:text-6xl font-serif font-black tracking-tight text-[#1A1917] dark:text-[#FAF8F5]">
+          Everything Your Studio Needs. <br className="hidden sm:inline" />
+          <span className="bg-gradient-to-r from-[#B89047] via-[#D4AF37] to-[#C5A059] bg-clip-text text-transparent">
+            Built Into One OS.
+          </span>
+        </h2>
 
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-medium mb-5">
-                Manage leads, conversations &amp; follow-ups in one place.
-              </p>
+        <p className="mt-6 text-lg text-[#5A554E] dark:text-[#C5C0B8] max-w-2xl mx-auto font-medium">
+          Purpose-built tools designed around the real operational workflow of wedding photographers, cinematographers, and luxury studios.
+        </p>
 
-              {/* Status List Rows */}
-              <div className="space-y-2">
-                
-                {/* 1. New Lead */}
-                <div className="bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 rounded-xl px-4 py-2.5 flex items-center gap-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0 shadow-xs" />
-                  <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                    New Lead
-                  </span>
-                </div>
-
-                {/* 2. Contacted */}
-                <div className="bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 rounded-xl px-4 py-2.5 flex items-center gap-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0 shadow-xs" />
-                  <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                    Contacted
-                  </span>
-                </div>
-
-                {/* 3. Quotation Sent */}
-                <div className="bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 rounded-xl px-4 py-2.5 flex items-center gap-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 shadow-xs" />
-                  <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                    Quotation Sent
-                  </span>
-                </div>
-
-                {/* 4. Follow-up */}
-                <div className="bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 rounded-xl px-4 py-2.5 flex items-center gap-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0 shadow-xs" />
-                  <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                    Follow-up
-                  </span>
-                </div>
-
-                {/* 5. Booked */}
-                <div className="bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 rounded-xl px-4 py-2.5 flex items-center gap-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-xs" />
-                  <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                    Booked
-                  </span>
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-
-          {/* ═══════════════════════════════════════════════════════════════
-              CARD 2: AUTOMATION (Sticky top-24 on mobile)
-              ═══════════════════════════════════════════════════════════════ */}
-          <div className="sticky top-24 lg:static z-20 bg-white/95 dark:bg-[#161514] rounded-[28px] sm:rounded-[32px] p-6 sm:p-7 border border-amber-200/70 dark:border-zinc-800 shadow-xl shadow-amber-950/5 flex flex-col justify-between transition-transform duration-300">
-            <div>
-              {/* Header Icon + Title */}
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shrink-0">
-                  <Workflow className="w-5 h-5 stroke-[2.2]" />
-                </div>
-                <h3 className="text-lg sm:text-xl font-bold font-serif text-zinc-900 dark:text-white">
-                  Automation
-                </h3>
-              </div>
-
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-medium mb-5">
-                Automated follow-ups, reminders &amp; notifications.
-              </p>
-
-              {/* Flowchart Diagram */}
-              <div className="space-y-1.5 flex flex-col items-center">
-                
-                {/* Node 1: New Lead */}
-                <div className="w-full bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 rounded-xl py-2 px-3 text-center">
-                  <span className="text-xs sm:text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                    New Lead
-                  </span>
-                </div>
-
-                {/* Down Arrow */}
-                <span className="text-xs font-bold text-zinc-400 select-none">↓</span>
-
-                {/* Node 2: Send WhatsApp */}
-                <div className="w-full bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-300/80 dark:border-emerald-700/60 rounded-xl py-2 px-3 flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-300">
-                  <MessageSquare className="w-3.5 h-3.5 fill-current" />
-                  <span className="text-xs sm:text-sm font-bold">
-                    Send WhatsApp
-                  </span>
-                </div>
-
-                {/* Down Arrow */}
-                <span className="text-xs font-bold text-zinc-400 select-none">↓</span>
-
-                {/* Node 3: Wait 1 Day */}
-                <div className="w-full bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 rounded-xl py-2 px-3 text-center">
-                  <span className="text-xs sm:text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                    Wait 1 Day
-                  </span>
-                </div>
-
-                {/* Down Arrow */}
-                <span className="text-xs font-bold text-zinc-400 select-none">↓</span>
-
-                {/* Node 4: Send Follow-up */}
-                <div className="w-full bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-300/80 dark:border-emerald-700/60 rounded-xl py-2 px-3 flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-300">
-                  <MessageSquare className="w-3.5 h-3.5 fill-current" />
-                  <span className="text-xs sm:text-sm font-bold">
-                    Send Follow-up
-                  </span>
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-
-          {/* ═══════════════════════════════════════════════════════════════
-              CARD 3: QUOTATIONS (Sticky top-28 on mobile)
-              ═══════════════════════════════════════════════════════════════ */}
-          <div className="sticky top-28 lg:static z-30 bg-white/95 dark:bg-[#161514] rounded-[28px] sm:rounded-[32px] p-6 sm:p-7 border border-amber-200/70 dark:border-zinc-800 shadow-xl shadow-amber-950/5 flex flex-col justify-between transition-transform duration-300">
-            <div>
-              {/* Header Icon + Title */}
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-2xl bg-purple-50 border border-purple-200/80 flex items-center justify-center text-purple-600 shrink-0">
-                  <FileText className="w-5 h-5 stroke-[2.2]" />
-                </div>
-                <h3 className="text-lg sm:text-xl font-bold font-serif text-zinc-900 dark:text-white">
-                  Quotations
-                </h3>
-              </div>
-
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-medium mb-5">
-                Create beautiful quotations in just a few clicks.
-              </p>
-
-              {/* Quotation Item Cards */}
-              <div className="space-y-3">
-                
-                {/* Quote 1: Rahul & Neha */}
-                <div className="p-3.5 rounded-2xl bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-bold text-zinc-400 tracking-wider">
-                      #INV-1023
-                    </span>
-                    <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white leading-tight">
-                      Rahul &amp; Neha
-                    </h4>
-                    <p className="text-xs sm:text-sm font-black text-[#bf7304] dark:text-amber-400">
-                      ₹1,80,000
-                    </p>
-                    <span className="text-[10px] text-zinc-400 font-medium">
-                      20 Dec 2024
-                    </span>
-                  </div>
-
-                  {/* Thumbnail */}
-                  <div className="w-12 h-14 rounded-xl bg-amber-100 border border-amber-200 overflow-hidden relative shrink-0 shadow-xs">
-                    <img
-                      src="https://images.unsplash.com/photo-1519741497674-611481863552?w=120&auto=format&fit=crop&q=80"
-                      alt="Wedding"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                </div>
-
-                {/* Quote 2: Aarav & Diya */}
-                <div className="p-3.5 rounded-2xl bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-bold text-zinc-400 tracking-wider">
-                      #INV-1024
-                    </span>
-                    <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white leading-tight">
-                      Aarav &amp; Diya
-                    </h4>
-                    <p className="text-xs sm:text-sm font-black text-[#bf7304] dark:text-amber-400">
-                      ₹2,40,000
-                    </p>
-                    <span className="text-[10px] text-zinc-400 font-medium">
-                      15 Jan 2025
-                    </span>
-                  </div>
-
-                  {/* Thumbnail */}
-                  <div className="w-12 h-14 rounded-xl bg-purple-100 border border-purple-200 overflow-hidden relative shrink-0 shadow-xs">
-                    <img
-                      src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80"
-                      alt="Couple"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-
-          {/* ═══════════════════════════════════════════════════════════════
-              CARD 4: CLIENTS (Sticky top-32 on mobile)
-              ═══════════════════════════════════════════════════════════════ */}
-          <div className="sticky top-32 lg:static z-40 bg-white/95 dark:bg-[#161514] rounded-[28px] sm:rounded-[32px] p-6 sm:p-7 border border-amber-200/70 dark:border-zinc-800 shadow-xl shadow-amber-950/5 flex flex-col justify-between transition-transform duration-300">
-            <div>
-              {/* Header Icon + Title */}
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 shrink-0">
-                  <Users className="w-5 h-5 stroke-[2.2]" />
-                </div>
-                <h3 className="text-lg sm:text-xl font-bold font-serif text-zinc-900 dark:text-white">
-                  Clients
-                </h3>
-              </div>
-
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-medium mb-5">
-                Everything about your client in one workspace.
-              </p>
-
-              {/* Client Status Cards */}
-              <div className="space-y-3">
-                
-                {/* Client 1: Rohan & Priya */}
-                <div className="p-4 rounded-2xl bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 space-y-2.5">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&auto=format&fit=crop&q=80"
-                      alt="Client"
-                      className="w-8 h-8 rounded-full object-cover ring-2 ring-white"
-                    />
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white leading-tight">
-                        Rohan &amp; Priya
-                      </h4>
-                      <span className="text-[11px] text-zinc-400 font-medium">
-                        Udaipur · ₹1.8L
-                      </span>
+        {/* BENTO GRID */}
+        <div className="mt-16 grid grid-cols-1 lg:grid-cols-12 gap-6 text-left">
+          {features.map((item, idx) => {
+            const IconComponent = item.icon;
+            return (
+              <motion.div
+                key={item.id}
+                initial={{ opacity: 0, y: 25 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: idx * 0.08 }}
+                className={`${item.span} p-8 rounded-3xl bg-gradient-to-br from-[#FAF8F5] via-[#FFFDF9] to-[#F5EFE6] dark:from-[#141210] dark:to-[#1C1A18] border border-[#EAE3D2] dark:border-[#2C2926] shadow-xs hover:border-[#D4AF37] transition-all hover:shadow-xl flex flex-col justify-between group`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#D4AF37] via-[#C5A059] to-[#9A7B32] text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                      <IconComponent className="w-6 h-6" />
                     </div>
+                    <span className="px-3 py-1 rounded-full bg-white dark:bg-[#25221F] border border-[#EAE3D2] text-[11px] font-bold text-[#B89047] uppercase tracking-wider">
+                      {item.badge}
+                    </span>
                   </div>
 
-                  {/* Progress Bar */}
-                  <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-2 rounded-full overflow-hidden">
-                    <div className="bg-emerald-600 h-full w-3/4 rounded-full" />
-                  </div>
+                  <h3 className="text-xl font-bold text-[#1A1917] dark:text-white font-serif mb-2">
+                    {item.title}
+                  </h3>
 
-                  <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-                    3/4 Payments Done
+                  <p className="text-sm text-[#5A554E] dark:text-[#C5C0B8] font-medium leading-relaxed mb-6">
+                    {item.desc}
                   </p>
                 </div>
 
-                {/* Client 2: Kabir & Simran */}
-                <div className="p-4 rounded-2xl bg-zinc-50/90 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 space-y-2.5">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&auto=format&fit=crop&q=80"
-                      alt="Client"
-                      className="w-8 h-8 rounded-full object-cover ring-2 ring-white"
-                    />
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white leading-tight">
-                        Kabir &amp; Simran
-                      </h4>
-                      <span className="text-[11px] text-zinc-400 font-medium">
-                        Goa · ₹3.2L
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-2 rounded-full overflow-hidden">
-                    <div className="bg-emerald-600 h-full w-full rounded-full" />
-                  </div>
-
-                  <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    All Payments Completed
-                  </p>
+                {/* MINI PREVIEW WIDGET */}
+                <div className="mt-auto pt-4 border-t border-[#EAE3D2]/60 dark:border-[#2C2926]">
+                  {item.preview}
                 </div>
-
-              </div>
-            </div>
-          </div>
-
+              </motion.div>
+            );
+          })}
         </div>
 
       </div>
