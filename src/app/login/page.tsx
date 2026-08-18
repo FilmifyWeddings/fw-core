@@ -588,42 +588,23 @@ export default function LoginPage() {
           <div className="w-full lg:col-span-4 xl:col-span-4 flex justify-center lg:justify-end order-1 lg:order-3">
             <div className="w-full max-w-[440px] bg-white/95 backdrop-blur-md rounded-3xl p-5 sm:p-7 border border-amber-200/60 shadow-xl shadow-amber-950/5">
               
-              {/* 3D Character Pop-Out Badge on Mobile */}
-              <div className="flex lg:hidden items-center justify-between pb-3.5 mb-3.5 border-b border-zinc-100/90 relative pt-1">
-                <div className="flex items-center gap-3">
-                  {/* 3D Pop-Out Avatar Frame: Bottom clipped inside circle, Head pops out at top */}
-                  <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
-                    {/* 1. Base Circle (Bottom clipped inside circle) */}
-                    <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-amber-200 via-amber-100 to-amber-50 border border-amber-300 shadow-sm overflow-hidden relative">
-                      <div className="absolute inset-0 top-1.5 flex items-end justify-center pointer-events-none">
-                        <Image
-                          src="/images/auth/42.png"
-                          alt="StudioCore Photographer"
-                          fill
-                          unoptimized
-                          priority
-                          className="object-contain object-bottom scale-120 translate-y-0.5"
-                        />
-                      </div>
-                    </div>
-
-                    {/* 2. Top Pop-Out Head & Hair (Extending over top rim) */}
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-14 h-7 overflow-hidden pointer-events-none">
-                      <div className="relative w-14 h-14 translate-y-3 flex items-end justify-center">
-                        <Image
-                          src="/images/auth/42.png"
-                          alt="StudioCore Photographer Head"
-                          fill
-                          unoptimized
-                          priority
-                          className="object-contain object-bottom scale-120 translate-y-0.5 drop-shadow-md"
-                        />
-                      </div>
-                    </div>
+              {/* 3D Character Header on Mobile (Standing directly on the divider line, no circle) */}
+              <div className="flex lg:hidden items-end justify-between pb-3 mb-3.5 border-b border-zinc-200/80 relative">
+                <div className="flex items-end gap-3">
+                  {/* 3D Photographer Character standing on the bottom line */}
+                  <div className="relative w-16 h-20 -mb-3 shrink-0 select-none pointer-events-none">
+                    <Image
+                      src="/images/auth/42.png"
+                      alt="StudioCore Photographer"
+                      fill
+                      unoptimized
+                      priority
+                      className="object-contain object-bottom drop-shadow-md"
+                    />
                   </div>
 
-                  <div>
-                    <h3 className="text-sm font-serif font-black text-zinc-900 leading-tight">
+                  <div className="pb-0.5">
+                    <h3 className="text-base font-serif font-black text-zinc-900 leading-tight">
                       StudioCore
                     </h3>
                     <p className="text-[11px] text-[#bf7304] font-bold">
@@ -631,7 +612,8 @@ export default function LoginPage() {
                     </p>
                   </div>
                 </div>
-                <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100/90 border border-amber-200 text-[#92400e] text-[10px] font-bold shadow-2xs">
+
+                <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100/90 border border-amber-200 text-[#92400e] text-[10px] font-bold shadow-2xs mb-0.5">
                   {authMode === 'login' ? 'Sign In' : 'Sign Up'}
                 </div>
               </div>
