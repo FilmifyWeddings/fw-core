@@ -419,27 +419,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen w-full bg-[#FAF7F2] text-zinc-900 font-sans relative overflow-x-hidden flex flex-col justify-between selection:bg-[#F36F21] selection:text-white">
       
-      {/* ── LUXURY BOTANICAL CORNERS ── */}
-      <div className="pointer-events-none absolute top-0 left-0 w-48 sm:w-64 md:w-80 h-48 sm:h-64 md:h-80 opacity-35 mix-blend-multiply select-none -translate-x-10 -translate-y-10 z-0">
-        <Image
-          src="/images/auth/gold_botanical_corner.jpg"
-          alt="Luxury Floral Decor"
-          fill
-          unoptimized
-          className="object-contain"
-        />
-      </div>
-
-      <div className="pointer-events-none absolute bottom-0 right-0 w-52 sm:w-72 md:w-96 h-52 sm:h-72 md:h-96 opacity-40 mix-blend-multiply select-none translate-x-12 translate-y-12 rotate-180 z-0">
-        <Image
-          src="/images/auth/gold_botanical_corner.jpg"
-          alt="Luxury Floral Decor"
-          fill
-          unoptimized
-          className="object-contain"
-        />
-      </div>
-
       {/* ── TOP LUXURY NAVIGATION BAR ── */}
       <header className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-2 flex items-center justify-between">
         {/* Brand Logo & Tagline */}
@@ -477,7 +456,7 @@ export default function LoginPage() {
         </nav>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        <div className="flex items-center gap-2.5 sm:gap-4">
           <button
             type="button"
             onClick={() => {
@@ -502,13 +481,13 @@ export default function LoginPage() {
       </header>
 
       {/* ── MAIN HERO SECTION ── */}
-      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 flex-1 flex items-center justify-center">
-        <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
+      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-6 lg:py-8 flex-1 flex items-center justify-center">
+        <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-6 items-center">
           
           {/* ═══════════════════════════════════════════════════════════════
-              LEFT COLUMN: HEADLINE, FEATURE PILLS & SOCIAL PROOF
+              LEFT COLUMN: HEADLINE & FEATURE PILLS (Desktop Only / Top on Large)
               ═══════════════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-4 xl:col-span-4 flex flex-col justify-center space-y-4 sm:space-y-5 text-left order-2 lg:order-1">
+          <div className="hidden lg:flex lg:col-span-4 xl:col-span-4 flex-col justify-center space-y-4 sm:space-y-5 text-left order-2 lg:order-1">
             
             {/* Welcome Badge */}
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100/80 border border-amber-300/60 text-[#92400e] text-xs sm:text-sm font-bold shadow-xs w-fit">
@@ -573,82 +552,74 @@ export default function LoginPage() {
 
             </div>
 
-            {/* Social Proof & Stars */}
-            <div className="flex items-center gap-3 pt-1">
-              <div className="flex -space-x-2 overflow-hidden">
-                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-amber-700 text-white text-[11px] font-bold flex items-center justify-center">
-                  SK
-                </div>
-                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center">
-                  RN
-                </div>
-                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-blue-700 text-white text-[11px] font-bold flex items-center justify-center">
-                  AP
-                </div>
-                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-purple-700 text-white text-[11px] font-bold flex items-center justify-center">
-                  VJ
-                </div>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-zinc-800">
-                  Trusted by 2,500+ Photographers
-                </span>
-                <div className="flex items-center gap-1 text-amber-500">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  ))}
-                </div>
-              </div>
-            </div>
-
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════
-              CENTER COLUMN: 3D PHOTOGRAPHER CHARACTER + WEDDING BACKDROP
+              CENTER COLUMN: 3D PHOTOGRAPHER CHARACTER WITH BOTTOM FADE
               ═══════════════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-4 xl:col-span-4 flex items-center justify-center relative min-h-[280px] sm:min-h-[380px] lg:min-h-[520px] order-1 lg:order-2">
+          <div className="hidden lg:flex lg:col-span-4 xl:col-span-4 items-end justify-center relative min-h-[360px] lg:min-h-[500px] xl:min-h-[540px] order-1 lg:order-2">
             
-            {/* Soft Warm Wedding Hall Backdrop Blend */}
-            <div className="absolute inset-0 w-full h-full rounded-full overflow-hidden opacity-90 pointer-events-none scale-105 sm:scale-110 filter blur-[0.5px]">
-              <Image
-                src="/images/auth/wedding_hall_bokeh_bg.jpg"
-                alt="Luxury Wedding Hall Backdrop"
-                fill
-                unoptimized
-                className="object-cover object-center"
-              />
-              <div className="absolute inset-0 bg-radial from-transparent via-[#FAF7F2]/40 to-[#FAF7F2]" />
-            </div>
+            {/* Soft Ambient Warm Glow Behind Character */}
+            <div className="absolute w-72 h-72 bg-amber-400/15 rounded-full filter blur-3xl animate-soft-glow pointer-events-none -translate-y-8" />
 
-            {/* Glowing Golden Ring Atmosphere */}
-            <div className="absolute w-60 sm:w-80 h-60 sm:h-80 bg-amber-400/20 rounded-full filter blur-3xl animate-soft-glow pointer-events-none" />
-
-            {/* 3D Photographer Character with Thumbs Up (42.png) with Gentle Float Animation */}
-            <div className="relative w-full max-w-[280px] sm:max-w-[350px] lg:max-w-[420px] aspect-[4/5] z-10 animate-subtle-float select-none">
+            {/* 3D Photographer Character (42.png) with Smooth Bottom Fade */}
+            <div
+              className="relative w-full max-w-[320px] lg:max-w-[400px] xl:max-w-[440px] aspect-[4/5] z-10 animate-subtle-float select-none"
+              style={{
+                maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 70%, rgba(0,0,0,0) 98%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 70%, rgba(0,0,0,0) 98%)',
+              }}
+            >
               <Image
                 src="/images/auth/42.png"
                 alt="StudioCore 3D Photographer Character"
                 fill
                 unoptimized
                 priority
-                className="object-contain object-bottom drop-shadow-2xl"
+                className="object-contain object-bottom drop-shadow-xl"
               />
             </div>
 
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════
-              RIGHT COLUMN: ELEVATED AUTHENTICATION FORM CARD
+              RIGHT COLUMN / MOBILE HERO: ELEVATED AUTHENTICATION FORM CARD
               ═══════════════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-4 xl:col-span-4 flex justify-center lg:justify-end order-3">
-            <div className="w-full max-w-[420px] bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-7 border border-amber-200/60 shadow-xl shadow-amber-950/5">
+          <div className="w-full lg:col-span-4 xl:col-span-4 flex justify-center lg:justify-end order-1 lg:order-3">
+            <div className="w-full max-w-[440px] bg-white/95 backdrop-blur-md rounded-3xl p-5 sm:p-7 border border-amber-200/60 shadow-xl shadow-amber-950/5">
               
+              {/* Mobile Hero Header Badge + Mini Character Peek on Mobile */}
+              <div className="flex lg:hidden items-center justify-between pb-3 mb-3 border-b border-zinc-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="relative w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200/80 overflow-hidden shrink-0">
+                    <Image
+                      src="/images/auth/42.png"
+                      alt="Photographer"
+                      fill
+                      unoptimized
+                      className="object-cover object-top scale-125 translate-y-1"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-serif font-black text-zinc-900 leading-tight">
+                      StudioCore Suite
+                    </h3>
+                    <p className="text-[11px] text-amber-700 font-semibold">
+                      Focus on Art, We Manage
+                    </p>
+                  </div>
+                </div>
+                <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100/80 text-[#92400e] text-[10px] font-bold">
+                  {authMode === 'login' ? 'Sign In' : 'Sign Up'}
+                </div>
+              </div>
+
               {/* Card Header */}
               <div className="mb-4 sm:mb-5">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl sm:text-[25px] font-serif font-black text-zinc-900 tracking-tight flex items-center gap-2">
+                  <h2 className="text-xl sm:text-2xl font-serif font-black text-zinc-900 tracking-tight flex items-center gap-1.5">
                     <span>{authMode === 'login' ? 'Welcome Back!' : 'Create Studio'}</span>
-                    <span className="text-xl">👋</span>
+                    <span className="text-lg">👋</span>
                   </h2>
                   <div className="flex p-0.5 bg-zinc-100 rounded-lg text-[11px] font-bold">
                     <button
@@ -683,7 +654,7 @@ export default function LoginPage() {
                   
                   {/* Email Address / Phone */}
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-700">Email Address</label>
+                    <label className="text-xs font-bold text-zinc-700">Email or Mobile Number</label>
                     <div className="relative flex items-center">
                       <div className="absolute left-3.5 pointer-events-none text-zinc-400">
                         <Mail className="w-4 h-4 stroke-[2]" />
@@ -692,7 +663,7 @@ export default function LoginPage() {
                         type="text"
                         value={identifier}
                         onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
-                        placeholder="Enter your email"
+                        placeholder="Enter email or mobile"
                         className="w-full pl-10 pr-4 h-10 sm:h-11 rounded-xl bg-zinc-50/80 border border-zinc-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20 focus:outline-none transition-all"
                       />
                     </div>
