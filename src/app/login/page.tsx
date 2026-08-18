@@ -4,8 +4,30 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, Lock, Eye, EyeOff, AlertCircle, Phone, Mail, ArrowRight, Building2, ChevronDown, Search, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import {
+  User,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  Phone,
+  Mail,
+  ArrowRight,
+  Building2,
+  ChevronDown,
+  Search,
+  CheckCircle2,
+  Clock,
+  FileText,
+  TrendingUp,
+  Heart,
+  ShieldCheck,
+  CreditCard,
+  Headphones,
+  Zap,
+  Star,
+} from 'lucide-react';
 import OtpModal from '@/components/auth/OtpModal';
 
 // Comprehensive Country Code Data with ISO for Flag Images
@@ -395,144 +417,334 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="fixed inset-0 w-full h-[100dvh] bg-[#F6EFEB] selection:bg-[#F36F21] selection:text-white font-sans flex flex-col justify-between p-3.5 sm:p-6 lg:p-10 overflow-hidden z-10">
+    <div className="min-h-screen w-full bg-[#FAF7F2] text-zinc-900 font-sans relative overflow-x-hidden flex flex-col justify-between selection:bg-[#F36F21] selection:text-white">
       
-      {/* ═══════════════════════════════════════════════════════════════
-          RESPONSIVE TWO-COLUMN CONTAINER
-          ═══════════════════════════════════════════════════════════════ */}
-      <div className="w-full max-w-[1380px] mx-auto grid grid-cols-1 lg:grid-cols-[38%_62%] xl:grid-cols-[36%_64%] items-center gap-3 lg:gap-12 xl:gap-16 my-auto h-full max-h-[100dvh] lg:max-h-none justify-center">
-        
-        {/* ── LEFT COLUMN: LOGO + FORM + CAPTURE + MOBILE 3D CHARACTER ── */}
-        <div className="w-full max-w-[360px] sm:max-w-[420px] mx-auto lg:mx-0 flex flex-col justify-between h-full max-h-[100dvh] lg:max-h-none lg:justify-center">
-          
-          {/* 1. StudioCore Brand Logo (Stays at Top Left) */}
-          <div className="pt-0.5 sm:pt-1">
-            <div className="flex items-center gap-2.5 sm:gap-4">
-              <div className="relative w-11 h-6 sm:w-16 sm:h-9 xl:w-[70px] xl:h-[40px] shrink-0 flex items-center justify-center">
-                <Image
-                  src="/images/auth/sc-orange-logo.png"
-                  alt="StudioCore SC Logo"
-                  fill
-                  unoptimized
-                  className="object-contain"
-                  priority
-                />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xl sm:text-3xl xl:text-[32px] font-black tracking-tight text-zinc-950 font-sans leading-none">
-                  StudioCore
-                </span>
-                <span className="text-[10px] sm:text-[13px] xl:text-sm font-semibold text-zinc-600 tracking-normal mt-0.5 sm:mt-1 leading-none">
-                  Focus on Art, We Manage
-                </span>
-              </div>
-            </div>
+      {/* ── LUXURY BOTANICAL CORNERS ── */}
+      <div className="pointer-events-none absolute top-0 left-0 w-48 sm:w-64 md:w-80 h-48 sm:h-64 md:h-80 opacity-35 mix-blend-multiply select-none -translate-x-10 -translate-y-10 z-0">
+        <Image
+          src="/images/auth/gold_botanical_corner.jpg"
+          alt="Luxury Floral Decor"
+          fill
+          unoptimized
+          className="object-contain"
+        />
+      </div>
+
+      <div className="pointer-events-none absolute bottom-0 right-0 w-52 sm:w-72 md:w-96 h-52 sm:h-72 md:h-96 opacity-40 mix-blend-multiply select-none translate-x-12 translate-y-12 rotate-180 z-0">
+        <Image
+          src="/images/auth/gold_botanical_corner.jpg"
+          alt="Luxury Floral Decor"
+          fill
+          unoptimized
+          className="object-contain"
+        />
+      </div>
+
+      {/* ── TOP LUXURY NAVIGATION BAR ── */}
+      <header className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-2 flex items-center justify-between">
+        {/* Brand Logo & Tagline */}
+        <Link href="/" className="flex items-center gap-2 group transition-transform">
+          <div className="relative w-8 h-8 sm:w-10 sm:h-10 shrink-0">
+            <Image
+              src="/images/auth/sc-orange-logo.png"
+              alt="StudioCore Logo"
+              fill
+              unoptimized
+              className="object-contain"
+              priority
+            />
           </div>
+          <div className="flex flex-col">
+            <span className="text-2xl sm:text-[28px] font-serif font-black tracking-tight text-[#bf7304] leading-none">
+              StudioCore
+            </span>
+            <span className="text-[10px] sm:text-[11px] font-medium text-zinc-500 tracking-tight mt-0.5">
+              All-in-One Studio Management
+            </span>
+          </div>
+        </Link>
 
-          {/* 2. Authentication Form Card */}
-          <div className="my-auto pt-2 sm:pt-4 lg:pt-0 lg:mt-6 xl:mt-8 flex flex-col">
+        {/* Center Nav Links (Desktop) */}
+        <nav className="hidden md:flex items-center gap-6 lg:gap-8 text-xs lg:text-sm font-semibold text-zinc-600">
+          <Link href="/features" className="hover:text-[#bf7304] transition-colors">Features</Link>
+          <Link href="/#how-it-works" className="hover:text-[#bf7304] transition-colors">How It Works</Link>
+          <Link href="/#solutions" className="hover:text-[#bf7304] transition-colors">Solutions</Link>
+          <Link href="/pricing" className="hover:text-[#bf7304] transition-colors">Pricing</Link>
+          <div className="flex items-center gap-1 cursor-pointer hover:text-[#bf7304] transition-colors">
+            <span>Resources</span>
+            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+          </div>
+        </nav>
+
+        {/* Right Actions */}
+        <div className="flex items-center gap-3 sm:gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode(authMode === 'login' ? 'signup' : 'login');
+              setError(null);
+            }}
+            className="text-xs sm:text-sm font-bold text-zinc-700 hover:text-zinc-950 transition-colors cursor-pointer"
+          >
+            {authMode === 'login' ? 'Create Account' : 'Login'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('signup');
+              setError(null);
+            }}
+            className="px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#d97706] to-[#b45309] hover:from-[#b45309] hover:to-[#92400e] text-white font-bold text-xs sm:text-sm shadow-md shadow-amber-800/15 hover:shadow-lg transition-all cursor-pointer active:scale-95"
+          >
+            Start Your Studio
+          </button>
+        </div>
+      </header>
+
+      {/* ── MAIN HERO SECTION ── */}
+      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 flex-1 flex items-center justify-center">
+        <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
+          
+          {/* ═══════════════════════════════════════════════════════════════
+              LEFT COLUMN: HEADLINE, FEATURE PILLS & SOCIAL PROOF
+              ═══════════════════════════════════════════════════════════════ */}
+          <div className="lg:col-span-4 xl:col-span-4 flex flex-col justify-center space-y-4 sm:space-y-5 text-left order-2 lg:order-1">
             
-            {/* Pill Tabs: Sign In / Sign Up */}
-            <div className="flex p-1 bg-zinc-200/80 rounded-xl max-w-[240px] mb-2 sm:mb-3">
-              <button
-                type="button"
-                onClick={() => { setAuthMode('login'); setError(null); }}
-                className={`flex-1 py-1.5 text-xs sm:text-sm font-extrabold rounded-lg transition-all cursor-pointer ${
-                  authMode === 'login'
-                    ? 'bg-white text-zinc-950 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-900'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode('signup'); setError(null); }}
-                className={`flex-1 py-1.5 text-xs sm:text-sm font-extrabold rounded-lg transition-all cursor-pointer ${
-                  authMode === 'signup'
-                    ? 'bg-white text-[#F36F21] shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-900'
-                }`}
-              >
-                Sign Up
-              </button>
+            {/* Welcome Badge */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100/80 border border-amber-300/60 text-[#92400e] text-xs sm:text-sm font-bold shadow-xs w-fit">
+              <span>👋</span>
+              <span>{authMode === 'login' ? 'Welcome Back!' : 'Start 14-Day Free Trial'}</span>
+              <span>👋</span>
             </div>
 
-            {/* Heading & Subheading */}
+            {/* Typography Heading */}
             <div>
-              <h1 className="text-xl sm:text-2xl xl:text-[30px] font-black text-zinc-900 tracking-tight leading-tight">
-                {authMode === 'login' ? 'Welcome Back' : 'Create Studio Account'}
+              <h1 className="text-3xl sm:text-4xl lg:text-[40px] xl:text-[44px] font-serif font-black text-zinc-900 tracking-tight leading-[1.12]">
+                Manage Your Studio.
               </h1>
-              <p className="text-[11px] sm:text-xs text-zinc-600 mt-0.5 font-normal">
+              <h2 className="text-3xl sm:text-4xl lg:text-[40px] xl:text-[44px] font-serif font-black text-[#bf7304] tracking-tight leading-[1.12] mt-0.5">
+                Grow Your Business.
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-600 mt-2 max-w-md font-medium leading-relaxed">
                 {authMode === 'login'
-                  ? 'Access your studio quotations and workspace'
-                  : 'Start managing inquiries, quotations & team with StudioCore'}
+                  ? 'Login to your StudioCore account and continue where you left off.'
+                  : 'Empower your photography studio with quotations, lead pipeline & instant delivery.'}
               </p>
             </div>
 
-            {/* Forms Container */}
-            <div className="mt-2.5 sm:mt-3.5">
+            {/* 4 Feature Value Pills (Glassy Box) */}
+            <div className="bg-white/85 backdrop-blur-xs rounded-2xl p-3.5 sm:p-4 border border-amber-100/80 shadow-sm space-y-2.5 max-w-md">
+              
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100/80 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                  <Clock className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <span className="text-xs sm:text-sm font-semibold text-zinc-800">
+                  Save time with automation
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100/80 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0">
+                  <FileText className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <span className="text-xs sm:text-sm font-semibold text-zinc-800">
+                  Stay organized & stress-free
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-purple-100/80 border border-purple-200 flex items-center justify-center text-purple-700 shrink-0">
+                  <TrendingUp className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <span className="text-xs sm:text-sm font-semibold text-zinc-800">
+                  Grow your photography business
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-rose-100/80 border border-rose-200 flex items-center justify-center text-rose-700 shrink-0">
+                  <Heart className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <span className="text-xs sm:text-sm font-semibold text-zinc-800">
+                  Loved by 2,500+ photographers
+                </span>
+              </div>
+
+            </div>
+
+            {/* Social Proof & Stars */}
+            <div className="flex items-center gap-3 pt-1">
+              <div className="flex -space-x-2 overflow-hidden">
+                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-amber-700 text-white text-[11px] font-bold flex items-center justify-center">
+                  SK
+                </div>
+                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center">
+                  RN
+                </div>
+                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-blue-700 text-white text-[11px] font-bold flex items-center justify-center">
+                  AP
+                </div>
+                <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-purple-700 text-white text-[11px] font-bold flex items-center justify-center">
+                  VJ
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-zinc-800">
+                  Trusted by 2,500+ Photographers
+                </span>
+                <div className="flex items-center gap-1 text-amber-500">
+                  {[...Array(5)].map((_, i) => (
+                    <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════
+              CENTER COLUMN: 3D PHOTOGRAPHER CHARACTER + WEDDING BACKDROP
+              ═══════════════════════════════════════════════════════════════ */}
+          <div className="lg:col-span-4 xl:col-span-4 flex items-center justify-center relative min-h-[280px] sm:min-h-[380px] lg:min-h-[520px] order-1 lg:order-2">
+            
+            {/* Soft Warm Wedding Hall Backdrop Blend */}
+            <div className="absolute inset-0 w-full h-full rounded-full overflow-hidden opacity-90 pointer-events-none scale-105 sm:scale-110 filter blur-[0.5px]">
+              <Image
+                src="/images/auth/wedding_hall_bokeh_bg.jpg"
+                alt="Luxury Wedding Hall Backdrop"
+                fill
+                unoptimized
+                className="object-cover object-center"
+              />
+              <div className="absolute inset-0 bg-radial from-transparent via-[#FAF7F2]/40 to-[#FAF7F2]" />
+            </div>
+
+            {/* Glowing Golden Ring Atmosphere */}
+            <div className="absolute w-60 sm:w-80 h-60 sm:h-80 bg-amber-400/20 rounded-full filter blur-3xl animate-soft-glow pointer-events-none" />
+
+            {/* 3D Photographer Character with Thumbs Up (42.png) with Gentle Float Animation */}
+            <div className="relative w-full max-w-[280px] sm:max-w-[350px] lg:max-w-[420px] aspect-[4/5] z-10 animate-subtle-float select-none">
+              <Image
+                src="/images/auth/42.png"
+                alt="StudioCore 3D Photographer Character"
+                fill
+                unoptimized
+                priority
+                className="object-contain object-bottom drop-shadow-2xl"
+              />
+            </div>
+
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════
+              RIGHT COLUMN: ELEVATED AUTHENTICATION FORM CARD
+              ═══════════════════════════════════════════════════════════════ */}
+          <div className="lg:col-span-4 xl:col-span-4 flex justify-center lg:justify-end order-3">
+            <div className="w-full max-w-[420px] bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-7 border border-amber-200/60 shadow-xl shadow-amber-950/5">
+              
+              {/* Card Header */}
+              <div className="mb-4 sm:mb-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl sm:text-[25px] font-serif font-black text-zinc-900 tracking-tight flex items-center gap-2">
+                    <span>{authMode === 'login' ? 'Welcome Back!' : 'Create Studio'}</span>
+                    <span className="text-xl">👋</span>
+                  </h2>
+                  <div className="flex p-0.5 bg-zinc-100 rounded-lg text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('login'); setError(null); }}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        authMode === 'login' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-900'
+                      }`}
+                    >
+                      Login
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('signup'); setError(null); }}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        authMode === 'signup' ? 'bg-white text-[#bf7304] shadow-xs' : 'text-zinc-500 hover:text-zinc-900'
+                      }`}
+                    >
+                      Sign Up
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-500 mt-1 font-medium">
+                  {authMode === 'login' ? 'Login to your StudioCore account' : 'Enter your details to create your studio'}
+                </p>
+              </div>
+
+              {/* ── FORM BODY ── */}
               {authMode === 'login' ? (
-                /* ── LOGIN FORM ── */
-                <form onSubmit={handleLoginSubmit} className="space-y-2 sm:space-y-3" autoComplete="off">
-                  {/* Email or Phone */}
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
-                      <User className="w-4 h-4 stroke-[2]" />
+                /* LOGIN FORM */
+                <form onSubmit={handleLoginSubmit} className="space-y-3.5" autoComplete="off">
+                  
+                  {/* Email Address / Phone */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-700">Email Address</label>
+                    <div className="relative flex items-center">
+                      <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                        <Mail className="w-4 h-4 stroke-[2]" />
+                      </div>
+                      <input
+                        type="text"
+                        value={identifier}
+                        onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
+                        placeholder="Enter your email"
+                        className="w-full pl-10 pr-4 h-10 sm:h-11 rounded-xl bg-zinc-50/80 border border-zinc-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20 focus:outline-none transition-all"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={identifier}
-                      onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
-                      placeholder="Email or Mobile Number"
-                      className="w-full pl-10 pr-4 h-9 sm:h-[46px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                    />
                   </div>
 
                   {/* Password */}
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3.5 pointer-events-none text-zinc-400">
-                      <Lock className="w-4 h-4 stroke-[2]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-700">Password</label>
+                    <div className="relative flex items-center">
+                      <div className="absolute left-3.5 pointer-events-none text-zinc-400">
+                        <Lock className="w-4 h-4 stroke-[2]" />
+                      </div>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => { setPassword(e.target.value); setError(null); }}
+                        placeholder="Enter your password"
+                        className="w-full pl-10 pr-10 h-10 sm:h-11 rounded-xl bg-zinc-50/80 border border-zinc-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20 focus:outline-none transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => { setPassword(e.target.value); setError(null); }}
-                      placeholder="Password"
-                      className="w-full pl-10 pr-10 h-9 sm:h-[46px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer touch-manipulation"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
                   </div>
 
                   {/* Remember Me & Forgot Password */}
-                  <div className="flex items-center justify-between pt-0.5 pb-0.5 text-xs">
+                  <div className="flex items-center justify-between pt-0.5 text-xs">
                     <label className="flex items-center gap-1.5 cursor-pointer select-none text-zinc-600 hover:text-zinc-900">
                       <input
                         type="checkbox"
                         checked={rememberMe}
                         onChange={(e) => setRememberMe(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-zinc-300 text-[#F36F21] focus:ring-[#F36F21] accent-[#F36F21] cursor-pointer"
+                        className="w-3.5 h-3.5 rounded border-zinc-300 text-[#bf7304] focus:ring-[#bf7304] accent-[#bf7304] cursor-pointer"
                       />
                       <span className="text-[11px] sm:text-xs font-semibold">Remember me</span>
                     </label>
                     <Link
                       href="/forgot-password"
-                      className="text-[11px] sm:text-xs font-bold text-[#F36F21] hover:underline"
+                      className="text-[11px] sm:text-xs font-bold text-[#bf7304] hover:underline"
                     >
-                      Forgot password?
+                      Forgot Password?
                     </Link>
                   </div>
 
                   {/* Error Notification */}
                   {error && (
-                    <div className="p-2 rounded-xl bg-red-50 border border-red-200 flex items-start gap-1.5 text-xs text-red-700 font-bold">
-                      <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-bold">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                       <span>{error}</span>
                     </div>
                   )}
@@ -541,29 +753,79 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-9 sm:h-[46px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99] touch-manipulation"
+                    className="w-full h-11 sm:h-11.5 rounded-xl bg-gradient-to-r from-[#d97706] to-[#b45309] hover:from-[#b45309] hover:to-[#92400e] text-white font-bold text-sm tracking-wide flex items-center justify-center gap-2 shadow-md shadow-amber-900/15 hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99]"
                   >
                     {loading ? (
-                      'Signing in...'
+                      'Logging in...'
                     ) : (
                       <>
-                        <span>Sign In to Workspace</span>
-                        <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>Login to StudioCore</span>
+                        <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                       </>
                     )}
                   </button>
+
+                  {/* Divider */}
+                  <div className="relative flex items-center justify-center my-3">
+                    <div className="border-t border-zinc-200 w-full" />
+                    <span className="bg-white px-2.5 text-[11px] font-medium text-zinc-400 uppercase tracking-wider absolute">
+                      or continue with
+                    </span>
+                  </div>
+
+                  {/* Social Buttons (Grid 2x2) */}
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { window.location.href = '/api/auth/google'; }}
+                      className="h-10 px-3 rounded-xl border border-zinc-200 hover:border-zinc-300 bg-white hover:bg-zinc-50 flex items-center justify-center gap-2 text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/>
+                        <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/>
+                        <path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.1c0 2.8.7 5.4 1.9 7.8l3.7-2.9z"/>
+                        <path fill="#34A853" d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16.5C3.7 20.2 7.5 23.5 12 23.5z"/>
+                      </svg>
+                      <span>Google</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { window.location.href = '/api/auth/facebook'; }}
+                      className="h-10 px-3 rounded-xl border border-zinc-200 hover:border-zinc-300 bg-white hover:bg-zinc-50 flex items-center justify-center gap-2 text-xs font-bold text-zinc-700 transition-all cursor-pointer shadow-2xs"
+                    >
+                      <svg className="w-4 h-4 fill-[#1877F2]" viewBox="0 0 24 24">
+                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                      </svg>
+                      <span>Facebook</span>
+                    </button>
+                  </div>
+
+                  {/* Footer Switch */}
+                  <div className="text-center pt-2">
+                    <p className="text-xs text-zinc-600 font-medium">
+                      Don&apos;t have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => { setAuthMode('signup'); setError(null); }}
+                        className="font-bold text-[#bf7304] hover:underline cursor-pointer"
+                      >
+                        Start Free Trial
+                      </button>
+                    </p>
+                  </div>
                 </form>
               ) : (
-                /* ── SIGN UP FORM (5 REQUIRED FIELDS + PASSWORD STRENGTH METER) ── */
-                <form onSubmit={handleSignupSubmit} className="space-y-2 sm:space-y-2.5" autoComplete="off">
+                /* SIGNUP FORM */
+                <form onSubmit={handleSignupSubmit} className="space-y-2.5" autoComplete="off">
                   
-                  {/* Honeypot hidden fields to trap browser password managers */}
+                  {/* Honeypot hidden fields */}
                   <div className="hidden" aria-hidden="true">
                     <input type="text" name="fake_user_name_trap" tabIndex={-1} autoComplete="off" />
                     <input type="password" name="fake_pwd_trap" tabIndex={-1} autoComplete="off" />
                   </div>
 
-                  {/* 1. Full Name (Required) */}
+                  {/* 1. Full Name */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3.5 pointer-events-none text-zinc-400">
                       <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
@@ -576,11 +838,11 @@ export default function LoginPage() {
                       onChange={(e) => { setFullName(e.target.value); setError(null); }}
                       placeholder="Full Name *"
                       required
-                      className="w-full pl-9 sm:pl-10 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      className="w-full pl-9 sm:pl-10 pr-3.5 h-9 sm:h-[40px] rounded-xl bg-zinc-50/80 border border-zinc-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20 focus:outline-none transition-all"
                     />
                   </div>
 
-                  {/* 2. Studio / Business Name (Required) */}
+                  {/* 2. Studio Name */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3.5 pointer-events-none text-zinc-400">
                       <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
@@ -593,11 +855,11 @@ export default function LoginPage() {
                       onChange={(e) => { setBusinessName(e.target.value); setError(null); }}
                       placeholder="Studio / Business Name *"
                       required
-                      className="w-full pl-9 sm:pl-10 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      className="w-full pl-9 sm:pl-10 pr-3.5 h-9 sm:h-[40px] rounded-xl bg-zinc-50/80 border border-zinc-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20 focus:outline-none transition-all"
                     />
                   </div>
 
-                  {/* 3. Email Address (Required) */}
+                  {/* 3. Email Address */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3.5 pointer-events-none text-zinc-400">
                       <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
@@ -610,21 +872,18 @@ export default function LoginPage() {
                       onChange={(e) => { setSignupEmail(e.target.value); setError(null); }}
                       placeholder="Email Address *"
                       required
-                      className="w-full pl-9 sm:pl-10 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      className="w-full pl-9 sm:pl-10 pr-3.5 h-9 sm:h-[40px] rounded-xl bg-zinc-50/80 border border-zinc-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20 focus:outline-none transition-all"
                     />
                   </div>
 
-                  {/* 4. Country Code (HD Flag) + Mobile Number (Required) */}
+                  {/* 4. Country Code + Mobile Number */}
                   <div className="flex items-center gap-1.5 relative">
-                    
-                    {/* Interactive Country Dropdown Button with HD Flag */}
                     <div className="relative" ref={countryDropdownRef}>
                       <button
                         type="button"
                         onClick={() => setIsCountryOpen(!isCountryOpen)}
-                        className="h-8.5 sm:h-[42px] px-2 sm:px-2.5 rounded-xl bg-white/95 border border-zinc-300 flex items-center gap-1.5 text-xs sm:text-sm font-bold text-zinc-800 hover:border-[#F36F21] transition-all cursor-pointer shrink-0 shadow-2xs"
+                        className="h-9 sm:h-[40px] px-2 sm:px-2.5 rounded-xl bg-zinc-50/80 border border-zinc-200 flex items-center gap-1.5 text-xs sm:text-sm font-bold text-zinc-800 hover:border-[#bf7304] transition-all cursor-pointer shrink-0"
                       >
-                        {/* High Definition Flag Image */}
                         <img
                           src={`https://flagcdn.com/w40/${selectedCountry.iso}.png`}
                           alt={selectedCountry.name}
@@ -636,10 +895,8 @@ export default function LoginPage() {
                         <ChevronDown className="w-3 h-3 text-zinc-400" />
                       </button>
 
-                      {/* Dropdown Menu */}
                       {isCountryOpen && (
                         <div className="absolute top-full left-0 mt-1.5 w-64 max-h-60 bg-white rounded-2xl shadow-xl border border-zinc-200 z-50 overflow-hidden flex flex-col">
-                          {/* Search */}
                           <div className="p-2 border-b border-zinc-100 flex items-center gap-2 bg-zinc-50">
                             <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                             <input
@@ -652,7 +909,6 @@ export default function LoginPage() {
                             />
                           </div>
 
-                          {/* Country List */}
                           <div className="overflow-y-auto flex-1 p-1">
                             {filteredCountries.map((country) => (
                               <button
@@ -665,7 +921,7 @@ export default function LoginPage() {
                                 }}
                                 className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold transition-colors ${
                                   selectedCountry.iso === country.iso
-                                    ? 'bg-orange-50 text-[#F36F21] font-bold'
+                                    ? 'bg-amber-50 text-[#bf7304] font-bold'
                                     : 'text-zinc-700 hover:bg-zinc-100'
                                 }`}
                               >
@@ -687,7 +943,6 @@ export default function LoginPage() {
                       )}
                     </div>
 
-                    {/* Phone Number Input */}
                     <div className="relative flex-1 flex items-center">
                       <div className="absolute left-3 pointer-events-none text-zinc-400">
                         <Phone className="w-3.5 h-3.5 stroke-[2]" />
@@ -705,22 +960,22 @@ export default function LoginPage() {
                         }}
                         placeholder="Mobile Number (10 digits) *"
                         required
-                        className={`w-full pl-8.5 sm:pl-9 pr-3.5 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:outline-none transition-all shadow-2xs ${
+                        className={`w-full pl-8.5 sm:pl-9 pr-3.5 h-9 sm:h-[40px] rounded-xl bg-zinc-50/80 border text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:outline-none transition-all ${
                           (selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length > 0 && signupPhone.length < 10
                             ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 ring-1 ring-red-400'
                             : (selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length === 10
                             ? 'border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
-                            : 'border-zinc-300 focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20'
+                            : 'border-zinc-200 focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20'
                         }`}
                       />
                     </div>
                   </div>
 
-                  {/* 🔴 Live 10-Digit Mobile Alert for India */}
+                  {/* 10-Digit Mobile Alert / Success */}
                   {(selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length > 0 && signupPhone.length < 10 && (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[11px] font-bold text-rose-600 animate-pulse">
                       <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>Mobile number 10 digit ka hona chahiye (Entered: {signupPhone.length}/10)</span>
+                      <span>Mobile number 10 digit ka hona chahiye ({signupPhone.length}/10)</span>
                     </div>
                   )}
                   {(selectedCountry.code === '+91' || selectedCountry.iso === 'in') && signupPhone.length === 10 && (
@@ -730,7 +985,7 @@ export default function LoginPage() {
                     </div>
                   )}
 
-                  {/* 5. Password (Required) */}
+                  {/* 5. Password */}
                   <div className="relative flex items-center">
                     <div className="absolute left-3.5 pointer-events-none text-zinc-400">
                       <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
@@ -743,18 +998,18 @@ export default function LoginPage() {
                       onChange={(e) => { setSignupPassword(e.target.value); setError(null); }}
                       placeholder="Password (min. 6 characters) *"
                       required
-                      className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 h-8.5 sm:h-[42px] rounded-xl bg-white/95 border border-zinc-300 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#F36F21] focus:ring-2 focus:ring-[#F36F21]/20 focus:outline-none transition-all shadow-2xs"
+                      className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 h-9 sm:h-[40px] rounded-xl bg-zinc-50/80 border border-zinc-200 text-zinc-900 text-xs sm:text-sm font-medium placeholder:text-zinc-400 focus:bg-white focus:border-[#bf7304] focus:ring-2 focus:ring-[#bf7304]/20 focus:outline-none transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowSignupPassword(!showSignupPassword)}
-                      className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer touch-manipulation"
+                      className="absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
                     >
                       {showSignupPassword ? <EyeOff className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
                     </button>
                   </div>
 
-                  {/* 🎨 Animated Colorful Password Strength Meter */}
+                  {/* Password Strength */}
                   {signupPassword && (
                     <div className="pt-0.5 space-y-1 transition-all duration-300">
                       <div className="grid grid-cols-4 gap-1.5 h-1.5 w-full">
@@ -764,7 +1019,7 @@ export default function LoginPage() {
                             <div
                               key={step}
                               className={`h-full rounded-full transition-all duration-500 ${
-                                active ? pwdStrength.color + ' shadow-sm' : 'bg-zinc-200'
+                                active ? pwdStrength.color + ' shadow-xs' : 'bg-zinc-200'
                               }`}
                             />
                           );
@@ -779,8 +1034,8 @@ export default function LoginPage() {
 
                   {/* Error Notification */}
                   {error && (
-                    <div className="p-2 rounded-xl bg-red-50 border border-red-200 flex items-start gap-1.5 text-xs text-red-700 font-bold">
-                      <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-bold">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                       <span>{error}</span>
                     </div>
                   )}
@@ -789,63 +1044,100 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-9 sm:h-[46px] rounded-xl bg-[#F36F21] hover:bg-[#e06118] active:bg-[#c95311] text-white font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99] touch-manipulation"
+                    className="w-full h-10 sm:h-11 rounded-xl bg-gradient-to-r from-[#d97706] to-[#b45309] hover:from-[#b45309] hover:to-[#92400e] text-white font-bold text-xs sm:text-sm tracking-wide flex items-center justify-center gap-2 shadow-md shadow-amber-900/15 hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99]"
                   >
                     {loading ? (
                       'Sending Verification Code...'
                     ) : (
                       <>
                         <span>Create Studio Account</span>
-                        <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                       </>
                     )}
                   </button>
+
+                  {/* Switch to Login */}
+                  <div className="text-center pt-1">
+                    <p className="text-xs text-zinc-600 font-medium">
+                      Already have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => { setAuthMode('login'); setError(null); }}
+                        className="font-bold text-[#bf7304] hover:underline cursor-pointer"
+                      >
+                        Sign In
+                      </button>
+                    </p>
+                  </div>
                 </form>
               )}
-            </div>
 
-            {/* Capture Graphic (Centered right below login button) */}
-            <div className="mt-2.5 sm:mt-3.5 lg:mt-8 relative w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[450px] h-[44px] sm:h-[54px] lg:h-[78px] mx-auto">
-              <Image
-                src="/images/auth/capture-manage-deliver-grow.png"
-                alt="Capture · Manage · Deliver · Grow"
-                fill
-                unoptimized
-                className="object-contain object-center"
-                priority
-              />
             </div>
           </div>
 
-          {/* 3. Mobile 3D Photographer (Directly below capture with minimal gap) */}
-          <div className="block lg:hidden w-full max-w-[340px] sm:max-w-[400px] aspect-[1292/1217] max-h-[30vh] sm:max-h-[34vh] mx-auto mt-1 sm:mt-2 relative shrink-0">
-            <Image
-              src="/images/auth/3D-Photographer.png"
-              alt="3D Photographer Workspace"
-              fill
-              unoptimized
-              className="object-contain object-bottom select-none"
-              sizes="(max-width: 1024px) 400px, 0px"
-              priority
-            />
+        </div>
+      </main>
+
+      {/* ── BOTTOM TRUST & BENEFIT BAR ── */}
+      <footer className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-6">
+        
+        {/* Trust Badges Container */}
+        <div className="w-full bg-white/90 backdrop-blur-xs rounded-2xl border border-amber-100/80 shadow-sm p-4 sm:p-5 grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 divide-y sm:divide-y-0 sm:divide-x divide-zinc-100">
+          
+          {/* Badge 1: 100% Secure */}
+          <div className="flex items-center gap-3 pt-2 sm:pt-0 sm:px-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shrink-0">
+              <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-zinc-900">100% Secure</h4>
+              <p className="text-[11px] text-zinc-500 font-medium">Your data is always safe</p>
+            </div>
+          </div>
+
+          {/* Badge 2: No Credit Card */}
+          <div className="flex items-center gap-3 pt-2 sm:pt-0 sm:px-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 shrink-0">
+              <CreditCard className="w-5 h-5 stroke-[2.2]" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-zinc-900">No Credit Card</h4>
+              <p className="text-[11px] text-zinc-500 font-medium">14-day free trial</p>
+            </div>
+          </div>
+
+          {/* Badge 3: 24/7 Support */}
+          <div className="flex items-center gap-3 pt-2 sm:pt-0 sm:px-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 shrink-0">
+              <Headphones className="w-5 h-5 stroke-[2.2]" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-zinc-900">24/7 Support</h4>
+              <p className="text-[11px] text-zinc-500 font-medium">We&apos;re here to help</p>
+            </div>
+          </div>
+
+          {/* Badge 4: Quick Setup */}
+          <div className="flex items-center gap-3 pt-2 sm:pt-0 sm:px-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-orange-50 border border-orange-200/80 flex items-center justify-center text-orange-600 shrink-0">
+              <Zap className="w-5 h-5 stroke-[2.2]" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-zinc-900">Quick Setup</h4>
+              <p className="text-[11px] text-zinc-500 font-medium">Get started in minutes</p>
+            </div>
           </div>
 
         </div>
 
-        {/* ── RIGHT COLUMN: LARGE 3D PHOTOGRAPHER (Desktop Only) ── */}
-        <div className="hidden lg:flex w-full max-w-[780px] xl:max-w-[860px] aspect-[1292/1217] max-h-[86vh] mx-auto items-center justify-center relative">
-          <Image
-            src="/images/auth/3D-Photographer.png"
-            alt="3D Photographer Character Workspace"
-            fill
-            unoptimized
-            priority
-            className="object-contain object-center select-none"
-            sizes="(max-width: 1024px) 0vw, (max-width: 1440px) 64vw, 860px"
-          />
+        {/* Copyright */}
+        <div className="text-center mt-4">
+          <p className="text-[11px] font-medium text-zinc-400">
+            © 2026 StudioCore. All rights reserved.
+          </p>
         </div>
 
-      </div>
+      </footer>
 
       {/* ── 6-DIGIT EMAIL OTP VERIFICATION MODAL ── */}
       <OtpModal
@@ -858,6 +1150,8 @@ export default function LoginPage() {
         onResendOtp={handleResendOtp}
         loading={otpLoading}
       />
-    </main>
+
+    </div>
   );
 }
+

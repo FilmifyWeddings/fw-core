@@ -220,4 +220,31 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   }
 }
 
+/* Subtle Character Floating & Glow Animations */
+@keyframes subtle-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
 
+@keyframes soft-pulse-glow {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
+}
+
+.animate-subtle-float {
+  animation: subtle-float 5s ease-in-out infinite;
+}
+
+.animate-soft-glow {
+  animation: soft-pulse-glow 6s ease-in-out infinite;
+}
