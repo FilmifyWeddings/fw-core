@@ -692,6 +692,16 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
         onClose={() => setAiModalOpen(false)}
         lead={lead}
         quotationId={aiTargetQuotationId}
+        onApplied={(updatedDoc, targetQId) => {
+          setAiModalOpen(false);
+          setOpeningQuotation({
+            id: targetQId,
+            title: `Quotation Document`,
+            step: 'Opening AI Generated Quotation in Builder...'
+          });
+          router.push(`/workspace/quotations/builder/templet/${targetQId}`);
+          setTimeout(() => onClose(), 600);
+        }}
       />
 
       {/* Share Link Drawer Modal */}

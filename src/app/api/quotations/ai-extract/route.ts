@@ -176,10 +176,27 @@ function normalizeCrewRoleName(rawRole: string): string {
  * or falls back to an intelligent structured extraction engine.
  */
 async function performAiExtraction(contextData: any, baseDoc: any) {
+  const userNotes = (contextData.additional_user_notes || '').trim();
+  const baseSchema = baseDoc ? JSON.parse(JSON.stringify(baseDoc)) : JSON.parse(JSON.stringify(DEFAULT_AIRY_PROPOSAL));
+
+  // PRIORITY 1: If user pasted valid structured JSON directly into AI prompt notes, parse and map immediately!
+  if (userNotes.startsWith('{') || userNotes.includes('{')) {
+    try {
+      const jsonMatch = userNotes.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.quotation || parsed.pages || parsed.cover || parsed.functionsPage || parsed.functions_coverage || parsed.pricingPage) {
+          console.log('[AI Extract] Direct JSON detected from prompt input - using direct mapping');
+          return mapAiOutputToQuotationDocument(parsed, baseSchema, contextData);
+        }
+      }
+    } catch (e) {
+      console.warn('[Direct JSON Parse Warning]:', e);
+    }
+  }
+
   const openAiKey = process.env.OPENAI_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
-
-  const baseSchema = baseDoc ? JSON.parse(JSON.stringify(baseDoc)) : JSON.parse(JSON.stringify(DEFAULT_AIRY_PROPOSAL));
 
   const promptText = `
 You are StudioCore AI — an intelligent quotation data extraction assistant for professional wedding photographers.

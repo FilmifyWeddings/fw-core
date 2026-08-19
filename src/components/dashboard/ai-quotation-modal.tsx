@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, X, Check, AlertTriangle, ArrowRight, Loader2, 
@@ -25,6 +26,7 @@ export function AiQuotationModal({
   quotationId,
   onApplied
 }: AiQuotationModalProps) {
+  const router = useRouter();
   const [step, setStep] = useState<'input' | 'preview'>('input');
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -282,10 +284,21 @@ LEAD & CLIENT CONTEXT:
         throw new Error(applyJson.error || 'Failed to apply AI data to quotation');
       }
 
+      // Prime local indexedDB and sessionStorage cache for instant builder hydration
+      try {
+        const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+        cacheDocumentLocal(targetQId, applyJson.document || extractedDoc, 1);
+        sessionStorage.removeItem(`lead_quotes_cache_${lead.id}`);
+      } catch (e) {}
+
       if (onApplied && targetQId) {
         onApplied(extractedDoc, targetQId);
+      } else if (targetQId) {
+        router.push(`/workspace/quotations/builder/templet/${targetQId}`);
+        onClose();
+      } else {
+        onClose();
       }
-      onClose();
     } catch (err: any) {
       console.error('[AI Apply Error]:', err);
       setErrorMsg(err.message || 'Failed to apply quotation changes.');

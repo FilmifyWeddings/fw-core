@@ -239,30 +239,101 @@ export function normalizeQuotationData(rawInput: any) {
 
   // 2. Normalize Cover
   const coverSrc = loaded.cover || pagesObj.cover || {};
+  const groomName = coverSrc.groomName ?? (d.cover.groomName || 'Rahul');
+  const brideName = coverSrc.brideName ?? (d.cover.brideName || 'Neha');
+  const coupleName = coverSrc.coupleName || (coverSrc.groomName && coverSrc.brideName ? `${coverSrc.groomName} & ${coverSrc.brideName}` : (loaded.client?.client_name || d.cover.coupleName));
+  const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover.eventType;
+  const locationName = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || '');
+  const weddingDate = coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || '';
+
   const cover = {
     ...d.cover,
     ...coverSrc,
-    coupleName: coverSrc.coupleName || coverSrc.client_name || coverSrc.couple_name || loaded.client?.client_name || d.cover.coupleName,
-    weddingDate: coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || (d.cover as any).weddingDate || '',
-    locationName: coverSrc.locationName || coverSrc.wedding_location || coverSrc.city || d.cover.locationName,
-    eventType: coverSrc.eventType || coverSrc.title || coverSrc.event_type || d.cover.eventType
+    groomName,
+    brideName,
+    coupleName,
+    eventType,
+    locationName,
+    weddingDate,
+    sideOption: coverSrc.sideOption || d.cover.sideOption,
+    brandName: coverSrc.brandName || d.cover.brandName,
   };
 
-  // 3. Normalize Functions / Events Page
+  // 3. Normalize About Us
+  const aboutSrc = loaded.aboutUs || pagesObj.about_us || {};
+  const aboutUs = {
+    ...d.aboutUs,
+    ...aboutSrc,
+    kicker: aboutSrc.kicker || d.aboutUs.kicker,
+    heading: aboutSrc.heading || d.aboutUs.heading,
+    text: aboutSrc.text || d.aboutUs.text,
+    signature: aboutSrc.signature || d.aboutUs.signature,
+  };
+
+  // 4. Normalize Pre-Wedding Shoot Details
+  const shootSrc = loaded.shootDetails || pagesObj.pre_wedding || {};
+  const shootVisible = shootSrc.visible !== undefined 
+    ? Boolean(shootSrc.visible) 
+    : Boolean(shootSrc.crewText || shootSrc.deliverablesText);
+
+  const shootDetails = {
+    ...d.shootDetails,
+    ...shootSrc,
+    visible: shootVisible,
+    kicker: shootSrc.kicker || d.shootDetails.kicker,
+    heading: shootSrc.heading || d.shootDetails.heading,
+    daysText: shootSrc.daysText || d.shootDetails.daysText,
+    crewText: shootSrc.crewText !== undefined ? shootSrc.crewText : d.shootDetails.crewText,
+    deliverablesHeading: shootSrc.deliverablesHeading || d.shootDetails.deliverablesHeading,
+    deliverablesText: shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : d.shootDetails.deliverablesText,
+    showExclusionsNote: shootSrc.showExclusionsNote !== undefined ? Boolean(shootSrc.showExclusionsNote) : true,
+  };
+
+  // 5. Normalize Functions / Events Page
   const funcsSrc = loaded.functionsPage || pagesObj.functions_coverage || pagesObj.functions || {};
+  const rawEvents = funcsSrc.items || funcsSrc.events || funcsSrc.functions || [];
   let funcItems: any[] = [];
-  const rawEvents = funcsSrc.events || funcsSrc.items || funcsSrc.functions || [];
+
   if (Array.isArray(rawEvents) && rawEvents.length > 0) {
-    funcItems = rawEvents.map((e: any, idx: number) => ({
-      id: e.id || `func-norm-${idx}`,
-      name: e.name || e.event_name || `Event ${idx + 1}`,
-      date: e.date || 'TBD',
-      time: e.time || 'Full Day',
-      venue: e.venue || e.location || 'Venue TBD',
-      team: Array.isArray(e.team)
-        ? e.team.join(', ')
-        : (Array.isArray(e.services) ? e.services.join(', ') : (e.team || e.services || 'Photographers & Cinematographers'))
-    }));
+    funcItems = rawEvents.map((e: any, idx: number) => {
+      let requirements: { name: string; qty: number }[] = [];
+      if (Array.isArray(e.requirements) && e.requirements.length > 0) {
+        requirements = e.requirements.map((r: any) => ({
+          name: typeof r === 'string' ? r : (r.name || 'Candid Photographer'),
+          qty: Number(r.qty || 1)
+        }));
+      } else if (Array.isArray(e.services) && e.services.length > 0) {
+        requirements = e.services.map((s: string) => ({ name: s, qty: 1 }));
+      } else if (e.team || e.services) {
+        const teamStr = String(e.team || e.services);
+        requirements = teamStr.split(/,|\n/).map((s: string) => s.trim()).filter(Boolean).map((s: string) => ({ name: s, qty: 1 }));
+      }
+
+      if (requirements.length === 0) {
+        requirements = [
+          { name: 'Traditional Photographer', qty: 1 },
+          { name: 'Cinematographer', qty: 1 }
+        ];
+      }
+
+      const isNotFixed = e.dateNotFixed ?? (!e.date || e.date === 'Date Not Fixed' || e.date === 'TBD');
+
+      return {
+        id: e.id || `func_${idx + 1}`,
+        name: e.name || e.event_name || `Function ${idx + 1}`,
+        date: isNotFixed ? 'Date Not Fixed' : (e.date || 'Date Not Fixed'),
+        dateNotFixed: isNotFixed,
+        startTime: e.startTime || '',
+        endTime: e.endTime || '',
+        time: e.time || (e.startTime && e.endTime ? `${e.startTime} - ${e.endTime}` : (e.time || '')),
+        durationSlot: e.durationSlot || '',
+        location: e.location || e.venue || '',
+        venue: e.venue || e.location || '',
+        notes: e.notes || '',
+        requirements,
+        team: Array.isArray(e.team) ? e.team.join(', ') : (e.team || requirements.map(r => `${r.qty}x ${r.name}`).join(', '))
+      };
+    });
   } else if (Array.isArray(d.functionsPage.items)) {
     funcItems = d.functionsPage.items;
   }
@@ -270,33 +341,113 @@ export function normalizeQuotationData(rawInput: any) {
   const functionsPage = {
     ...d.functionsPage,
     ...funcsSrc,
+    kicker: funcsSrc.kicker || d.functionsPage.kicker,
+    heading: funcsSrc.heading || d.functionsPage.heading,
     items: funcItems
   };
 
-  // 4. Normalize Deliverables Page
+  // 6. Normalize Deliverables Page
   const delivSrc = loaded.deliverablesPage || pagesObj.deliverables || {};
-  const delivItems = Array.isArray(delivSrc.items)
-    ? delivSrc.items
-    : (Array.isArray(delivSrc.selectedItems) ? delivSrc.selectedItems : d.deliverablesPage.selectedItems);
+  let delivItems: string[] = [];
+  if (Array.isArray(delivSrc.selectedItems) && delivSrc.selectedItems.length > 0) {
+    delivItems = delivSrc.selectedItems;
+  } else if (Array.isArray(delivSrc.items) && delivSrc.items.length > 0) {
+    delivItems = delivSrc.items;
+  } else {
+    delivItems = d.deliverablesPage.selectedItems;
+  }
+
+  const combinedOptions = Array.from(new Set([
+    ...d.deliverablesPage.availableOptions,
+    ...(Array.isArray(delivSrc.availableOptions) ? delivSrc.availableOptions : []),
+    ...delivItems
+  ]));
+
   const deliverablesPage = {
     ...d.deliverablesPage,
     ...delivSrc,
-    selectedItems: delivItems
+    kicker: delivSrc.kicker || d.deliverablesPage.kicker,
+    heading: delivSrc.heading || d.deliverablesPage.heading,
+    selectedItems: delivItems,
+    availableOptions: combinedOptions
   };
 
-  // 5. Normalize Pricing Page
+  // 7. Normalize Special Value Additions
+  const valAddSrc = loaded.specialValueAdditions || pagesObj.special_value_additions || {};
+  const valAddItems = Array.isArray(valAddSrc.selectedItems)
+    ? valAddSrc.selectedItems
+    : (Array.isArray(valAddSrc.items) ? valAddSrc.items : []);
+
+  const valCombinedOptions = Array.from(new Set([
+    ...d.specialValueAdditions.availableOptions,
+    ...(Array.isArray(valAddSrc.availableOptions) ? valAddSrc.availableOptions : []),
+    ...valAddItems
+  ]));
+
+  const specialValueAdditions = {
+    ...d.specialValueAdditions,
+    ...valAddSrc,
+    kicker: valAddSrc.kicker || d.specialValueAdditions.kicker,
+    heading: valAddSrc.heading || d.specialValueAdditions.heading,
+    selectedItems: valAddItems,
+    availableOptions: valCombinedOptions,
+    note: valAddSrc.note || ''
+  };
+
+  // 8. Normalize Pricing Page
   const pricingSrc = loaded.pricingPage || pagesObj.pricing || {};
-  const basePriceVal = typeof pricingSrc.basePrice === 'number'
-    ? pricingSrc.basePrice
-    : (typeof pricingSrc.total_amount === 'number' ? pricingSrc.total_amount : d.pricingPage.basePrice);
+  const basePrice = Number(pricingSrc.basePrice ?? pricingSrc.total_amount ?? pricingSrc.base ?? d.pricingPage.basePrice);
+  const discountAmount = Number(pricingSrc.discountAmount ?? pricingSrc.discount ?? 0);
+  const gstPct = Number(pricingSrc.gstPct ?? pricingSrc.gstPercent ?? 0);
+  const travelCharges = Number(pricingSrc.travelCharges ?? pricingSrc.travel ?? 0);
+  const accommodationCharges = Number(pricingSrc.accommodationCharges ?? pricingSrc.accommodation ?? 0);
+  const additionalCharges = Number(pricingSrc.additionalCharges ?? pricingSrc.additional ?? 0);
 
   const pricingPage = {
     ...d.pricingPage,
     ...pricingSrc,
-    basePrice: basePriceVal
+    kicker: pricingSrc.kicker || d.pricingPage.kicker,
+    heading: pricingSrc.heading || d.pricingPage.heading,
+    basePrice,
+    discountAmount,
+    gstPct,
+    travelCharges,
+    accommodationCharges,
+    additionalCharges,
+    showExclusionsNote: pricingSrc.showExclusionsNote !== undefined ? Boolean(pricingSrc.showExclusionsNote) : true,
+    note: pricingSrc.note || ''
   };
 
-  // 6. Normalize Thank You Page
+  // 9. Normalize Payment Terms Page
+  const payTermsSrc = loaded.paymentTermsPage || pagesObj.payment_terms || {};
+  const netAmount = Math.max(0, basePrice - discountAmount + travelCharges + accommodationCharges + additionalCharges);
+
+  let paySteps = payTermsSrc.steps || [];
+  if (!Array.isArray(paySteps) || paySteps.length === 0) {
+    paySteps = [
+      { name: 'Advance Token', pct: '25%', amount: Math.round(netAmount * 0.25), status: 'Pending' },
+      { name: 'On Event Day', pct: '50%', amount: Math.round(netAmount * 0.50), status: 'Pending' },
+      { name: 'On Final Delivery', pct: '25%', amount: Math.round(netAmount * 0.25), status: 'Pending' }
+    ];
+  } else {
+    paySteps = paySteps.map((s: any) => ({
+      name: s.name || 'Payment Milestone',
+      pct: s.pct || '30%',
+      amount: Number(s.amount || 0),
+      status: s.status || 'Pending'
+    }));
+  }
+
+  const paymentTermsPage = {
+    ...d.paymentTermsPage,
+    ...payTermsSrc,
+    kicker: payTermsSrc.kicker || d.paymentTermsPage.kicker,
+    heading: payTermsSrc.heading || d.paymentTermsPage.heading,
+    steps: paySteps,
+    note: payTermsSrc.note || ''
+  };
+
+  // 10. Normalize Thank You Page
   const thankSrc = loaded.thankYouPage || pagesObj.thank_you || {};
   const thankYouPage = {
     ...d.thankYouPage,
@@ -304,51 +455,36 @@ export function normalizeQuotationData(rawInput: any) {
     contactPerson: thankSrc.contactPerson || thankSrc.signature || d.thankYouPage.contactPerson
   };
 
-  // 7. Calculate Active Page Sequence from Page Visibility Flags
+  // 11. Calculate Active Page Sequence from Page Visibility Flags
   const activeSeq: string[] = ['cover', 'aboutUs'];
+  if (shootDetails.visible) activeSeq.push('shootDetails');
+  activeSeq.push('functionsPage');
+  activeSeq.push('deliverablesPage');
+  if (specialValueAdditions.selectedItems.length > 0) activeSeq.push('specialValueAdditions');
+  activeSeq.push('pricingPage');
+  if (paymentTermsPage.steps.length > 0) activeSeq.push('paymentTermsPage');
 
-  // Check shootDetails / pre_wedding
-  const preWedSrc = loaded.shootDetails || pagesObj.pre_wedding;
-  if (preWedSrc?.visible !== false) activeSeq.push('shootDetails');
-
-  // Functions page
-  if (funcsSrc?.visible !== false) activeSeq.push('functionsPage');
-
-  // Deliverables page
-  if (delivSrc?.visible !== false) activeSeq.push('deliverablesPage');
-
-  // Special value additions
-  const valAddSrc = loaded.specialValueAdditions || pagesObj.special_value_additions;
-  if (valAddSrc?.visible === true && valAddSrc?.selectedItems?.length > 0) activeSeq.push('specialValueAdditions');
-
-  // Pricing page
-  if (pricingSrc?.visible !== false) activeSeq.push('pricingPage');
-
-  // Payment terms
-  const payTermsSrc = loaded.paymentTermsPage || pagesObj.payment_terms;
-  if (payTermsSrc?.visible === true && payTermsSrc?.steps?.length > 0) activeSeq.push('paymentTermsPage');
-
-  // Add-ons
   const addOnsSrc = loaded.addOnsPage || pagesObj.add_ons;
-  if (addOnsSrc?.visible === true && addOnsSrc?.items?.length > 0) activeSeq.push('addOnsPage');
+  if (addOnsSrc?.visible === true && Array.isArray(addOnsSrc.items) && addOnsSrc.items.length > 0) {
+    activeSeq.push('addOnsPage');
+  }
 
-  // Terms
   const termsSrc = loaded.termsPage || pagesObj.terms_conditions;
-  if (termsSrc?.visible === true && termsSrc?.items?.length > 0) activeSeq.push('termsPage');
-
-  // Thank you
-  if (thankSrc?.visible !== false) activeSeq.push('thankYouPage');
+  if (termsSrc?.visible !== false) activeSeq.push('termsPage');
+  activeSeq.push('thankYouPage');
 
   return {
     ...d,
     ...loaded,
     cover,
-    aboutUs: { ...d.aboutUs, ...(loaded.aboutUs || pagesObj.about_us || {}) },
-    shootDetails: { ...d.shootDetails, ...(loaded.shootDetails || pagesObj.pre_wedding || {}) },
+    aboutUs,
+    shootDetails,
     functionsPage,
     deliverablesPage,
+    specialValueAdditions,
     pricingPage,
+    paymentTermsPage,
     thankYouPage,
-    pageSequence: loaded.pageSequence && Array.isArray(loaded.pageSequence) ? loaded.pageSequence : activeSeq
+    pageSequence: loaded.pageSequence && Array.isArray(loaded.pageSequence) && loaded.pageSequence.length > 0 ? loaded.pageSequence : activeSeq
   };
 }
