@@ -260,10 +260,14 @@ export async function GET(
     // 2. Fetch quotation documents specifically for this lead (Indexed & Filtered, Avoid DB Table Scan)
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
 
-    const { data: matchedDocs } = await supabaseAdmin
+    const { data: matchedDocs, error: matchedDocsErr } = await supabaseAdmin
       .from('quotation_documents')
-      .select('id, template_id, lead_id, version, lead_version, content_json, document_json, created_at, updated_at')
+      .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
       .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
+
+    if (matchedDocsErr) {
+      console.warn('[LeadQuotationsAPI] matchedDocs error:', matchedDocsErr);
+    }
 
     // 3. Fetch client response metadata & quotations in parallel
     const [responsesRes, quotesRes] = await Promise.all([
@@ -273,19 +277,39 @@ export async function GET(
         .eq('lead_id', leadId),
       supabaseAdmin
         .from('quotations')
-        .select('id, quotation_number, title, status, client_name, client_notes, public_token')
+        .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, created_at, updated_at')
         .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortId}%`)
     ]);
 
     const allResponses = responsesRes.data || [];
     const allQuotes = quotesRes.data || [];
 
-    const sortedByAge = [...(matchedDocs || [])].sort((a: any, b: any) =>
+    // Merge docs from quotation_documents and any legacy quotes from quotations table
+    const docTemplateIds = new Set((matchedDocs || []).map((d: any) => d.template_id));
+    const legacyOnlyQuotes = allQuotes.filter((q: any) => 
+      !docTemplateIds.has(q.id) && !docTemplateIds.has(q.quotation_number)
+    );
+
+    const combinedList = [
+      ...(matchedDocs || []),
+      ...legacyOnlyQuotes.map((q: any, i: number) => ({
+        id: q.id,
+        template_id: q.quotation_number || q.id,
+        lead_id: leadId,
+        version: (matchedDocs?.length || 0) + i + 1,
+        lead_version: (matchedDocs?.length || 0) + i + 1,
+        content_json: q.content_json || {},
+        created_at: q.created_at || new Date().toISOString(),
+        updated_at: q.updated_at || q.created_at || new Date().toISOString()
+      }))
+    ];
+
+    const sortedByAge = combinedList.sort((a: any, b: any) =>
       new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
     );
 
     const formattedQuotations = sortedByAge.map((doc: any, idx: number) => {
-      const content = doc.content_json || doc.document_json || {};
+      const content = doc.content_json || {};
       const explicitVer = doc.lead_version || content.lead_version || (doc.version > 1 ? doc.version : null);
       const leadVer = (explicitVer && typeof explicitVer === 'number' && explicitVer > 0)
         ? explicitVer

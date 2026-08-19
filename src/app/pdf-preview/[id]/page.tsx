@@ -23,11 +23,11 @@ export default async function PdfPreviewPage({ params }: PdfPreviewProps) {
 
   const { data: doc } = await supabaseAdmin
     .from('quotation_documents')
-    .select('content_json, document_json')
+    .select('content_json')
     .eq('template_id', id)
     .maybeSingle();
 
-  const docContent = doc?.content_json || doc?.document_json;
+  const docContent = doc?.content_json;
   if (docContent && typeof docContent === 'object' && Object.keys(docContent).length > 0) {
     documentData = docContent;
   } else {
