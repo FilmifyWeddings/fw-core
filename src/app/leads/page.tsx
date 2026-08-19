@@ -132,6 +132,7 @@ export default function LeadsPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifiedCommentIds, setNotifiedCommentIds] = useState<string[]>([]);
+  const [impersonatedWorkspaceName, setImpersonatedWorkspaceName] = useState<string | null>(null);
   const notifContainerRef = useRef<HTMLDivElement>(null);
 
   // Close notifications popover on click outside
@@ -166,9 +167,15 @@ export default function LeadsPage() {
       // Admin impersonation override
       if (session.user.email === 'sushantnawale700@gmail.com') {
         const impId = localStorage.getItem('impersonated_tenant_id');
+        const impName = localStorage.getItem('impersonated_workspace_name');
         if (impId) {
           uId = impId;
+          setImpersonatedWorkspaceName(impName || impId);
+        } else {
+          setImpersonatedWorkspaceName(null);
         }
+      } else {
+        setImpersonatedWorkspaceName(null);
       }
       setUserId(uId);
       setIsDemoMode(false);
@@ -842,7 +849,28 @@ export default function LeadsPage() {
               unreadNotificationCount={notifications.filter(n => !n.read).length}
               onNotificationClick={() => setShowNotifications(true)}
               renderHeader={() => (
-                <div className="hidden md:flex flex-row items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-zinc-900">
+                <div className="flex flex-col gap-2 pb-3 border-b border-slate-200 dark:border-zinc-900">
+                  {impersonatedWorkspaceName && (
+                    <div className="w-full bg-amber-500/15 border border-amber-500/40 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200 text-xs font-semibold">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        <span>
+                          <strong>Impersonation Active:</strong> You are currently viewing leads of <strong>{impersonatedWorkspaceName}</strong>.
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          localStorage.removeItem('impersonated_tenant_id');
+                          localStorage.removeItem('impersonated_workspace_name');
+                          window.location.reload();
+                        }}
+                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow transition-all cursor-pointer"
+                      >
+                        Exit Impersonation (Show My Own Leads)
+                      </button>
+                    </div>
+                  )}
+                  <div className="hidden md:flex flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center shadow-md">
                     <Database className="w-5 h-5 text-white" />
@@ -1003,6 +1031,7 @@ export default function LeadsPage() {
                   </button>
                 </div>
               </div>
+            </div>
             )}
           />
           </React.Suspense>

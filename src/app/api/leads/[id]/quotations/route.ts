@@ -257,13 +257,11 @@ export async function GET(
       raw_payload: {}
     };
 
-    // 2. Fetch quotation documents specifically for this lead (Indexed & Filtered, Avoid DB Table Scan)
-    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-
+    // 2. Fetch quotation documents specifically for this lead (Strict lead_id matching)
     const { data: matchedDocs, error: matchedDocsErr } = await supabaseAdmin
       .from('quotation_documents')
       .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
+      .or(`lead_id.eq.${leadId},template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`);
 
     if (matchedDocsErr) {
       console.warn('[LeadQuotationsAPI] matchedDocs error:', matchedDocsErr);
@@ -278,7 +276,7 @@ export async function GET(
       supabaseAdmin
         .from('quotations')
         .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, created_at, updated_at')
-        .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortId}%`)
+        .eq('client_id', leadId)
     ]);
 
     const allResponses = responsesRes.data || [];

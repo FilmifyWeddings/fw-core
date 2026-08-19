@@ -130,12 +130,18 @@ export default function ClientsPage() {
         setClients([]);
       }
 
-      // 3. Fetch leads for "Convert Lead" option
-      const { data: leadsData } = await supabase
+      // 3. Fetch leads for "Convert Lead" option (Scoped to workspace)
+      let leadsQuery = supabase
         .from('leads')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
+
+      if (workspaceId && workspaceId !== 'ws_demo') {
+        leadsQuery = leadsQuery.eq('workspace_id', workspaceId);
+      }
+
+      const { data: leadsData } = await leadsQuery;
 
       if (leadsData) {
         setLeads(leadsData);

@@ -153,14 +153,14 @@ const MODULES_LIST: WorkspaceModule[] = [
 ];
 
 export default function WorkspaceHubPage() {
-  const [userName, setUserName] = useState<string>('Sushant');
+  const [userName, setUserName] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [stats, setStats] = useState({
-    leadsCount: 128,
-    bookingsCount: 42,
-    revenue: '₹48,60,000',
-    pendingPayments: '₹6,45,000'
+    leadsCount: 0,
+    bookingsCount: 0,
+    revenue: '₹0',
+    pendingPayments: '₹0'
   });
 
   useEffect(() => {
@@ -177,33 +177,40 @@ export default function WorkspaceHubPage() {
           const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
           if (name) {
             setUserName(name.split(' ')[0]);
+          } else {
+            setUserName(session.user.email?.split('@')[0] || 'User');
           }
 
           const { count: realLeads } = await supabase
             .from('leads')
-            .select('*', { count: 'exact', head: true });
+            .select('*', { count: 'exact', head: true })
+            .eq('workspace_id', session.user.id);
 
           const { data: quotes } = await supabase
             .from('quotations')
-            .select('total_amount, status');
+            .select('total_amount, status')
+            .eq('workspace_id', session.user.id);
 
-          if (realLeads && realLeads > 0) {
-            setStats(prev => ({
-              ...prev,
-              leadsCount: realLeads,
-              bookingsCount: Math.max(1, Math.round(realLeads * 0.35))
-            }));
-          }
+          const lCount = realLeads || 0;
+          let totRevenue = 0;
+          let acceptedCount = 0;
 
           if (quotes && quotes.length > 0) {
-            const tot = quotes.reduce((acc, q) => acc + (Number(q.total_amount) || 0), 0);
-            if (tot > 0) {
-              setStats(prev => ({
-                ...prev,
-                revenue: `₹${tot.toLocaleString('en-IN')}`
-              }));
-            }
+            quotes.forEach((q: any) => {
+              const amt = Number(q.total_amount) || 0;
+              totRevenue += amt;
+              if (q.status === 'accepted' || q.status === 'approved' || q.status === 'booked') {
+                acceptedCount++;
+              }
+            });
           }
+
+          setStats({
+            leadsCount: lCount,
+            bookingsCount: acceptedCount,
+            revenue: totRevenue > 0 ? `₹${totRevenue.toLocaleString('en-IN')}` : '₹0',
+            pendingPayments: '₹0'
+          });
         }
       } catch (e) {
         console.error('Error fetching dashboard statistics:', e);
