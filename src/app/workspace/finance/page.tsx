@@ -10,6 +10,7 @@ import {
   Trash2, X, RefreshCw, Sparkles, Tag, PieChart, Wallet, ArrowRight, Bell, Send, Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem 
 } from '@/types';
@@ -139,28 +140,120 @@ export default function FinancePage() {
         dbFinances.forEach(f => financeMap.set(f.client_id, f));
       }
 
-      // 3. Synthesize and ensure EVERY client has a full Pricing Breakdown + 4-Tier Milestones
+      // 3. Fetch Latest Quotation Documents for all clients with lead_id
+      const leadIds = clientList.filter(c => c.lead_id).map(c => c.lead_id);
+      const quoteDocMap = new Map<string, any>();
+
+      if (leadIds.length > 0) {
+        const { data: quoteDocs } = await supabase
+          .from('quotation_documents')
+          .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+          .in('lead_id', leadIds)
+          .order('created_at', { ascending: false });
+
+        if (quoteDocs && quoteDocs.length > 0) {
+          for (const doc of quoteDocs) {
+            if (!quoteDocMap.has(doc.lead_id)) {
+              quoteDocMap.set(doc.lead_id, doc);
+            }
+          }
+        }
+      }
+
+      // 4. Synthesize records with 100% Quotation Fidelity
       const finalRecords: ClientFinanceRecord[] = [];
-      const newRecordsToInsert: any[] = [];
+      const recordsToUpsertInDB: any[] = [];
 
       for (const c of clientList) {
         const existing = financeMap.get(c.id);
-        if (existing) {
-          const finalTotal = Math.round(Number(existing.final_total_amount) || Number(c.total_package_amount) || 169920);
-          const received = Math.round(Number(existing.received_amount) || Number(c.paid_amount) || 0);
+        const linkedQuote = c.lead_id ? quoteDocMap.get(c.lead_id) : null;
+        const qFinancials = linkedQuote && linkedQuote.content_json
+          ? extractFinancialsFromQuotation(linkedQuote.content_json, c.event_date)
+          : null;
+
+        if (qFinancials && qFinancials.final_total_amount > 0) {
+          // Quotation is the primary source of truth
+          const isDbCorruptOrMissing = !existing || 
+            Number(existing.final_total_amount) <= 0 || 
+            Number(existing.base_package_price) <= 10 || 
+            existing.final_total_amount !== qFinancials.final_total_amount;
+
+          const recordData: ClientFinanceRecord = {
+            id: existing?.id || `fin_${c.id}`,
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_id: c.id,
+            client: c,
+            base_package_price: qFinancials.base_package_price,
+            discount_amount: qFinancials.discount_amount,
+            accommodation_charges: qFinancials.accommodation_charges,
+            travel_charges: qFinancials.travel_charges,
+            additional_charges: qFinancials.additional_charges,
+            subtotal_amount: qFinancials.subtotal_amount,
+            gst_rate: qFinancials.gst_rate,
+            gst_amount: qFinancials.gst_amount,
+            final_total_amount: qFinancials.final_total_amount,
+            received_amount: existing?.received_amount !== undefined && existing.received_amount > qFinancials.received_amount
+              ? Math.round(Number(existing.received_amount))
+              : qFinancials.received_amount,
+            pending_amount: Math.max(0, qFinancials.final_total_amount - (existing?.received_amount !== undefined && existing.received_amount > qFinancials.received_amount ? Number(existing.received_amount) : qFinancials.received_amount)),
+            payment_status: (existing?.payment_status && existing.payment_status !== 'pending')
+              ? existing.payment_status
+              : qFinancials.payment_status,
+            milestones: Array.isArray(existing?.milestones) && existing.milestones.length > 0 && !isDbCorruptOrMissing
+              ? existing.milestones
+              : qFinancials.milestones,
+            created_at: existing?.created_at || c.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+
+          finalRecords.push(recordData);
+
+          if (isDbCorruptOrMissing) {
+            recordsToUpsertInDB.push({
+              user_id: workspaceId,
+              workspace_id: workspaceId,
+              client_id: c.id,
+              base_package_price: recordData.base_package_price,
+              discount_amount: recordData.discount_amount,
+              accommodation_charges: recordData.accommodation_charges,
+              travel_charges: recordData.travel_charges,
+              additional_charges: recordData.additional_charges,
+              subtotal_amount: recordData.subtotal_amount,
+              gst_rate: recordData.gst_rate,
+              gst_amount: recordData.gst_amount,
+              final_total_amount: recordData.final_total_amount,
+              received_amount: recordData.received_amount,
+              pending_amount: recordData.pending_amount,
+              payment_status: recordData.payment_status,
+              milestones: recordData.milestones,
+              updated_at: new Date().toISOString()
+            });
+          }
+        } else if (existing) {
+          const rawBase = Math.max(0, Math.round(Number(existing.base_package_price) || Number(c.total_package_amount) || 150000));
+          const discount = Math.max(0, Math.round(Number(existing.discount_amount) || 0));
+          const accommodation = Math.max(0, Math.round(Number(existing.accommodation_charges) || 0));
+          const travel = Math.max(0, Math.round(Number(existing.travel_charges) || 0));
+          const additional = Math.max(0, Math.round(Number(existing.additional_charges) || 0));
+          const subtotal = Math.max(0, rawBase - discount + accommodation + travel + additional);
+          const gstRate = Number(existing.gst_rate) || 0;
+          const gstAmount = Math.round((subtotal * gstRate) / 100);
+          const finalTotal = subtotal + gstAmount;
+          const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(c.paid_amount) || 0));
           const pending = Math.max(0, finalTotal - received);
 
           finalRecords.push({
             ...existing,
             client: c,
-            base_package_price: Math.round(Number(existing.base_package_price) || 150000),
-            discount_amount: Math.round(Number(existing.discount_amount) || 10000),
-            accommodation_charges: Math.round(Number(existing.accommodation_charges) || 1000),
-            travel_charges: Math.round(Number(existing.travel_charges) || 2000),
-            additional_charges: Math.round(Number(existing.additional_charges) || 1000),
-            subtotal_amount: Math.round(Number(existing.subtotal_amount) || 144000),
-            gst_rate: Number(existing.gst_rate) || 18,
-            gst_amount: Math.round(Number(existing.gst_amount) || 25920),
+            base_package_price: rawBase,
+            discount_amount: discount,
+            accommodation_charges: accommodation,
+            travel_charges: travel,
+            additional_charges: additional,
+            subtotal_amount: subtotal,
+            gst_rate: gstRate,
+            gst_amount: gstAmount,
             final_total_amount: finalTotal,
             received_amount: received,
             pending_amount: pending,
@@ -170,19 +263,15 @@ export default function FinancePage() {
               : generateDefaultMilestones(finalTotal, c.event_date, received)
           });
         } else {
-          // Calculate default pricing breakdown matching user quotation image
-          const basePkg = Math.round(Number(c.total_package_amount) || 150000);
-          const discount = 10000;
-          const accommodation = 1000;
-          const travel = 2000;
-          const additional = 1000;
-          const subtotal = Math.round(basePkg - discount + accommodation + travel + additional);
-          const gstRate = 18;
-          const gstAmount = Math.round((subtotal * gstRate) / 100);
-          const finalTotal = subtotal + gstAmount;
-          const received = Math.round(Number(c.paid_amount) || 25000);
+          // Clean default for client without quotation
+          const basePkg = Math.max(0, Math.round(Number(c.total_package_amount) || 150000));
+          const discount = 0;
+          const subtotal = basePkg;
+          const gstRate = 0;
+          const gstAmount = 0;
+          const finalTotal = subtotal;
+          const received = Math.max(0, Math.round(Number(c.paid_amount) || 0));
           const pending = Math.max(0, finalTotal - received);
-
           const defaultMilestones = generateDefaultMilestones(finalTotal, c.event_date, received);
 
           const newRecord: ClientFinanceRecord = {
@@ -193,31 +282,31 @@ export default function FinancePage() {
             client: c,
             base_package_price: basePkg,
             discount_amount: discount,
-            accommodation_charges: accommodation,
-            travel_charges: travel,
-            additional_charges: additional,
+            accommodation_charges: 0,
+            travel_charges: 0,
+            additional_charges: 0,
             subtotal_amount: subtotal,
             gst_rate: gstRate,
             gst_amount: gstAmount,
             final_total_amount: finalTotal,
             received_amount: received,
             pending_amount: pending,
-            payment_status: pending === 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
+            payment_status: pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
             milestones: defaultMilestones,
             created_at: c.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
 
           finalRecords.push(newRecord);
-          newRecordsToInsert.push({
+          recordsToUpsertInDB.push({
             user_id: workspaceId,
             workspace_id: workspaceId,
             client_id: c.id,
             base_package_price: basePkg,
             discount_amount: discount,
-            accommodation_charges: accommodation,
-            travel_charges: travel,
-            additional_charges: additional,
+            accommodation_charges: 0,
+            travel_charges: 0,
+            additional_charges: 0,
             subtotal_amount: subtotal,
             gst_rate: gstRate,
             gst_amount: gstAmount,
@@ -225,7 +314,8 @@ export default function FinancePage() {
             received_amount: received,
             pending_amount: pending,
             payment_status: newRecord.payment_status,
-            milestones: defaultMilestones
+            milestones: defaultMilestones,
+            updated_at: new Date().toISOString()
           });
         }
       }
@@ -235,11 +325,38 @@ export default function FinancePage() {
         setExpandedCards(new Set([finalRecords[0].id]));
       }
 
-      // Background persist missing finance records
-      if (newRecordsToInsert.length > 0 && workspaceId !== 'ws_demo') {
+      // Background persist/heal records
+      if (recordsToUpsertInDB.length > 0 && workspaceId !== 'ws_demo') {
         (async () => {
           try {
-            await supabase.from('client_finance_records').insert(newRecordsToInsert);
+            for (const item of recordsToUpsertInDB) {
+              const { data: existingRec } = await supabase
+                .from('client_finance_records')
+                .select('id')
+                .eq('client_id', item.client_id)
+                .maybeSingle();
+
+              if (existingRec) {
+                await supabase
+                  .from('client_finance_records')
+                  .update(item)
+                  .eq('client_id', item.client_id);
+              } else {
+                await supabase
+                  .from('client_finance_records')
+                  .insert([{ ...item, created_at: new Date().toISOString() }]);
+              }
+
+              // Also sync package amount on workspace_clients
+              await supabase
+                .from('workspace_clients')
+                .update({
+                  total_package_amount: item.final_total_amount,
+                  paid_amount: item.received_amount,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', item.client_id);
+            }
           } catch (_) {}
         })();
       }
@@ -424,6 +541,64 @@ export default function FinancePage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', record.client_id);
+
+      // Sync back to Lead Quotation document if linked
+      const targetLeadId = record.client?.lead_id;
+      if (targetLeadId) {
+        (async () => {
+          try {
+            const { data: quoteDocs } = await supabase
+              .from('quotation_documents')
+              .select('id, template_id, content_json')
+              .or(`lead_id.eq.${targetLeadId},template_id.eq.FW-L-${targetLeadId},template_id.eq.FW-Q-${targetLeadId}`)
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+            if (quoteDocs && quoteDocs.length > 0) {
+              const targetDoc = quoteDocs[0];
+              const contentJson = targetDoc.content_json || {};
+              
+              // Update pricingPage
+              contentJson.pricingPage = {
+                ...(contentJson.pricingPage || {}),
+                basePrice: Math.round(record.base_package_price),
+                discountAmount: Math.round(record.discount_amount),
+                accommodationCharges: Math.round(record.accommodation_charges),
+                travelCharges: Math.round(record.travel_charges),
+                additionalCharges: Math.round(record.additional_charges),
+                gstPct: record.gst_rate
+              };
+
+              // Update paymentTermsPage steps
+              if (Array.isArray(record.milestones) && record.milestones.length > 0) {
+                contentJson.paymentTermsPage = {
+                  ...(contentJson.paymentTermsPage || {}),
+                  steps: record.milestones.map((m: any) => ({
+                    id: m.id,
+                    name: m.step_name,
+                    stepName: m.step_name,
+                    amount: Math.round(m.amount),
+                    status: m.status === 'completed' ? 'Completed' : 'Pending',
+                    date: m.due_date,
+                    paid_date: m.paid_date,
+                    payment_mode: m.payment_mode
+                  }))
+                };
+              }
+
+              await supabase
+                .from('quotation_documents')
+                .update({
+                  content_json: contentJson,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', targetDoc.id);
+            }
+          } catch (syncErr) {
+            console.warn('[FinanceToQuotationSync] Error:', syncErr);
+          }
+        })();
+      }
 
     } catch (e) {
       console.error('Error updating finance record in DB:', e);

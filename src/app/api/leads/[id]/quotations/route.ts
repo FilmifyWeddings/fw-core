@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
+import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -548,17 +549,74 @@ export async function POST(
 
     // Also sync to legacy quotations table for full backwards compatibility
     try {
+      const calcFin = extractFinancialsFromQuotation(newQuotationJson);
       await supabaseAdmin.from('quotations').upsert({
         workspace_id: currentUserId,
         quotation_number: newTemplateId,
         title: quotationTitle,
         client_name: leadName,
-        total_amount: newQuotationJson.pricingPage?.basePrice || 0,
+        total_amount: calcFin.final_total_amount,
         client_id: leadId,
         status: 'draft',
         created_at: now,
         updated_at: now
       });
+
+      // If a workspace_client exists for this lead, sync finance card immediately
+      const { data: linkedClients } = await supabaseAdmin
+        .from('workspace_clients')
+        .select('id')
+        .eq('lead_id', leadId);
+
+      if (linkedClients && linkedClients.length > 0) {
+        for (const lc of linkedClients) {
+          await supabaseAdmin
+            .from('workspace_clients')
+            .update({
+              total_package_amount: calcFin.final_total_amount,
+              paid_amount: calcFin.received_amount,
+              updated_at: now
+            })
+            .eq('id', lc.id);
+
+          const finPayload = {
+            user_id: currentUserId,
+            workspace_id: currentUserId,
+            client_id: lc.id,
+            base_package_price: calcFin.base_package_price,
+            discount_amount: calcFin.discount_amount,
+            accommodation_charges: calcFin.accommodation_charges,
+            travel_charges: calcFin.travel_charges,
+            additional_charges: calcFin.additional_charges,
+            subtotal_amount: calcFin.subtotal_amount,
+            gst_rate: calcFin.gst_rate,
+            gst_amount: calcFin.gst_amount,
+            final_total_amount: calcFin.final_total_amount,
+            received_amount: calcFin.received_amount,
+            pending_amount: calcFin.pending_amount,
+            payment_status: calcFin.payment_status,
+            milestones: calcFin.milestones,
+            updated_at: now
+          };
+
+          const { data: exFin } = await supabaseAdmin
+            .from('client_finance_records')
+            .select('id')
+            .eq('client_id', lc.id)
+            .maybeSingle();
+
+          if (exFin) {
+            await supabaseAdmin
+              .from('client_finance_records')
+              .update(finPayload)
+              .eq('client_id', lc.id);
+          } else {
+            await supabaseAdmin
+              .from('client_finance_records')
+              .insert([{ ...finPayload, created_at: now }]);
+          }
+        }
+      }
     } catch (_) {}
 
     return NextResponse.json({

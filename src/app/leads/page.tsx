@@ -8,6 +8,7 @@ import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
+import { extractFinancialsFromQuotation, findLatestQuotationForLead } from '@/lib/quotation-finance-sync';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -467,26 +468,14 @@ export default function LeadsPage() {
       const currentWorkspaceId = mergedLead.workspace_id || userId;
       if (!currentWorkspaceId) return;
 
-      // 1. Check if client already exists for this lead
-      const { data: existingClients } = await supabase
-        .from('workspace_clients')
-        .select('id')
-        .eq('lead_id', leadId);
-
-      if (existingClients && existingClients.length > 0) {
-        console.log('[LeadToClient] Client already exists for lead:', leadId);
-        return;
-      }
-
-      // 2. Extract best possible values from lead and raw payload
+      // 1. Extract best possible values from lead and raw payload
       const raw = mergedLead.raw_payload || {};
       const clientName = mergedLead.name || raw.groom_name || raw.bride_name || 'Booked Client';
       const clientPhone = mergedLead.phone || raw.phone || raw.contact || '';
       const clientEmail = mergedLead.email || raw.email || null;
+      let eventType = raw.shoot_type || raw.event_type || raw.service || 'Wedding Photography';
       
-      const eventType = raw.shoot_type || raw.event_type || raw.service || 'Wedding';
-      
-      // Parse event date if present (YYYY-MM-DD or parseable string)
+      // Parse event date if present
       let parsedEventDate: string | null = null;
       if (raw.event_date || raw.wedding_date || raw.date) {
         const rawDate = raw.event_date || raw.wedding_date || raw.date;
@@ -496,156 +485,253 @@ export default function LeadsPage() {
         }
       }
 
-      // Parse budget / package amount
-      let packageAmount = 0;
-      if (raw.budget || raw.package_amount || raw.amount) {
-        const numStr = String(raw.budget || raw.package_amount || raw.amount).replace(/[^0-9.]/g, '');
-        packageAmount = parseFloat(numStr) || 0;
+      // 2. Fetch Latest Quotation Version for this lead
+      const latestQuote = await findLatestQuotationForLead(supabase, leadId);
+      const quoteFinancials = latestQuote && latestQuote.content_json
+        ? extractFinancialsFromQuotation(latestQuote.content_json, parsedEventDate)
+        : null;
+
+      let packageAmount = quoteFinancials ? quoteFinancials.final_total_amount : 0;
+      let paidAmount = quoteFinancials ? quoteFinancials.received_amount : 0;
+      if (quoteFinancials?.event_date) parsedEventDate = quoteFinancials.event_date;
+      if (quoteFinancials?.event_type) eventType = quoteFinancials.event_type;
+
+      if (!quoteFinancials) {
+        if (raw.budget || raw.package_amount || raw.amount) {
+          const numStr = String(raw.budget || raw.package_amount || raw.amount).replace(/[^0-9.]/g, '');
+          const parsed = parseFloat(numStr) || 0;
+          if (parsed > 1000) packageAmount = parsed;
+        }
       }
 
-      const clientPayload = {
-        user_id: currentWorkspaceId,
-        workspace_id: currentWorkspaceId,
-        lead_id: leadId,
-        name: clientName,
-        phone: clientPhone,
-        email: clientEmail,
-        event_type: eventType,
-        event_date: parsedEventDate,
-        total_package_amount: packageAmount,
-        paid_amount: 0,
-        status: 'active'
-      };
-
-      const { data: newClient, error: clientErr } = await supabase
+      // 3. Check if client already exists for this lead
+      const { data: existingClients } = await supabase
         .from('workspace_clients')
-        .insert([clientPayload])
         .select('id')
-        .single();
+        .eq('lead_id', leadId);
 
-      if (clientErr) {
-        console.error('[LeadToClient] Error creating client from booked lead:', clientErr.message);
-      } else if (newClient) {
-        console.log('[LeadToClient] Successfully auto-created client from booked lead:', newClient.id);
-        // Link client_id on leads table
+      let targetClientId: string | null = null;
+
+      if (existingClients && existingClients.length > 0) {
+        targetClientId = existingClients[0].id;
+        console.log('[LeadToClient] Client already exists for lead:', leadId, 'Updating with latest quotation...');
         await supabase
-          .from('leads')
-          .update({ client_id: newClient.id })
-          .eq('id', leadId);
+          .from('workspace_clients')
+          .update({
+            total_package_amount: packageAmount,
+            paid_amount: paidAmount,
+            event_type: eventType,
+            event_date: parsedEventDate,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', targetClientId);
+      } else {
+        const clientPayload = {
+          user_id: currentWorkspaceId,
+          workspace_id: currentWorkspaceId,
+          lead_id: leadId,
+          name: clientName,
+          phone: clientPhone,
+          email: clientEmail,
+          event_type: eventType,
+          event_date: parsedEventDate,
+          total_package_amount: packageAmount,
+          paid_amount: paidAmount,
+          status: 'active'
+        };
 
-        // Also auto-create Post-Production Project for this client
-        const defaultDeliverables = [
-          {
-            id: `deliv_photo_1_${Date.now()}`,
-            title: 'Edited Photos',
-            category: 'photos',
-            count: '500 Photos',
-            assigned_to: 'Vikram (Photo Retoucher)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 15 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_photo_2_${Date.now()}`,
-            title: 'Save the Date Photo',
-            category: 'photos',
-            count: '5 Photos',
-            assigned_to: 'Vikram (Photo Retoucher)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() - 10 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_photo_3_${Date.now()}`,
-            title: 'Instagram Posts',
-            category: 'photos',
-            count: '10 Posts',
-            assigned_to: 'Vikram (Photo Retoucher)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 5 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_1_${Date.now()}`,
-            title: 'Cinematic Film',
-            category: 'videos',
-            count: '25 Mins',
-            assigned_to: 'Amit (Senior Video Editor)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 30 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_2_${Date.now()}`,
-            title: 'Cinematic Teaser',
-            category: 'videos',
-            count: '1 Min',
-            assigned_to: 'Rahul (Teaser Specialist)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 7 * 86400000).toISOString().split('T')[0] : '',
-            status: 'in_progress',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_3_${Date.now()}`,
-            title: 'Traditional Full Video',
-            category: 'videos',
-            count: '2 Hours',
-            assigned_to: 'Suresh (Traditional Editor)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 45 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_4_${Date.now()}`,
-            title: 'Viral Instagram Reels',
-            category: 'videos',
-            count: '3 Reels',
-            assigned_to: 'Priya (Reels Specialist)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 10 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_album_1_${Date.now()}`,
-            title: 'Main Wedding Album',
-            category: 'albums',
-            count: '40 Pages',
-            assigned_to: 'Rohan (Album Designer)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_album_2_${Date.now()}`,
-            title: 'Parent / Mini Album',
-            category: 'albums',
-            count: '20 Pages',
-            assigned_to: 'Rohan (Album Designer)',
-            deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          }
-        ];
+        const { data: newClient, error: clientErr } = await supabase
+          .from('workspace_clients')
+          .insert([clientPayload])
+          .select('id')
+          .single();
 
-        await supabase
-          .from('post_production_projects')
-          .insert([{
-            user_id: currentWorkspaceId,
-            workspace_id: currentWorkspaceId,
-            client_id: newClient.id,
-            project_manager_name: 'Sushant (Lead Manager)',
-            overall_status: 'active',
-            deliverables: defaultDeliverables
-          }]);
+        if (clientErr) {
+          console.error('[LeadToClient] Error creating client from booked lead:', clientErr.message);
+          return;
+        }
+
+        if (newClient) {
+          targetClientId = newClient.id;
+          console.log('[LeadToClient] Successfully auto-created client from booked lead:', targetClientId);
+          
+          await supabase
+            .from('leads')
+            .update({ client_id: targetClientId })
+            .eq('id', leadId);
+
+          // Auto-create Post-Production Project for new client
+          const defaultDeliverables = [
+            {
+              id: `deliv_photo_1_${Date.now()}`,
+              title: 'Edited Photos',
+              category: 'photos',
+              count: '500 Photos',
+              assigned_to: 'Vikram (Photo Retoucher)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 15 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_photo_2_${Date.now()}`,
+              title: 'Save the Date Photo',
+              category: 'photos',
+              count: '5 Photos',
+              assigned_to: 'Vikram (Photo Retoucher)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() - 10 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_photo_3_${Date.now()}`,
+              title: 'Instagram Posts',
+              category: 'photos',
+              count: '10 Posts',
+              assigned_to: 'Vikram (Photo Retoucher)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 5 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_video_1_${Date.now()}`,
+              title: 'Cinematic Film',
+              category: 'videos',
+              count: '25 Mins',
+              assigned_to: 'Amit (Senior Video Editor)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 30 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_video_2_${Date.now()}`,
+              title: 'Cinematic Teaser',
+              category: 'videos',
+              count: '1 Min',
+              assigned_to: 'Rahul (Teaser Specialist)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 7 * 86400000).toISOString().split('T')[0] : '',
+              status: 'in_progress',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_video_3_${Date.now()}`,
+              title: 'Traditional Full Video',
+              category: 'videos',
+              count: '2 Hours',
+              assigned_to: 'Suresh (Traditional Editor)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 45 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_video_4_${Date.now()}`,
+              title: 'Viral Instagram Reels',
+              category: 'videos',
+              count: '3 Reels',
+              assigned_to: 'Priya (Reels Specialist)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 10 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_album_1_${Date.now()}`,
+              title: 'Main Wedding Album',
+              category: 'albums',
+              count: '40 Pages',
+              assigned_to: 'Rohan (Album Designer)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            },
+            {
+              id: `deliv_album_2_${Date.now()}`,
+              title: 'Parent / Mini Album',
+              category: 'albums',
+              count: '20 Pages',
+              assigned_to: 'Rohan (Album Designer)',
+              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
+              status: 'pending',
+              drive_link: '',
+              comments: []
+            }
+          ];
+
+          await supabase
+            .from('post_production_projects')
+            .insert([{
+              user_id: currentWorkspaceId,
+              workspace_id: currentWorkspaceId,
+              client_id: targetClientId,
+              project_manager_name: 'Sushant (Lead Manager)',
+              overall_status: 'active',
+              deliverables: defaultDeliverables
+            }]);
+        }
+      }
+
+      // 4. Upsert Client Finance Record matching exact quotation breakdown
+      if (targetClientId) {
+        const finPayload = quoteFinancials ? {
+          user_id: currentWorkspaceId,
+          workspace_id: currentWorkspaceId,
+          client_id: targetClientId,
+          base_package_price: quoteFinancials.base_package_price,
+          discount_amount: quoteFinancials.discount_amount,
+          accommodation_charges: quoteFinancials.accommodation_charges,
+          travel_charges: quoteFinancials.travel_charges,
+          additional_charges: quoteFinancials.additional_charges,
+          subtotal_amount: quoteFinancials.subtotal_amount,
+          gst_rate: quoteFinancials.gst_rate,
+          gst_amount: quoteFinancials.gst_amount,
+          final_total_amount: quoteFinancials.final_total_amount,
+          received_amount: quoteFinancials.received_amount,
+          pending_amount: quoteFinancials.pending_amount,
+          payment_status: quoteFinancials.payment_status,
+          milestones: quoteFinancials.milestones,
+          updated_at: new Date().toISOString()
+        } : {
+          user_id: currentWorkspaceId,
+          workspace_id: currentWorkspaceId,
+          client_id: targetClientId,
+          base_package_price: packageAmount,
+          discount_amount: 0,
+          accommodation_charges: 0,
+          travel_charges: 0,
+          additional_charges: 0,
+          subtotal_amount: packageAmount,
+          gst_rate: 0,
+          gst_amount: 0,
+          final_total_amount: packageAmount,
+          received_amount: 0,
+          pending_amount: packageAmount,
+          payment_status: 'pending',
+          milestones: [],
+          updated_at: new Date().toISOString()
+        };
+
+        const { data: finRec } = await supabase
+          .from('client_finance_records')
+          .select('id')
+          .eq('client_id', targetClientId)
+          .maybeSingle();
+
+        if (finRec) {
+          await supabase
+            .from('client_finance_records')
+            .update(finPayload)
+            .eq('client_id', targetClientId);
+        } else {
+          await supabase
+            .from('client_finance_records')
+            .insert([{ ...finPayload, created_at: new Date().toISOString() }]);
+        }
       }
     } catch (e) {
       console.error('[LeadToClient] autoSyncBookedLeadToClient Exception:', e);
