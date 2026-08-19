@@ -24,12 +24,12 @@ export const PricingCardsGrid: React.FC<PricingCardsGridProps> = ({ isYearly }) 
           <div className="mb-6">
             <div className="flex items-baseline gap-1">
               <span className="font-serif text-[34px] lg:text-[38px] font-bold text-[#211B17]">
-                {isYearly ? 'â‚¹799' : 'â‚¹999'}
+                {isYearly ? '₹799' : '₹999'}
               </span>
               <span className="text-[13px] text-[#746E67]">/month</span>
             </div>
             <div className="text-[11px] text-[#99928A] mt-0.5">
-              {isYearly ? 'Billed annually (â‚¹9,588/yr)' : 'Billed monthly'}
+              {isYearly ? 'Billed annually (₹9,588/yr)' : 'Billed monthly'}
             </div>
           </div>
 
@@ -89,12 +89,12 @@ export const PricingCardsGrid: React.FC<PricingCardsGridProps> = ({ isYearly }) 
           <div className="mb-6">
             <div className="flex items-baseline gap-1">
               <span className="font-serif text-[34px] lg:text-[38px] font-bold text-[#211B17]">
-                {isYearly ? 'â‚¹1,999' : 'â‚¹2,499'}
+                {isYearly ? '₹1,999' : '₹2,499'}
               </span>
               <span className="text-[13px] text-[#746E67]">/month</span>
             </div>
             <div className="text-[11px] text-[#99928A] mt-0.5">
-              {isYearly ? 'Billed annually (â‚¹23,988/yr)' : 'Billed monthly'}
+              {isYearly ? 'Billed annually (₹23,988/yr)' : 'Billed monthly'}
             </div>
           </div>
 
@@ -153,12 +153,12 @@ export const PricingCardsGrid: React.FC<PricingCardsGridProps> = ({ isYearly }) 
           <div className="mb-6">
             <div className="flex items-baseline gap-1">
               <span className="font-serif text-[34px] lg:text-[38px] font-bold text-[#211B17]">
-                {isYearly ? 'â‚¹3,999' : 'â‚¹4,999'}
+                {isYearly ? '₹3,999' : '₹4,999'}
               </span>
               <span className="text-[13px] text-[#746E67]">/month</span>
             </div>
             <div className="text-[11px] text-[#99928A] mt-0.5">
-              {isYearly ? 'Billed annually (â‚¹47,988/yr)' : 'Billed monthly'}
+              {isYearly ? 'Billed annually (₹47,988/yr)' : 'Billed monthly'}
             </div>
           </div>
 

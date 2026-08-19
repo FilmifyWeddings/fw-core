@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { forwardRef } from 'react';
 import {
@@ -60,7 +60,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
                 <span className="w-2 h-2 rounded-full bg-[#E65100]" />
                 <span className="font-medium text-[#211B17]">Quotation Sent</span>
               </div>
-              <span className="text-[9.5px] text-[#E65100] font-semibold">â‚¹1,80,000</span>
+              <span className="text-[9.5px] text-[#E65100] font-semibold">₹1,80,000</span>
             </div>
             <div className="flex items-center justify-between px-3 py-1.5 rounded-[7px] bg-[#FAF8F3] border border-[#F2ECE2]">
               <div className="flex items-center gap-2">
@@ -100,7 +100,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
           {/* Vertical Workflow Flow */}
           <div className="flex flex-col items-center gap-1.5 text-[11px]">
             <div className="w-full text-center py-2 rounded-[7px] bg-[#FAF8F3] border border-[#F2ECE2] font-semibold text-[#211B17]">
-              âš¡ New Lead Discovered
+              ⚡ New Lead Discovered
             </div>
             <ArrowDown className="w-3.5 h-3.5 text-[#99928A]" />
             <div className="w-full flex items-center justify-center gap-2 py-2 rounded-[7px] bg-[#E8F5E9] border border-[#C8E6C9] font-semibold text-[#2E7D32]">
@@ -144,8 +144,8 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
               <div>
                 <div className="text-[8.5px] uppercase text-[#99928A] font-bold">#INV-1023</div>
                 <div className="text-[13px] font-bold text-[#211B17]">Rahul & Neha</div>
-                <div className="text-[13px] font-bold text-[#C89435]">â‚¹1,80,000</div>
-                <div className="text-[9.5px] text-[#746E67]">20 Dec 2024 Â· 3 Days Shoot</div>
+                <div className="text-[13px] font-bold text-[#C89435]">₹1,80,000</div>
+                <div className="text-[9.5px] text-[#746E67]">20 Dec 2024 · 3 Days Shoot</div>
               </div>
               <div className="w-13 h-16 rounded-[6px] overflow-hidden flex-shrink-0 border border-[#E9E0D4] shadow-xs">
                 <img
@@ -161,8 +161,8 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
               <div>
                 <div className="text-[8.5px] uppercase text-[#99928A] font-bold">#INV-1024</div>
                 <div className="text-[13px] font-bold text-[#211B17]">Mehul & Shifa</div>
-                <div className="text-[13px] font-bold text-[#C89435]">â‚¹2,40,000</div>
-                <div className="text-[9.5px] text-[#746E67]">15 Jan 2025 Â· Royal Destination</div>
+                <div className="text-[13px] font-bold text-[#C89435]">₹2,40,000</div>
+                <div className="text-[9.5px] text-[#746E67]">15 Jan 2025 · Royal Destination</div>
               </div>
               <div className="w-13 h-16 rounded-[6px] overflow-hidden flex-shrink-0 border border-[#E9E0D4] shadow-xs">
                 <img
@@ -205,7 +205,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
                 />
                 <div className="min-w-0">
                   <div className="text-[12.5px] font-bold text-[#211B17]">Rohan & Priya</div>
-                  <div className="text-[9.5px] text-[#746E67]">Udaipur Destination Â· Total: â‚¹1.8L</div>
+                  <div className="text-[9.5px] text-[#746E67]">Udaipur Destination · Total: ₹1.8L</div>
                 </div>
               </div>
               <div className="w-full h-2 bg-[#E8F5E9] rounded-full overflow-hidden mb-1">
@@ -227,7 +227,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
                 />
                 <div className="min-w-0">
                   <div className="text-[12.5px] font-bold text-[#211B17]">Karan & Anjali</div>
-                  <div className="text-[9.5px] text-[#746E67]">Jaipur Palace Â· Total: â‚¹2.1L</div>
+                  <div className="text-[9.5px] text-[#746E67]">Jaipur Palace · Total: ₹2.1L</div>
                 </div>
               </div>
               <div className="w-full h-2 bg-[#E8F5E9] rounded-full overflow-hidden mb-1">
@@ -264,7 +264,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
             <div className="bg-[#FAF8F3] rounded-[10px] p-2.5 border border-[#F0E8DC] space-y-1">
               <div className="flex items-center gap-1.5 font-bold text-[#C89435] text-[11px] pb-1 border-b border-[#E9E0D4]/60">
                 <Calendar className="w-3.5 h-3.5" />
-                <span>22 May Â· Mumbai Grand Ballroom</span>
+                <span>22 May · Mumbai Grand Ballroom</span>
               </div>
               <div className="flex justify-between text-[#746E67]">
                 <span>Lead Photographer:</span>
@@ -279,7 +279,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
             <div className="bg-[#FAF8F3] rounded-[10px] p-2.5 border border-[#F0E8DC] space-y-1">
               <div className="flex items-center gap-1.5 font-bold text-[#C89435] text-[11px] pb-1 border-b border-[#E9E0D4]/60">
                 <Calendar className="w-3.5 h-3.5" />
-                <span>14 Jun Â· Goa Beach Resort</span>
+                <span>14 Jun · Goa Beach Resort</span>
               </div>
               <div className="flex justify-between text-[#746E67]">
                 <span>Photographer:</span>
@@ -314,18 +314,18 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
           {/* 2 Stacked Payment Cards */}
           <div className="space-y-2">
             <div className="bg-[#FAF8F3] rounded-[10px] p-2.5 border border-[#F0E8DC]">
-              <div className="font-bold text-[#211B17] text-[12.5px] mb-1">Rohan & Priya Â· Royal Wedding</div>
+              <div className="font-bold text-[#211B17] text-[12.5px] mb-1">Rohan & Priya · Royal Wedding</div>
               <div className="flex justify-between text-[11px]">
-                <span className="text-[#2E7D32] font-bold">âœ“ Paid: â‚¹1,10,000</span>
-                <span className="text-[#E65100] font-bold">â³ Due: â‚¹70,000</span>
+                <span className="text-[#2E7D32] font-bold">✓ Paid: ₹1,10,000</span>
+                <span className="text-[#E65100] font-bold">Due: ₹70,000</span>
               </div>
             </div>
 
             <div className="bg-[#FAF8F3] rounded-[10px] p-2.5 border border-[#F0E8DC]">
-              <div className="font-bold text-[#211B17] text-[12.5px] mb-1">Aarav & Diya Â· Pre-Wed & Wedding</div>
+              <div className="font-bold text-[#211B17] text-[12.5px] mb-1">Aarav & Diya · Pre-Wed & Wedding</div>
               <div className="flex justify-between text-[11px]">
-                <span className="text-[#2E7D32] font-bold">âœ“ Paid: â‚¹2,00,000</span>
-                <span className="text-[#E65100] font-bold">â³ Due: â‚¹40,000</span>
+                <span className="text-[#2E7D32] font-bold">✓ Paid: ₹2,00,000</span>
+                <span className="text-[#E65100] font-bold">Due: ₹40,000</span>
               </div>
             </div>
           </div>
@@ -490,7 +490,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
               <div className="min-w-0">
                 <div className="text-[7px] uppercase text-[#99928A] font-semibold">#INV-1023</div>
                 <div className="text-[9.5px] font-bold text-[#211B17] truncate">Rahul & Neha</div>
-                <div className="text-[10px] font-bold text-[#C89435]">â‚¹1,80,000</div>
+                <div className="text-[10px] font-bold text-[#C89435]">₹1,80,000</div>
                 <div className="text-[7.5px] text-[#746E67]">20 Dec 2024</div>
               </div>
               <div className="w-8 h-10 rounded-[4px] overflow-hidden flex-shrink-0 border border-[#E9E0D4] shadow-xs">
@@ -507,7 +507,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
               <div className="min-w-0">
                 <div className="text-[7px] uppercase text-[#99928A] font-semibold">#INV-1024</div>
                 <div className="text-[9.5px] font-bold text-[#211B17] truncate">Mehul & Shifa</div>
-                <div className="text-[10px] font-bold text-[#C89435]">â‚¹2,40,000</div>
+                <div className="text-[10px] font-bold text-[#C89435]">₹2,40,000</div>
                 <div className="text-[7.5px] text-[#746E67]">15 Jan 2025</div>
               </div>
               <div className="w-8 h-10 rounded-[4px] overflow-hidden flex-shrink-0 border border-[#E9E0D4] shadow-xs">
@@ -547,7 +547,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
                 />
                 <div className="min-w-0">
                   <div className="text-[9.5px] font-bold text-[#211B17] truncate">Rohan & Priya</div>
-                  <div className="text-[7.5px] text-[#746E67]">Udaipur Â· â‚¹1.8L</div>
+                  <div className="text-[7.5px] text-[#746E67]">Udaipur · ₹1.8L</div>
                 </div>
               </div>
               <div className="w-full h-1 bg-[#E8F5E9] rounded-full overflow-hidden">
@@ -566,7 +566,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
                 />
                 <div className="min-w-0">
                   <div className="text-[9.5px] font-bold text-[#211B17] truncate">Karan & Anjali</div>
-                  <div className="text-[7.5px] text-[#746E67]">Jaipur Â· â‚¹2.1L</div>
+                  <div className="text-[7.5px] text-[#746E67]">Jaipur · ₹2.1L</div>
                 </div>
               </div>
               <div className="w-full h-1 bg-[#E8F5E9] rounded-full overflow-hidden">
@@ -596,7 +596,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
             <div className="bg-[#FAF8F3] rounded-[8px] p-1.5 border border-[#F0E8DC] space-y-0.5">
               <div className="flex items-center gap-1 font-semibold text-[#C89435] text-[8.5px] pb-0.5 border-b border-[#E9E0D4]/60">
                 <Calendar className="w-2.5 h-2.5" />
-                <span>22 May Â· Mumbai</span>
+                <span>22 May · Mumbai</span>
               </div>
               <div className="flex justify-between text-[#746E67]">
                 <span>Photo:</span>
@@ -611,7 +611,7 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
             <div className="bg-[#FAF8F3] rounded-[8px] p-1.5 border border-[#F0E8DC] space-y-0.5">
               <div className="flex items-center gap-1 font-semibold text-[#C89435] text-[8.5px] pb-0.5 border-b border-[#E9E0D4]/60">
                 <Calendar className="w-2.5 h-2.5" />
-                <span>14 Jun Â· Goa</span>
+                <span>14 Jun · Goa</span>
               </div>
               <div className="flex justify-between text-[#746E67]">
                 <span>Photo:</span>
@@ -642,18 +642,18 @@ export const FeatureCardsRow = forwardRef<HTMLDivElement>((_, ref) => {
           {/* 2 Payment Breakdown Cards */}
           <div className="space-y-1.5 text-[8.5px] mt-auto">
             <div className="bg-[#FAF8F3] rounded-[8px] p-1.5 border border-[#F0E8DC]">
-              <div className="font-semibold text-[#211B17] truncate">Rohan & Priya Â· â‚¹1.8L</div>
+              <div className="font-semibold text-[#211B17] truncate">Rohan & Priya · ₹1.8L</div>
               <div className="flex justify-between mt-0.5">
-                <span className="text-[#2E7D32] font-semibold">Paid: â‚¹1.1L</span>
-                <span className="text-[#E65100] font-semibold">Due: â‚¹70k</span>
+                <span className="text-[#2E7D32] font-semibold">Paid: ₹1.1L</span>
+                <span className="text-[#E65100] font-semibold">Due: ₹70k</span>
               </div>
             </div>
 
             <div className="bg-[#FAF8F3] rounded-[8px] p-1.5 border border-[#F0E8DC]">
-              <div className="font-semibold text-[#211B17] truncate">Aarav & Diya Â· â‚¹2.4L</div>
+              <div className="font-semibold text-[#211B17] truncate">Aarav & Diya · ₹2.4L</div>
               <div className="flex justify-between mt-0.5">
-                <span className="text-[#2E7D32] font-semibold">Paid: â‚¹2.0L</span>
-                <span className="text-[#E65100] font-semibold">Due: â‚¹40k</span>
+                <span className="text-[#2E7D32] font-semibold">Paid: ₹2.0L</span>
+                <span className="text-[#E65100] font-semibold">Due: ₹40k</span>
               </div>
             </div>
           </div>

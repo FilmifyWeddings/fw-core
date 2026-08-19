@@ -47,7 +47,7 @@ export const PricingPage: React.FC = () => {
         {/* 5. Character CTA Banner (Camera Photographer on Left) */}
         <PricingCtaBanner />
 
-        {/* 6. NEW â€” Business Stats Bar (Animated Count-Up) */}
+        {/* 6. NEW — Business Stats Bar (Animated Count-Up) */}
         <BusinessStatsBar />
 
         {/* 7. Testimonials Hero & 5 Cards Carousel */}

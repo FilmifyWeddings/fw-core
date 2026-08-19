@@ -35,7 +35,7 @@ export const ChaosCards = forwardRef<HTMLDivElement, ChaosCardsProps>(
               <div className="min-w-0">
                 <div className="text-[11.5px] font-semibold text-[#211B17] truncate">New Lead</div>
                 <div className="text-[10px] text-[#746E67] truncate">Rahul & Priya</div>
-                <div className="text-[8.5px] text-[#99928A]">Wedding Â· 12m ago</div>
+                <div className="text-[8.5px] text-[#99928A]">Wedding · 12m ago</div>
               </div>
             </div>
             <ChevronRight className="w-3.5 h-3.5 text-[#99928A]" />
@@ -201,9 +201,9 @@ export const ChaosCards = forwardRef<HTMLDivElement, ChaosCardsProps>(
               Follow-up Today
             </div>
             <div className="font-handwriting text-[10.5px] text-[#6D4C41] space-y-0.5 pl-1">
-              <div>â€¢ Leads</div>
-              <div>â€¢ Rohan</div>
-              <div>â€¢ Karan</div>
+              <div>• Leads</div>
+              <div>• Rohan</div>
+              <div>• Karan</div>
             </div>
           </div>
 
@@ -213,8 +213,8 @@ export const ChaosCards = forwardRef<HTMLDivElement, ChaosCardsProps>(
               Follow-up Tomorrow
             </div>
             <div className="font-handwriting text-[10.5px] text-[#6D4C41] space-y-0.5 pl-1">
-              <div>â€¢ Calls</div>
-              <div>â€¢ Messages</div>
+              <div>• Calls</div>
+              <div>• Messages</div>
             </div>
           </div>
 
@@ -224,8 +224,8 @@ export const ChaosCards = forwardRef<HTMLDivElement, ChaosCardsProps>(
               Unsent Follow-ups
             </div>
             <div className="font-handwriting text-[10.5px] text-[#C62828] space-y-0.5 pl-1">
-              <div>â€¢ 3 Leads</div>
-              <div>â€¢ 2 Clients</div>
+              <div>• 3 Leads</div>
+              <div>• 2 Clients</div>
             </div>
           </div>
         </div>
@@ -244,7 +244,7 @@ export const ChaosCards = forwardRef<HTMLDivElement, ChaosCardsProps>(
               </div>
               <div className="min-w-0">
                 <div className="text-[11.5px] font-semibold text-[#211B17]">Editing Pending</div>
-                <div className="text-[9.5px] text-[#746E67]">3 Projects Â· Need Review</div>
+                <div className="text-[9.5px] text-[#746E67]">3 Projects · Need Review</div>
               </div>
             </div>
             <span className="w-4 h-4 rounded-full bg-[#D32F2F] text-white text-[8.5px] font-bold flex items-center justify-center">
@@ -269,22 +269,22 @@ export const ChaosCards = forwardRef<HTMLDivElement, ChaosCardsProps>(
           <div className="space-y-1 text-[9.5px]">
             <div className="flex items-center justify-between">
               <span className="text-[#746E67]">Advance</span>
-              <span className="font-medium text-[#211B17]">â‚¹18,000</span>
+              <span className="font-medium text-[#211B17]">₹18,000</span>
               <span className="text-[8.5px] font-semibold text-[#2E7D32] bg-[#E8F5E9] px-1.5 py-0.5 rounded-[3px]">Paid</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#746E67]">Second Payment</span>
-              <span className="font-medium text-[#211B17]">â‚¹68,000</span>
+              <span className="font-medium text-[#211B17]">₹68,000</span>
               <span className="text-[8.5px] font-medium text-[#D32F2F]">Pending</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#746E67]">Final Payment</span>
-              <span className="font-medium text-[#211B17]">â‚¹76,000</span>
+              <span className="font-medium text-[#211B17]">₹76,000</span>
               <span className="text-[8.5px] font-medium text-[#D32F2F]">Pending</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#746E67]">Album Payment</span>
-              <span className="font-medium text-[#211B17]">â‚¹12,000</span>
+              <span className="font-medium text-[#211B17]">₹12,000</span>
               <span className="text-[8.5px] font-medium text-[#D32F2F]">Pending</span>
             </div>
           </div>
@@ -314,7 +314,7 @@ export const ChaosCards = forwardRef<HTMLDivElement, ChaosCardsProps>(
 
           <div className="bg-[#FAF8F3] p-1.5 rounded-[7px] mb-2">
             <div className="text-[8px] uppercase tracking-wider text-[#99928A] font-semibold">Total Amount</div>
-            <div className="text-[14px] font-bold text-[#211B17]">â‚¹1,80,000</div>
+            <div className="text-[14px] font-bold text-[#211B17]">₹1,80,000</div>
           </div>
 
           <button className="w-full py-1.5 bg-[#2E7D32] hover:bg-[#1B5E20] text-white text-[9.5px] font-semibold rounded-[7px] shadow-xs flex items-center justify-center gap-1 transition-colors">

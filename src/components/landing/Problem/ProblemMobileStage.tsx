@@ -19,10 +19,10 @@ export const ProblemMobileStage: React.FC = () => {
       <div className="absolute left-[2%] sm:left-[5%] top-[5px] z-10 bg-[#FFF9C4] border border-[#FFF176] rounded-[6px] p-2 shadow-[0_4px_12px_rgba(33,27,23,0.08)] transform -rotate-6 w-[80px] sm:w-[95px] text-[8px] sm:text-[9px] animate-float-slow">
         <div className="font-bold text-[#8C6D33] text-[9px] sm:text-[10px] mb-1">Don't Forget</div>
         <div className="space-y-0.5 text-[#5D4037]">
-          <div>â˜‘ Follow-up</div>
-          <div>â˜‘ Payment</div>
-          <div>â˜‘ Edit</div>
-          <div>â˜‘ Album</div>
+          <div>☑ Follow-up</div>
+          <div>☑ Payment</div>
+          <div>☑ Edit</div>
+          <div>☑ Album</div>
         </div>
       </div>
 
@@ -85,11 +85,11 @@ export const ProblemMobileStage: React.FC = () => {
         <div className="text-[7px] sm:text-[8px] space-y-0.5">
           <div className="flex justify-between text-[#746E67]">
             <span>Aarav & Diya</span>
-            <span className="text-[#C62828] font-semibold">â‚¹1,30,000 due</span>
+            <span className="text-[#C62828] font-semibold">₹1,30,000 due</span>
           </div>
           <div className="flex justify-between text-[#746E67]">
             <span>Rohan & Priya</span>
-            <span className="text-[#C62828] font-semibold">â‚¹1,40,000 due</span>
+            <span className="text-[#C62828] font-semibold">₹1,40,000 due</span>
           </div>
         </div>
       </div>

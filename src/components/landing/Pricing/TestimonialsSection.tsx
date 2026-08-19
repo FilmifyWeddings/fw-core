@@ -103,7 +103,7 @@ export const TestimonialsSection: React.FC = () => {
           >
             {/* Oversized quote mark */}
             <div className="absolute top-3 right-4 font-serif text-[42px] font-bold text-[#E9DCCA]/60 select-none pointer-events-none leading-none">
-              â€œ
+              “
             </div>
 
             <div>
@@ -138,7 +138,7 @@ export const TestimonialsSection: React.FC = () => {
             className="bg-[#FFFCF8] rounded-[20px] border border-[#E9E0D4] p-5 flex flex-col justify-between shadow-xs relative"
           >
             <div className="absolute top-3 right-4 font-serif text-[42px] font-bold text-[#E9DCCA]/60 leading-none">
-              â€œ
+              “
             </div>
             <div>
               <div className="flex items-center gap-3 mb-4">
@@ -149,7 +149,7 @@ export const TestimonialsSection: React.FC = () => {
                 />
                 <div>
                   <h4 className="text-[13.5px] font-bold text-[#211B17]">{t.name}</h4>
-                  <div className="text-[11px] text-[#746E67]">{t.role} Â· {t.city}</div>
+                  <div className="text-[11px] text-[#746E67]">{t.role} · {t.city}</div>
                 </div>
               </div>
               <p className="text-[12px] text-[#4A443E] leading-relaxed italic">

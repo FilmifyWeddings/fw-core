@@ -46,25 +46,25 @@ export const ProblemPaymentCard = forwardRef<HTMLDivElement, ProblemPaymentCardP
             {/* Row 1 */}
             <div className="grid grid-cols-12 py-1.5 items-center">
               <span className="col-span-4 font-medium text-[#211B17] truncate">Aarav & Diya</span>
-              <span className="col-span-3 text-right text-[#746E67]">â‚¹1,80,000</span>
-              <span className="col-span-2 text-right text-[#2E7D32]">â‚¹50k</span>
-              <span className="col-span-3 text-right font-medium text-[#D32F2F]">â‚¹1,30,000</span>
+              <span className="col-span-3 text-right text-[#746E67]">₹1,80,000</span>
+              <span className="col-span-2 text-right text-[#2E7D32]">₹50k</span>
+              <span className="col-span-3 text-right font-medium text-[#D32F2F]">₹1,30,000</span>
             </div>
 
             {/* Row 2 */}
             <div className="grid grid-cols-12 py-1.5 items-center">
               <span className="col-span-4 font-medium text-[#211B17] truncate">Rohan & Priya</span>
-              <span className="col-span-3 text-right text-[#746E67]">â‚¹2,20,000</span>
-              <span className="col-span-2 text-right text-[#2E7D32]">â‚¹80k</span>
-              <span className="col-span-3 text-right font-medium text-[#D32F2F]">â‚¹1,40,000</span>
+              <span className="col-span-3 text-right text-[#746E67]">₹2,20,000</span>
+              <span className="col-span-2 text-right text-[#2E7D32]">₹80k</span>
+              <span className="col-span-3 text-right font-medium text-[#D32F2F]">₹1,40,000</span>
             </div>
 
             {/* Row 3 */}
             <div className="grid grid-cols-12 py-1.5 items-center">
               <span className="col-span-4 font-medium text-[#211B17] truncate">Karan & Anjali</span>
-              <span className="col-span-3 text-right text-[#746E67]">â‚¹1,50,000</span>
-              <span className="col-span-2 text-right text-[#2E7D32]">â‚¹20k</span>
-              <span className="col-span-3 text-right font-medium text-[#D32F2F]">â‚¹1,30,000</span>
+              <span className="col-span-3 text-right text-[#746E67]">₹1,50,000</span>
+              <span className="col-span-2 text-right text-[#2E7D32]">₹20k</span>
+              <span className="col-span-3 text-right font-medium text-[#D32F2F]">₹1,30,000</span>
             </div>
           </div>
         </div>

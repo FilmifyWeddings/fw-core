@@ -72,7 +72,7 @@ export const HeroMobileStage = forwardRef<HTMLDivElement, HeroMobileStageProps>(
                 <div className="bg-[#FAF8F3] p-1.5 rounded-[6px] border border-[#F0E8DC]">
                   <div className="text-[7px] uppercase font-semibold text-[#99928A]">Revenue</div>
                   <div className="text-[11.5px] sm:text-[13.5px] font-bold text-[#211B17]">
-                    â‚¹24.8L
+                    ₹24.8L
                   </div>
                 </div>
               </div>
@@ -85,11 +85,11 @@ export const HeroMobileStage = forwardRef<HTMLDivElement, HeroMobileStageProps>(
                 </div>
                 <div className="flex items-center justify-between text-[#746E67]">
                   <span>Rohan & Priya</span>
-                  <span className="text-[#2E7D32] font-semibold">â‚¹1.8L</span>
+                  <span className="text-[#2E7D32] font-semibold">₹1.8L</span>
                 </div>
                 <div className="flex items-center justify-between text-[#746E67]">
                   <span>Aarav & Diya</span>
-                  <span className="text-[#2E7D32] font-semibold">â‚¹2.4L</span>
+                  <span className="text-[#2E7D32] font-semibold">₹2.4L</span>
                 </div>
               </div>
             </div>
@@ -147,7 +147,7 @@ export const HeroMobileStage = forwardRef<HTMLDivElement, HeroMobileStageProps>(
             </div>
             <div className="min-w-0">
               <div className="text-[8.5px] font-bold text-[#211B17] truncate">Quotation</div>
-              <div className="text-[8px] font-bold text-[#C89435]">â‚¹1,80,000</div>
+              <div className="text-[8px] font-bold text-[#C89435]">₹1,80,000</div>
             </div>
           </div>
 
@@ -158,7 +158,7 @@ export const HeroMobileStage = forwardRef<HTMLDivElement, HeroMobileStageProps>(
             </div>
             <div className="min-w-0">
               <div className="text-[8.5px] font-bold text-[#211B17] truncate">Payment</div>
-              <div className="text-[8px] font-bold text-[#2E7D32]">â‚¹50,000</div>
+              <div className="text-[8px] font-bold text-[#2E7D32]">₹50,000</div>
             </div>
           </div>
         </div>

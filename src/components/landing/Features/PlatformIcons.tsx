@@ -99,7 +99,7 @@ export const PaymentTrackingIcon: React.FC<{ className?: string }> = ({ classNam
     <rect x="5.5" y="9" width="25" height="18" rx="3.5" fill="#FFFFFF" fillOpacity="0.18" stroke="#FFFFFF" strokeWidth="1.2" />
     <rect x="5.5" y="13.5" width="25" height="4" fill="#0F172A" fillOpacity="0.45" />
     <circle cx="24" cy="22" r="3" fill="#F59E0B" />
-    <text x="11.5" y="23.5" fontSize="7" fontWeight="bold" fill="#FFFFFF" fontFamily="sans-serif">â‚¹ UPI</text>
+    <text x="11.5" y="23.5" fontSize="7" fontWeight="bold" fill="#FFFFFF" fontFamily="sans-serif">₹ UPI</text>
   </svg>
 );
 

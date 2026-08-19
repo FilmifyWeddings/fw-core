@@ -70,7 +70,7 @@ export const FeaturesSection: React.FC = () => {
         {/* PART A: 7 Feature Cards Row */}
         <FeatureCardsRow ref={cardsRowRef} />
 
-        {/* PART B: Before â†’ After Transformation Container */}
+        {/* PART B: Before → After Transformation Container */}
         <TransformationPanel ref={panelRef} mouseOffset={mouseOffset} />
       </div>
     </section>

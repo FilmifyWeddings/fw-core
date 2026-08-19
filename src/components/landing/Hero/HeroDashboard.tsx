@@ -114,7 +114,7 @@ export const HeroDashboard = forwardRef<HTMLDivElement, HeroDashboardProps>((_, 
             {/* Metric 3 */}
             <div className="bg-white p-3.5 rounded-[12px] border border-[#F2ECE2] shadow-[0_2px_8px_rgba(33,27,23,0.02)]">
               <span className="text-[11px] font-medium text-[#746E67] block mb-1">Revenue</span>
-              <div className="text-[17px] font-semibold text-[#211B17] leading-tight mb-1 tracking-tight">â‚¹24,80,000</div>
+              <div className="text-[17px] font-semibold text-[#211B17] leading-tight mb-1 tracking-tight">₹24,80,000</div>
               <div className="flex items-center gap-1 text-[10px] font-medium text-[#2E7D32]">
                 <ArrowUpRight className="w-3 h-3 text-[#2E7D32]" />
                 <span>+21% this month</span>
@@ -124,7 +124,7 @@ export const HeroDashboard = forwardRef<HTMLDivElement, HeroDashboardProps>((_, 
             {/* Metric 4 */}
             <div className="bg-white p-3.5 rounded-[12px] border border-[#F2ECE2] shadow-[0_2px_8px_rgba(33,27,23,0.02)]">
               <span className="text-[11px] font-medium text-[#746E67] block mb-1">Pending Payments</span>
-              <div className="text-[17px] font-semibold text-[#211B17] leading-tight mb-1 tracking-tight">â‚¹6,45,000</div>
+              <div className="text-[17px] font-semibold text-[#211B17] leading-tight mb-1 tracking-tight">₹6,45,000</div>
               <a href="#payments" className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[#C89435] hover:underline">
                 <span>View Details</span>
                 <ChevronRight className="w-2.5 h-2.5" />

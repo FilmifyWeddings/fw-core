@@ -52,7 +52,7 @@ export const SolutionMobileStage: React.FC = () => {
           {/* Metric 3 */}
           <div className="bg-[#FAF8F3]/90 p-1.5 sm:p-2 rounded-[8px] border border-[#F0E8DC]">
             <span className="text-[7.5px] sm:text-[9px] text-[#746E67] font-medium block">Revenue</span>
-            <div className="text-[13px] sm:text-[16px] font-bold text-[#211B17] leading-tight">â‚¹48,60,000</div>
+            <div className="text-[13px] sm:text-[16px] font-bold text-[#211B17] leading-tight">₹48,60,000</div>
             <div className="flex items-center gap-0.5 text-[7.5px] sm:text-[8.5px] font-semibold text-[#2E7D32]">
               <ArrowUpRight className="w-2.5 h-2.5" />
               <span>+31% this month</span>
@@ -74,7 +74,7 @@ export const SolutionMobileStage: React.FC = () => {
         <div className="bg-[#FAF8F3]/60 p-2 sm:p-2.5 rounded-[10px] border border-[#F0E8DC]">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[9.5px] sm:text-[11px] font-semibold text-[#211B17]">Leads Overview</span>
-            <span className="text-[8px] sm:text-[9px] text-[#8C6D33] font-medium">â€¢ This Year</span>
+            <span className="text-[8px] sm:text-[9px] text-[#8C6D33] font-medium">• This Year</span>
           </div>
 
           <div className="w-full h-[65px] sm:h-[80px] relative">
@@ -184,7 +184,7 @@ export const SolutionMobileStage: React.FC = () => {
                 <CreditCard className="w-2.5 h-2.5" />
               </div>
               <div className="min-w-0 flex-1 truncate">
-                <span className="font-medium text-[#211B17]">Payment received â€” Aarav & Diya</span>
+                <span className="font-medium text-[#211B17]">Payment received — Aarav & Diya</span>
                 <span className="text-[7px] text-[#99928A] ml-1">1h ago</span>
               </div>
             </div>

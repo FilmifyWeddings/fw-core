@@ -22,7 +22,7 @@ export const ChaosScene = forwardRef<HTMLDivElement, ChaosSceneProps>(
           {/* 1. Left Editorial Serif Statement */}
           <div className="absolute left-[2%] xl:left-[4%] top-[80px] max-w-[280px] xl:max-w-[320px] z-10 select-none">
             <h3 className="font-serif text-[36px] sm:text-[42px] xl:text-[48px] font-normal leading-[1.04] text-[#211B17] tracking-tight">
-              You didnâ€™t start<br />
+              You didn’t start<br />
               photography to<br />
               manage spreadsheets.
             </h3>

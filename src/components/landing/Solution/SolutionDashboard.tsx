@@ -60,7 +60,7 @@ export const SolutionDashboard = forwardRef<HTMLDivElement, SolutionDashboardPro
           {/* Card 3 */}
           <div className="bg-[#FAF8F3]/70 p-3 rounded-[12px] border border-[#F0E8DC]">
             <span className="text-[10px] text-[#746E67] font-medium block mb-1">Revenue</span>
-            <div className="text-[16px] sm:text-[18px] font-bold text-[#211B17] leading-tight mb-1 tracking-tight">â‚¹48,60,000</div>
+            <div className="text-[16px] sm:text-[18px] font-bold text-[#211B17] leading-tight mb-1 tracking-tight">₹48,60,000</div>
             <div className="flex items-center gap-0.5 text-[9.5px] font-medium text-[#2E7D32]">
               <ArrowUpRight className="w-3 h-3 text-[#2E7D32]" />
               <span>+31% this month</span>
@@ -90,7 +90,7 @@ export const SolutionDashboard = forwardRef<HTMLDivElement, SolutionDashboardPro
                   <ChevronDown className="w-2.5 h-2.5" />
                 </div>
                 <span className="w-1 h-1 rounded-full bg-[#99928A]" />
-                <span className="text-[#8C6D33] font-medium">â€¢ This Year</span>
+                <span className="text-[#8C6D33] font-medium">• This Year</span>
               </div>
             </div>
 
@@ -218,7 +218,7 @@ export const SolutionDashboard = forwardRef<HTMLDivElement, SolutionDashboardPro
                   <Camera className="w-3 h-3" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium text-[#211B17] truncate leading-tight">Shoot completed â€” Karan & Anjali</div>
+                  <div className="font-medium text-[#211B17] truncate leading-tight">Shoot completed — Karan & Anjali</div>
                   <div className="text-[8.5px] text-[#99928A]">3 hrs ago</div>
                 </div>
               </div>

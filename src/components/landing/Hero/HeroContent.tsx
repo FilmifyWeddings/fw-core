@@ -35,7 +35,7 @@ export const HeroContent = forwardRef<HTMLDivElement, HeroContentProps>(
           ref={descriptionRef}
           className="text-[14px] sm:text-[15.5px] lg:text-[17px] text-[#746E67] font-normal leading-[1.6] lg:leading-[1.65] max-w-[460px] mb-6 sm:mb-8"
         >
-          From leads and follow-ups to bookings, payments, team management and post-production â€” run your entire photography studio from one powerful platform.
+          From leads and follow-ups to bookings, payments, team management and post-production — run your entire photography studio from one powerful platform.
         </p>
 
         {/* Call to Actions */}

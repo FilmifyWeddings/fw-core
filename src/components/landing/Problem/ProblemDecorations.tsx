@@ -106,23 +106,23 @@ export const ProblemDecorations: React.FC = () => {
         </div>
         <div className="space-y-0.5 font-handwriting text-[13px] text-[#554E48]">
           <div className="flex items-center gap-1">
-            <span className="text-[#C89435] font-bold">â˜‘</span>
+            <span className="text-[#C89435] font-bold">☑</span>
             <span>Follow-up</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[#C89435] font-bold">â˜‘</span>
+            <span className="text-[#C89435] font-bold">☑</span>
             <span>Payment</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[#C89435] font-bold">â˜‘</span>
+            <span className="text-[#C89435] font-bold">☑</span>
             <span>Shoot</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[#C89435] font-bold">â˜‘</span>
+            <span className="text-[#C89435] font-bold">☑</span>
             <span>Edit</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[#C89435] font-bold">â˜‘</span>
+            <span className="text-[#C89435] font-bold">☑</span>
             <span>Album</span>
           </div>
         </div>

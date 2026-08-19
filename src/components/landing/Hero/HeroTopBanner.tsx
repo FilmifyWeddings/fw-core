@@ -22,7 +22,7 @@ export const HeroTopBanner: React.FC = () => {
         <span>Made with</span>
         <Heart className="w-3.5 h-3.5 fill-[#E53935] text-[#E53935] inline-block animate-pulse" />
         <span className="font-semibold text-[#211B17]">in India</span>
-        <span className="text-[13px]">ðŸ‡®ðŸ‡³</span>
+        <span className="text-[13px]">🇮🇳</span>
       </div>
     </div>
   );

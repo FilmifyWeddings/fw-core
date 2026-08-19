@@ -64,9 +64,9 @@ export const ChaosMobileScene: React.FC = () => {
             Follow-up Today
           </div>
           <div className="font-handwriting text-[9px] sm:text-[10px] text-[#6D4C41] space-y-0.5 pl-0.5">
-            <div>â€¢ Leads (3)</div>
-            <div>â€¢ Rohan & Priya</div>
-            <div>â€¢ Karan (Shoot)</div>
+            <div>• Leads (3)</div>
+            <div>• Rohan & Priya</div>
+            <div>• Karan (Shoot)</div>
           </div>
         </div>
 
@@ -100,7 +100,7 @@ export const ChaosMobileScene: React.FC = () => {
             </span>
           </div>
           <div className="text-[8px] font-semibold text-[#211B17] truncate">Aarav & Diya</div>
-          <div className="text-[11px] sm:text-[12px] font-bold text-[#211B17] mt-0.5">â‚¹1,80,000</div>
+          <div className="text-[11px] sm:text-[12px] font-bold text-[#211B17] mt-0.5">₹1,80,000</div>
         </div>
 
         {/* 6. Client Deliverables */}

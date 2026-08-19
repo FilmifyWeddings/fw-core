@@ -112,7 +112,7 @@ export const BusinessStatsBar: React.FC = () => {
           </div>
           <div>
             <div className="font-bold text-[24px] sm:text-[28px] lg:text-[32px] text-[#211B17] tracking-tight leading-none">
-              â‚¹{countPayments}Cr+
+              ₹{countPayments}Cr+
             </div>
             <div className="text-[12.5px] sm:text-[13.5px] text-[#746E67] font-medium mt-1">
               Payments Managed
