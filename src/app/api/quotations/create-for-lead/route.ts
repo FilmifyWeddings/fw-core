@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveUserDefaultQuotationTemplate, GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
 
 /**
  * Authoritative Fast Backend Route for Lead Quotation Creation (<100ms Response)
@@ -85,6 +85,21 @@ export async function POST(req: NextRequest) {
       clonedDoc.cover.locationName = effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location;
     }
 
+    const eventType = clonedDoc.cover?.eventType || 'Wedding';
+    const quotationTitle = `${leadName} - ${eventType} Quotation`;
+    clonedDoc.designName = quotationTitle;
+    clonedDoc.title = quotationTitle;
+
+    // Ensure payment term steps have unique IDs
+    if (clonedDoc.paymentTermsPage?.steps && Array.isArray(clonedDoc.paymentTermsPage.steps)) {
+      clonedDoc.paymentTermsPage.steps = clonedDoc.paymentTermsPage.steps.map((s: any, idx: number) => ({
+        ...s,
+        id: s.id || `pt_${Date.now()}_${idx}_${Math.random().toString(36).substring(7)}`,
+        stepName: s.stepName || s.name || `Installment #${idx + 1}`,
+        name: s.name || s.stepName || `Installment #${idx + 1}`
+      }));
+    }
+
     if (Array.isArray(clonedDoc.pages)) {
       clonedDoc.pages = clonedDoc.pages.map((page: any, idx: number) => ({
         ...page,
@@ -113,7 +128,7 @@ export async function POST(req: NextRequest) {
       console.error('Error inserting quotation document:', docInsErr);
     }
 
-    // Non-blocking background sync to legacy quotations table
+    // Non-blocking background sync to legacy quotations table with "{coupleName} - {eventType} Quotation"
     (async () => {
       try {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceTemplateId);
@@ -122,8 +137,9 @@ export async function POST(req: NextRequest) {
           workspace_id: workspaceId,
           user_id: userId,
           template_id: isUuid ? sourceTemplateId : null,
-          title: leadName,
+          title: quotationTitle,
           client_name: leadName,
+          total_amount: clonedDoc.pricingPage?.basePrice || 0,
           status: 'draft',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()

@@ -48,6 +48,11 @@ export async function POST(req: NextRequest) {
 
     // 2. Normalize document schema on top of the existing template
     const normalizedDoc = normalizeQuotationData(document, baseTemplate);
+    const coupleName = normalizedDoc.cover?.coupleName || normalizedDoc.cover?.groomName || 'Valued Client';
+    const eventType = normalizedDoc.cover?.eventType || 'Wedding';
+    const quotationTitle = `${coupleName} - ${eventType} Quotation`;
+    normalizedDoc.designName = quotationTitle;
+    normalizedDoc.title = quotationTitle;
 
     // 3. Update quotation_documents content_json in place
     const { error: docErr } = await supabaseAdmin
@@ -67,7 +72,8 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin
         .from('quotations')
         .update({
-          client_name: normalizedDoc.cover?.coupleName || normalizedDoc.cover?.groomName || 'Valued Client',
+          title: quotationTitle,
+          client_name: coupleName,
           total_amount: normalizedDoc.pricingPage?.basePrice || 0,
           updated_at: new Date().toISOString()
         })

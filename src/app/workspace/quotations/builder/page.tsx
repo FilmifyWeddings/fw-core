@@ -2688,8 +2688,8 @@ function StudioCoreAiryBuilderContent() {
           },
           body: JSON.stringify({
             workspace_id: userId || 'demo_user',
-            title: data.designName || 'Wedding - Design 1',
-            client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
+            title: data.designName || data.title || `${data.cover?.coupleName || (data.cover?.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'Client')} - ${data.cover?.eventType || 'Wedding'} Quotation`,
+            client_name: data.cover?.coupleName || `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
             content_json: data,
             financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
             status: 'draft'
@@ -2829,8 +2829,8 @@ function StudioCoreAiryBuilderContent() {
         },
         body: JSON.stringify({
           workspace_id: userId || 'demo_user',
-          title: data.designName || 'Wedding - Design 1',
-          client_name: `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
+          title: data.designName || data.title || `${data.cover?.coupleName || (data.cover?.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'Client')} - ${data.cover?.eventType || 'Wedding'} Quotation`,
+          client_name: data.cover?.coupleName || `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
           content_json: data,
           financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
           status: 'draft'
@@ -3745,14 +3745,14 @@ function StudioCoreAiryBuilderContent() {
                       
               <div className="space-y-2">
                 {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps).map((step, idx) => (
-                  <div key={step?.id || idx} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
+                  <div key={step?.id || `pt_${idx}`} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase text-amber-950">Installment #{idx + 1}</span>
                       <button
                         type="button"
                         onClick={() => {
                           const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.filter(s => s.id !== step.id);
+                          const updated = steps.filter((_, sIdx) => sIdx !== idx);
                           const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                           setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
@@ -3769,7 +3769,7 @@ function StudioCoreAiryBuilderContent() {
                         disabled={false}
                         onChange={(val) => {
                           const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.map(s => s.id === step.id ? { ...s, date: val } : s);
+                          const updated = steps.map((s, sIdx) => sIdx === idx ? { ...s, date: val } : s);
                           const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                           setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
@@ -3780,10 +3780,10 @@ function StudioCoreAiryBuilderContent() {
                       <label className="block text-[9px] uppercase font-bold text-zinc-500">Step / Stage Name</label>
                       <input
                         type="text"
-                        value={step?.stepName || ''}
+                        value={step?.stepName || step?.name || ''}
                         onChange={(e) => {
                           const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.map(s => s.id === step.id ? { ...s, stepName: e.target.value } : s);
+                          const updated = steps.map((s, sIdx) => sIdx === idx ? { ...s, stepName: e.target.value, name: e.target.value } : s);
                           const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                           setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                         }}
@@ -3799,7 +3799,7 @@ function StudioCoreAiryBuilderContent() {
                           value={step?.amount ?? 0}
                           onChange={(e) => {
                             const steps = data.paymentTermsPage?.steps || [];
-                            const updated = steps.map(s => s.id === step.id ? { ...s, amount: Number(e.target.value) || 0 } : s);
+                            const updated = steps.map((s, sIdx) => sIdx === idx ? { ...s, amount: Number(e.target.value) || 0 } : s);
                             const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                             setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                           }}
@@ -3816,7 +3816,7 @@ function StudioCoreAiryBuilderContent() {
                           ]}
                           onChange={(val) => {
                             const steps = data.paymentTermsPage?.steps || [];
-                            const updated = steps.map(s => s.id === step.id ? { ...s, status: val as 'Completed' | 'Pending' } : s);
+                            const updated = steps.map((s, sIdx) => sIdx === idx ? { ...s, status: val as 'Completed' | 'Pending' } : s);
                             const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                             setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
                           }}

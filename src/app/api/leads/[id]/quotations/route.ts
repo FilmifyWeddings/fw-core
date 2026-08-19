@@ -440,6 +440,21 @@ export async function POST(
       newQuotationJson.cover.locationName = lead.raw_payload.venue || lead.raw_payload.location;
     }
 
+    const eventType = newQuotationJson.cover?.eventType || 'Wedding';
+    const quotationTitle = `${leadName} - ${eventType} Quotation`;
+    newQuotationJson.designName = quotationTitle;
+    newQuotationJson.title = quotationTitle;
+
+    // Ensure payment term steps have unique IDs
+    if (newQuotationJson.paymentTermsPage?.steps && Array.isArray(newQuotationJson.paymentTermsPage.steps)) {
+      newQuotationJson.paymentTermsPage.steps = newQuotationJson.paymentTermsPage.steps.map((s: any, idx: number) => ({
+        ...s,
+        id: s.id || `pt_${Date.now()}_${idx}_${Math.random().toString(36).substring(7)}`,
+        stepName: s.stepName || s.name || `Installment #${idx + 1}`,
+        name: s.name || s.stepName || `Installment #${idx + 1}`
+      }));
+    }
+
     if (Array.isArray(newQuotationJson.pageSequence)) {
       newQuotationJson.pageSequence = newQuotationJson.pageSequence.map((p: any) => ({
         ...p,
@@ -501,8 +516,9 @@ export async function POST(
       await supabaseAdmin.from('quotations').upsert({
         workspace_id: currentUserId,
         quotation_number: newTemplateId,
-        title: `Wedding - Design 1 (V${nextLeadVersion})`,
+        title: quotationTitle,
         client_name: leadName,
+        total_amount: newQuotationJson.pricingPage?.basePrice || 0,
         client_id: leadId,
         status: 'draft',
         created_at: now,
