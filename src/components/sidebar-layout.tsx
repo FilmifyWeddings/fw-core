@@ -50,11 +50,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [userId, setUserId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Load collapsed preference & user profile
+  // Load user profile & collapsed preference
   useEffect(() => {
     const savedCollapsed = localStorage.getItem('sidebar_collapsed');
-    if (savedCollapsed) {
+    if (savedCollapsed !== null) {
       setCollapsed(savedCollapsed === 'true');
+    } else {
+      setCollapsed(false); // Expanded by default on first visit
     }
 
     if (typeof window !== 'undefined') {
@@ -135,16 +137,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       name: 'Dashboard',
       path: '/workspace',
       icon: LayoutDashboard,
-      color: 'text-amber-600',
-      iconBg: 'bg-amber-500/10 text-amber-600',
+      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
     },
     {
       id: 'leads',
       name: 'Leads & CRM',
       path: '/leads',
       icon: Target,
-      color: 'text-emerald-600',
-      iconBg: 'bg-emerald-500/10 text-emerald-600',
+      iconBg: 'bg-[#E6F4EA] text-[#137333]',
       hasSubmenu: true,
       subItems: [
         { name: 'All Active Leads', path: '/leads', icon: Layers },
@@ -157,88 +157,77 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       name: 'Clients Directory',
       path: '/workspace/clients',
       icon: Users,
-      color: 'text-purple-600',
-      iconBg: 'bg-purple-500/10 text-purple-600',
+      iconBg: 'bg-[#F3E8FF] text-[#7E22CE]',
     },
     {
       id: 'quotations',
       name: 'Quotations',
       path: '/quotations',
       icon: FileText,
-      color: 'text-orange-600',
-      iconBg: 'bg-orange-500/10 text-orange-600',
+      iconBg: 'bg-[#FEF3C7] text-[#B45309]',
     },
     {
       id: 'bookings',
       name: 'Bookings',
       path: '/team-manager',
       icon: Calendar,
-      color: 'text-blue-600',
-      iconBg: 'bg-blue-500/10 text-blue-600',
+      iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
     },
     {
       id: 'team-manager',
       name: 'Team Manager',
       path: '/team-manager',
       icon: Users2,
-      color: 'text-indigo-600',
-      iconBg: 'bg-indigo-500/10 text-indigo-600',
+      iconBg: 'bg-[#EDE9FE] text-[#6366F1]',
     },
     {
       id: 'post-production',
       name: 'Post-Production',
       path: '/workspace/post-production',
       icon: Film,
-      color: 'text-rose-600',
-      iconBg: 'bg-rose-500/10 text-rose-600',
+      iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
     },
     {
       id: 'finance',
       name: 'Finance & Payments',
       path: '/workspace/finance',
       icon: IndianRupee,
-      color: 'text-amber-600',
-      iconBg: 'bg-amber-500/15 text-amber-700',
+      iconBg: 'bg-[#FEF9C3] text-[#A16207]',
     },
     {
       id: 'attendance',
       name: 'Attendance',
       path: '/workspace/attendance',
       icon: Clock,
-      color: 'text-emerald-600',
-      iconBg: 'bg-emerald-500/10 text-emerald-600',
+      iconBg: 'bg-[#DCFCE7] text-[#15803D]',
     },
     {
       id: 'integrations',
       name: 'Integrations',
       path: '/workspace/integrations',
       icon: Layers,
-      color: 'text-cyan-600',
-      iconBg: 'bg-cyan-500/10 text-cyan-600',
+      iconBg: 'bg-[#E0F2FE] text-[#0369A1]',
     },
     {
       id: 'reports',
       name: 'Reports',
       path: '/workspace/finance',
       icon: BarChart3,
-      color: 'text-slate-600',
-      iconBg: 'bg-slate-500/10 text-slate-600',
+      iconBg: 'bg-[#F1F5F9] text-[#475569]',
     },
     {
       id: 'settings',
       name: 'Settings',
       path: '/workspace/settings',
       icon: Settings,
-      color: 'text-zinc-600',
-      iconBg: 'bg-zinc-500/10 text-zinc-600',
+      iconBg: 'bg-[#F4F4F5] text-[#52525B]',
     },
     {
       id: 'support',
       name: 'Help & Support',
       path: '/support',
       icon: Headphones,
-      color: 'text-teal-600',
-      iconBg: 'bg-teal-500/10 text-teal-600',
+      iconBg: 'bg-[#CCFBF1] text-[#0F766E]',
     },
   ];
 
@@ -266,7 +255,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         }`}
       >
         {/* Top Brand Logo Header */}
-        <div className="h-18 px-4 border-b border-[#F0ECE4] flex items-center justify-between shrink-0">
+        <div className="h-16 px-4 border-b border-[#F0ECE4] flex items-center justify-between shrink-0">
           <Link href="/workspace" className="flex items-center gap-2.5 overflow-hidden group">
             {!collapsed ? (
               <div className="overflow-hidden">
@@ -279,7 +268,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 </p>
               </div>
             ) : (
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white font-black flex items-center justify-center shadow-xs">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white font-black text-xs flex items-center justify-center shadow-xs">
                 SC
               </div>
             )}
@@ -442,114 +431,112 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       </aside>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. TOP HEADER BAR WITH SEARCH, NOTIFICATIONS & USER PROFILE
+          2. MAIN CONTENT WRAPPER (HEADER + CONTENT) WITH PERFECT ALIGNMENT
       ───────────────────────────────────────────────────────────── */}
-      <header
-        className={`sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#EBE7DF] h-16 flex items-center justify-between px-4 sm:px-6 transition-all duration-300 ease-in-out ${
-          collapsed ? 'lg:pl-24' : 'lg:pl-68'
-        }`}
-      >
-        {/* Left Side: Mobile Menu + Search Bar */}
-        <div className="flex items-center gap-3 sm:gap-4 flex-1 max-w-lg">
-          <button
-            onClick={() => {
-              if (window.innerWidth < 1024) {
-                setMobileDrawerOpen(true);
-              } else {
-                setCollapsed(prev => !prev);
-              }
-            }}
-            className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
-            aria-label="Toggle Menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-
-          {/* Search Box */}
-          <div className="relative flex-1">
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#F4F2EC] hover:bg-[#EFECE5] border border-[#E5E1D8] text-xs transition-colors">
-              <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-              <input
-                type="text"
-                placeholder="Search anything..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent border-none outline-hidden text-xs text-zinc-800 placeholder:text-zinc-400 w-full"
-              />
-              <kbd className="hidden sm:inline-flex px-1.5 py-0.5 rounded bg-white text-zinc-400 text-[10px] font-mono font-bold border border-zinc-200 shadow-2xs">
-                ⌘K
-              </kbd>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Side: Notifications, Calendar & Profile */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          
-          {/* Notifications Bell */}
-          <button
-            type="button"
-            className="relative p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
-              3
-            </span>
-          </button>
-
-          {/* Calendar Shortcut */}
-          <Link
-            href="/team-manager"
-            className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
-            title="Calendar & Schedules"
-          >
-            <Calendar className="w-4 h-4" />
-          </Link>
-
-          {/* Topbar User Profile Avatar & Name */}
-          <div
-            onClick={() => setShowProfileModal(true)}
-            className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-zinc-200 cursor-pointer group"
-          >
-            {userAvatarUrl ? (
-              <img
-                src={userAvatarUrl}
-                alt="Avatar"
-                className="w-8 h-8 rounded-full object-cover border border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center shadow-2xs">
-                {userName.slice(0, 2).toUpperCase()}
-              </div>
-            )}
-
-            <div className="hidden sm:block text-left">
-              <h4 className="text-xs font-black text-zinc-900 group-hover:text-amber-700 transition-colors leading-tight">
-                {userName}
-              </h4>
-              <p className="text-[10px] text-zinc-400 font-medium">
-                Studio Owner
-              </p>
-            </div>
-          </div>
-
-        </div>
-      </header>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. MAIN CONTENT VIEWPORT
-      ───────────────────────────────────────────────────────────── */}
-      <main
-        className={`flex-1 min-w-0 transition-all duration-300 ease-in-out ${
+      <div
+        className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${
           collapsed ? 'lg:pl-20' : 'lg:pl-64'
         }`}
       >
-        {children}
-      </main>
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#EBE7DF] h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0">
+          
+          {/* Left Side: Mobile Drawer / Collapse Toggle + Search Bar */}
+          <div className="flex items-center gap-3 sm:gap-4 flex-1 max-w-lg">
+            <button
+              onClick={() => {
+                if (window.innerWidth < 1024) {
+                  setMobileDrawerOpen(true);
+                } else {
+                  setCollapsed(prev => !prev);
+                }
+              }}
+              className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+              aria-label="Toggle Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Search Box */}
+            <div className="relative flex-1">
+              <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#F4F2EC] hover:bg-[#EFECE5] border border-[#E5E1D8] text-xs transition-colors">
+                <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search anything..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-transparent border-none outline-hidden text-xs text-zinc-800 placeholder:text-zinc-400 w-full"
+                />
+                <kbd className="hidden sm:inline-flex px-1.5 py-0.5 rounded bg-white text-zinc-400 text-[10px] font-mono font-bold border border-zinc-200 shadow-2xs">
+                  ⌘K
+                </kbd>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Side: Notifications, Calendar & Profile */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            
+            {/* Notifications Bell */}
+            <button
+              type="button"
+              className="relative p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
+                3
+              </span>
+            </button>
+
+            {/* Calendar Shortcut */}
+            <Link
+              href="/team-manager"
+              className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+              title="Calendar & Schedules"
+            >
+              <Calendar className="w-4 h-4" />
+            </Link>
+
+            {/* Topbar User Profile */}
+            <div
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-zinc-200 cursor-pointer group"
+            >
+              {userAvatarUrl ? (
+                <img
+                  src={userAvatarUrl}
+                  alt="Avatar"
+                  className="w-8 h-8 rounded-full object-cover border border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center shadow-2xs">
+                  {userName.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+
+              <div className="hidden sm:block text-left">
+                <h4 className="text-xs font-black text-zinc-900 group-hover:text-amber-700 transition-colors leading-tight">
+                  {userName}
+                </h4>
+                <p className="text-[10px] text-zinc-400 font-medium">
+                  Studio Owner
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </header>
+
+        {/* Viewport Content */}
+        <main className="flex-1 min-w-0">
+          {children}
+        </main>
+      </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          4. MOBILE SLIDING DRAWER
+          3. MOBILE SLIDING DRAWER
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {mobileDrawerOpen && (

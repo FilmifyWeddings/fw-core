@@ -24,8 +24,8 @@ interface WorkspaceModule {
   description: string;
   href: string;
   icon: any;
-  badgeBg: string;
-  badgeText: string;
+  iconBg: string;
+  iconColor: string;
   decoration: React.FC<{ className?: string }>;
 }
 
@@ -36,8 +36,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Capture, qualify and manage leads from Meta Ads, WhatsApp, Website & more.',
     href: '/leads',
     icon: Target,
-    badgeBg: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-    badgeText: 'text-emerald-700 dark:text-emerald-300',
+    iconBg: 'bg-[#E6F4EA]',
+    iconColor: 'text-[#137333]',
     decoration: CrmDecoration,
   },
   {
@@ -46,8 +46,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Centralized client roster with contact info, package details and billing records.',
     href: '/workspace/clients',
     icon: Users,
-    badgeBg: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-    badgeText: 'text-purple-700 dark:text-purple-300',
+    iconBg: 'bg-[#F3E8FF]',
+    iconColor: 'text-[#7E22CE]',
     decoration: ClientsDecoration,
   },
   {
@@ -56,8 +56,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Create stunning quotations and convert leads faster with smart follow-ups.',
     href: '/quotations',
     icon: FileText,
-    badgeBg: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-    badgeText: 'text-amber-800 dark:text-amber-300',
+    iconBg: 'bg-[#FEF3C7]',
+    iconColor: 'text-[#B45309]',
     decoration: QuotationsDecoration,
   },
   {
@@ -66,8 +66,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Manage bookings, events, calendars and schedules. Never miss a booking.',
     href: '/team-manager',
     icon: Calendar,
-    badgeBg: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-    badgeText: 'text-blue-700 dark:text-blue-300',
+    iconBg: 'bg-[#E0F2FE]',
+    iconColor: 'text-[#0284C7]',
     decoration: BookingsDecoration,
   },
   {
@@ -76,8 +76,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Assign tasks, manage your team and track performance with ease.',
     href: '/team-manager',
     icon: Users2,
-    badgeBg: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20',
-    badgeText: 'text-indigo-700 dark:text-indigo-300',
+    iconBg: 'bg-[#EDE9FE]',
+    iconColor: 'text-[#6366F1]',
     decoration: TeamDecoration,
   },
   {
@@ -86,8 +86,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Track projects, deliverables, edits, approvals and client feedback.',
     href: '/workspace/post-production',
     icon: Film,
-    badgeBg: 'bg-rose-500/10 text-rose-600 border-rose-500/20',
-    badgeText: 'text-rose-700 dark:text-rose-300',
+    iconBg: 'bg-[#FFE4E6]',
+    iconColor: 'text-[#E11D48]',
     decoration: PostProdDecoration,
   },
   {
@@ -96,8 +96,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Invoices, payments, expenses, payouts, profit & loss and tax summary.',
     href: '/workspace/finance',
     icon: IndianRupee,
-    badgeBg: 'bg-amber-500/15 text-amber-700 border-amber-500/25',
-    badgeText: 'text-amber-900 dark:text-amber-200',
+    iconBg: 'bg-[#FEF9C3]',
+    iconColor: 'text-[#A16207]',
     decoration: FinanceDecoration,
   },
   {
@@ -106,8 +106,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'GPS based attendance, leaves, overtime, shifts and team productivity.',
     href: '/workspace/attendance',
     icon: Clock,
-    badgeBg: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-    badgeText: 'text-emerald-700 dark:text-emerald-300',
+    iconBg: 'bg-[#DCFCE7]',
+    iconColor: 'text-[#15803D]',
     decoration: AttendanceDecoration,
   },
   {
@@ -116,8 +116,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Connect WhatsApp, Email, Google Calendar, Drive and 50+ tools.',
     href: '/workspace/integrations',
     icon: Layers,
-    badgeBg: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20',
-    badgeText: 'text-cyan-700 dark:text-cyan-300',
+    iconBg: 'bg-[#E0F2FE]',
+    iconColor: 'text-[#0369A1]',
     decoration: IntegrationsDecoration,
   },
   {
@@ -126,8 +126,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Powerful insights and reports to grow your photography business.',
     href: '/workspace/finance',
     icon: BarChart3,
-    badgeBg: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
-    badgeText: 'text-slate-700 dark:text-slate-300',
+    iconBg: 'bg-[#F1F5F9]',
+    iconColor: 'text-[#475569]',
     decoration: ReportsDecoration,
   },
   {
@@ -136,8 +136,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Manage studio profile, roles, permissions, preferences and configurations.',
     href: '/workspace/settings',
     icon: Settings,
-    badgeBg: 'bg-zinc-500/10 text-zinc-600 border-zinc-500/20',
-    badgeText: 'text-zinc-700 dark:text-zinc-300',
+    iconBg: 'bg-[#F4F4F5]',
+    iconColor: 'text-[#52525B]',
     decoration: SettingsDecoration,
   },
   {
@@ -146,8 +146,8 @@ const MODULES_LIST: WorkspaceModule[] = [
     description: 'Get help, watch tutorials and connect with our support team.',
     href: '/support',
     icon: Headphones,
-    badgeBg: 'bg-teal-500/10 text-teal-600 border-teal-500/20',
-    badgeText: 'text-teal-700 dark:text-teal-300',
+    iconBg: 'bg-[#CCFBF1]',
+    iconColor: 'text-[#0F766E]',
     decoration: SupportDecoration,
   }
 ];
@@ -179,7 +179,6 @@ export default function WorkspaceHubPage() {
             setUserName(name.split(' ')[0]);
           }
 
-          // Fetch real counts from DB
           const { count: realLeads } = await supabase
             .from('leads')
             .select('*', { count: 'exact', head: true });
@@ -214,33 +213,33 @@ export default function WorkspaceHubPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] text-zinc-900 font-sans selection:bg-amber-100 p-4 sm:p-6 lg:p-8 space-y-8 max-w-[1440px] mx-auto">
+    <div className="w-full bg-[#FAF9F6] text-zinc-900 font-sans selection:bg-amber-100 px-4 sm:px-6 lg:px-8 py-6 space-y-7">
       
       {/* ─────────────────────────────────────────────────────────────
-          1. HERO WELCOME SECTION WITH 3D CHARACTER & STATS
+          1. HERO WELCOME SECTION WITH 3D CHARACTER & FLOATING STATS
       ───────────────────────────────────────────────────────────── */}
       <motion.div 
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative bg-gradient-to-br from-[#FAF8F5] via-[#F6F2EC] to-[#EFE8DC] border border-[#E8E2D6] rounded-[28px] p-6 sm:p-8 lg:p-10 shadow-xs overflow-visible"
+        className="relative bg-gradient-to-br from-[#FAF8F5] via-[#F6F2EC] to-[#EFE8DC] border border-[#E8E2D6] rounded-[26px] p-6 sm:p-8 lg:p-9 shadow-xs overflow-visible"
       >
-        {/* Subtle Ambient Glows */}
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-10 left-10 w-72 h-72 bg-orange-400/5 rounded-full blur-2xl pointer-events-none" />
+        {/* Subtle Ambient Light Glows */}
+        <div className="absolute top-0 right-1/3 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-8 left-10 w-72 h-72 bg-orange-400/5 rounded-full blur-2xl pointer-events-none" />
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center relative z-10">
           
           {/* Left Column: Welcome & Value Proposition */}
-          <div className="lg:col-span-5 space-y-5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 border border-amber-200/60 shadow-2xs text-xs font-bold text-zinc-800">
+          <div className="lg:col-span-5 space-y-4">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/90 border border-[#E8E2D6] shadow-2xs text-xs font-bold text-zinc-800">
               <span>Welcome back, {userName}!</span>
               <span className="text-sm">👋</span>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl lg:text-[44px] font-black tracking-tight text-zinc-900 leading-[1.12]">
+            <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-black tracking-tight text-zinc-900 leading-[1.14]">
               Focus on Your Craft, <br />
-              <span className="text-[#B88746] font-serif italic font-normal text-4xl sm:text-5xl lg:text-[52px]">
+              <span className="text-[#B88746] font-serif italic font-normal text-4xl sm:text-5xl lg:text-[50px]">
                 We Manage the Rest.
               </span>
             </h1>
@@ -310,7 +309,7 @@ export default function WorkspaceHubPage() {
 
               <Link
                 href="/team-manager"
-                className="px-4 py-2.5 rounded-xl bg-white/90 hover:bg-white text-zinc-800 font-extrabold text-xs border border-zinc-200/80 shadow-2xs hover:shadow-xs active:scale-98 transition flex items-center gap-2"
+                className="px-4 py-2.5 rounded-xl bg-white/90 hover:bg-white text-zinc-800 font-extrabold text-xs border border-[#E8E2D6] shadow-2xs hover:shadow-xs active:scale-98 transition flex items-center gap-2"
               >
                 <span>View My Tasks</span>
                 <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-800 text-[10px] font-black">
@@ -320,13 +319,13 @@ export default function WorkspaceHubPage() {
             </div>
           </div>
 
-          {/* Center Column: 3D Photographer Character (Integrated & Naturally Overlapping) */}
-          <div className="lg:col-span-3 flex items-center justify-center relative min-h-[260px] lg:min-h-[300px]">
+          {/* Center Column: 3D Photographer Character (Integrated & Natural Overlap) */}
+          <div className="lg:col-span-3 flex items-center justify-center relative min-h-[260px] lg:min-h-[320px]">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="relative w-full max-w-[280px] lg:max-w-[320px] flex items-center justify-center"
+              className="relative w-full max-w-[280px] lg:max-w-[340px] flex items-center justify-center"
             >
               <img
                 src="/assets/characters/photographer-hero.png"
@@ -338,14 +337,14 @@ export default function WorkspaceHubPage() {
 
           {/* Right Column: Floating Statistics Panel */}
           <div className="lg:col-span-4 flex justify-center lg:justify-end">
-            <div className="bg-white/90 backdrop-blur-md rounded-[24px] p-5 sm:p-6 border border-white shadow-xl shadow-zinc-900/5 w-full max-w-sm space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white/95 backdrop-blur-md rounded-[24px] p-5 sm:p-6 border border-white shadow-xl shadow-zinc-900/5 w-full max-w-sm space-y-4">
+              <div className="grid grid-cols-2 gap-3.5">
                 
                 {/* 1. New Leads */}
                 <div className="p-3.5 rounded-2xl bg-[#FAF9F6] border border-zinc-200/60 space-y-1.5 group hover:border-emerald-500/30 transition">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-zinc-500">New Leads</span>
-                    <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                    <div className="w-6 h-6 rounded-lg bg-[#E6F4EA] text-[#137333] flex items-center justify-center">
                       <Target className="w-3.5 h-3.5" />
                     </div>
                   </div>
@@ -362,7 +361,7 @@ export default function WorkspaceHubPage() {
                 <div className="p-3.5 rounded-2xl bg-[#FAF9F6] border border-zinc-200/60 space-y-1.5 group hover:border-purple-500/30 transition">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-zinc-500">Bookings</span>
-                    <div className="w-6 h-6 rounded-lg bg-purple-500/10 text-purple-600 flex items-center justify-center">
+                    <div className="w-6 h-6 rounded-lg bg-[#F3E8FF] text-[#7E22CE] flex items-center justify-center">
                       <Calendar className="w-3.5 h-3.5" />
                     </div>
                   </div>
@@ -379,7 +378,7 @@ export default function WorkspaceHubPage() {
                 <div className="p-3.5 rounded-2xl bg-[#FAF9F6] border border-zinc-200/60 space-y-1.5 group hover:border-amber-500/30 transition">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-zinc-500">Revenue</span>
-                    <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                    <div className="w-6 h-6 rounded-lg bg-[#FEF9C3] text-[#A16207] flex items-center justify-center">
                       <IndianRupee className="w-3.5 h-3.5" />
                     </div>
                   </div>
@@ -396,7 +395,7 @@ export default function WorkspaceHubPage() {
                 <div className="p-3.5 rounded-2xl bg-[#FAF9F6] border border-zinc-200/60 space-y-1.5 group hover:border-rose-500/30 transition">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-zinc-500">Pending</span>
-                    <div className="w-6 h-6 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center">
+                    <div className="w-6 h-6 rounded-lg bg-[#FFE4E6] text-[#E11D48] flex items-center justify-center">
                       <CreditCard className="w-3.5 h-3.5" />
                     </div>
                   </div>
@@ -457,7 +456,7 @@ export default function WorkspaceHubPage() {
           </div>
         </div>
 
-        {/* Module Cards Grid */}
+        {/* 12 Module Cards Grid */}
         <div className={
           viewMode === 'grid'
             ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5"
@@ -472,20 +471,20 @@ export default function WorkspaceHubPage() {
                 key={mod.id}
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: idx * 0.03 }}
+                transition={{ duration: 0.3, delay: idx * 0.02 }}
               >
                 <Link
                   href={mod.href}
-                  className="group block relative bg-gradient-to-br from-white via-white/95 to-[#FAF8F5] border border-zinc-200/80 hover:border-amber-500/40 rounded-[22px] p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden h-full"
+                  className="group block relative bg-white hover:bg-gradient-to-br hover:from-white hover:to-[#FAF8F5] border border-[#EBE7DF] hover:border-amber-400/50 rounded-[20px] p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden h-full"
                 >
-                  {/* Subtle Vector Decoration in Bottom-Right Corner */}
-                  <div className="absolute -bottom-4 -right-4 pointer-events-none opacity-40 group-hover:opacity-70 group-hover:scale-110 transition-all duration-500">
-                    <Decoration className="w-28 h-28" />
+                  {/* Rich 3D Pastel Vector Decoration in Bottom-Right Corner */}
+                  <div className="absolute -bottom-2 -right-2 pointer-events-none opacity-85 group-hover:opacity-100 group-hover:scale-108 transition-all duration-300 z-0">
+                    <Decoration className="w-28 h-28 sm:w-30 sm:h-30" />
                   </div>
 
-                  <div className="relative z-10 space-y-3">
+                  <div className="relative z-10 max-w-[75%] space-y-2.5">
                     {/* Top Icon Badge */}
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border shadow-2xs group-hover:scale-105 transition-transform ${mod.badgeBg}`}>
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform ${mod.iconBg} ${mod.iconColor}`}>
                       <Icon className="w-5 h-5" />
                     </div>
 
@@ -500,7 +499,7 @@ export default function WorkspaceHubPage() {
                     </div>
 
                     {/* Action Arrow */}
-                    <div className="pt-1 flex items-center gap-1.5 text-xs font-bold text-zinc-700 group-hover:text-amber-600 transition-colors">
+                    <div className="pt-0.5 flex items-center gap-1.5 text-xs font-bold text-zinc-700 group-hover:text-amber-600 transition-colors">
                       <span>Open</span>
                       <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                     </div>
@@ -519,7 +518,7 @@ export default function WorkspaceHubPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.2 }}
-        className="relative bg-gradient-to-r from-[#0C101A] via-[#101524] to-[#171D30] rounded-[28px] p-6 sm:p-8 lg:p-10 text-white shadow-2xl overflow-hidden border border-zinc-800"
+        className="relative bg-gradient-to-r from-[#0C101A] via-[#101524] to-[#171D30] rounded-[26px] p-6 sm:p-8 lg:p-9 text-white shadow-2xl overflow-hidden border border-zinc-800"
       >
         {/* Subtle Ambient Glows */}
         <div className="absolute top-0 right-10 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -528,7 +527,7 @@ export default function WorkspaceHubPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
           
           {/* Left: Headline & Explore Button */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-3.5">
             <h3 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-white leading-tight">
               Take Your Studio to the Next Level
             </h3>
@@ -545,34 +544,34 @@ export default function WorkspaceHubPage() {
           </div>
 
           {/* Center: 4 Value Highlights */}
-          <div className="lg:col-span-5 grid grid-cols-2 gap-4">
-            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
+          <div className="lg:col-span-5 grid grid-cols-2 gap-3.5">
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
               <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
-                <Clock className="w-4 h-4" />
+                <Clock className="w-3.5 h-3.5" />
                 <span>Save Time</span>
               </div>
               <p className="text-[11px] text-zinc-400 font-medium">Automate repetitive tasks</p>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
               <div className="flex items-center gap-2 text-blue-400 font-black text-xs">
-                <FolderCheck className="w-4 h-4" />
+                <FolderCheck className="w-3.5 h-3.5" />
                 <span>Stay Organized</span>
               </div>
               <p className="text-[11px] text-zinc-400 font-medium">Everything in one place</p>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
               <div className="flex items-center gap-2 text-emerald-400 font-black text-xs">
-                <Zap className="w-4 h-4" />
+                <Zap className="w-3.5 h-3.5" />
                 <span>Grow Faster</span>
               </div>
               <p className="text-[11px] text-zinc-400 font-medium">Focus on what you love</p>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
+            <div className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-1 backdrop-blur-xs">
               <div className="flex items-center gap-2 text-rose-400 font-black text-xs">
-                <HeartHandshake className="w-4 h-4" />
+                <HeartHandshake className="w-3.5 h-3.5" />
                 <span>Be Stress-Free</span>
               </div>
               <p className="text-[11px] text-zinc-400 font-medium">We handle the rest</p>
@@ -584,7 +583,7 @@ export default function WorkspaceHubPage() {
             <img
               src="/assets/characters/photographer-banner.png"
               alt="StudioCore Pro"
-              className="w-44 sm:w-52 h-auto object-contain drop-shadow-2xl hover:scale-105 transition-transform duration-300"
+              className="w-40 sm:w-48 h-auto object-contain drop-shadow-2xl hover:scale-105 transition-transform duration-300"
             />
           </div>
 
