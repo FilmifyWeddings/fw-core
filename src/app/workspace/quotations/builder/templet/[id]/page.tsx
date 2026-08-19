@@ -2123,7 +2123,30 @@ function StudioCoreAiryBuilderContent() {
   const [isAddPageModalOpen, setAddPageModalOpen] = useState(false);
   const [draggedPageIndex, setDraggedPageIndex] = useState<number | null>(null);
 
-  const pageSequence: PageSequenceItem[] = data?.pageSequence || DEFAULT_PAGE_SEQUENCE;
+  const rawSequence = data?.pageSequence || DEFAULT_PAGE_SEQUENCE;
+  const pageSequence: PageSequenceItem[] = (Array.isArray(rawSequence) && rawSequence.length > 0 ? rawSequence : DEFAULT_PAGE_SEQUENCE).map((p: any) => {
+    if (typeof p === 'string') {
+      const std = STANDARD_PAGE_DEFINITIONS.find(s => s.type === p);
+      return {
+        id: p,
+        type: p,
+        label: std?.label || p.replace(/([A-Z])/g, ' $1').replace(/^./, (str: string) => str.toUpperCase()),
+        isStandard: !!std
+      };
+    }
+    if (p && typeof p === 'object') {
+      const typeStr = p.type || p.id || 'cover';
+      const std = STANDARD_PAGE_DEFINITIONS.find(s => s.type === typeStr);
+      return {
+        id: p.id || typeStr,
+        type: typeStr,
+        label: p.label || std?.label || typeStr,
+        isStandard: p.isStandard ?? !!std,
+        customId: p.customId
+      };
+    }
+    return { id: 'cover', type: 'cover', label: 'Cover Page', isStandard: true };
+  });
 
   const updatePageSequence = (newSeq: PageSequenceItem[]) => {
     setData((prev: any) => ({ ...prev, pageSequence: newSeq }));

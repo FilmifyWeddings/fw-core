@@ -2,19 +2,34 @@
  * Centralized Quotation Defaults & Pricing Calculators
  */
 
-export const DEFAULT_PAGE_SEQUENCE = [
-  'cover',
-  'aboutUs',
-  'shootDetails',
-  'functionsPage',
-  'deliverablesPage',
-  'specialValueAdditions',
-  'pricingPage',
-  'paymentTermsPage',
-  'addOnsPage',
-  'termsPage',
-  'thankYouPage'
+export interface PageSequenceItem {
+  id: string;
+  type: string;
+  label: string;
+  isStandard?: boolean;
+  customId?: string;
+}
+
+export const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
+  { type: 'cover', label: 'Cover Page' },
+  { type: 'aboutUs', label: 'About Us' },
+  { type: 'shootDetails', label: 'Pre-Wedding Shoot' },
+  { type: 'functionsPage', label: 'Functions & Coverage' },
+  { type: 'deliverablesPage', label: 'Deliverables' },
+  { type: 'specialValueAdditions', label: 'Special Value Additions' },
+  { type: 'pricingPage', label: 'Pricing Details' },
+  { type: 'paymentTermsPage', label: 'Payment Terms & Schedule' },
+  { type: 'addOnsPage', label: 'Add-Ons & Upgrades' },
+  { type: 'termsPage', label: 'Terms & Conditions' },
+  { type: 'thankYouPage', label: 'Thank You Page' },
 ];
+
+export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(std => ({
+  id: std.type,
+  type: std.type,
+  label: std.label,
+  isStandard: true,
+}));
 
 export const DEFAULT_AIRY_PROPOSAL = {
   designName: 'Wedding - Design 1',
@@ -456,22 +471,58 @@ export function normalizeQuotationData(rawInput: any) {
   };
 
   // 11. Calculate Active Page Sequence from Page Visibility Flags
-  const activeSeq: string[] = ['cover', 'aboutUs'];
-  if (shootDetails.visible) activeSeq.push('shootDetails');
-  activeSeq.push('functionsPage');
-  activeSeq.push('deliverablesPage');
-  if (specialValueAdditions.selectedItems.length > 0) activeSeq.push('specialValueAdditions');
-  activeSeq.push('pricingPage');
-  if (paymentTermsPage.steps.length > 0) activeSeq.push('paymentTermsPage');
+  const toPageSequenceItem = (rawItem: any): PageSequenceItem => {
+    if (typeof rawItem === 'string') {
+      const std = STANDARD_PAGE_DEFINITIONS.find(s => s.type === rawItem);
+      return {
+        id: rawItem,
+        type: rawItem,
+        label: std?.label || rawItem.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
+        isStandard: !!std
+      };
+    }
+    if (rawItem && typeof rawItem === 'object') {
+      const typeStr = rawItem.type || rawItem.id || 'cover';
+      const std = STANDARD_PAGE_DEFINITIONS.find(s => s.type === typeStr);
+      return {
+        id: rawItem.id || typeStr,
+        type: typeStr,
+        label: rawItem.label || std?.label || typeStr,
+        isStandard: rawItem.isStandard ?? !!std,
+        customId: rawItem.customId
+      };
+    }
+    return { id: 'cover', type: 'cover', label: 'Cover Page', isStandard: true };
+  };
 
-  const addOnsSrc = loaded.addOnsPage || pagesObj.add_ons;
-  if (addOnsSrc?.visible === true && Array.isArray(addOnsSrc.items) && addOnsSrc.items.length > 0) {
-    activeSeq.push('addOnsPage');
+  let finalPageSequence: PageSequenceItem[] = [];
+
+  if (Array.isArray(loaded.pageSequence) && loaded.pageSequence.length > 0) {
+    finalPageSequence = loaded.pageSequence.map(toPageSequenceItem);
+  } else {
+    const rawTypes: string[] = ['cover', 'aboutUs'];
+    if (shootDetails.visible) rawTypes.push('shootDetails');
+    rawTypes.push('functionsPage');
+    rawTypes.push('deliverablesPage');
+    if (specialValueAdditions.selectedItems && specialValueAdditions.selectedItems.length > 0) {
+      rawTypes.push('specialValueAdditions');
+    }
+    rawTypes.push('pricingPage');
+    if (paymentTermsPage.steps && paymentTermsPage.steps.length > 0) {
+      rawTypes.push('paymentTermsPage');
+    }
+
+    const addOnsSrc = loaded.addOnsPage || pagesObj.add_ons;
+    if (addOnsSrc?.visible === true && Array.isArray(addOnsSrc.items) && addOnsSrc.items.length > 0) {
+      rawTypes.push('addOnsPage');
+    }
+
+    const termsSrc = loaded.termsPage || pagesObj.terms_conditions;
+    if (termsSrc?.visible !== false) rawTypes.push('termsPage');
+    rawTypes.push('thankYouPage');
+
+    finalPageSequence = rawTypes.map(toPageSequenceItem);
   }
-
-  const termsSrc = loaded.termsPage || pagesObj.terms_conditions;
-  if (termsSrc?.visible !== false) activeSeq.push('termsPage');
-  activeSeq.push('thankYouPage');
 
   return {
     ...d,
@@ -485,6 +536,6 @@ export function normalizeQuotationData(rawInput: any) {
     pricingPage,
     paymentTermsPage,
     thankYouPage,
-    pageSequence: loaded.pageSequence && Array.isArray(loaded.pageSequence) && loaded.pageSequence.length > 0 ? loaded.pageSequence : activeSeq
+    pageSequence: finalPageSequence
   };
 }
