@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500" fill="none">
+  <g stroke="#C89435" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.35">
+    <!-- Main stem -->
+    <path d="M 450 480 C 400 380, 320 300, 240 220 C 180 160, 100 120, 30 100" />
+    <path d="M 480 450 C 410 390, 340 330, 270 280 C 200 230, 140 200, 70 180" />
+    
+    <!-- Delicate leaves & petals -->
+    <path d="M 320 300 C 340 270, 370 260, 390 280 C 370 310, 340 315, 320 300 Z" fill="#F6EEDB" fill-opacity="0.3" />
+    <path d="M 270 250 C 285 220, 315 210, 335 230 C 315 260, 285 265, 270 250 Z" fill="#F6EEDB" fill-opacity="0.3" />
+    <path d="M 220 200 C 230 170, 260 160, 280 180 C 260 210, 230 215, 220 200 Z" fill="#F6EEDB" fill-opacity="0.3" />
+    <path d="M 170 160 C 180 130, 210 120, 230 140 C 210 170, 180 175, 170 160 Z" fill="#F6EEDB" fill-opacity="0.3" />
+    
+    <!-- Secondary branches -->
+    <path d="M 370 350 C 400 330, 430 340, 440 370 C 410 380, 380 370, 370 350 Z" fill="#F6EEDB" fill-opacity="0.25" />
+    <path d="M 290 320 C 280 350, 290 380, 320 390 C 330 360, 320 330, 290 320 Z" fill="#F6EEDB" fill-opacity="0.25" />
+    <path d="M 240 280 C 225 305, 230 335, 255 345 C 270 320, 265 290, 240 280 Z" fill="#F6EEDB" fill-opacity="0.25" />
+    
+    <!-- Flower blossom accents -->
+    <circle cx="150" cy="140" r="12" fill="#FAF5EB" fill-opacity="0.5" stroke="#C89435" stroke-width="1" />
+    <circle cx="150" cy="140" r="4" fill="#C89435" fill-opacity="0.8" />
+    
+    <circle cx="340" cy="270" r="16" fill="#FAF5EB" fill-opacity="0.5" stroke="#C89435" stroke-width="1" />
+    <circle cx="340" cy="270" r="5" fill="#C89435" fill-opacity="0.8" />
+
+    <circle cx="260" cy="220" r="10" fill="#FAF5EB" fill-opacity="0.5" stroke="#C89435" stroke-width="1" />
+    <circle cx="260" cy="220" r="3" fill="#C89435" fill-opacity="0.8" />
+    
+    <!-- Delicate bud lines -->
+    <path d="M 150 128 C 145 110, 155 95, 170 90" />
+    <path d="M 150 152 C 145 170, 155 185, 170 190" />
+    <circle cx="170" cy="90" r="3" fill="#C89435" />
+    <circle cx="170" cy="190" r="3" fill="#C89435" />
+  </g>
+</svg>

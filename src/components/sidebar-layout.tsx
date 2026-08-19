@@ -5,10 +5,11 @@ import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Database, Users, FileText, Calendar, Film, DollarSign, 
-  Clock, Plug, Settings, HelpCircle, LogOut, ChevronDown, 
-  ChevronRight, ChevronLeft, Menu, X, Sparkles, UserCheck, 
-  Layers, Archive, UserX, CheckCircle2, ArrowUpRight
+  LayoutDashboard, Target, Users, FileText, Calendar, Users2, 
+  Film, IndianRupee, Clock, Layers, BarChart3, Settings, 
+  Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
+  Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
+  ArrowUpRight, Search, Bell, MoreVertical, ShieldCheck, Crown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
@@ -39,7 +40,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const [collapsed, setCollapsed] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('user@studiocore.in');
-  const [userName, setUserName] = useState<string>('Studio Owner');
+  const [userName, setUserName] = useState<string>('Sushant Sharma');
   const [workspaceName, setWorkspaceName] = useState<string>('StudioCore Workspace');
   const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
@@ -47,15 +48,15 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [leadsSubmenuOpen, setLeadsSubmenuOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Load collapsed state & user profile
+  // Load collapsed preference & user profile
   useEffect(() => {
     const savedCollapsed = localStorage.getItem('sidebar_collapsed');
     if (savedCollapsed) {
       setCollapsed(savedCollapsed === 'true');
     }
 
-    // Instant client-side check for onboarding celebration
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const isParamPresent = params.get('onboarding') === 'true' || params.get('welcome') === 'true';
@@ -78,7 +79,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             .eq('id', session.user.id)
             .maybeSingle();
 
-          const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+          const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Sushant Sharma';
           setUserName(name);
 
           if (profile?.avatar_url) {
@@ -95,19 +96,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             const defaultName = session.user.email ? `${session.user.email.split('@')[0]}'s Studio` : 'My StudioCore';
             setWorkspaceName(defaultName);
           }
-
-          // Check if onboarding celebration should trigger for fresh accounts
-          const onboardingParam = searchParams?.get('onboarding') === 'true' || searchParams?.get('welcome') === 'true';
-          const pendingCelebration = typeof window !== 'undefined' && localStorage.getItem('sc_show_onboarding_celebration') === 'true';
-          const userSeenKey = `sc_welcome_seen_${session.user.id}`;
-          const alreadySeen = typeof window !== 'undefined' && localStorage.getItem(userSeenKey) === 'true';
-
-          if (onboardingParam || pendingCelebration || (!alreadySeen && session.user.user_metadata?.is_onboarded !== true)) {
-            setShowOnboardingCelebration(true);
-            try {
-              localStorage.removeItem('sc_show_onboarding_celebration');
-            } catch (e) {}
-          }
         }
       } catch (err) {
         console.error('Error loading user profile in sidebar:', err);
@@ -117,19 +105,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     fetchUserProfile();
   }, [searchParams]);
 
-  // Save collapsed preference
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(collapsed));
   }, [collapsed]);
 
-  // Auto-expand Leads submenu if on /leads path
   useEffect(() => {
     if (pathname.startsWith('/leads')) {
       setLeadsSubmenuOpen(true);
     }
   }, [pathname]);
 
-  // Close mobile drawer on route change
   useEffect(() => {
     setMobileDrawerOpen(false);
   }, [pathname]);
@@ -142,16 +127,24 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // 10 MASTER MENU ITEMS IN EXACT REQUESTED SEQUENCE
+  // NAVIGATION MENU ITEMS IN EXACT REFERENCE SEQUENCE
   // ─────────────────────────────────────────────────────────────
   const menuItems = [
     {
+      id: 'dashboard',
+      name: 'Dashboard',
+      path: '/workspace',
+      icon: LayoutDashboard,
+      color: 'text-amber-600',
+      iconBg: 'bg-amber-500/10 text-amber-600',
+    },
+    {
       id: 'leads',
-      name: 'Leads',
+      name: 'Leads & CRM',
       path: '/leads',
-      icon: Database,
-      gradient: 'from-emerald-500 to-teal-600',
-      shadow: 'shadow-emerald-500/25',
+      icon: Target,
+      color: 'text-emerald-600',
+      iconBg: 'bg-emerald-500/10 text-emerald-600',
       hasSubmenu: true,
       subItems: [
         { name: 'All Active Leads', path: '/leads', icon: Layers },
@@ -164,76 +157,91 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       name: 'Clients Directory',
       path: '/workspace/clients',
       icon: Users,
-      gradient: 'from-indigo-500 to-purple-600',
-      shadow: 'shadow-indigo-500/25',
+      color: 'text-purple-600',
+      iconBg: 'bg-purple-500/10 text-purple-600',
     },
     {
       id: 'quotations',
       name: 'Quotations',
       path: '/quotations',
       icon: FileText,
-      gradient: 'from-amber-400 to-yellow-600',
-      shadow: 'shadow-amber-500/25',
+      color: 'text-orange-600',
+      iconBg: 'bg-orange-500/10 text-orange-600',
+    },
+    {
+      id: 'bookings',
+      name: 'Bookings',
+      path: '/team-manager',
+      icon: Calendar,
+      color: 'text-blue-600',
+      iconBg: 'bg-blue-500/10 text-blue-600',
     },
     {
       id: 'team-manager',
       name: 'Team Manager',
       path: '/team-manager',
-      icon: Calendar,
-      gradient: 'from-violet-500 to-purple-700',
-      shadow: 'shadow-violet-500/25',
+      icon: Users2,
+      color: 'text-indigo-600',
+      iconBg: 'bg-indigo-500/10 text-indigo-600',
     },
     {
       id: 'post-production',
       name: 'Post-Production',
       path: '/workspace/post-production',
       icon: Film,
-      gradient: 'from-pink-500 to-rose-600',
-      shadow: 'shadow-pink-500/25',
+      color: 'text-rose-600',
+      iconBg: 'bg-rose-500/10 text-rose-600',
     },
     {
       id: 'finance',
       name: 'Finance & Payments',
       path: '/workspace/finance',
-      icon: DollarSign,
-      gradient: 'from-amber-500 to-yellow-600',
-      shadow: 'shadow-amber-500/25',
+      icon: IndianRupee,
+      color: 'text-amber-600',
+      iconBg: 'bg-amber-500/15 text-amber-700',
     },
     {
       id: 'attendance',
-      name: 'Workforce Attendance',
+      name: 'Attendance',
       path: '/workspace/attendance',
       icon: Clock,
-      gradient: 'from-emerald-500 to-teal-600',
-      shadow: 'shadow-emerald-500/25',
+      color: 'text-emerald-600',
+      iconBg: 'bg-emerald-500/10 text-emerald-600',
     },
     {
       id: 'integrations',
       name: 'Integrations',
       path: '/workspace/integrations',
-      icon: Plug,
-      gradient: 'from-blue-500 to-cyan-600',
-      shadow: 'shadow-blue-500/25',
+      icon: Layers,
+      color: 'text-cyan-600',
+      iconBg: 'bg-cyan-500/10 text-cyan-600',
+    },
+    {
+      id: 'reports',
+      name: 'Reports',
+      path: '/workspace/finance',
+      icon: BarChart3,
+      color: 'text-slate-600',
+      iconBg: 'bg-slate-500/10 text-slate-600',
     },
     {
       id: 'settings',
       name: 'Settings',
-      path: '/settings',
+      path: '/workspace/settings',
       icon: Settings,
-      gradient: 'from-slate-600 to-zinc-700',
-      shadow: 'shadow-slate-500/25',
+      color: 'text-zinc-600',
+      iconBg: 'bg-zinc-500/10 text-zinc-600',
     },
     {
       id: 'support',
       name: 'Help & Support',
       path: '/support',
-      icon: HelpCircle,
-      gradient: 'from-teal-500 to-emerald-600',
-      shadow: 'shadow-teal-500/25',
+      icon: Headphones,
+      color: 'text-teal-600',
+      iconBg: 'bg-teal-500/10 text-teal-600',
     },
   ];
 
-  // Standalone pages that do not show the global sidebar
   const isStandalonePage = 
     pathname === '/login' ||
     pathname.startsWith('/pdf-preview') ||
@@ -243,145 +251,100 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/admin/workspace/quotations/builder');
 
   if (isStandalonePage) {
-    return <div className="min-h-screen w-full bg-[#FDFCF7] text-slate-900">{children}</div>;
+    return <div className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900">{children}</div>;
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#FDFCF7] text-slate-900 flex flex-col font-sans selection:bg-amber-100">
+    <div className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900 flex flex-col font-sans selection:bg-amber-100">
       
       {/* ─────────────────────────────────────────────────────────────
-          MOBILE TOP HEADER (< 1024PX)
-      ───────────────────────────────────────────────────────────── */}
-      <header className="lg:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 h-14 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-2.5">
-          <img
-            src="/StudioCorelogo1.png"
-            alt="StudioCore"
-            className="w-8 h-8 rounded-xl object-contain shadow-xs border border-amber-500/30 bg-black"
-          />
-          <div>
-            <span className="font-black text-sm text-slate-900 tracking-tight">StudioCore</span>
-            <span className="text-[9px] font-extrabold text-amber-700 ml-1.5 uppercase tracking-wider">Suite</span>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setMobileDrawerOpen(true)}
-          className="p-2 rounded-xl text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition"
-          aria-label="Open Navigation Menu"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-      </header>
-
-      {/* ─────────────────────────────────────────────────────────────
-          DESKTOP MASTER SIDEBAR (PC & TABLET)
+          1. DESKTOP & TABLET FIXED LEFT SIDEBAR
       ───────────────────────────────────────────────────────────── */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 hidden lg:flex flex-col bg-white border-r border-slate-200/90 shadow-sm transition-all duration-300 ease-in-out ${
+        className={`fixed top-0 bottom-0 left-0 z-50 hidden lg:flex flex-col bg-white border-r border-[#EBE7DF] shadow-xs transition-all duration-300 ease-in-out ${
           collapsed ? 'w-20' : 'w-64'
         }`}
       >
-        {/* Top Brand & Logo Header with Expand/Collapse Toggle Arrow */}
-        <div className="h-16 border-b border-slate-100 px-3.5 flex items-center justify-between shrink-0">
+        {/* Top Brand Logo Header */}
+        <div className="h-18 px-4 border-b border-[#F0ECE4] flex items-center justify-between shrink-0">
           <Link href="/workspace" className="flex items-center gap-2.5 overflow-hidden group">
-            <div className="w-9 h-9 rounded-xl overflow-hidden bg-black border border-amber-500/40 shadow-sm flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <img
-                src="/StudioCorelogo1.png"
-                alt="StudioCore"
-                className="w-full h-full object-contain"
-              />
-            </div>
-
-            {!collapsed && (
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                className="overflow-hidden whitespace-nowrap"
-              >
-                <h2 className="text-sm font-black text-slate-900 tracking-tight leading-none flex items-center gap-1">
-                  StudioCore
-                  <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                    Pro
-                  </span>
-                </h2>
-                <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mt-0.5">
-                  Production Suite
+            {!collapsed ? (
+              <div className="overflow-hidden">
+                <div className="flex items-center gap-1">
+                  <span className="text-lg font-black text-zinc-900 tracking-tight">StudioCore</span>
+                  <span className="text-amber-600 font-black text-sm">✦</span>
+                </div>
+                <p className="text-[10px] font-bold text-zinc-400 tracking-tight">
+                  All-in-One Studio Management
                 </p>
-              </motion.div>
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white font-black flex items-center justify-center shadow-xs">
+                SC
+              </div>
             )}
           </Link>
 
-          {/* Toggle Collapse/Expand Arrow Button */}
           <button
             onClick={() => setCollapsed(prev => !prev)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors shrink-0"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition shrink-0"
             title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
         </div>
 
-        {/* Navigation Items List */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-1.5 scrollbar-thin scrollbar-thumb-slate-200">
+        {/* Navigation Items */}
+        <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1 scrollbar-thin scrollbar-thumb-zinc-200">
           {menuItems.map((item) => {
             const Icon = item.icon;
+            const isDashboard = item.id === 'dashboard';
             const isLeads = item.id === 'leads';
-            const isActive = isLeads
-              ? pathname.startsWith('/leads')
-              : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+            
+            const isActive = isDashboard
+              ? pathname === '/workspace'
+              : isLeads
+                ? pathname.startsWith('/leads')
+                : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
 
             return (
               <div key={item.id} className="relative group">
-                <div className="flex items-center">
-                  <Link
-                    href={item.path}
-                    className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
-                      isActive
-                        ? 'bg-amber-500/10 text-amber-950 border border-amber-300/80 shadow-2xs font-extrabold'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
-                    } ${collapsed ? 'justify-center px-2' : ''}`}
-                  >
-                    {/* 3D Gradient Icon Container */}
-                    <div
-                      className={`w-7 h-7 rounded-lg bg-gradient-to-br ${item.gradient} ${item.shadow} flex items-center justify-center text-white shrink-0 shadow-sm transition-transform group-hover:scale-105`}
+                <Link
+                  href={item.path}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+                    isActive
+                      ? 'bg-[#FDF6EC] text-[#92400E] font-extrabold border border-[#F5E6CC] shadow-2xs'
+                      : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 border border-transparent'
+                  } ${collapsed ? 'justify-center px-2' : ''}`}
+                >
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${item.iconBg} ${isActive ? 'text-[#B45309]' : ''}`}>
+                    <Icon className="w-3.5 h-3.5" />
+                  </div>
+
+                  {!collapsed && (
+                    <span className="truncate flex-1 text-left tracking-tight">
+                      {item.name}
+                    </span>
+                  )}
+
+                  {!collapsed && isLeads && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setLeadsSubmenuOpen(prev => !prev);
+                      }}
+                      className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/50 transition"
                     >
-                      <Icon className="w-4 h-4 stroke-[2.2]" />
-                    </div>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${leadsSubmenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  )}
+                </Link>
 
-                    {/* Menu Label */}
-                    {!collapsed && (
-                      <span className="truncate flex-1 text-left tracking-tight">
-                        {item.name}
-                      </span>
-                    )}
-
-                    {/* Submenu Dropdown Arrow for Leads */}
-                    {!collapsed && isLeads && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setLeadsSubmenuOpen(prev => !prev);
-                        }}
-                        className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition"
-                      >
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${leadsSubmenuOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    )}
-                  </Link>
-                </div>
-
-                {/* Leads Submenu Items (When Expanded) */}
+                {/* Submenu for Leads */}
                 {!collapsed && isLeads && leadsSubmenuOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="pl-9 pr-2 py-1 space-y-1"
-                  >
+                  <div className="pl-9 pr-2 py-1 space-y-1">
                     {item.subItems?.map((sub) => {
                       const SubIcon = sub.icon;
                       const isSubActive = checkIsSubActive(sub.path);
@@ -392,25 +355,15 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                           href={sub.path}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition ${
                             isSubActive
-                              ? 'bg-amber-500/15 text-amber-950 font-extrabold border border-amber-300 shadow-2xs'
-                              : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                              ? 'bg-amber-500/15 text-amber-950 font-extrabold border border-amber-300'
+                              : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
                           }`}
                         >
-                          <SubIcon className={`w-3 h-3 ${isSubActive ? 'text-amber-600' : 'text-slate-400'}`} />
+                          <SubIcon className={`w-3 h-3 ${isSubActive ? 'text-amber-600' : 'text-zinc-400'}`} />
                           <span>{sub.name}</span>
                         </Link>
                       );
                     })}
-                  </motion.div>
-                )}
-
-                {/* 3D Floating Tooltip in Collapsed State */}
-                {collapsed && (
-                  <div className="hidden group-hover:block absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 pointer-events-none">
-                    <div className="bg-slate-950 text-white px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap shadow-xl border border-slate-800 flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${item.gradient}`} />
-                      <span>{item.name}</span>
-                    </div>
                   </div>
                 )}
               </div>
@@ -418,37 +371,54 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           })}
         </nav>
 
-        {/* Bottom Profile & Studio Section (Clickable to open Profile Modal) */}
-        <div className="p-3 border-t border-slate-100 shrink-0 bg-slate-50/50">
-          <div
-            className={`flex items-center rounded-xl p-2 transition ${
-              collapsed ? 'justify-center' : 'justify-between bg-white border border-slate-200/80 shadow-2xs'
-            }`}
-          >
-            <div
-              onClick={() => setShowProfileModal(true)}
-              className="flex items-center gap-2.5 overflow-hidden cursor-pointer group flex-1 hover:opacity-90 transition-opacity"
-              title="Click to view & edit Studio Profile"
+        {/* "Grow Your Studio" Card */}
+        {!collapsed && (
+          <div className="p-3 mx-3 mb-2 rounded-2xl bg-gradient-to-br from-[#FFFBF2] to-[#FFF5E6] border border-[#FDE8CA] space-y-2">
+            <div className="flex items-center gap-2 text-zinc-900 font-extrabold text-xs">
+              <Sparkles className="w-4 h-4 text-amber-600" />
+              <span>Grow Your Studio</span>
+            </div>
+            <p className="text-[10px] text-zinc-500 leading-tight">
+              Discover tools and insights that help you grow faster.
+            </p>
+            <Link
+              href="/workspace/settings"
+              className="block w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-[#D9822B] to-[#C2721C] text-white font-extrabold text-[11px] text-center shadow-xs hover:brightness-105 transition"
             >
+              Upgrade Now
+            </Link>
+          </div>
+        )}
+
+        {/* Bottom User Profile Card */}
+        <div className="p-3 border-t border-[#F0ECE4] shrink-0 bg-[#FAF9F6]">
+          <div
+            onClick={() => setShowProfileModal(true)}
+            className={`flex items-center rounded-xl p-2 cursor-pointer hover:bg-white transition ${
+              collapsed ? 'justify-center' : 'justify-between border border-zinc-200/60 shadow-2xs'
+            }`}
+            title="Studio Profile & Settings"
+          >
+            <div className="flex items-center gap-2.5 overflow-hidden">
               {userAvatarUrl ? (
                 <img
                   src={userAvatarUrl}
                   alt="Avatar"
-                  className="w-8 h-8 rounded-xl object-cover border border-amber-400 shrink-0 shadow-2xs group-hover:scale-105 transition-transform"
+                  className="w-8 h-8 rounded-full object-cover border border-amber-400 shrink-0"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs border border-amber-300 shrink-0 group-hover:scale-105 transition-transform">
-                  {userEmail.slice(0, 2).toUpperCase()}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center shrink-0">
+                  {userName.slice(0, 2).toUpperCase()}
                 </div>
               )}
 
               {!collapsed && (
                 <div className="overflow-hidden text-left">
-                  <h4 className="text-xs font-black text-slate-900 truncate max-w-[120px] group-hover:text-[#F36F21] transition-colors">
-                    {workspaceName}
+                  <h4 className="text-xs font-black text-zinc-900 truncate max-w-[110px]">
+                    {userName}
                   </h4>
-                  <p className="text-[10px] text-slate-400 truncate max-w-[120px] font-mono">
-                    {userEmail}
+                  <p className="text-[10px] text-zinc-400 font-medium truncate">
+                    Studio Owner
                   </p>
                 </div>
               )}
@@ -456,11 +426,15 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
             {!collapsed && (
               <button
-                onClick={handleSignOut}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0 ml-1"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSignOut();
+                }}
+                className="p-1 text-zinc-400 hover:text-rose-600 transition"
                 title="Sign out"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -468,148 +442,103 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       </aside>
 
       {/* ─────────────────────────────────────────────────────────────
-          MOBILE SLIDING DRAWER (< 1024PX)
+          2. TOP HEADER BAR WITH SEARCH, NOTIFICATIONS & USER PROFILE
       ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {mobileDrawerOpen && (
-          <div className="lg:hidden fixed inset-0 z-50 flex">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileDrawerOpen(false)}
-              className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs"
-            />
+      <header
+        className={`sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#EBE7DF] h-16 flex items-center justify-between px-4 sm:px-6 transition-all duration-300 ease-in-out ${
+          collapsed ? 'lg:pl-24' : 'lg:pl-68'
+        }`}
+      >
+        {/* Left Side: Mobile Menu + Search Bar */}
+        <div className="flex items-center gap-3 sm:gap-4 flex-1 max-w-lg">
+          <button
+            onClick={() => {
+              if (window.innerWidth < 1024) {
+                setMobileDrawerOpen(true);
+              } else {
+                setCollapsed(prev => !prev);
+              }
+            }}
+            className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+            aria-label="Toggle Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
 
-            {/* Sliding Drawer */}
-            <motion.div
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 260 }}
-              className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl flex flex-col justify-between z-10"
-            >
-              {/* Header */}
-              <div className="h-16 px-4 border-b border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <img
-                    src="/StudioCorelogo1.png"
-                    alt="StudioCore"
-                    className="w-8 h-8 rounded-xl object-contain bg-black border border-amber-500/30"
-                  />
-                  <div>
-                    <h3 className="font-black text-sm text-slate-900">StudioCore</h3>
-                    <p className="text-[9px] font-bold text-amber-700 uppercase">Production Suite</p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setMobileDrawerOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Menu List */}
-              <div className="flex-1 overflow-y-auto py-3 px-3 space-y-1.5">
-                {menuItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
-
-                  return (
-                    <div key={item.id}>
-                      <Link
-                        href={item.path}
-                        onClick={() => setMobileDrawerOpen(false)}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-extrabold transition ${
-                          isActive
-                            ? 'bg-amber-500/10 text-amber-950 border border-amber-300 shadow-2xs'
-                            : 'text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${item.gradient} flex items-center justify-center text-white`}>
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <span>{item.name}</span>
-                      </Link>
-
-                      {/* Mobile Submenu for Leads */}
-                      {item.id === 'leads' && (
-                        <div className="pl-9 pr-2 py-1 space-y-1">
-                          {item.subItems?.map(sub => {
-                            const SubIcon = sub.icon;
-                            const isSubActive = checkIsSubActive(sub.path);
-                            return (
-                              <Link
-                                key={sub.name}
-                                href={sub.path}
-                                onClick={() => setMobileDrawerOpen(false)}
-                                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition ${
-                                  isSubActive
-                                    ? 'bg-amber-500/15 text-amber-950 font-black border border-amber-300 shadow-2xs'
-                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-bold'
-                                }`}
-                              >
-                                <SubIcon className={`w-3.5 h-3.5 ${isSubActive ? 'text-amber-600' : 'text-slate-400'}`} />
-                                <span>{sub.name}</span>
-                              </Link>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Bottom Profile Card */}
-              <div className="p-4 border-t border-slate-100 bg-slate-50">
-                <div className="flex items-center justify-between">
-                  <div
-                    onClick={() => {
-                      setMobileDrawerOpen(false);
-                      setShowProfileModal(true);
-                    }}
-                    className="flex items-center gap-2.5 cursor-pointer group flex-1"
-                  >
-                    {userAvatarUrl ? (
-                      <img
-                        src={userAvatarUrl}
-                        alt="Avatar"
-                        className="w-8 h-8 rounded-xl object-cover border border-amber-400 shrink-0"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-xl bg-amber-400 text-slate-900 font-black text-xs flex items-center justify-center">
-                        {userEmail.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-xs font-black text-slate-900 group-hover:text-[#F36F21] transition-colors">{workspaceName}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{userEmail}</p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleSignOut}
-                    className="p-2 text-slate-400 hover:text-rose-600 transition"
-                    title="Sign Out"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-            </motion.div>
+          {/* Search Box */}
+          <div className="relative flex-1">
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#F4F2EC] hover:bg-[#EFECE5] border border-[#E5E1D8] text-xs transition-colors">
+              <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <input
+                type="text"
+                placeholder="Search anything..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent border-none outline-hidden text-xs text-zinc-800 placeholder:text-zinc-400 w-full"
+              />
+              <kbd className="hidden sm:inline-flex px-1.5 py-0.5 rounded bg-white text-zinc-400 text-[10px] font-mono font-bold border border-zinc-200 shadow-2xs">
+                ⌘K
+              </kbd>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+
+        {/* Right Side: Notifications, Calendar & Profile */}
+        <div className="flex items-center gap-3 sm:gap-4">
+          
+          {/* Notifications Bell */}
+          <button
+            type="button"
+            className="relative p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+            title="Notifications"
+          >
+            <Bell className="w-4 h-4" />
+            <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
+              3
+            </span>
+          </button>
+
+          {/* Calendar Shortcut */}
+          <Link
+            href="/team-manager"
+            className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+            title="Calendar & Schedules"
+          >
+            <Calendar className="w-4 h-4" />
+          </Link>
+
+          {/* Topbar User Profile Avatar & Name */}
+          <div
+            onClick={() => setShowProfileModal(true)}
+            className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-zinc-200 cursor-pointer group"
+          >
+            {userAvatarUrl ? (
+              <img
+                src={userAvatarUrl}
+                alt="Avatar"
+                className="w-8 h-8 rounded-full object-cover border border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center shadow-2xs">
+                {userName.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+
+            <div className="hidden sm:block text-left">
+              <h4 className="text-xs font-black text-zinc-900 group-hover:text-amber-700 transition-colors leading-tight">
+                {userName}
+              </h4>
+              <p className="text-[10px] text-zinc-400 font-medium">
+                Studio Owner
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </header>
 
       {/* ─────────────────────────────────────────────────────────────
-          MAIN CONTENT VIEWPORT
-          - Responsive Left Padding on PC/Desktop based on Collapsed state
-          - NO BOTTOM BAR ON PC!
+          3. MAIN CONTENT VIEWPORT
       ───────────────────────────────────────────────────────────── */}
       <main
         className={`flex-1 min-w-0 transition-all duration-300 ease-in-out ${
@@ -619,7 +548,99 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         {children}
       </main>
 
-      {/* ── STUDIO PROFILE EDIT MODAL ── */}
+      {/* ─────────────────────────────────────────────────────────────
+          4. MOBILE SLIDING DRAWER
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {mobileDrawerOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 flex">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileDrawerOpen(false)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            />
+
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 260 }}
+              className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl flex flex-col justify-between z-10"
+            >
+              <div className="h-16 px-4 border-b border-zinc-100 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base font-black text-zinc-900">StudioCore</span>
+                  <span className="text-amber-600 font-black">✦</span>
+                </div>
+                <button
+                  onClick={() => setMobileDrawerOpen(false)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+
+                  return (
+                    <div key={item.id}>
+                      <Link
+                        href={item.path}
+                        onClick={() => setMobileDrawerOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition ${
+                          isActive
+                            ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC]'
+                            : 'text-zinc-600 hover:bg-zinc-50'
+                        }`}
+                      >
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${item.iconBg}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                        </div>
+                        <span>{item.name}</span>
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="p-4 border-t border-zinc-100 bg-zinc-50">
+                <div className="flex items-center justify-between">
+                  <div
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      setShowProfileModal(true);
+                    }}
+                    className="flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-amber-400 text-zinc-900 font-black text-xs flex items-center justify-center">
+                      {userName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-zinc-900">{userName}</p>
+                      <p className="text-[10px] text-zinc-400">Studio Owner</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleSignOut}
+                    className="p-2 text-zinc-400 hover:text-rose-600 transition"
+                    title="Sign Out"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Profile & Onboarding Modals */}
       <StudioProfileEditModal
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
@@ -629,7 +650,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         }}
       />
 
-      {/* ── ONBOARDING CELEBRATION MODAL (Dual-Cannon Confetti + Welcome + Profile Setup) ── */}
       <OnboardingCelebrationModal
         isOpen={showOnboardingCelebration}
         onClose={() => setShowOnboardingCelebration(false)}
