@@ -318,9 +318,29 @@ function paginateFunctionItems(items: any[]): any[][] {
 }
 
 export function renderQuotationToHTML(documentData: any): string {
-  const theme = getThemeFromKey(documentData?.look || documentData?.theme);
-  const primaryFont = documentData?.primaryFont || "'Cormorant Garamond', serif";
-  const secondaryFont = documentData?.secondaryFont || "'Plus Jakarta Sans', sans-serif";
+  let theme = getThemeFromKey(documentData?.look || documentData?.theme || documentData?.colorPalette);
+  if (documentData?.colorPalette && typeof documentData.colorPalette === 'object') {
+    theme = {
+      ...theme,
+      ...documentData.colorPalette,
+      primary: documentData.colorPalette.primary || theme.primary,
+      background: documentData.colorPalette.background || theme.background,
+      text: documentData.colorPalette.text || theme.text,
+      kicker: documentData.colorPalette.kicker || theme.kicker || theme.primary,
+      borderColor: documentData.colorPalette.borderColor || theme.borderColor,
+      boxBgColor: documentData.colorPalette.boxBgColor || theme.boxBgColor
+    };
+  }
+
+  let primaryFont = documentData?.primaryFont || "'Cormorant Garamond', serif";
+  if (primaryFont && !primaryFont.includes(',') && !primaryFont.includes("'") && !primaryFont.includes('"')) {
+    primaryFont = `'${primaryFont}', serif`;
+  }
+
+  let secondaryFont = documentData?.secondaryFont || "'Plus Jakarta Sans', sans-serif";
+  if (secondaryFont && !secondaryFont.includes(',') && !secondaryFont.includes("'") && !secondaryFont.includes('"')) {
+    secondaryFont = `'${secondaryFont}', sans-serif`;
+  }
 
   const embeddedFontsCSS = getEmbeddedCustomFontsBase64CSS();
 

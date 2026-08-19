@@ -302,51 +302,37 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
-  const [exportStatusText, setExportStatusText] = useState('');
-
   const handleDownloadPDF = async (q: QuotationVersionItem) => {
     const templateId = q.template_id;
     if (downloadingPdf === templateId) return;
 
     setDownloadingPdf(templateId);
     setIsExportingPdf(true);
-    setExportProgress(15);
+    setExportProgress(20);
     setExportStatusText('Fetching document snapshot...');
     setErrorMsg(null);
 
     const progressTimer = setInterval(() => {
       setExportProgress(prev => (prev < 90 ? prev + 15 : prev));
-    }, 200);
+    }, 250);
 
     try {
       const { downloadServerChromiumPdf } = await import('@/lib/pdf-export-engine');
-      setExportStatusText('Rendering HD Chromium PDF Pages...');
+      setExportStatusText('Rendering Vector PDF Pages...');
 
-      const blobUrl = await downloadServerChromiumPdf({
+      await downloadServerChromiumPdf({
         templateId,
         filename: `${q.title || 'Quotation'}_V${q.version}.pdf`,
+        content_json: q.content_json
       });
 
       setExportProgress(100);
       setExportStatusText('Download Complete!');
       clearInterval(progressTimer);
-
-      if (typeof blobUrl === 'string') {
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = `${q.title || 'Quotation'}_V${q.version}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        setTimeout(() => {
-          URL.revokeObjectURL(blobUrl);
-        }, 15000);
-      }
     } catch (err: any) {
       clearInterval(progressTimer);
       console.error('[Download PDF Error]:', err);
-      setErrorMsg(err.message || 'Network error while exporting PDF.');
+      window.open(`/api/quotations/${templateId}/render-html?print=true`, '_blank');
     } finally {
       setTimeout(() => {
         setIsExportingPdf(false);
@@ -547,42 +533,65 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                       </div>
 
                       {/* Version Action Buttons */}
-                      <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-800/60">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenQuotation(q.template_id, q.title || `Quotation V${q.version}`)}
-                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-[11px] uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <span>Open Builder</span>
-                          <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                        </button>
+                      <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-800/60 gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          {/* Review Client View Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const clientUrl = q.public_token 
+                                ? `/p/quotation/${q.public_token}` 
+                                : `/workspace/quotations/builder/templet/${q.template_id}?preview=public`;
+                              window.open(clientUrl, '_blank');
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-extrabold text-[11px] uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer"
+                            title="Review Client Preview Link"
+                          >
+                            <ExternalLink className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            <span>Review</span>
+                          </button>
+
+                          {/* Edit Builder Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuotation(q.template_id, q.title || `Quotation V${q.version}`)}
+                            className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[11px] uppercase tracking-wider shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                            title="Open Builder Editor"
+                          >
+                            <span>Edit</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </div>
 
                         <div className="flex items-center gap-1">
+                          {/* Download PDF Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadPDF(q)}
+                            disabled={downloadingPdf === q.template_id}
+                            className="px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-extrabold text-[11px] uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            title="Download PDF Copy"
+                          >
+                            {downloadingPdf === q.template_id ? (
+                              <RefreshCw className="w-3 h-3 animate-spin text-amber-400 dark:text-amber-600" />
+                            ) : (
+                              <Download className="w-3 h-3 text-amber-400 dark:text-amber-600" />
+                            )}
+                            <span>PDF</span>
+                          </button>
+
+                          {/* Shareable Link Button */}
                           <button
                             type="button"
                             onClick={() => handleSendLink(q)}
                             disabled={generatingLink === q.template_id}
                             title="Generate Shareable Link"
-                            className="p-1.5 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-colors"
+                            className="p-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 transition-colors"
                           >
                             {generatingLink === q.template_id ? (
                               <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
                             ) : (
                               <Send className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadPDF(q)}
-                            disabled={downloadingPdf === q.template_id}
-                            title="Download PDF"
-                            className="p-1.5 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-colors"
-                          >
-                            {downloadingPdf === q.template_id ? (
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                            ) : (
-                              <Download className="w-3.5 h-3.5" />
                             )}
                           </button>
                         </div>
@@ -723,20 +732,28 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setActiveShareModal(null)}
-                className="flex-1 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs"
+                onClick={() => window.open(activeShareModal.url, '_blank')}
+                className="flex-1 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-800 dark:text-zinc-200 font-extrabold text-xs uppercase flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                Close
+                <ExternalLink className="w-3.5 h-3.5 text-amber-500" />
+                <span>Open View</span>
               </button>
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs uppercase flex items-center justify-center gap-1.5"
+                className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
               >
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 <span>{copied ? 'Copied!' : 'Copy Link'}</span>
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setActiveShareModal(null)}
+              className="w-full py-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xs font-bold transition-colors cursor-pointer"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

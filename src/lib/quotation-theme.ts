@@ -1,5 +1,6 @@
 // Server-Safe Shared Theme Registry & Design Tokens
 export const COLOR_THEMES: Record<string, any> = {
+  'cherry-red-cream': { id: 'cherry-red-cream', name: 'Cherry Red & Cream', primary: '#750505', background: '#FBFCEB', text: '#750505', kicker: '#750505', borderColor: 'rgba(117, 5, 5, 0.2)', boxBgColor: 'rgba(117, 5, 5, 0.06)' },
   'cream-cherry-red': { id: 'cream-cherry-red', name: 'Cream & Cherry Red (Inverted)', primary: '#FBFCEB', background: '#750505', text: '#FBFCEB', kicker: '#FFECD1', borderColor: 'rgba(251, 252, 235, 0.25)', boxBgColor: 'rgba(251, 252, 235, 0.08)', isDark: true },
   'cyprus-sand-dune': { id: 'cyprus-sand-dune', name: 'Cyprus & Sand Dune', primary: '#004643', background: '#F0EDE5', text: '#004643', kicker: '#004643', borderColor: 'rgba(0, 70, 67, 0.2)', boxBgColor: 'rgba(0, 70, 67, 0.06)' },
   'sand-dune-cyprus': { id: 'sand-dune-cyprus', name: 'Sand Dune & Cyprus (Inverted)', primary: '#F0EDE5', background: '#004643', text: '#F0EDE5', kicker: '#E6CFA7', borderColor: 'rgba(240, 237, 229, 0.25)', boxBgColor: 'rgba(240, 237, 229, 0.08)', isDark: true },

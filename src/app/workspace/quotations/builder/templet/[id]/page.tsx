@@ -2013,6 +2013,25 @@ function StudioCoreAiryBuilderContent() {
   const [budgetNotes, setBudgetNotes] = useState('');
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleClientDownloadPdf = async () => {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      await downloadServerChromiumPdf({
+        templateId: templateId || routeId,
+        filename: `${data.designName || data.title || 'Quotation'}.pdf`,
+        content_json: data
+      });
+    } catch (e) {
+      console.error('[Client Download PDF Error]:', e);
+      window.open(`/api/quotations/${templateId || routeId}/render-html?print=true`, '_blank');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   const triggerInstantConfetti = () => {
     setShowConfetti(true);
     try {
@@ -6322,14 +6341,29 @@ function StudioCoreAiryBuilderContent() {
       {/* ── PUBLIC PREVIEW LIQUID GLASS BOTTOM CLIENT ACTION BAR ── */}
       {isPublicPreview && (
         <div className="fixed bottom-4 left-0 right-0 z-[9000] px-4 pointer-events-none flex justify-center no-print">
-          <div className="pointer-events-auto bg-white/75 backdrop-blur-xl border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.15)] rounded-full px-5 py-2.5 flex items-center justify-center gap-3">
+          <div className="pointer-events-auto bg-white/85 dark:bg-[#1C1A18]/85 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-700/80 shadow-[0_12px_40px_rgba(0,0,0,0.18)] rounded-full px-4 py-2 flex items-center justify-center gap-2.5 sm:gap-3">
+            <button
+              type="button"
+              onClick={handleClientDownloadPdf}
+              disabled={downloadingPdf}
+              className="px-4 py-2 rounded-full bg-zinc-900 hover:bg-black text-white font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 disabled:opacity-50"
+              title="Download PDF Copy"
+            >
+              {downloadingPdf ? (
+                <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-amber-400" />
+              )}
+              <span>{downloadingPdf ? 'Exporting...' : 'Download PDF'}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowBudgetModal(true)}
               disabled={accepted}
-              className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-950 border border-amber-500/40 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+              className="px-4 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-950 dark:text-amber-300 border border-amber-500/40 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 hover:scale-105 active:scale-95"
             >
-              <DollarSign className="w-4 h-4 text-amber-600" />
+              <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span>{budgetRequested ? `Budget: ₹${budgetRequested.toLocaleString('en-IN')}` : 'Discuss Budget'}</span>
             </button>
 
@@ -6337,7 +6371,7 @@ function StudioCoreAiryBuilderContent() {
               type="button"
               onClick={() => setShowAcceptModal(true)}
               disabled={accepted}
-              className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60"
+              className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60 hover:scale-105 active:scale-95"
             >
               <CheckCircle2 className="w-4 h-4 text-white" />
               <span>{accepted ? '✓ Proposal Accepted' : 'Accept Proposal'}</span>
