@@ -236,26 +236,53 @@ export function getThemeFromKey(key: any) {
         isDark: !!key.isDark
       };
     }
-    key = key.name || key.id || '';
+    key = key.id || key.name || '';
   }
   const strKey = String(key).trim();
   if (COLOR_THEMES[strKey]) return COLOR_THEMES[strKey];
 
   const lowerKey = strKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // 1. Direct EXACT match on ID or Name slug
   for (const val of Object.values(COLOR_THEMES)) {
     const valId = val.id.toLowerCase().replace(/[^a-z0-9]/g, '');
     const valName = val.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (valId === lowerKey || valName === lowerKey || valName.includes(lowerKey) || lowerKey.includes(valId)) {
+    if (valId === lowerKey || valName === lowerKey) {
       return val;
     }
+  }
+
+  // 2. Direct EXACT match on alias slug
+  for (const val of Object.values(COLOR_THEMES)) {
     if (Array.isArray(val.aliases)) {
       for (const alias of val.aliases) {
         const aSlug = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (aSlug === lowerKey || lowerKey.includes(aSlug) || aSlug.includes(lowerKey)) {
+        if (aSlug === lowerKey) {
           return val;
         }
       }
     }
   }
+
+  // 3. Exact matching with inverted preference
+  const isInverted = lowerKey.includes('inverted') || lowerKey.includes('dark');
+  for (const val of Object.values(COLOR_THEMES)) {
+    if (isInverted !== !!val.isDark) continue;
+    const valId = val.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const valName = val.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (valName.includes(lowerKey) || lowerKey.includes(valId) || lowerKey.includes(valName)) {
+      return val;
+    }
+  }
+
+  // 4. General fallback
+  for (const val of Object.values(COLOR_THEMES)) {
+    const valId = val.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const valName = val.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (valName.includes(lowerKey) || lowerKey.includes(valId)) {
+      return val;
+    }
+  }
+
   return COLOR_THEMES['cyprus-sand-dune'];
 }

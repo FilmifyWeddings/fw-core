@@ -3039,7 +3039,7 @@ function StudioCoreAiryBuilderContent() {
   };
 
   // Smart Dynamic Theme Resolution
-  const activeTheme = COLOR_THEMES.find(t => t.name === data.look || t.id === data.look) || COLOR_THEMES[0];
+  const activeTheme = COLOR_THEMES.find(t => t.name === data.look || t.id === data.look || t.name === data.theme || t.id === data.theme) || COLOR_THEMES[0];
   
   const pageBgColor = activeTheme.background;
   const textColor = activeTheme.primary || activeTheme.text;
@@ -3079,8 +3079,16 @@ function StudioCoreAiryBuilderContent() {
 
         {/* Canva-Style Visual COLOR PALETTE Selector (Full Width) */}
         <CanvaThemeSelector
-          value={data.look}
-          onChange={(themeName) => setData({ ...data, look: themeName })}
+          value={data.look || data.theme}
+          onChange={(themeName) => {
+            const found = COLOR_THEMES.find(t => t.name === themeName || t.id === themeName);
+            setData({
+              ...data,
+              look: themeName,
+              theme: themeName,
+              colorPalette: found ? { ...found } : themeName
+            });
+          }}
         />
 
         {/* Canva-Style Typography Customizers */}
