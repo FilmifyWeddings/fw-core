@@ -4714,16 +4714,31 @@ function StudioCoreAiryBuilderContent() {
                 const previewUrl = `/workspace/quotations/builder/templet/${templateId || 'templet'}?preview=public`;
                 window.open(previewUrl, '_blank');
               }}
-              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-[10px] sm:text-[11px] font-extrabold transition-all items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 hidden md:flex"
+              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 hidden md:flex"
               title="Preview Template"
             >
               <Eye className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Preview</span>
             </button>
 
             <button
+              type="button"
+              onClick={handleClientDownloadPdf}
+              disabled={downloadingPdf}
+              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50"
+              title="Download High-Res PDF"
+            >
+              {downloadingPdf ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+              ) : (
+                <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+              )}
+              <span>{downloadingPdf ? 'Exporting...' : 'Download PDF'}</span>
+            </button>
+
+            <button
               onClick={handleManualSave}
               disabled={saving}
-              className="px-3 sm:px-4 py-1 rounded-full bg-black hover:bg-zinc-800 text-white text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50"
+              className="px-3 sm:px-4 py-1.5 rounded-full bg-zinc-900 hover:bg-black text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shadow-md disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? '...' : 'Save'}
             </button>
@@ -6346,13 +6361,13 @@ function StudioCoreAiryBuilderContent() {
               type="button"
               onClick={handleClientDownloadPdf}
               disabled={downloadingPdf}
-              className="px-4 py-2 rounded-full bg-zinc-900 hover:bg-black text-white font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 disabled:opacity-50"
+              className="px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 disabled:opacity-50"
               title="Download PDF Copy"
             >
               {downloadingPdf ? (
-                <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                <RefreshCw className="w-3.5 h-3.5 text-white animate-spin" />
               ) : (
-                <Download className="w-3.5 h-3.5 text-amber-400" />
+                <Download className="w-3.5 h-3.5 text-white" />
               )}
               <span>{downloadingPdf ? 'Exporting...' : 'Download PDF'}</span>
             </button>

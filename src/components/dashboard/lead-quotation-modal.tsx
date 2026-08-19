@@ -569,13 +569,13 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                             type="button"
                             onClick={() => handleDownloadPDF(q)}
                             disabled={downloadingPdf === q.template_id}
-                            className="px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-extrabold text-[11px] uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-[11px] uppercase tracking-wider shadow-xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
                             title="Download PDF Copy"
                           >
                             {downloadingPdf === q.template_id ? (
-                              <RefreshCw className="w-3 h-3 animate-spin text-amber-400 dark:text-amber-600" />
+                              <RefreshCw className="w-3 h-3 animate-spin text-white" />
                             ) : (
-                              <Download className="w-3 h-3 text-amber-400 dark:text-amber-600" />
+                              <Download className="w-3 h-3 text-white" />
                             )}
                             <span>PDF</span>
                           </button>
