@@ -540,7 +540,14 @@ function paginateFunctionItems(items: any[]): any[][] {
 }
 
 export function renderQuotationToHTML(documentData: any): string {
-  let theme = getThemeFromKey(documentData?.look || documentData?.theme || documentData?.colorPalette);
+  let theme = getThemeFromKey(
+    documentData?.look || 
+    documentData?.theme || 
+    documentData?.colorTheme || 
+    documentData?.colorPalette?.name || 
+    documentData?.colorPalette
+  );
+
   if (documentData?.colorPalette && typeof documentData.colorPalette === 'object') {
     theme = {
       ...theme,
@@ -550,19 +557,33 @@ export function renderQuotationToHTML(documentData: any): string {
       text: documentData.colorPalette.text || theme.text,
       kicker: documentData.colorPalette.kicker || theme.kicker || theme.primary,
       borderColor: documentData.colorPalette.borderColor || theme.borderColor,
-      boxBgColor: documentData.colorPalette.boxBgColor || theme.boxBgColor
+      boxBgColor: documentData.colorPalette.boxBgColor || theme.boxBgColor,
+      isDark: documentData.colorPalette.isDark !== undefined ? documentData.colorPalette.isDark : theme.isDark
     };
   }
 
-  let primaryFont = documentData?.primaryFont || "'Cormorant Garamond', serif";
-  if (primaryFont && !primaryFont.includes(',') && !primaryFont.includes("'") && !primaryFont.includes('"')) {
-    primaryFont = `'${primaryFont}', serif`;
+  if (documentData?.primary && documentData?.background) {
+    theme = {
+      ...theme,
+      primary: documentData.primary,
+      background: documentData.background,
+      text: documentData.text || documentData.primary,
+      kicker: documentData.kicker || documentData.primary,
+      borderColor: documentData.borderColor || theme.borderColor,
+      boxBgColor: documentData.boxBgColor || theme.boxBgColor,
+      isDark: documentData.isDark !== undefined ? documentData.isDark : theme.isDark
+    };
   }
 
-  let secondaryFont = documentData?.secondaryFont || "'Plus Jakarta Sans', sans-serif";
-  if (secondaryFont && !secondaryFont.includes(',') && !secondaryFont.includes("'") && !secondaryFont.includes('"')) {
-    secondaryFont = `'${secondaryFont}', sans-serif`;
-  }
+  const rawPrimary = documentData?.primaryFont || documentData?.fontFamily || documentData?.headingFont || "'Cormorant Garamond', serif";
+  const cleanPrimaryName = String(rawPrimary).replace(/['"]/g, '').split(',')[0].trim();
+  const isSans = cleanPrimaryName.toLowerCase().includes('sans') || cleanPrimaryName.toLowerCase().includes('montserrat') || cleanPrimaryName.toLowerCase().includes('inter') || cleanPrimaryName.toLowerCase().includes('outfit') || cleanPrimaryName.toLowerCase().includes('aligin') || cleanPrimaryName.toLowerCase().includes('amida') || cleanPrimaryName.toLowerCase().includes('aurora') || cleanPrimaryName.toLowerCase().includes('bevola') || cleanPrimaryName.toLowerCase().includes('gloci') || cleanPrimaryName.toLowerCase().includes('hakuna') || cleanPrimaryName.toLowerCase().includes('lostgun') || cleanPrimaryName.toLowerCase().includes('monic');
+  const isCursive = cleanPrimaryName.toLowerCase().includes('script') || cleanPrimaryName.toLowerCase().includes('vibes') || cleanPrimaryName.toLowerCase().includes('wondershine');
+  const primaryFont = `'${cleanPrimaryName}', ${isCursive ? 'cursive' : isSans ? 'sans-serif' : 'serif'}`;
+
+  const rawSecondary = documentData?.secondaryFont || documentData?.bodyFont || "'Plus Jakarta Sans', sans-serif";
+  const cleanSecondaryName = String(rawSecondary).replace(/['"]/g, '').split(',')[0].trim();
+  const secondaryFont = `'${cleanSecondaryName}', sans-serif`;
 
   const embeddedFontsCSS = getEmbeddedCustomFontsBase64CSS();
 
@@ -1533,7 +1554,7 @@ export function renderQuotationToHTML(documentData: any): string {
         <title>${documentData?.designName || 'Quotation Preview'} - PDF</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Cinzel:wght@400;600;700;800;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Dancing+Script:wght@400..700&family=Great+Vibes&family=Inter:wght@300;400;500;600;700&family=Italiana&family=Josefin+Sans:wght@300;400;600;700&family=Marcellus&family=Montserrat:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Prata&family=Tenor+Sans&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Cinzel:wght@400;600;700;800;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Dancing+Script:wght@400..700&family=DM+Serif+Display&family=Great+Vibes&family=Inter:wght@300;400;500;600;700&family=Italiana&family=Josefin+Sans:wght@300;400;600;700&family=Marcellus&family=Montserrat:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Prata&family=Tenor+Sans&display=swap" rel="stylesheet" />
         <style>
           ${embeddedFontsCSS}
 
@@ -1558,7 +1579,13 @@ export function renderQuotationToHTML(documentData: any): string {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .canvas-wrapper {
+          h1, h2, h3, .couple-name-heading, .brand-name-heading, .section-heading, .title-primary {
+            font-family: ${primaryFont} !important;
+          }
+          p, span, div, li, td, th, .font-secondary {
+            font-family: ${secondaryFont};
+          }
+          .canvas-wrapper, #quotation-full-canvas {
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -1567,6 +1594,7 @@ export function renderQuotationToHTML(documentData: any): string {
             margin: 0 !important;
             background-color: transparent !important;
             width: 794px !important;
+            font-family: ${secondaryFont} !important;
           }
           .pdf-page, .quotation-page, .quotation-canvas-page, section {
             width: 794px !important;
