@@ -144,11 +144,15 @@ export default function OnboardingCelebrationModal({
   const markCompletedGlobally = () => {
     try {
       localStorage.setItem('sc_welcome_completed', 'true');
+      localStorage.removeItem('sc_show_onboarding_celebration');
       if (userId) {
         localStorage.setItem(`sc_welcome_seen_${userId}`, 'true');
       }
       if (typeof window !== 'undefined' && window.history.replaceState) {
-        window.history.replaceState({}, '', window.location.pathname);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('welcome');
+        url.searchParams.delete('onboarding');
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
       }
     } catch (e) {}
   };

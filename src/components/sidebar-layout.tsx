@@ -63,8 +63,27 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       const params = new URLSearchParams(window.location.search);
       const isParamPresent = params.get('onboarding') === 'true' || params.get('welcome') === 'true';
       const isPending = localStorage.getItem('sc_show_onboarding_celebration') === 'true';
-      if (isParamPresent || isPending) {
+      const isCompleted = localStorage.getItem('sc_welcome_completed') === 'true';
+
+      if ((isParamPresent || isPending) && !isCompleted) {
         setShowOnboardingCelebration(true);
+        try {
+          localStorage.removeItem('sc_show_onboarding_celebration');
+          localStorage.setItem('sc_welcome_completed', 'true');
+          if (window.history.replaceState) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('welcome');
+            url.searchParams.delete('onboarding');
+            window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+          }
+        } catch (_) {}
+      } else if (isParamPresent && window.history.replaceState) {
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('welcome');
+          url.searchParams.delete('onboarding');
+          window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+        } catch (_) {}
       }
     }
 
