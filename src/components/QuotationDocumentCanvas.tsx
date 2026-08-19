@@ -37,6 +37,20 @@ export function resolveFunctionTitle(rawName?: string | null): string {
   return parts.join(' + ').toUpperCase();
 }
 
+export const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
+  { type: 'cover', label: 'Cover Page' },
+  { type: 'aboutUs', label: 'About Us' },
+  { type: 'shootDetails', label: 'Pre-Wedding Shoot' },
+  { type: 'functionsPage', label: 'Functions & Coverage' },
+  { type: 'deliverablesPage', label: 'Deliverables' },
+  { type: 'specialValueAdditions', label: 'Special Value Additions' },
+  { type: 'pricingPage', label: 'Pricing Details' },
+  { type: 'paymentTermsPage', label: 'Payment Terms & Schedule' },
+  { type: 'addOnsPage', label: 'Add-Ons & Upgrades' },
+  { type: 'termsPage', label: 'Terms & Conditions' },
+  { type: 'thankYouPage', label: 'Thank You Page' },
+];
+
 export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = [
   { id: 'cover-std', type: 'cover', label: 'Cover Page' },
   { id: 'about-std', type: 'aboutUs', label: 'About Us' },
