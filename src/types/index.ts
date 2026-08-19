@@ -857,4 +857,7 @@ export interface QuotationProposal {
   updated_at: string;
 }
 
+export * from './landing';
+
+
 

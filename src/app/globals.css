@@ -1,6 +1,35 @@
 @import "tailwindcss";
 @import "../styles/document.css";
 
+@theme {
+  --color-studio-bg: #FFFDF8;
+  --color-studio-secondary: #FAF8F3;
+  --color-studio-card: #FFFFFF;
+  --color-studio-beige: #F3EEE6;
+  --color-studio-beige-light: #FAF6F0;
+  --color-studio-gold: #C89435;
+  --color-studio-gold-hover: #B68225;
+  --color-studio-gold-light: #FBF5EB;
+  --color-studio-gold-border: #E6D7BE;
+  --color-studio-champagne: #D4A853;
+  --color-studio-dark: #211B17;
+  --color-studio-charcoal: #2D2723;
+  --color-studio-muted: #746E67;
+  --color-studio-muted-light: #99928A;
+  --color-studio-border: #E9E1D5;
+  --color-studio-border-light: #F2ECE2;
+
+  --font-serif: 'Instrument Serif', 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  --font-handwriting: 'Caveat', cursive, sans-serif;
+
+  --shadow-luxury: 0 20px 50px -12px rgba(33, 27, 23, 0.08), 0 4px 12px -2px rgba(33, 27, 23, 0.03);
+  --shadow-luxury-lg: 0 30px 70px -15px rgba(33, 27, 23, 0.12), 0 10px 24px -5px rgba(33, 27, 23, 0.05);
+  --shadow-card: 0 10px 30px -5px rgba(45, 39, 35, 0.06), 0 2px 6px 0 rgba(45, 39, 35, 0.02);
+  --shadow-notification: 0 12px 32px -4px rgba(33, 27, 23, 0.09), 0 4px 8px -2px rgba(33, 27, 23, 0.03);
+  --shadow-gold-glow: 0 10px 25px -5px rgba(200, 148, 53, 0.35);
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
@@ -248,3 +277,58 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .animate-soft-glow {
   animation: soft-pulse-glow 6s ease-in-out infinite;
 }
+
+/* Custom luxury gradients and effects */
+.gold-text-gradient {
+  background: linear-gradient(135deg, #C89435 0%, #E2BA69 50%, #B68225 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtle-paper-texture {
+  background-image: radial-gradient(rgba(200, 148, 53, 0.05) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* Floating keyframe for character breathing */
+@keyframes characterIdle {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(0.3deg);
+  }
+}
+
+.animate-character-idle {
+  animation: characterIdle 5s ease-in-out infinite;
+}
+
+/* Floating keyframes for notifications */
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes floatDelayed {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes floatFast {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-float-slow {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: floatDelayed 7s ease-in-out 1.5s infinite;
+}
+
+.animate-float-fast {
+  animation: floatFast 5s ease-in-out 0.8s infinite;
+}
+

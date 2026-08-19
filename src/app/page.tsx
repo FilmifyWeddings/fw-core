@@ -1,90 +1,32 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Navbar } from '@/components/landing/Navbar';
-import { HeroSection } from '@/components/landing/HeroSection';
-import { TrustedSection } from '@/components/landing/TrustedSection';
-import { ProblemSection } from '@/components/landing/ProblemSection';
-import { SolutionSection } from '@/components/landing/SolutionSection';
-import { BentoFeatures } from '@/components/landing/BentoFeatures';
-import { ComparisonSection } from '@/components/landing/ComparisonSection';
-import { LiveShowcaseSection } from '@/components/landing/LiveShowcaseSection';
-import { AutomationSection } from '@/components/landing/AutomationSection';
-import { StatsSection } from '@/components/landing/StatsSection';
-import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
-import { PricingSection } from '@/components/landing/PricingSection';
-import { FaqSection } from '@/components/landing/FaqSection';
-import { CtaSection } from '@/components/landing/CtaSection';
-import { Footer } from '@/components/landing/Footer';
-import { SubPageViewer } from '@/components/landing/SubPages';
-import { PersistentPhotographer } from '@/components/landing/PersistentPhotographer';
+import React from 'react';
+import { Hero } from '@/components/landing/Hero/Hero';
+import { ProblemSection } from '@/components/landing/Problem/ProblemSection';
+import { SolutionSection } from '@/components/landing/Solution/SolutionSection';
+import { FeaturesSection } from '@/components/landing/Features/FeaturesSection';
+import { PricingPage } from '@/components/landing/Pricing/PricingPage';
 
 export default function RootLandingPage() {
-  const [activePage, setActivePage] = useState<string>('home');
-
-  const handleNavigate = (pageSlug: string) => {
-    setActivePage(pageSlug);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   return (
-    <div className="min-h-screen w-full bg-[#FFFDF9] dark:bg-[#0C0B0A] text-[#1A1917] dark:text-[#FAF8F5] font-sans antialiased selection:bg-[#D4AF37]/30 selection:text-[#B89047]">
-      
-      {/* PERSISTENT ANIMATED PHOTOGRAPHER CHARACTER */}
-      {activePage === 'home' && <PersistentPhotographer />}
+    <div className="min-h-screen bg-[#FFFDF8] text-[#211B17] flex flex-col justify-between selection:bg-[#C89435]/20 selection:text-[#211B17]">
+      <main className="w-full">
+        {/* Page 01: Hero Section */}
+        <Hero />
 
-      {/* GLOBAL LANDING NAVBAR */}
-      <Navbar activePage={activePage} onNavigate={handleNavigate} />
+        {/* Page 02: The Reality / Problem Section */}
+        <ProblemSection />
 
-      {/* DYNAMIC VIEW ROUTER */}
-      {activePage === 'home' ? (
-        <main className="w-full relative overflow-x-hidden">
-          {/* SECTION 1 — HERO */}
-          <HeroSection onNavigate={handleNavigate} />
+        {/* Page 03: The Solution / Transformation Section */}
+        <SolutionSection />
 
-          {/* SECTION 2 — TRUSTED BY MARQUEE */}
-          <TrustedSection />
+        {/* Page 04: Everything You Need. In One Place. (Before → After Transformation) */}
+        <FeaturesSection />
 
-          {/* SECTION 3 — THE DISCONNECTED PROBLEM */}
-          <ProblemSection />
-
-          {/* SECTION 4 — THE STUDIOCORE SOLUTION */}
-          <SolutionSection />
-
-          {/* SECTION 5 — BENTO GRID FEATURES */}
-          <BentoFeatures />
-
-          {/* SECTION 6 — WHY STUDIOCORE COMPARISON */}
-          <ComparisonSection />
-
-          {/* SECTION 7 — LIVE INTERACTIVE DASHBOARD SHOWCASE */}
-          <LiveShowcaseSection />
-
-          {/* SECTION 8 — AUTOMATION BLUEPRINT */}
-          <AutomationSection />
-
-          {/* SECTION 9 — STATISTICAL METRICS */}
-          <StatsSection />
-
-          {/* SECTION 10 — TESTIMONIALS */}
-          <TestimonialsSection />
-
-          {/* SECTION 11 — PRICING MATRICES */}
-          <PricingSection onNavigate={handleNavigate} />
-
-          {/* SECTION 12 — FAQ ACCORDION */}
-          <FaqSection />
-
-          {/* SECTION 13 — FINAL CALL TO ACTION */}
-          <CtaSection onNavigate={handleNavigate} />
-        </main>
-      ) : (
-        <SubPageViewer pageSlug={activePage} onNavigate={handleNavigate} />
-      )}
-
-      {/* GLOBAL LANDING FOOTER */}
-      <Footer onNavigate={handleNavigate} />
-
+        {/* Page 05: Pricing, Business Stats & Testimonials */}
+        <PricingPage />
+      </main>
     </div>
   );
 }
+

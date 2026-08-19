@@ -251,7 +251,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   ];
 
   const isStandalonePage = 
+    pathname === '/' ||
     pathname === '/login' ||
+    pathname === '/features' ||
+    pathname === '/pricing' ||
+    pathname === '/book-demo' ||
+    pathname === '/free-trial' ||
+    pathname === '/privacy-policy' ||
+    pathname === '/terms-of-service' ||
     pathname.startsWith('/pdf-preview') ||
     pathname.startsWith('/p/quotation') ||
     pathname.startsWith('/attendance/') ||
@@ -259,7 +266,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/admin/workspace/quotations/builder');
 
   if (isStandalonePage) {
-    return <div className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900">{children}</div>;
+    return <div className="min-h-screen w-full bg-[#FFFDF8] text-zinc-900">{children}</div>;
   }
 
   return (
