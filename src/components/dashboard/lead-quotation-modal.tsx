@@ -720,6 +720,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
         onClose={() => setAiModalOpen(false)}
         lead={lead}
         quotationId={aiTargetQuotationId}
+        selectedTemplateId={selectedTemplateId}
         onApplied={(updatedDoc, targetQId) => {
           setAiModalOpen(false);
           setOpeningQuotation({

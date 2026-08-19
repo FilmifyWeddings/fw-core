@@ -14,8 +14,10 @@ import AiMicButton from '@/components/AiMicButton';
 interface AiQuotationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  lead: Lead | null;
+  lead?: Lead | null;
   quotationId?: string | null;
+  selectedTemplateId?: string | null;
+  currentDocumentData?: any;
   onApplied?: (updatedDoc: any, targetQuotationId: string) => void;
 }
 
@@ -24,6 +26,8 @@ export function AiQuotationModal({
   onClose,
   lead,
   quotationId,
+  selectedTemplateId,
+  currentDocumentData,
   onApplied
 }: AiQuotationModalProps) {
   const router = useRouter();
@@ -40,7 +44,16 @@ export function AiQuotationModal({
   const [missingInfo, setMissingInfo] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
 
-  if (!isOpen || !lead) return null;
+  if (!isOpen) return null;
+
+  const effectiveLead: any = lead || {
+    id: quotationId || 'draft',
+    name: currentDocumentData?.cover?.coupleName || 'Client',
+    phone: '',
+    email: '',
+    raw_payload: {},
+    comments: []
+  };
 
   const handleCopySystemPrompt = () => {
     const masterPrompt = `You are StudioCore AI Quotation Assistant for Professional Wedding & Event Photography Studios.
@@ -187,11 +200,11 @@ Respond ONLY with valid JSON matching the schema below (No Markdown formatting a
 
 ==================================================
 LEAD & CLIENT CONTEXT:
-- Lead Name: ${lead.name || 'N/A'}
-- Phone: ${lead.phone || 'N/A'}
-- Email: ${lead.email || 'N/A'}
-- Lead Form Payload: ${JSON.stringify(lead.raw_payload || {}, null, 2)}
-- Lead Comments & Notes: ${Array.isArray(lead.comments) ? lead.comments.map((c: any) => c.text).join('\\n') : 'N/A'}
+- Lead Name: ${effectiveLead.name || 'N/A'}
+- Phone: ${effectiveLead.phone || 'N/A'}
+- Email: ${effectiveLead.email || 'N/A'}
+- Lead Form Payload: ${JSON.stringify(effectiveLead.raw_payload || {}, null, 2)}
+- Lead Comments & Notes: ${Array.isArray(effectiveLead.comments) ? effectiveLead.comments.map((c: any) => c.text).join('\n') : 'N/A'}
 - Additional Notes: ${additionalNotes || 'N/A'}`;
 
     navigator.clipboard.writeText(masterPrompt);
@@ -213,8 +226,10 @@ LEAD & CLIENT CONTEXT:
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          leadId: lead.id,
+          leadId: effectiveLead.id,
           quotationId: quotationId || null,
+          explicitTemplateId: selectedTemplateId || null,
+          currentDocument: currentDocumentData || null,
           additionalNotes: additionalNotes.trim()
         })
       });
@@ -245,9 +260,9 @@ LEAD & CLIENT CONTEXT:
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // If no quotationId exists, first create one for lead
+      // If no quotationId exists and we have a real lead, first create one for lead using selectedTemplateId
       let targetQId = quotationId;
-      if (!targetQId) {
+      if (!targetQId && effectiveLead.id && effectiveLead.id !== 'draft') {
         const createRes = await fetch('/api/quotations/create-for-lead', {
           method: 'POST',
           headers: {
@@ -255,8 +270,9 @@ LEAD & CLIENT CONTEXT:
             'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({
-            leadId: lead.id,
-            clientName: lead.name
+            leadId: effectiveLead.id,
+            clientName: effectiveLead.name,
+            explicitTemplateId: selectedTemplateId || undefined
           })
         });
         const createJson = await createRes.json();
@@ -266,34 +282,38 @@ LEAD & CLIENT CONTEXT:
         targetQId = createJson.quotationId || createJson.templateId;
       }
 
-      // Apply extracted document directly to current draft without version bump
-      const applyRes = await fetch('/api/quotations/ai-apply', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          quotationId: targetQId,
-          document: extractedDoc
-        })
-      });
+      // Apply extracted document directly to current draft if targetQId exists
+      if (targetQId && targetQId !== 'draft') {
+        const applyRes = await fetch('/api/quotations/ai-apply', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            quotationId: targetQId,
+            document: extractedDoc
+          })
+        });
 
-      const applyJson = await applyRes.json();
-      if (!applyRes.ok || !applyJson.success) {
-        throw new Error(applyJson.error || 'Failed to apply AI data to quotation');
+        const applyJson = await applyRes.json();
+        if (!applyRes.ok || !applyJson.success) {
+          throw new Error(applyJson.error || 'Failed to apply AI data to quotation');
+        }
+
+        // Prime local indexedDB and sessionStorage cache for instant builder hydration
+        try {
+          const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+          cacheDocumentLocal(targetQId, applyJson.document || extractedDoc, 1);
+          if (effectiveLead.id && effectiveLead.id !== 'draft') {
+            sessionStorage.removeItem(`lead_quotes_cache_${effectiveLead.id}`);
+          }
+        } catch (e) {}
       }
 
-      // Prime local indexedDB and sessionStorage cache for instant builder hydration
-      try {
-        const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-        cacheDocumentLocal(targetQId, applyJson.document || extractedDoc, 1);
-        sessionStorage.removeItem(`lead_quotes_cache_${lead.id}`);
-      } catch (e) {}
-
-      if (onApplied && targetQId) {
-        onApplied(extractedDoc, targetQId);
-      } else if (targetQId) {
+      if (onApplied) {
+        onApplied(extractedDoc, targetQId || quotationId || 'draft');
+      } else if (targetQId && targetQId !== 'draft') {
         router.push(`/workspace/quotations/builder/templet/${targetQId}`);
         onClose();
       } else {

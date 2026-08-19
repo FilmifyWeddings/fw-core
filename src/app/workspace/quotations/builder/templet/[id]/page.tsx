@@ -26,6 +26,11 @@ const MasterMediaModal = dynamic(
   () => import('@/components/MasterMediaModal').then(m => m.MasterMediaModal),
   { ssr: false }
 );
+
+const AiQuotationModal = dynamic(
+  () => import('@/components/dashboard/ai-quotation-modal').then(m => m.AiQuotationModal),
+  { ssr: false }
+);
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
@@ -2013,6 +2018,9 @@ function StudioCoreAiryBuilderContent() {
   const [budgetNotes, setBudgetNotes] = useState('');
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [leadData, setLeadData] = useState<any>(null);
+
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const handleClientDownloadPdf = async () => {
@@ -2730,6 +2738,19 @@ function StudioCoreAiryBuilderContent() {
 
         isRemoteUpdateRef.current = true;
         setRawData(loadedData);
+
+        // Fetch connected Lead data if lead_id is present
+        const leadIdToFetch = loadedData.lead_id || json.document?.lead_id;
+        if (leadIdToFetch) {
+          try {
+            const { data: matchedLead } = await supabase
+              .from('leads')
+              .select('*')
+              .eq('id', leadIdToFetch)
+              .maybeSingle();
+            if (matchedLead) setLeadData(matchedLead);
+          } catch (e) {}
+        }
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
         setIsDataReady(true);
@@ -4710,6 +4731,16 @@ function StudioCoreAiryBuilderContent() {
           {/* Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             <button
+              type="button"
+              onClick={() => setAiModalOpen(true)}
+              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+              title="Create & Refine Quotation with AI"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+              <span>Create with AI</span>
+            </button>
+
+            <button
               onClick={() => {
                 const previewUrl = `/workspace/quotations/builder/templet/${templateId || 'templet'}?preview=public`;
                 window.open(previewUrl, '_blank');
@@ -6678,6 +6709,38 @@ function StudioCoreAiryBuilderContent() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── AI QUOTATION ASSISTANT MODAL ── */}
+      <AiQuotationModal
+        isOpen={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        lead={leadData || { id: templateId || routeId, name: data.cover?.coupleName || 'Client', phone: '', email: '', raw_payload: {} }}
+        quotationId={templateId || routeId}
+        currentDocumentData={data}
+        onApplied={(updatedDoc) => {
+          setAiModalOpen(false);
+          if (updatedDoc) {
+            setData((prev: any) => {
+              const merged = {
+                ...prev,
+                ...updatedDoc,
+                cover: { ...(prev.cover || {}), ...(updatedDoc.cover || {}) },
+                functionsPage: updatedDoc.functionsPage || prev.functionsPage,
+                deliverablesPage: updatedDoc.deliverablesPage || prev.deliverablesPage,
+                shootDetails: updatedDoc.shootDetails || prev.shootDetails,
+                pricingPage: updatedDoc.pricingPage || prev.pricingPage,
+                paymentTermsPage: updatedDoc.paymentTermsPage || prev.paymentTermsPage,
+              };
+              try {
+                cacheDocumentLocal(templateId || routeId, merged, currentVersionRef.current);
+              } catch (e) {}
+              return merged;
+            });
+            setSaved(true);
+            triggerRevisionSave();
+          }
+        }}
+      />
 
     </div>
   );

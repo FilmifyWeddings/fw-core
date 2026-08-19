@@ -18,11 +18,7 @@ export async function POST(req: NextRequest) {
   try {
     const { userId, userEmail } = await resolveRequestUser(req);
     const body = await req.json().catch(() => ({}));
-    const { leadId, quotationId, additionalNotes } = body;
-
-    if (!leadId) {
-      return NextResponse.json({ error: 'leadId is required' }, { status: 400 });
-    }
+    const { leadId, quotationId, explicitTemplateId, selectedTemplateId, currentDocument, additionalNotes } = body;
 
     let workspaceId = userId;
     const { data: profile } = await supabaseAdmin
@@ -32,26 +28,33 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (profile?.id) workspaceId = profile.id;
 
-    // 1. Fetch & Verify Lead Ownership
-    const { data: lead, error: leadErr } = await supabaseAdmin
-      .from('leads')
-      .select('*')
-      .eq('id', leadId)
-      .maybeSingle();
-
-    if (leadErr || !lead) {
-      return NextResponse.json({ error: 'Lead not found or access denied' }, { status: 404 });
+    // 1. Fetch Lead or Synthesize from Document
+    let lead: any = null;
+    if (leadId && leadId !== 'draft') {
+      const { data: matchedLead } = await supabaseAdmin
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .maybeSingle();
+      if (matchedLead) lead = matchedLead;
     }
 
-    // Verify workspace access (unless super admin)
-    if (userEmail !== 'sushantnawale700@gmail.com' && lead.workspace_id && lead.workspace_id !== workspaceId && lead.workspace_id !== userId) {
-      return NextResponse.json({ error: 'Unauthorized access to lead' }, { status: 403 });
+    if (!lead) {
+      lead = {
+        id: leadId || quotationId || 'draft',
+        name: body.clientName || currentDocument?.cover?.coupleName || 'Client',
+        phone: '',
+        email: '',
+        status: 'Active',
+        raw_payload: {},
+        comments: []
+      };
     }
 
-    // 2. Fetch Existing Quotation Document if quotationId / templateId provided
-    let existingDoc: any = null;
+    // 2. Fetch Existing Quotation Document or use currentDocument
+    let existingDoc: any = currentDocument || null;
     const targetQId = quotationId || body.templateId;
-    if (targetQId) {
+    if (!existingDoc && targetQId) {
       const { data: qDoc } = await supabaseAdmin
         .from('quotation_documents')
         .select('content_json')
@@ -70,9 +73,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // STRICT GUARANTEE: If no document exists, resolve user's active default quotation template
+    // STRICT GUARANTEE: If no document exists, resolve the explicitly selected template (or user default template)
     if (!existingDoc) {
-      const resolvedDefault = await resolveUserDefaultQuotationTemplate(workspaceId, userId);
+      const resolvedDefault = await resolveUserDefaultQuotationTemplate(
+        workspaceId, 
+        userId, 
+        explicitTemplateId || selectedTemplateId
+      );
       existingDoc = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
     }
 
